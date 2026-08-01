@@ -229,7 +229,7 @@ export function MobileNav({
         )}
         <div className="flex items-center justify-between pt-1">
           <span className="text-xs text-neutral-500">{t("nav.language")}</span>
-          <LanguageCurrencySelector />
+          <LanguageCurrencySelector openUpward />
         </div>
       </div>
       <CompareHint hint={savedHint} hintRef={savedHintRef} />

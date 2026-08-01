@@ -31,6 +31,11 @@ export function matchesListingFilters(listing: Listing, f: FilterState): boolean
   if (f.priceMax != null && listing.price > f.priceMax) return false;
   if (f.areaMin != null && listing.area < f.areaMin) return false;
   if (f.areaMax != null && listing.area > f.areaMax) return false;
+  if (f.landAreaMin != null && (listing.landArea == null || listing.landArea < f.landAreaMin))
+    return false;
+  if (f.landAreaMax != null && (listing.landArea == null || listing.landArea > f.landAreaMax))
+    return false;
+  if (f.buildingPermit && !listing.buildingPermit) return false;
   if (f.bedrooms != null && listing.bedrooms < f.bedrooms) return false;
   if (f.bathrooms != null && listing.bathrooms < f.bathrooms) return false;
   if (f.condition.length && !f.condition.includes(listing.condition))

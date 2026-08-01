@@ -184,7 +184,12 @@ const propertyTypeMix: Listing["propertyType"][] = [
   "house",
   "studio",
   "villa",
+  "land",
+  "office",
+  "commercial",
 ];
+
+const NO_BEDROOM_TYPES: Listing["propertyType"][] = ["studio", "land", "office", "commercial"];
 
 const listingTitles = [
   "Sunlit Corner Apartment",
@@ -204,8 +209,12 @@ const listingTitles = [
 function buildListing(i: number, neighborhood: Neighborhood): Listing {
   const isRent = i % 3 === 0;
   const type = propertyTypeMix[i % propertyTypeMix.length];
-  const bedrooms = type === "studio" ? 0 : 1 + (i % 4);
+  const bedrooms = NO_BEDROOM_TYPES.includes(type) ? 0 : 1 + (i % 4);
   const area = Math.round(40 + bedrooms * 22 + (i % 5) * 6);
+  // Villas sit on their own plot, distinct from the built floor area.
+  const landArea = type === "villa" ? Math.round(area * (1.6 + (i % 3) * 0.3)) : undefined;
+  // Only meaningful for land listings.
+  const buildingPermit = type === "land" ? i % 2 === 0 : undefined;
   const pricePerSqm = isRent ? 0 : Math.round(jitter(1650, 700, i * 11 + 1));
   const price = isRent
     ? Math.round(jitter(350, 300, i * 11 + 2) + bedrooms * 120)
@@ -227,8 +236,10 @@ function buildListing(i: number, neighborhood: Neighborhood): Listing {
     pricePerSqm: isRent ? undefined : pricePerSqm,
     negotiable: i % 4 === 0,
     area,
+    landArea,
+    buildingPermit,
     bedrooms,
-    bathrooms: Math.max(1, Math.round(bedrooms * 0.7)),
+    bathrooms: type === "land" ? 0 : Math.max(1, Math.round(bedrooms * 0.7)),
     floor: 1 + (i % 8),
     totalFloors: 6 + (i % 5),
     yearBuilt: 1998 + (i % 26),

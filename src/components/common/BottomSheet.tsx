@@ -20,7 +20,7 @@ const SNAP_VH: Record<SheetSnap, number> = {
   // and popular-areas row — the default state, with results cropped out
   // until the visitor drags the sheet up further.
   preview: 0.28,
-  half: 0.52,
+  half: 0.6,
   expanded: 0.92,
 };
 
@@ -33,6 +33,7 @@ export function BottomSheet({
   children,
   snapPoints = ["collapsed", "half", "expanded"],
   headerContent,
+  tapToExpand,
 }: {
   open: boolean;
   onClose: () => void;
@@ -42,6 +43,9 @@ export function BottomSheet({
   children: ReactNode;
   snapPoints?: SheetSnap[];
   headerContent?: ReactNode;
+  /** Snap tapped (not dragged) into when the visitor taps the sheet's
+   * handle bar — e.g. "half" so it jumps to 60% of the screen. */
+  tapToExpand?: SheetSnap;
 }) {
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -93,6 +97,15 @@ export function BottomSheet({
     onSnapChange(nearest);
   }, [isDragging, dragOffset, onClose, onSnapChange, snap, snapPoints]);
 
+  // A tap (click/touch, not a drag) anywhere in the sheet expands it to a
+  // fixed snap — e.g. "half" so the listings sheet jumps to 60% of the
+  // screen. Browsers already suppress the click event after a genuine
+  // touch-drag, so this only fires for real taps.
+  const onSheetClick = useCallback(() => {
+    if (!tapToExpand || SNAP_VH[snap] >= SNAP_VH[tapToExpand]) return;
+    onSnapChange(tapToExpand);
+  }, [tapToExpand, snap, onSnapChange]);
+
   useEffect(() => {
     if (open) document.body.style.overscrollBehaviorY = "none";
     return () => {
@@ -118,6 +131,7 @@ export function BottomSheet({
       )}
       <div
         ref={sheetRef}
+        onClick={onSheetClick}
         className={cn(
           "glass-panel pointer-events-auto absolute inset-x-0 bottom-0 flex flex-col rounded-t-panel shadow-[0_-8px_30px_rgba(23,22,38,0.18)]",
           isDragging ? "" : "transition-[height] duration-300 ease-out"
@@ -140,7 +154,10 @@ export function BottomSheet({
               <div className="flex items-center gap-2">
                 {headerContent}
                 <button
-                  onClick={onClose}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClose();
+                  }}
                   aria-label={t("common.close")}
                   className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100"
                 >

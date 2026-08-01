@@ -53,7 +53,19 @@ export default function HomePage() {
           mode === "map" ? "lg:w-[calc(60%-11px)]" : "lg:w-[calc(40%-11px)]"
         )}
       >
-        <MapView className="lg:rounded-panel" controlsClassName="top-3 right-3" />
+        <div
+          // Mobile only: tapping the map collapses the listings sheet back
+          // to its default preview size, giving the map its full height
+          // back (the sheet only auto-expands via the handle-bar tap below).
+          onClick={() => {
+            if (mobileSheet === "listings" && listingsSnap !== "preview") {
+              setListingsSnap("preview");
+            }
+          }}
+          className="absolute inset-0"
+        >
+          <MapView className="lg:rounded-panel" controlsClassName="top-3 right-3" />
+        </div>
         <ModeSwitch className="absolute left-1/2 top-4 z-20 hidden -translate-x-1/2 lg:flex" />
         <OnboardingHint />
         <CompareTray />
@@ -65,6 +77,7 @@ export default function HomePage() {
           snap={listingsSnap}
           onSnapChange={setListingsSnap}
           snapPoints={["preview", "half", "expanded"]}
+          tapToExpand="half"
         >
           <div className="space-y-3 pb-2 pt-1">
             <CategoryQuickFilters onMore={() => setMobileSheet("filters")} />

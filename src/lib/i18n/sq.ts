@@ -118,6 +118,9 @@ const sq: Dictionary = {
     propertyType: "Lloji i pronës",
     priceRangeEur: "Diapazoni i çmimit (EUR)",
     areaM2: "Sipërfaqja (m²)",
+    villaSizeM2: "Sipërfaqja e vilës (m²)",
+    landSizeM2: "Sipërfaqja e tokës (m²)",
+    buildingPermit: "Leje ndërtimi",
     bedrooms: "Dhoma gjumi",
     bathrooms: "Banjo",
     moreFilters: "Më shumë filtra",
@@ -130,6 +133,7 @@ const sq: Dictionary = {
     resetAllFilters: "Rivendos të gjithë filtrat",
     priceRangeAria: "Diapazoni i çmimit",
     areaRangeAria: "Diapazoni i sipërfaqes",
+    landSizeRangeAria: "Diapazoni i sipërfaqes së tokës",
     countPlus: "{count}+",
   },
   search: {

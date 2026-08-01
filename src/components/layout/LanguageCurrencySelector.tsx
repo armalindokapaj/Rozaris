@@ -17,7 +17,13 @@ const CURRENCY_OPTIONS = [
   { code: "ALL", flag: "🇦🇱", label: "Lek (L)" },
 ] as const;
 
-export function LanguageCurrencySelector() {
+export function LanguageCurrencySelector({
+  openUpward = false,
+}: {
+  /** The mobile nav's footer sits at the bottom of the screen — a
+   * downward-opening dropdown there renders mostly off-screen. */
+  openUpward?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const { locale, setLocale, currency, setCurrency } = useAppStore();
@@ -46,7 +52,10 @@ export function LanguageCurrencySelector() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-40 mt-2 w-56 rounded-card border border-neutral-200 bg-white p-2 shadow-xl"
+          className={cn(
+            "absolute right-0 z-40 w-56 rounded-card border border-neutral-200 bg-white p-2 shadow-xl",
+            openUpward ? "bottom-full mb-2" : "mt-2"
+          )}
         >
           <p className="px-2 pt-1 pb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-400">
             {t("nav.language")}

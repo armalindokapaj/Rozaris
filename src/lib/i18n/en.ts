@@ -116,6 +116,9 @@ const en = {
     propertyType: "Property type",
     priceRangeEur: "Price range (EUR)",
     areaM2: "Area (m²)",
+    villaSizeM2: "Villa size (m²)",
+    landSizeM2: "Land size (m²)",
+    buildingPermit: "Building permit",
     bedrooms: "Bedrooms",
     bathrooms: "Bathrooms",
     moreFilters: "More filters",
@@ -128,6 +131,7 @@ const en = {
     resetAllFilters: "Reset all filters",
     priceRangeAria: "Price range",
     areaRangeAria: "Area range",
+    landSizeRangeAria: "Land size range",
     countPlus: "{count}+",
   },
   search: {

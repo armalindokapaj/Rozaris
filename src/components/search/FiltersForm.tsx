@@ -38,6 +38,15 @@ const RENT_AREA_SCALE: SliderScale = { min: 30, max: 1_500, step: 10 };
 // Daily (short-term) rent — much lower price/area domain than long-term
 const DAILY_RENT_PRICE_SCALE: SliderScale = { min: 20, max: 300, step: 10 };
 const DAILY_RENT_AREA_SCALE: SliderScale = { min: 30, max: 150, step: 10 };
+// A villa's plot is typically several times its built floor area.
+const LAND_SIZE_SCALE: SliderScale = {
+  min: 100,
+  max: 3_000,
+  breakpoint: 1_000,
+  breakpointFraction: 0.7,
+  step: 50,
+  stepAfterBreakpoint: 200,
+};
 
 function priceScaleFor(filters: FilterState): SliderScale {
   if (filters.transaction !== "rent") return BUY_PRICE_SCALE;
@@ -56,6 +65,22 @@ const PROPERTY_TYPES: PropertyType[] = [
   "commercial",
   "office",
 ];
+
+// Each property type surfaces only the "main filters" that actually apply
+// to it — e.g. a studio has no bedrooms field, land has no bedrooms/baths
+// but does have a building-permit filter. Selecting a type (the most
+// recently toggled one) swaps which fields show; with none selected, the
+// broadest generic set is shown.
+type FilterField = "bedrooms" | "bathrooms" | "area" | "landSize" | "buildingPermit";
+const TYPE_FIELDS: Partial<Record<PropertyType, FilterField[]>> = {
+  apartment: ["bedrooms", "bathrooms", "area"],
+  villa: ["bedrooms", "bathrooms", "area", "landSize"],
+  studio: ["area"],
+  land: ["area", "buildingPermit"],
+  office: ["area"],
+  commercial: ["area"],
+};
+const DEFAULT_FIELDS: FilterField[] = ["area", "bedrooms", "bathrooms"];
 const CONDITIONS: Condition[] = ["new", "renovated", "good", "needs_renovation"];
 const AMENITIES: Amenity[] = [
   "elevator",
@@ -122,6 +147,15 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
   const conditionLabels = CONDITION_LABELS[locale];
   const amenityLabels = AMENITY_LABELS[locale];
   const poiLabels = POI_LABELS[locale];
+
+  // The most recently toggled type drives which fields show — e.g.
+  // clicking Apartment surfaces its main filters (bedrooms/bathrooms/area).
+  const activeType = filters.propertyTypes[filters.propertyTypes.length - 1];
+  const activeFields = activeType ? TYPE_FIELDS[activeType] ?? DEFAULT_FIELDS : DEFAULT_FIELDS;
+  const showArea = activeFields.includes("area");
+  const showBedBath = activeFields.includes("bedrooms") || activeFields.includes("bathrooms");
+  const showLandSize = activeFields.includes("landSize");
+  const showBuildingPermit = activeFields.includes("buildingPermit");
 
   return (
     <div className={cn("space-y-5", compact ? "px-4 py-4" : "p-5")}>
@@ -218,47 +252,76 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
         />
       </Section>
 
-      {/* Area */}
-      <Section label={t("filters.areaM2")}>
-        <RangeSlider
-          scale={areaScaleFor(filters)}
-          valueMin={filters.areaMin}
-          valueMax={filters.areaMax}
-          onChange={(areaMin, areaMax) => setFilters({ areaMin, areaMax })}
-          formatValue={formatArea}
-          ariaLabel={t("filters.areaRangeAria")}
-        />
-      </Section>
+      {/* Area — relabeled "Villa size" for villas, since it's the built
+          floor area rather than the surrounding plot (see Land size below). */}
+      {showArea && (
+        <Section label={activeType === "villa" ? t("filters.villaSizeM2") : t("filters.areaM2")}>
+          <RangeSlider
+            scale={areaScaleFor(filters)}
+            valueMin={filters.areaMin}
+            valueMax={filters.areaMax}
+            onChange={(areaMin, areaMax) => setFilters({ areaMin, areaMax })}
+            formatValue={formatArea}
+            ariaLabel={t("filters.areaRangeAria")}
+          />
+        </Section>
+      )}
+
+      {showLandSize && (
+        <Section label={t("filters.landSizeM2")}>
+          <RangeSlider
+            scale={LAND_SIZE_SCALE}
+            valueMin={filters.landAreaMin}
+            valueMax={filters.landAreaMax}
+            onChange={(landAreaMin, landAreaMax) => setFilters({ landAreaMin, landAreaMax })}
+            formatValue={formatArea}
+            ariaLabel={t("filters.landSizeRangeAria")}
+          />
+        </Section>
+      )}
+
+      {showBuildingPermit && (
+        <Section label={t("filters.buildingPermit")}>
+          <Pill
+            active={filters.buildingPermit}
+            onClick={() => setFilters({ buildingPermit: !filters.buildingPermit })}
+          >
+            {t("filters.buildingPermit")}
+          </Pill>
+        </Section>
+      )}
 
       {/* Bedrooms / Bathrooms */}
-      <div className="grid grid-cols-2 gap-4">
-        <Section label={t("filters.bedrooms")}>
-          <div className="flex flex-wrap gap-1.5">
-            {[1, 2, 3].map((v) => (
-              <Pill
-                key={v}
-                active={filters.bedrooms === v}
-                onClick={() => setFilters({ bedrooms: filters.bedrooms === v ? null : v })}
-              >
-                {t("filters.countPlus", { count: v })}
-              </Pill>
-            ))}
-          </div>
-        </Section>
-        <Section label={t("filters.bathrooms")}>
-          <div className="flex flex-wrap gap-1.5">
-            {[1, 2].map((v) => (
-              <Pill
-                key={v}
-                active={filters.bathrooms === v}
-                onClick={() => setFilters({ bathrooms: filters.bathrooms === v ? null : v })}
-              >
-                {t("filters.countPlus", { count: v })}
-              </Pill>
-            ))}
-          </div>
-        </Section>
-      </div>
+      {showBedBath && (
+        <div className="grid grid-cols-2 gap-4">
+          <Section label={t("filters.bedrooms")}>
+            <div className="flex flex-wrap gap-1.5">
+              {[1, 2, 3].map((v) => (
+                <Pill
+                  key={v}
+                  active={filters.bedrooms === v}
+                  onClick={() => setFilters({ bedrooms: filters.bedrooms === v ? null : v })}
+                >
+                  {t("filters.countPlus", { count: v })}
+                </Pill>
+              ))}
+            </div>
+          </Section>
+          <Section label={t("filters.bathrooms")}>
+            <div className="flex flex-wrap gap-1.5">
+              {[1, 2].map((v) => (
+                <Pill
+                  key={v}
+                  active={filters.bathrooms === v}
+                  onClick={() => setFilters({ bathrooms: filters.bathrooms === v ? null : v })}
+                >
+                  {t("filters.countPlus", { count: v })}
+                </Pill>
+              ))}
+            </div>
+          </Section>
+        </div>
+      )}
 
       {/* More filters toggle */}
       <button

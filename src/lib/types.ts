@@ -86,6 +86,11 @@ export interface Listing {
   pricePerSqm?: number;
   negotiable: boolean;
   area: number;
+  /** Lot/plot size in m², distinct from the built-up `area` — relevant for
+   * villas (their own land) and raw land listings. */
+  landArea?: number;
+  /** Only meaningful for land listings. */
+  buildingPermit?: boolean;
   bedrooms: number;
   bathrooms: number;
   floor?: number;
@@ -203,6 +208,9 @@ export interface FilterState {
   priceMax: number | null;
   areaMin: number | null;
   areaMax: number | null;
+  landAreaMin: number | null;
+  landAreaMax: number | null;
+  buildingPermit: boolean;
   bedrooms: number | null;
   bathrooms: number | null;
   condition: Condition[];
