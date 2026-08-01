@@ -339,7 +339,7 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
       <button
         onClick={resetFilters}
         disabled={JSON.stringify(filters) === JSON.stringify(defaultFilters)}
-        className="flex w-full items-center justify-center gap-1.5 rounded-control py-2 text-sm font-medium text-neutral-500 hover:text-neutral-800 disabled:opacity-40"
+        className="flex w-full items-center justify-center gap-1.5 rounded-control py-2 text-sm font-medium text-neutral-500 transition-colors hover:text-brand-600 disabled:opacity-40 disabled:hover:text-neutral-500"
       >
         <RotateCcw className="h-3.5 w-3.5" />
         {t("filters.resetAllFilters")}

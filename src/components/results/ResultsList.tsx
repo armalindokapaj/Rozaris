@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
@@ -26,6 +26,17 @@ export function ResultsList({
   const mapBounds = useAppStore((s) => s.mapBounds);
   const [page, setPage] = useState(1);
   const { t } = useT();
+
+  // The sort/count header above has no scroll of its own, so a wheel
+  // gesture there does nothing by default — forward it to the results
+  // scroll container below so scrolling works from anywhere in the panel,
+  // without moving or extending the visible scrollbar into the header.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  function forwardWheelToList(e: React.WheelEvent) {
+    if (!scrollRef.current) return;
+    e.preventDefault();
+    scrollRef.current.scrollTop += e.deltaY;
+  }
 
   // Reset to page 1 whenever the result set changes — adjusted during
   // render (React's recommended pattern) rather than in an effect.
@@ -76,25 +87,31 @@ export function ResultsList({
     <div className="flex h-full flex-col">
       {layout === "panel" ? (
         // Map mode's side panel: sort control on top, result count below.
-        <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-100 px-4 py-3">
+        <div
+          onWheel={forwardWheelToList}
+          className="flex shrink-0 flex-col gap-2 border-b border-neutral-100 px-4 py-3"
+        >
           <div className="flex justify-center">
             <SortDropdown />
           </div>
           {countBlock}
         </div>
       ) : (
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-100 px-4 py-3">
+        <div
+          onWheel={forwardWheelToList}
+          className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-100 px-4 py-3"
+        >
           {countBlock}
           <SortDropdown />
         </div>
       )}
 
       {total === 0 ? (
-        <div className="flex-1 overflow-y-auto scroll-thin">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin">
           <EmptyState />
         </div>
       ) : layout === "panel" ? (
-        <div className="flex-1 space-y-3 overflow-y-auto scroll-thin p-3">
+        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto scroll-thin p-3">
           {pageRows.map((row) =>
             row.kind === "listing" ? (
               <ListingCard key={row.item.id} listing={row.item} />
@@ -104,7 +121,7 @@ export function ResultsList({
           )}
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto scroll-thin p-4">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin p-4">
           <div className="grid grid-cols-3 gap-4">
             {pageRows.map((row) =>
               row.kind === "listing" ? (
