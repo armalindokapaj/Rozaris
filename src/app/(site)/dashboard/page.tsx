@@ -23,8 +23,10 @@ import { useAppStore } from "@/lib/store";
 import { listingsByPublisher, projectsByDeveloper, DEMO_PUBLISHER } from "@/lib/mockData";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
+import { useProjectConstruction } from "@/hooks/useProjectConstruction";
 import { useT } from "@/lib/i18n/useT";
 import { MessagesPanel } from "@/components/messages/MessagesPanel";
+import { ConstructionTimelineEditor } from "@/components/dashboard/ConstructionTimelineEditor";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -331,33 +333,64 @@ function ProjectsTab({ projects }: { projects: ReturnType<typeof projectsByDevel
       </div>
       <div className="space-y-3">
         {projects.map((p) => (
-          <div key={p.id} className="rounded-panel border border-neutral-200 bg-white p-4">
-            <div className="flex items-center justify-between">
-              <p className="font-semibold text-neutral-900">{p.name}</p>
-              <Link
-                href={`/project/${p.slug}`}
-                target="_blank"
-                className="text-xs font-semibold text-brand-600 hover:underline"
-              >
-                {t("dashboard.view3d")}
-              </Link>
-            </div>
-            <p className="mt-1 text-xs text-neutral-500">
-              {t("dashboard.unitsAvailableTotal", {
-                available: p.availableUnits,
-                total: p.totalUnits,
-                percent: p.progressPercent,
-              })}
-            </p>
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
-              <div
-                className="h-full rounded-full bg-listing-new-dev"
-                style={{ width: `${p.progressPercent}%` }}
-              />
-            </div>
-          </div>
+          <ProjectRow key={p.id} project={p} />
         ))}
       </div>
+    </div>
+  );
+}
+
+function ProjectRow({ project: p }: { project: ReturnType<typeof projectsByDeveloper>[number] }) {
+  const { t } = useT();
+  const live = useProjectConstruction(p);
+  const timelineRequests = useAppStore((s) => s.timelineRequests);
+  const hasPending = timelineRequests.some((r) => r.projectId === p.id && r.status === "pending");
+  const [editorOpen, setEditorOpen] = useState(false);
+
+  return (
+    <div className="rounded-panel border border-neutral-200 bg-white p-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-semibold text-neutral-900">{p.name}</p>
+        <div className="flex shrink-0 items-center gap-3">
+          {hasPending && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+              {t("dashboard.timelinePendingBadge")}
+            </span>
+          )}
+          <button
+            onClick={() => setEditorOpen((v) => !v)}
+            className="text-xs font-semibold text-brand-600 hover:underline"
+          >
+            {t("dashboard.editTimeline")}
+          </button>
+          <Link
+            href={`/project/${p.slug}`}
+            target="_blank"
+            className="text-xs font-semibold text-brand-600 hover:underline"
+          >
+            {t("dashboard.view3d")}
+          </Link>
+        </div>
+      </div>
+      <p className="mt-1 text-xs text-neutral-500">
+        {t("dashboard.unitsAvailableTotal", {
+          available: p.availableUnits,
+          total: p.totalUnits,
+          percent: live.progressPercent,
+        })}
+      </p>
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
+        <div
+          className="h-full rounded-full bg-listing-new-dev"
+          style={{ width: `${live.progressPercent}%` }}
+        />
+      </div>
+
+      {editorOpen && (
+        <div className="mt-4">
+          <ConstructionTimelineEditor project={p} />
+        </div>
+      )}
     </div>
   );
 }

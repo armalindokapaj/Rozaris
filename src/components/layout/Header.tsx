@@ -48,13 +48,6 @@ function ResourcesDropdown() {
             {t("nav.mortgageCalculator")}
           </Link>
           <Link
-            href="/developers"
-            onClick={() => setOpen(false)}
-            className="block rounded-lg px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
-          >
-            {t("nav.verifiedDevelopers")}
-          </Link>
-          <Link
             href="/help"
             onClick={() => setOpen(false)}
             className="block rounded-lg px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100"

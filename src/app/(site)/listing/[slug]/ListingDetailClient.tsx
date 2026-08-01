@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import {
   BedDouble,
   Bath,
@@ -9,7 +8,6 @@ import {
   Calendar,
   Heart,
   SquareStack,
-  ChevronRight,
   ShieldCheck,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
@@ -52,21 +50,21 @@ export function ListingDetailClient({
   const inCompare = compareIndex !== -1;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 lg:px-8 lg:py-10">
-      <nav aria-label={t("common.breadcrumb")} className="mb-4 flex items-center gap-1.5 text-xs text-neutral-500">
-        <Link href="/" className="hover:text-neutral-700">
-          {t("nav.home")}
-        </Link>
-        <ChevronRight className="h-3 w-3" />
-        <span>{listing.city}</span>
-        <ChevronRight className="h-3 w-3" />
-        <span>{neighborhood?.name}</span>
-        <ChevronRight className="h-3 w-3" />
-        <span className="truncate text-neutral-700">{listing.title}</span>
-      </nav>
-
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px]">
+    // Same p-4 outer spacing as the Front Page's row container, so the right
+    // panel sits the exact same distance from the header and viewport edge
+    // as the Front Page's right results panel.
+    <div className="px-4 py-4 lg:p-4">
+      {/* Column gap matches the panel's distance from the header/edge (both
+          16px) — the same spacing rule used everywhere a left/right panel
+          sits next to the main column (Front Page, New Projects). */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
         <div className="min-w-0 space-y-6">
+          <Gallery
+            seedBase={listing.id}
+            hasFacade={!!listing.facadeImage}
+            hasVideo={!!listing.videoUrl}
+          />
+
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span
@@ -94,12 +92,6 @@ export function ListingDetailClient({
               {neighborhood?.name}, {listing.city}
             </p>
           </div>
-
-          <Gallery
-            seedBase={listing.id}
-            hasFacade={!!listing.facadeImage}
-            hasVideo={!!listing.videoUrl}
-          />
 
           <div className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-neutral-200 bg-white p-5">
             <div>
@@ -216,15 +208,23 @@ export function ListingDetailClient({
           )}
         </div>
 
-        <aside className="space-y-5 lg:sticky lg:top-20 lg:self-start">
-          <PublisherCard
-            publisher={listing.publisher}
-            whatsappMessage={`Hi, I'm interested in "${listing.title}"`}
-            contentTitle={listing.title}
-            contentUrl={`${SITE_URL}/listing/${listing.slug}`}
-          />
+        <aside className="glass-panel overflow-hidden rounded-panel shadow-sm lg:sticky lg:top-20 lg:self-start">
+          <div className="border-b border-neutral-100 px-5 pt-5 pb-4">
+            <h2 className="text-[15px] font-bold text-neutral-900">{t("listing.contactPublisher")}</h2>
+          </div>
+          <div className="p-5">
+            <PublisherCard
+              bare
+              publisher={listing.publisher}
+              whatsappMessage={`Hi, I'm interested in "${listing.title}"`}
+              contentTitle={listing.title}
+              contentUrl={`${SITE_URL}/listing/${listing.slug}`}
+            />
+          </div>
           {listing.transaction === "sale" && (
-            <MortgageCalculator initialPrice={listing.price} />
+            <div className="border-t border-neutral-100 p-5">
+              <MortgageCalculator compact initialPrice={listing.price} />
+            </div>
           )}
         </aside>
       </div>

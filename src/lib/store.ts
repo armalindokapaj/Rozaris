@@ -4,6 +4,8 @@ import type {
   BuyerPreferences,
   BuyerProfile,
   CompareEntity,
+  ConstructionTimelineDraft,
+  ConstructionTimelineRequest,
   Conversation,
   Currency,
   FilterState,
@@ -140,6 +142,15 @@ interface AppState {
   // Buyer <-> Seller messaging (mock — nothing is delivered off-device)
   conversations: Conversation[];
   sendMessage: (conversationId: string, text: string) => void;
+
+  // Construction timeline edits: a publisher's draft only affects what's
+  // shown on the live project (projectConstructionOverrides) once an admin
+  // approves the request.
+  timelineRequests: ConstructionTimelineRequest[];
+  projectConstructionOverrides: Record<string, ConstructionTimelineDraft>;
+  submitTimelineRequest: (projectId: string, projectName: string, draft: ConstructionTimelineDraft) => void;
+  approveTimelineRequest: (requestId: string) => void;
+  rejectTimelineRequest: (requestId: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -308,6 +319,42 @@ export const useAppStore = create<AppState>()(
           ),
         }));
       },
+
+      timelineRequests: [],
+      projectConstructionOverrides: {},
+      submitTimelineRequest: (projectId, projectName, draft) => {
+        const request: ConstructionTimelineRequest = {
+          id: `timeline-${projectId}-${Date.now()}`,
+          projectId,
+          projectName,
+          publisherId: DEMO_PUBLISHER.id,
+          publisherName: DEMO_PUBLISHER.name,
+          draft,
+          status: "pending",
+          submittedAt: new Date().toISOString(),
+        };
+        set((s) => ({ timelineRequests: [request, ...s.timelineRequests] }));
+      },
+      approveTimelineRequest: (requestId) => {
+        const request = get().timelineRequests.find((r) => r.id === requestId);
+        if (!request) return;
+        set((s) => ({
+          timelineRequests: s.timelineRequests.map((r) =>
+            r.id === requestId ? { ...r, status: "approved", reviewedAt: new Date().toISOString() } : r
+          ),
+          projectConstructionOverrides: {
+            ...s.projectConstructionOverrides,
+            [request.projectId]: request.draft,
+          },
+        }));
+      },
+      rejectTimelineRequest: (requestId) => {
+        set((s) => ({
+          timelineRequests: s.timelineRequests.map((r) =>
+            r.id === requestId ? { ...r, status: "rejected", reviewedAt: new Date().toISOString() } : r
+          ),
+        }));
+      },
     }),
     {
       name: "rozaris-store",
@@ -325,6 +372,8 @@ export const useAppStore = create<AppState>()(
         eurToAllRateUpdatedAt: s.eurToAllRateUpdatedAt,
         buyerProfile: s.buyerProfile,
         conversations: s.conversations,
+        timelineRequests: s.timelineRequests,
+        projectConstructionOverrides: s.projectConstructionOverrides,
       }),
     }
   )

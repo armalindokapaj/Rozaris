@@ -5,6 +5,7 @@ import Link from "next/link";
 import type mapboxgl from "mapbox-gl";
 import { LayoutGrid, RotateCcw, Eye, SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
+import { useProjectConstruction } from "@/hooks/useProjectConstruction";
 import { useT } from "@/lib/i18n/useT";
 import { ExteriorViewer, resetExteriorView } from "@/components/project/ExteriorViewer";
 import { SimplifiedProjectView } from "@/components/project/SimplifiedProjectView";
@@ -20,6 +21,7 @@ export function ArchVizClient({ project }: { project: Project }) {
   const [simplified, setSimplified] = useState(false);
   const compareCount = useAppStore((s) => s.compare.length);
   const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
+  const construction = useProjectConstruction(project);
   const { t } = useT();
 
   return (
@@ -86,8 +88,8 @@ export function ArchVizClient({ project }: { project: Project }) {
           {project.status === "under_construction" && (
             <div className="w-full max-w-sm">
               <ConstructionTimelineStrip
-                stages={project.constructionStages}
-                overallPercent={project.progressPercent}
+                stages={construction.stages}
+                overallPercent={construction.progressPercent}
               />
             </div>
           )}

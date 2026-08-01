@@ -3,6 +3,7 @@
 import { Box } from "lucide-react";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { useAppStore } from "@/lib/store";
+import { useProjectConstruction } from "@/hooks/useProjectConstruction";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { getNeighborhood } from "@/lib/mockData";
@@ -22,6 +23,7 @@ export function ProjectCard({ project }: { project: Project }) {
   const selectProject = useAppStore((s) => s.selectProject);
   const requestFlyTo = useAppStore((s) => s.requestFlyTo);
   const { t } = useT();
+  const construction = useProjectConstruction(project);
 
   const isActive = selectedProjectId === project.id || hoveredId === project.id;
 
@@ -51,11 +53,8 @@ export function ProjectCard({ project }: { project: Project }) {
           <span className="rounded-full bg-listing-new-dev px-2 py-1 text-[11px] font-semibold text-white shadow">
             {t("results.newProject")}
           </span>
-          {project.premium && (
-            <span className="rounded-full bg-listing-premium px-2 py-1 text-[11px] font-semibold text-white shadow">
-              {t("results.premium")}
-            </span>
-          )}
+          {/* No "Premium" text badge — premium status reads through the
+              amber tint/border and hover treatment only. */}
         </div>
       </div>
       <div className="flex flex-col gap-1.5 p-3.5">
@@ -73,7 +72,7 @@ export function ProjectCard({ project }: { project: Project }) {
           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
             <div
               className="h-full rounded-full bg-listing-new-dev"
-              style={{ width: `${project.progressPercent}%` }}
+              style={{ width: `${construction.progressPercent}%` }}
             />
           </div>
         )}

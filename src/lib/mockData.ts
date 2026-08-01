@@ -305,7 +305,11 @@ function buildUnits(
   });
 }
 
-const stageTemplate = (percent: number): ConstructionStage[] => {
+/** Derives the fixed 8-stage construction breakdown from a single overall
+ * percent — the source of truth for both the seeded mock projects and the
+ * publisher's timeline editor (which only exposes one overall-progress
+ * control, then regenerates stage status/percent/dates from it). */
+export const stageTemplate = (percent: number): ConstructionStage[] => {
   const names = [
     "Site preparation",
     "Excavation",

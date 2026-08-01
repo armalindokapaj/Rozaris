@@ -61,23 +61,22 @@ export function ListingCard({
     >
       <div className="relative aspect-[4/3] w-full">
         <PlaceholderImage seed={listing.id} kind="interior" className="h-full w-full" />
-        <div className="absolute left-2.5 top-2.5 flex gap-1.5">
-          {listing.premium && (
-            <span className="rounded-full bg-listing-premium px-2 py-1 text-[11px] font-semibold text-white shadow">
-              {t("results.premium")}
+        {variant !== "grid" && (
+          <div className="absolute left-2.5 top-2.5 flex gap-1.5">
+            {/* No "Premium" text badge on the card itself — premium status
+                reads through the amber tint/border and hover treatment only. */}
+            <span
+              className={cn(
+                "rounded-full px-2 py-1 text-[11px] font-semibold text-white shadow",
+                listing.transaction === "sale" && "bg-sale",
+                listing.transaction === "rent" && "bg-rent",
+                listing.transaction === "coming_soon" && "bg-coming-soon"
+              )}
+            >
+              {transactionLabel(listing.transaction, listing.rentSubtype, locale)}
             </span>
-          )}
-          <span
-            className={cn(
-              "rounded-full px-2 py-1 text-[11px] font-semibold text-white shadow",
-              listing.transaction === "sale" && "bg-sale",
-              listing.transaction === "rent" && "bg-rent",
-              listing.transaction === "coming_soon" && "bg-coming-soon"
-            )}
-          >
-            {transactionLabel(listing.transaction, listing.rentSubtype, locale)}
-          </span>
-        </div>
+          </div>
+        )}
         <div className="absolute right-2.5 top-2.5 flex flex-col gap-1.5">
           <button
             onClick={(e) => {

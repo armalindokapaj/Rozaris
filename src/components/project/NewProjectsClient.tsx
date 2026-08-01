@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Building2, Waves, Home as HomeIcon, LayoutGrid, List as ListIcon, ChevronDown, Check } from "lucide-react";
-import { ProjectCard } from "@/components/results/ProjectCard";
+import { Building2, Waves, Home as HomeIcon, ChevronDown, Check } from "lucide-react";
 import { ProjectListRow } from "@/components/project/ProjectListRow";
 import { useT } from "@/lib/i18n/useT";
 import { useClickOutside } from "@/hooks/useClickOutside";
@@ -38,8 +37,6 @@ const PRICE_BUCKETS: { id: PriceBucketId; labelKey: string; test: (price: number
 function projectFromPrice(project: Project): number | null {
   return project.units.length ? Math.min(...project.units.map((u) => u.price)) : null;
 }
-
-type ViewMode = "grid" | "list";
 
 function toggle<T>(arr: T[], value: T): T[] {
   return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
@@ -115,7 +112,6 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
   const [settings, setSettings] = useState<ProjectSetting[]>([]);
   const [propertyTypes, setPropertyTypes] = useState<PropertyType[]>([]);
   const [priceBuckets, setPriceBuckets] = useState<PriceBucketId[]>([]);
-  const [view, setView] = useState<ViewMode>("grid");
 
   const cityOptions = useMemo(
     () => Array.from(new Set(projects.map((p) => p.city))).sort(),
@@ -146,22 +142,24 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
     cities.length + settings.length + propertyTypes.length + priceBuckets.length;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+    // Same p-4 outer spacing as the Front Page's row container, so the left
+    // panel sits the exact same distance from the header and viewport edge
+    // as the Front Page's left filters panel.
+    <div className="px-4 py-4 lg:p-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         {/* Left panel: page intro + all filters, self-contained and sticky —
-            doesn't intervene with the right panel's results at all. */}
-        <aside className="glass-panel shrink-0 rounded-panel p-5 shadow-sm lg:sticky lg:top-20 lg:w-72">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-neutral-900">
-                {t("newProjectsPage.title")}
-              </h1>
-              <p className="mt-1.5 text-sm text-neutral-500">{t("newProjectsPage.subtitle")}</p>
-            </div>
+            doesn't intervene with the right panel's results at all. Same
+            glass-panel shell, header treatment, and width as the Front
+            Page's left filters panel for visual consistency. */}
+        <aside className="glass-panel shrink-0 overflow-hidden rounded-panel shadow-sm lg:sticky lg:top-20 lg:w-72">
+          <div className="border-b border-neutral-100 px-5 pt-5 pb-4">
+            <h1 className="text-[17px] font-bold text-neutral-900">
+              {t("newProjectsPage.title")}
+            </h1>
+            <p className="mt-1.5 text-sm text-neutral-500">{t("newProjectsPage.subtitle")}</p>
           </div>
 
-          <div className="my-5 h-px bg-neutral-100" />
-
+          <div className="p-5">
           {activeFilterCount > 0 && (
             <button
               onClick={() => {
@@ -250,52 +248,15 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
               })}
             </div>
           </div>
+          </div>
         </aside>
 
-        {/* Right panel: view toggle + results only. */}
+        {/* Right panel: results only. */}
         <div className="min-w-0 flex-1">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-neutral-500">
-              {t("newProjectsPage.resultsCount", { count: filtered.length })}
-            </p>
-            <div className="flex shrink-0 items-center gap-0.5 rounded-control border border-neutral-200 bg-white p-1">
-              <button
-                onClick={() => setView("grid")}
-                aria-pressed={view === "grid"}
-                aria-label={t("newProjectsPage.viewGrid")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-xs font-medium transition-colors",
-                  view === "grid" ? "bg-neutral-900 text-white" : "text-neutral-500 hover:text-neutral-800"
-                )}
-              >
-                <LayoutGrid className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t("newProjectsPage.viewGrid")}</span>
-              </button>
-              <button
-                onClick={() => setView("list")}
-                aria-pressed={view === "list"}
-                aria-label={t("newProjectsPage.viewList")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-xs font-medium transition-colors",
-                  view === "list" ? "bg-neutral-900 text-white" : "text-neutral-500 hover:text-neutral-800"
-                )}
-              >
-                <ListIcon className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t("newProjectsPage.viewList")}</span>
-              </button>
-            </div>
-          </div>
-
           {filtered.length === 0 ? (
             <p className="rounded-panel border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-400">
               {t("newProjectsPage.noProjectsMatch")}
             </p>
-          ) : view === "grid" ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filtered.map((p) => (
-                <ProjectCard key={p.id} project={p} />
-              ))}
-            </div>
           ) : (
             <div className="space-y-3">
               {filtered.map((p) => (

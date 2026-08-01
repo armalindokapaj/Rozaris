@@ -4,7 +4,7 @@ import Link from "next/link";
 import { BadgeCheck, MessageCircle, Phone } from "lucide-react";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { useT } from "@/lib/i18n/useT";
-import { telHref, whatsappHref } from "@/lib/utils";
+import { cn, telHref, whatsappHref } from "@/lib/utils";
 import type { Publisher } from "@/lib/types";
 
 const TYPE_LABEL_KEY: Record<Publisher["type"], string> = {
@@ -18,15 +18,18 @@ export function PublisherCard({
   whatsappMessage,
   contentTitle,
   contentUrl,
+  bare = false,
 }: {
   publisher: Publisher;
   whatsappMessage: string;
   contentTitle: string;
   contentUrl: string;
+  /** Skip the card's own border/background — for nesting inside a parent panel that already provides one. */
+  bare?: boolean;
 }) {
   const { t } = useT();
   return (
-    <div className="rounded-panel border border-neutral-200 bg-white p-5">
+    <div className={cn(!bare && "rounded-panel border border-neutral-200 bg-white p-5")}>
       <Link
         href={`/developer/${publisher.slug}`}
         className="flex items-center gap-3 hover:opacity-90"

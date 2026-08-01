@@ -253,3 +253,27 @@ export interface Conversation {
   listingSlug?: string;
   messages: Message[];
 }
+
+// --- Construction timeline edits (publisher-submitted, admin-approved) ---
+
+/** The editable part of a project's construction progress — a publisher
+ * drafts one of these and it only takes effect on the live project once an
+ * admin approves it. */
+export interface ConstructionTimelineDraft {
+  progressPercent: number;
+  stages: ConstructionStage[];
+}
+
+export type TimelineRequestStatus = "pending" | "approved" | "rejected";
+
+export interface ConstructionTimelineRequest {
+  id: string;
+  projectId: string;
+  projectName: string;
+  publisherId: string;
+  publisherName: string;
+  draft: ConstructionTimelineDraft;
+  status: TimelineRequestStatus;
+  submittedAt: string;
+  reviewedAt?: string;
+}
