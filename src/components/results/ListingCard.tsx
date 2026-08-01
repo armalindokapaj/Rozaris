@@ -54,8 +54,12 @@ export function ListingCard({
         isActive
           ? "border-brand-400 shadow-lg ring-1 ring-brand-200"
           : listing.premium
-          ? "border-listing-premium/50 hover:z-10 hover:scale-[1.02] hover:border-listing-premium hover:shadow-lg"
+          ? "border-listing-premium/50"
           : "border-neutral-200 hover:border-neutral-300 hover:shadow-md",
+        // Applied whenever premium, not only in the non-active branch above —
+        // otherwise hovering the card sets hoveredId (for map-marker sync),
+        // which flips isActive and would silently swallow the zoom effect.
+        listing.premium && "hover:z-10 hover:scale-[1.02] hover:border-listing-premium hover:shadow-lg",
         "flex flex-col"
       )}
     >
