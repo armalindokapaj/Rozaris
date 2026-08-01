@@ -12,6 +12,7 @@ import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { ListingCard } from "@/components/results/ListingCard";
 import { ProjectCard } from "@/components/results/ProjectCard";
 import { telHref, whatsappHref } from "@/lib/utils";
+import sq from "@/lib/i18n/sq";
 
 export function generateStaticParams() {
   return publishers.map((p) => ({ slug: p.slug }));
@@ -27,14 +28,14 @@ export async function generateMetadata({
   if (!publisher) return {};
   return {
     title: publisher.name,
-    description: publisher.bio ?? `${publisher.name} on ROZARIS.`,
+    description: publisher.bio ?? `${publisher.name} në ROZARIS.`,
   };
 }
 
 const TYPE_LABEL: Record<string, string> = {
-  private_owner: "Private Owner",
-  agency: "Agency",
-  developer: "Developer",
+  private_owner: sq.publisher.typePrivateOwner,
+  agency: sq.publisher.typeAgency,
+  developer: sq.publisher.typeDeveloper,
 };
 
 export default async function DeveloperPage({
@@ -84,18 +85,18 @@ export default async function DeveloperPage({
         </div>
         <div className="flex gap-2">
           <a
-            href={whatsappHref(publisher.whatsapp, `Hi ${publisher.name}, I found you on ROZARIS`)}
+            href={whatsappHref(publisher.whatsapp, `Përshëndetje ${publisher.name}, ju gjeta në ROZARIS`)}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 rounded-control bg-[#25D366] px-4 py-2.5 text-sm font-semibold text-white"
           >
-            <MessageCircle className="h-4 w-4" /> WhatsApp
+            <MessageCircle className="h-4 w-4" /> {sq.publisher.whatsapp}
           </a>
           <a
             href={telHref(publisher.phone)}
             className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-700"
           >
-            <Phone className="h-4 w-4" /> Call
+            <Phone className="h-4 w-4" /> {sq.publisher.call}
           </a>
         </div>
       </div>
@@ -103,7 +104,7 @@ export default async function DeveloperPage({
       {projects.length > 0 && (
         <section className="mt-8">
           <h2 className="text-base font-bold text-neutral-900">
-            Projects ({projects.length})
+            Projekte ({projects.length})
           </h2>
           <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((p) => (
@@ -116,7 +117,7 @@ export default async function DeveloperPage({
       {listings.length > 0 && (
         <section className="mt-8">
           <h2 className="text-base font-bold text-neutral-900">
-            Active listings ({listings.length})
+            Listime aktive ({listings.length})
           </h2>
           <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {listings.map((l) => (
@@ -127,7 +128,7 @@ export default async function DeveloperPage({
       )}
 
       {projects.length === 0 && listings.length === 0 && (
-        <p className="mt-8 text-sm text-neutral-500">No public inventory yet.</p>
+        <p className="mt-8 text-sm text-neutral-500">Ende pa inventar publik.</p>
       )}
     </div>
   );

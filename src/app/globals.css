@@ -220,6 +220,68 @@ body {
   border-radius: 13px;
 }
 
+/* Dual-thumb range slider (search filters): two overlaid native inputs,
+   track hidden so only the thumb is interactive/visible. */
+.rz-range-thumb {
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  transform: translateY(-50%);
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  pointer-events: none;
+}
+.rz-range-thumb::-webkit-slider-runnable-track {
+  -webkit-appearance: none;
+  background: transparent;
+  height: 20px;
+}
+.rz-range-thumb::-moz-range-track {
+  background: transparent;
+  height: 20px;
+  border: none;
+}
+.rz-range-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: white;
+  border: 2px solid var(--color-brand-500);
+  box-shadow: 0 1px 3px rgba(23, 22, 38, 0.3);
+  cursor: grab;
+  margin-top: 1px;
+}
+.rz-range-thumb::-moz-range-thumb {
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: white;
+  border: 2px solid var(--color-brand-500);
+  box-shadow: 0 1px 3px rgba(23, 22, 38, 0.3);
+  cursor: grab;
+}
+.rz-range-thumb:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+.rz-range-thumb:active::-moz-range-thumb {
+  cursor: grabbing;
+}
+.rz-range-thumb:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
+.rz-range-thumb:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

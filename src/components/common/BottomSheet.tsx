@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { X } from "lucide-react";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 
 export type SheetSnap = "collapsed" | "half" | "expanded";
@@ -42,6 +43,7 @@ export function BottomSheet({
   const [isDragging, setIsDragging] = useState(false);
   const dragStartY = useRef(0);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const { t } = useT();
 
   const heightVh = useMemo(() => SNAP_VH[snap] * 100, [snap]);
 
@@ -105,7 +107,7 @@ export function BottomSheet({
     >
       {snap === "expanded" && (
         <button
-          aria-label="Close sheet"
+          aria-label={t("common.close")}
           onClick={onClose}
           className="pointer-events-auto absolute inset-0 bg-neutral-900/20 backdrop-blur-[1px]"
         />
@@ -135,7 +137,7 @@ export function BottomSheet({
                 {headerContent}
                 <button
                   onClick={onClose}
-                  aria-label="Close"
+                  aria-label={t("common.close")}
                   className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100"
                 >
                   <X className="h-4 w-4" />

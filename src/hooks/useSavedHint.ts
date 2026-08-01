@@ -4,14 +4,13 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { useT } from "@/lib/i18n/useT";
-
-export type CompareHintState = { x: number; y: number; text: string } | null;
+import type { CompareHintState } from "@/hooks/useCompareHint";
 
 const HINT_TIMEOUT_MS = 3000;
 
-export function useCompareHint() {
-  const compareCount = useAppStore((s) => s.compare.length);
-  const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
+/** Clicking "Saved" with nothing saved shows a small tooltip instead of navigating to an empty page. */
+export function useSavedHint() {
+  const savedCount = useAppStore((s) => s.saved.listings.length + s.saved.projects.length);
   const { t } = useT();
 
   const [hint, setHint] = useState<CompareHintState>(null);
@@ -26,17 +25,14 @@ export function useCompareHint() {
     };
   }, []);
 
-  function handleCompareClick(e: MouseEvent<HTMLButtonElement>) {
-    if (compareCount === 2) {
-      setCompareOverlayOpen(true);
-      return;
-    }
+  function handleSavedClick(e: MouseEvent<HTMLAnchorElement | HTMLButtonElement>) {
+    if (savedCount > 0) return;
+    e.preventDefault();
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     const x = Math.min(Math.max(e.clientX, 120), window.innerWidth - 120);
-    const text = compareCount === 0 ? t("compare.hintNone") : t("compare.hintOne");
-    setHint({ x, y: e.clientY, text });
+    setHint({ x, y: e.clientY, text: t("saved.emptyHint") });
     timeoutRef.current = setTimeout(() => setHint(null), HINT_TIMEOUT_MS);
   }
 
-  return { hint, hintRef, handleCompareClick };
+  return { hint, hintRef, handleSavedClick };
 }

@@ -8,6 +8,7 @@ import { ListingCard } from "@/components/results/ListingCard";
 import { ProjectCard } from "@/components/results/ProjectCard";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { useHasMounted } from "@/hooks/useHasMounted";
+import { useT } from "@/lib/i18n/useT";
 
 export default function SavedPage() {
   const auth = useAppStore((s) => s.auth);
@@ -15,6 +16,7 @@ export default function SavedPage() {
   const saved = useAppStore((s) => s.saved);
   const savedSearches = useAppStore((s) => s.savedSearches);
   const mounted = useHasMounted();
+  const { t } = useT();
 
   if (!mounted) return null;
 
@@ -22,15 +24,13 @@ export default function SavedPage() {
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-24 text-center">
         <Heart className="h-10 w-10 text-brand-500" />
-        <h1 className="text-xl font-bold text-neutral-900">Sign in to view saved items</h1>
-        <p className="text-sm text-neutral-500">
-          Saving listings, projects, neighborhoods and searches requires a phone-verified account.
-        </p>
+        <h1 className="text-xl font-bold text-neutral-900">{t("saved.signInTitle")}</h1>
+        <p className="text-sm text-neutral-500">{t("saved.signInBody")}</p>
         <button
           onClick={() => signIn("John Doe")}
           className="rounded-control bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white"
         >
-          Sign in (demo)
+          {t("saved.signInDemo")}
         </button>
       </div>
     );
@@ -48,20 +48,18 @@ export default function SavedPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 lg:px-8">
-      <h1 className="text-2xl font-bold text-neutral-900">Saved</h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        Your saved listings, projects, neighborhoods and search alerts.
-      </p>
+      <h1 className="text-2xl font-bold text-neutral-900">{t("saved.pageTitle")}</h1>
+      <p className="mt-1 text-sm text-neutral-500">{t("saved.pageSubtitle")}</p>
 
       {isEmpty && (
         <p className="mt-10 rounded-panel border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-400">
-          Nothing saved yet. Tap the heart icon on any listing or project to save it here.
+          {t("saved.nothingSavedYet")}
         </p>
       )}
 
       {savedSearches.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-base font-bold text-neutral-900">Saved searches</h2>
+          <h2 className="text-base font-bold text-neutral-900">{t("saved.savedSearches")}</h2>
           <div className="mt-3 space-y-2">
             {savedSearches.map((s) => (
               <div
@@ -70,7 +68,7 @@ export default function SavedPage() {
               >
                 <div>
                   <p className="text-sm font-semibold text-neutral-900">{s.name}</p>
-                  <p className="text-xs text-neutral-500">{s.filtersSummary || "All properties"}</p>
+                  <p className="text-xs text-neutral-500">{s.filtersSummary || t("saved.allProperties")}</p>
                 </div>
                 <span className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium capitalize text-neutral-600">
                   <Bell className="h-3.5 w-3.5" />
@@ -84,7 +82,7 @@ export default function SavedPage() {
 
       {savedNeighborhoods.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-base font-bold text-neutral-900">Neighborhoods</h2>
+          <h2 className="text-base font-bold text-neutral-900">{t("saved.neighborhoods")}</h2>
           <div className="mt-3 flex flex-wrap gap-3">
             {savedNeighborhoods.map((n) => (
               <div
@@ -104,7 +102,7 @@ export default function SavedPage() {
 
       {savedProjects.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-base font-bold text-neutral-900">Projects</h2>
+          <h2 className="text-base font-bold text-neutral-900">{t("saved.projects")}</h2>
           <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {savedProjects.map((p) => (
               <ProjectCard key={p.id} project={p} />
@@ -115,7 +113,7 @@ export default function SavedPage() {
 
       {savedListings.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-base font-bold text-neutral-900">Listings</h2>
+          <h2 className="text-base font-bold text-neutral-900">{t("saved.listings")}</h2>
           <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {savedListings.map((l) => (
               <ListingCard key={l.id} listing={l} variant="grid" />
@@ -126,7 +124,10 @@ export default function SavedPage() {
 
       {!isEmpty && (
         <p className="mt-10 text-center text-xs text-neutral-400">
-          Looking for more? <Link href="/" className="text-brand-600 hover:underline">Back to the map</Link>
+          {t("saved.lookingForMore")}{" "}
+          <Link href="/" className="text-brand-600 hover:underline">
+            {t("saved.backToMap")}
+          </Link>
         </p>
       )}
     </div>

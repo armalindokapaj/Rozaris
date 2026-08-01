@@ -5,6 +5,7 @@ import Link from "next/link";
 import type mapboxgl from "mapbox-gl";
 import { LayoutGrid, RotateCcw, Eye, SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
+import { useT } from "@/lib/i18n/useT";
 import { ExteriorViewer, resetExteriorView } from "@/components/project/ExteriorViewer";
 import { SimplifiedProjectView } from "@/components/project/SimplifiedProjectView";
 import { ConstructionTimelineStrip } from "@/components/project/ConstructionTimelineStrip";
@@ -19,6 +20,7 @@ export function ArchVizClient({ project }: { project: Project }) {
   const [simplified, setSimplified] = useState(false);
   const compareCount = useAppStore((s) => s.compare.length);
   const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
+  const { t } = useT();
 
   return (
     <div id="main-content" className="relative h-dvh w-full overflow-hidden bg-neutral-900">
@@ -53,13 +55,13 @@ export function ArchVizClient({ project }: { project: Project }) {
           >
             <Eye className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">
-              {simplified ? "3D view" : "Simplified view"}
+              {simplified ? t("project.threeDView") : t("project.simplifiedView")}
             </span>
           </button>
           {!simplified && (
             <button
               onClick={() => resetExteriorView(map, project)}
-              aria-label="Reset exterior view"
+              aria-label={t("project.resetExteriorView")}
               className="glass-panel-dark flex h-10 w-10 items-center justify-center rounded-full text-white"
             >
               <RotateCcw className="h-4 w-4" />
@@ -94,7 +96,7 @@ export function ArchVizClient({ project }: { project: Project }) {
             className="flex items-center gap-2 rounded-pill bg-brand-500 px-6 py-3.5 text-sm font-bold text-white shadow-xl hover:bg-brand-600"
           >
             <LayoutGrid className="h-4 w-4" />
-            Explore Available Units ({project.availableUnits})
+            {t("project.exploreAvailableUnits", { count: project.availableUnits })}
           </button>
         </div>
       )}

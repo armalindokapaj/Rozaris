@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, Home, LayoutGrid, ImageIcon, User } from "lucide-react";
+import { Building2, Home, LayoutGrid, ImageIcon, User, PlayCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const GRADIENTS: Array<[string, string]> = [
@@ -21,7 +21,7 @@ function hash(seed: string) {
   return Math.abs(h);
 }
 
-type Kind = "interior" | "facade" | "floorplan" | "hero" | "avatar" | "gallery";
+type Kind = "interior" | "facade" | "floorplan" | "hero" | "avatar" | "gallery" | "video";
 
 const ICONS: Record<Kind, typeof Home> = {
   interior: Home,
@@ -30,6 +30,7 @@ const ICONS: Record<Kind, typeof Home> = {
   hero: Building2,
   avatar: User,
   gallery: ImageIcon,
+  video: PlayCircle,
 };
 
 export function PlaceholderImage({

@@ -5,12 +5,14 @@ import Link from "next/link";
 import { ChevronDown, LayoutDashboard, LogOut, ShieldCheck, User } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
+import { useT } from "@/lib/i18n/useT";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 
 export function AccountMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const { auth, signIn, signOut } = useAppStore();
+  const { t } = useT();
   useClickOutside(ref, () => setOpen(false), open);
 
   if (!auth.signedIn) {
@@ -20,7 +22,7 @@ export function AccountMenu() {
         onClick={() => signIn("John Doe", "publisher")}
         className="rounded-control bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 transition-colors"
       >
-        Sign in
+        {t("common.signIn")}
       </button>
     );
   }
@@ -65,21 +67,21 @@ export function AccountMenu() {
             onClick={() => setOpen(false)}
             className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
           >
-            <LayoutDashboard className="h-4 w-4" /> Publisher dashboard
+            <LayoutDashboard className="h-4 w-4" /> {t("nav.publisherDashboard")}
           </Link>
           <Link
             href="/admin"
             onClick={() => setOpen(false)}
             className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
           >
-            <ShieldCheck className="h-4 w-4" /> Admin console
+            <ShieldCheck className="h-4 w-4" /> {t("nav.adminConsole")}
           </Link>
           <Link
             href="/dashboard#profile"
             onClick={() => setOpen(false)}
             className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
           >
-            <User className="h-4 w-4" /> Profile settings
+            <User className="h-4 w-4" /> {t("nav.profileSettings")}
           </Link>
           <div className="my-1.5 h-px bg-neutral-100" />
           <button
@@ -89,7 +91,7 @@ export function AccountMenu() {
             }}
             className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-red-600 hover:bg-red-50"
           >
-            <LogOut className="h-4 w-4" /> Sign out
+            <LogOut className="h-4 w-4" /> {t("nav.signOut")}
           </button>
         </div>
       )}

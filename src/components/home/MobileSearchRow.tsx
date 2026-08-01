@@ -2,12 +2,15 @@
 
 import { SlidersHorizontal } from "lucide-react";
 import { useAppStore } from "@/lib/store";
+import { useT } from "@/lib/i18n/useT";
 import { SearchBar } from "@/components/search/SearchBar";
 import { cn } from "@/lib/utils";
 
 export function MobileSearchRow({ onOpenFilters }: { onOpenFilters: () => void }) {
   const filters = useAppStore((s) => s.filters);
   const setFilters = useAppStore((s) => s.setFilters);
+  const setTransaction = useAppStore((s) => s.setTransaction);
+  const { t } = useT();
   const activeFilterCount =
     filters.propertyTypes.length +
     (filters.priceMin || filters.priceMax ? 1 : 0) +
@@ -25,21 +28,21 @@ export function MobileSearchRow({ onOpenFilters }: { onOpenFilters: () => void }
       <div className="flex gap-2">
         {(
           [
-            ["buy", "Buy"],
-            ["rent", "Rent"],
+            ["buy", "nav.buy"],
+            ["rent", "nav.rent"],
           ] as const
-        ).map(([t, label]) => (
+        ).map(([txn, labelKey]) => (
           <button
-            key={t}
-            onClick={() => setFilters({ transaction: t, projectsOnly: false })}
+            key={txn}
+            onClick={() => setTransaction(txn)}
             className={cn(
               "rounded-control px-3.5 py-1.5 text-sm font-semibold",
-              filters.transaction === t && !filters.projectsOnly
+              filters.transaction === txn && !filters.projectsOnly
                 ? "bg-brand-500 text-white"
                 : "bg-neutral-100 text-neutral-600"
             )}
           >
-            {label}
+            {t(labelKey)}
           </button>
         ))}
         <button
@@ -49,14 +52,14 @@ export function MobileSearchRow({ onOpenFilters }: { onOpenFilters: () => void }
             filters.projectsOnly ? "bg-brand-500 text-white" : "bg-neutral-100 text-neutral-600"
           )}
         >
-          New Projects
+          {t("nav.newProjects")}
         </button>
       </div>
       <div className="flex items-center gap-2">
         <SearchBar className="flex-1" />
         <button
           onClick={onOpenFilters}
-          aria-label="Open filters"
+          aria-label={t("home.openFilters")}
           className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-neutral-200 text-neutral-600"
         >
           <SlidersHorizontal className="h-4.5 w-4.5" />

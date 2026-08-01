@@ -1,6 +1,7 @@
 "use client";
 
 import { Box, List, TriangleAlert } from "lucide-react";
+import { useT } from "@/lib/i18n/useT";
 
 /**
  * PER-009 graceful degradation: if Mapbox is unconfigured or WebGL is
@@ -18,6 +19,7 @@ export function MapFallback({
   actionLabel?: string;
   onAction?: () => void;
 }) {
+  const { t } = useT();
   return (
     <div className="relative flex h-full w-full flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-brand-50 via-neutral-50 to-brand-100 px-6 text-center">
       <div
@@ -31,12 +33,12 @@ export function MapFallback({
         <Box className="h-7 w-7 text-brand-500" strokeWidth={1.5} />
       </div>
       <h2 className="relative mt-4 text-lg font-semibold text-neutral-900">
-        3D map unavailable
+        {t("map.unavailable")}
       </h2>
       <p className="relative mt-1.5 max-w-xs text-sm text-neutral-600">{reason}</p>
       <p className="relative mt-1 flex items-center gap-1.5 text-xs text-neutral-400">
         <TriangleAlert className="h-3.5 w-3.5" />
-        Set NEXT_PUBLIC_MAPBOX_TOKEN to enable the live 3D map.
+        {t("map.setTokenHint")}
       </p>
       {onAction && actionLabel && (
         <button

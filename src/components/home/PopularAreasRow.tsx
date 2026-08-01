@@ -2,16 +2,18 @@
 
 import { neighborhoods } from "@/lib/mockData";
 import { useAppStore } from "@/lib/store";
+import { useT } from "@/lib/i18n/useT";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 
 export function PopularAreasRow() {
   const requestFlyTo = useAppStore((s) => s.requestFlyTo);
   const setFilters = useAppStore((s) => s.setFilters);
+  const { t } = useT();
 
   return (
     <div className="px-4">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-neutral-900">Explore Popular Neighborhoods</h3>
+        <h3 className="text-sm font-semibold text-neutral-900">{t("home.popularAreasTitle")}</h3>
       </div>
       <div className="flex gap-3 overflow-x-auto scroll-thin pb-1">
         {neighborhoods.map((n) => (
@@ -31,7 +33,9 @@ export function PopularAreasRow() {
             />
             <span className="text-left">
               <span className="block text-xs font-semibold text-neutral-800">{n.name}</span>
-              <span className="block text-[11px] text-neutral-500">{n.listingCount}+ properties</span>
+              <span className="block text-[11px] text-neutral-500">
+                {t("home.propertiesSuffix", { count: n.listingCount })}
+              </span>
             </span>
           </button>
         ))}

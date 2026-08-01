@@ -18,7 +18,7 @@ export async function generateMetadata({
   if (!project) return {};
   return {
     title: `${project.name} — ArchViz | ${project.developer.name}`,
-    description: `Explore ${project.name} by ${project.developer.name} in interactive 3D. ${project.availableUnits} units available.`,
+    description: `Eksploro ${project.name} nga ${project.developer.name} në 3D interaktiv. ${project.availableUnits} njësi të disponueshme.`,
   };
 }
 
@@ -36,7 +36,7 @@ export default async function ProjectArchVizPage({
     "@type": "ApartmentComplex",
     name: project.name,
     url: `${SITE_URL}/project/${project.slug}`,
-    description: project.description,
+    description: project.description.sq,
     numberOfAccommodationUnits: project.totalUnits,
     developer: { "@type": "Organization", name: project.developer.name },
   };
@@ -52,18 +52,19 @@ export default async function ProjectArchVizPage({
       <noscript>
         <main style={{ padding: 24, fontFamily: "sans-serif", maxWidth: 720 }}>
           <h1>{project.name}</h1>
-          <p>By {project.developer.name}</p>
-          <p>{project.description}</p>
+          <p>Nga {project.developer.name}</p>
+          <p>{project.description.sq}</p>
           <p>
-            {project.availableUnits} of {project.totalUnits} units available ·{" "}
+            {project.availableUnits} nga {project.totalUnits} njësi të disponueshme ·{" "}
             {project.completionLabel}
           </p>
-          <h2>Units</h2>
+          <h2>Njësitë</h2>
           <ul>
             {project.units.map((u) => (
               <li key={u.id}>
-                {u.code} — {u.bedrooms} bed, {u.area} m² — {u.currency === "EUR" ? "€" : "L"}
-                {u.price.toLocaleString()} ({u.status})
+                {u.code} — {u.bedrooms} dhoma gjumi, {u.area} m² — {u.currency === "EUR" ? "€" : "L"}
+                {u.price.toLocaleString()} (
+                {u.status === "available" ? "e disponueshme" : u.status === "reserved" ? "e rezervuar" : "e shitur"})
               </li>
             ))}
           </ul>

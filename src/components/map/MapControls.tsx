@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Minus, LocateFixed, Box } from "lucide-react";
 import type mapboxgl from "mapbox-gl";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 
 export function MapControls({
@@ -12,6 +13,7 @@ export function MapControls({
   map: mapboxgl.Map | null;
   className?: string;
 }) {
+  const { t } = useT();
   function withMap(fn: (m: mapboxgl.Map) => void) {
     if (map) fn(map);
   }
@@ -24,7 +26,7 @@ export function MapControls({
       )}
     >
       <button
-        aria-label="Reset north / compass"
+        aria-label={t("map.resetCompass")}
         onClick={() =>
           withMap((m) => m.easeTo({ bearing: 0, duration: 400 }))
         }
@@ -33,7 +35,7 @@ export function MapControls({
         <CompassGlyph map={map} />
       </button>
       <button
-        aria-label="Toggle 3D perspective"
+        aria-label={t("map.toggle3d")}
         onClick={() =>
           withMap((m) => {
             const pitch = m.getPitch();
@@ -46,7 +48,7 @@ export function MapControls({
       </button>
       <div className="glass-panel flex flex-col overflow-hidden rounded-full shadow-md">
         <button
-          aria-label="Zoom in"
+          aria-label={t("map.zoomIn")}
           onClick={() => withMap((m) => m.zoomIn({ duration: 300 }))}
           className="flex h-11 w-11 items-center justify-center text-neutral-700 hover:text-brand-600"
         >
@@ -54,7 +56,7 @@ export function MapControls({
         </button>
         <div className="h-px bg-neutral-200" />
         <button
-          aria-label="Zoom out"
+          aria-label={t("map.zoomOut")}
           onClick={() => withMap((m) => m.zoomOut({ duration: 300 }))}
           className="flex h-11 w-11 items-center justify-center text-neutral-700 hover:text-brand-600"
         >
@@ -62,7 +64,7 @@ export function MapControls({
         </button>
       </div>
       <button
-        aria-label="Use my location"
+        aria-label={t("map.useMyLocation")}
         onClick={() => {
           if (!navigator.geolocation) return;
           navigator.geolocation.getCurrentPosition((pos) => {

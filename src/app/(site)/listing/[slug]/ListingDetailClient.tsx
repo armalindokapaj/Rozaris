@@ -13,16 +13,17 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
+import { usePriceFormat } from "@/hooks/usePriceFormat";
+import { useT } from "@/lib/i18n/useT";
 import { getNeighborhood } from "@/lib/mockData";
 import { Gallery } from "@/components/listing/Gallery";
 import { PublisherCard } from "@/components/listing/PublisherCard";
 import { MortgageCalculator } from "@/components/listing/MortgageCalculator";
 import { StaticContextMap } from "@/components/map/StaticContextMap";
 import { ListingCard } from "@/components/results/ListingCard";
-import { AMENITY_LABELS, SITE_URL } from "@/lib/constants";
+import { AMENITY_LABELS, CONDITION_LABELS, PROPERTY_TYPE_LABELS, SITE_URL } from "@/lib/constants";
 import {
   formatArea,
-  formatPrice,
   formatRelativeDate,
   transactionLabel,
   cn,
@@ -43,6 +44,8 @@ export function ListingDetailClient({
   const compare = useAppStore((s) => s.compare);
   const addCompare = useAppStore((s) => s.addCompare);
   const removeCompareAt = useAppStore((s) => s.removeCompareAt);
+  const priceFmt = usePriceFormat();
+  const { t, locale } = useT();
   const compareIndex = compare.findIndex(
     (c) => c.kind === "listing" && c.entity.id === listing.id
   );
@@ -50,9 +53,9 @@ export function ListingDetailClient({
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 lg:px-8 lg:py-10">
-      <nav aria-label="Breadcrumb" className="mb-4 flex items-center gap-1.5 text-xs text-neutral-500">
+      <nav aria-label={t("common.breadcrumb")} className="mb-4 flex items-center gap-1.5 text-xs text-neutral-500">
         <Link href="/" className="hover:text-neutral-700">
-          Home
+          {t("nav.home")}
         </Link>
         <ChevronRight className="h-3 w-3" />
         <span>{listing.city}</span>
@@ -73,15 +76,15 @@ export function ListingDetailClient({
                   listing.transaction === "rent" && "bg-rent"
                 )}
               >
-                {transactionLabel(listing.transaction, listing.rentSubtype)}
+                {transactionLabel(listing.transaction, listing.rentSubtype, locale)}
               </span>
               {listing.premium && (
                 <span className="rounded-full bg-listing-premium px-2.5 py-1 text-xs font-semibold text-white">
-                  Premium
+                  {t("results.premium")}
                 </span>
               )}
               <span className="text-xs text-neutral-400">
-                Listed {formatRelativeDate(listing.createdAt)}
+                {t("listing.listed", { date: formatRelativeDate(listing.createdAt, locale) })}
               </span>
             </div>
             <h1 className="mt-2 text-2xl font-bold text-neutral-900 sm:text-3xl">
@@ -92,22 +95,26 @@ export function ListingDetailClient({
             </p>
           </div>
 
-          <Gallery seedBase={listing.id} />
+          <Gallery
+            seedBase={listing.id}
+            hasFacade={!!listing.facadeImage}
+            hasVideo={!!listing.videoUrl}
+          />
 
           <div className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-neutral-200 bg-white p-5">
             <div>
               <p className="text-2xl font-bold text-neutral-900">
-                {formatPrice(listing.price, listing.currency)}
+                {priceFmt(listing.price)}
                 {listing.transaction === "rent" && (
                   <span className="text-sm font-medium text-neutral-500">
-                    {listing.rentSubtype === "daily" ? "/night" : "/mo"}
+                    {listing.rentSubtype === "daily" ? t("results.perNight") : t("results.perMonth")}
                   </span>
                 )}
               </p>
               {listing.pricePerSqm && (
                 <p className="text-xs text-neutral-500">
-                  {formatPrice(Math.round(listing.pricePerSqm), listing.currency)}/m²
-                  {listing.negotiable && " · Negotiable"}
+                  {priceFmt(Math.round(listing.pricePerSqm))}/m²
+                  {listing.negotiable && t("listing.negotiable")}
                 </p>
               )}
             </div>
@@ -119,7 +126,7 @@ export function ListingDetailClient({
                 className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3.5 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
               >
                 <Heart className={cn("h-4 w-4", saved && "fill-red-500 text-red-500")} />
-                {saved ? "Saved" : "Save"}
+                {saved ? t("listing.saved") : t("listing.save")}
               </button>
               <button
                 onClick={() =>
@@ -136,39 +143,39 @@ export function ListingDetailClient({
                 )}
               >
                 <SquareStack className="h-4 w-4" />
-                {inCompare ? "In compare" : "Compare"}
+                {inCompare ? t("listing.inCompare") : t("nav.compare")}
               </button>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Fact icon={BedDouble} label="Bedrooms" value={listing.bedrooms} />
-            <Fact icon={Bath} label="Bathrooms" value={listing.bathrooms} />
-            <Fact icon={Ruler} label="Area" value={formatArea(listing.area)} />
+            <Fact icon={BedDouble} label={t("filters.bedrooms")} value={listing.bedrooms} />
+            <Fact icon={Bath} label={t("filters.bathrooms")} value={listing.bathrooms} />
+            <Fact icon={Ruler} label={t("listing.area")} value={formatArea(listing.area)} />
             <Fact
               icon={Layers}
-              label="Floor"
+              label={t("listing.floor")}
               value={listing.floor ? `${listing.floor}/${listing.totalFloors}` : "—"}
             />
           </div>
 
           <section>
-            <h2 className="text-base font-bold text-neutral-900">Description</h2>
+            <h2 className="text-base font-bold text-neutral-900">{t("listing.description")}</h2>
             <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-neutral-600">
-              {listing.description}
+              {listing.description[locale]}
             </p>
           </section>
 
           {listing.amenities.length > 0 && (
             <section>
-              <h2 className="text-base font-bold text-neutral-900">Amenities</h2>
+              <h2 className="text-base font-bold text-neutral-900">{t("filters.amenities")}</h2>
               <div className="mt-3 flex flex-wrap gap-2">
                 {listing.amenities.map((a) => (
                   <span
                     key={a}
                     className="rounded-pill border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600"
                   >
-                    {AMENITY_LABELS[a]}
+                    {AMENITY_LABELS[locale][a]}
                   </span>
                 ))}
               </div>
@@ -176,10 +183,12 @@ export function ListingDetailClient({
           )}
 
           <section>
-            <h2 className="text-base font-bold text-neutral-900">Location & building context</h2>
+            <h2 className="text-base font-bold text-neutral-900">
+              {t("listing.locationBuildingContext")}
+            </h2>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-neutral-500">
               <ShieldCheck className="h-3.5 w-3.5" />
-              Exact unit position may be approximated for privacy; the building is accurate.
+              {t("listing.approxPrivacyNote")}
             </p>
             <StaticContextMap
               center={listing.coords}
@@ -188,15 +197,15 @@ export function ListingDetailClient({
           </section>
 
           <div className="grid grid-cols-2 gap-3 rounded-panel border border-neutral-200 bg-white p-5 text-sm sm:grid-cols-3">
-            <MetaRow icon={Calendar} label="Year built" value={listing.yearBuilt ?? "—"} />
-            <MetaRow label="Condition" value={listing.condition.replace("_", " ")} />
-            <MetaRow label="Property type" value={listing.propertyType} />
+            <MetaRow icon={Calendar} label={t("listing.yearBuilt")} value={listing.yearBuilt ?? "—"} />
+            <MetaRow label={t("filters.condition")} value={CONDITION_LABELS[locale][listing.condition]} />
+            <MetaRow label={t("filters.propertyType")} value={PROPERTY_TYPE_LABELS[locale][listing.propertyType]} />
           </div>
 
           {related.length > 0 && (
             <section>
               <h2 className="text-base font-bold text-neutral-900">
-                More in {neighborhood?.name}
+                {t("listing.moreIn", { area: neighborhood?.name ?? "" })}
               </h2>
               <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
                 {related.map((l) => (

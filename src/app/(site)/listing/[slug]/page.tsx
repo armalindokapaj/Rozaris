@@ -20,10 +20,10 @@ export async function generateMetadata({
   const price = formatPrice(listing.price, listing.currency);
   return {
     title: `${listing.title} — ${price}`,
-    description: `${listing.bedrooms} bed, ${listing.area} m² ${listing.propertyType} in ${listing.city}. ${listing.description.slice(0, 120)}`,
+    description: `${listing.bedrooms} dhoma gjumi, ${listing.area} m² ${listing.propertyType} në ${listing.city}. ${listing.description.sq.slice(0, 120)}`,
     openGraph: {
       title: `${listing.title} — ${price}`,
-      description: listing.description.slice(0, 160),
+      description: listing.description.sq.slice(0, 160),
     },
   };
 }
@@ -44,7 +44,7 @@ export default async function ListingDetailPage({
     "@context": "https://schema.org",
     "@type": "Residence",
     name: listing.title,
-    description: listing.description,
+    description: listing.description.sq,
     url: `${SITE_URL}/listing/${listing.slug}`,
     address: {
       "@type": "PostalAddress",

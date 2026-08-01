@@ -3,13 +3,16 @@
 import { X, SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
+import { usePriceFormat } from "@/hooks/usePriceFormat";
+import { useT } from "@/lib/i18n/useT";
 import { compareImage, comparePrice, compareTitle } from "@/lib/compare";
-import { formatPrice } from "@/lib/utils";
 
 export function CompareTray() {
   const compare = useAppStore((s) => s.compare);
   const removeCompareAt = useAppStore((s) => s.removeCompareAt);
   const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
+  const priceFmt = usePriceFormat();
+  const { t } = useT();
 
   if (compare.length === 0) return null;
 
@@ -27,7 +30,7 @@ export function CompareTray() {
               />
               <button
                 onClick={() => removeCompareAt(i)}
-                aria-label={`Remove ${compareTitle(item)} from compare`}
+                aria-label={t("compare.removeFromCompare", { title: compareTitle(item) })}
                 className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-neutral-900 text-white shadow"
               >
                 <X className="h-3 w-3" />
@@ -43,9 +46,7 @@ export function CompareTray() {
         <div className="hidden text-xs text-neutral-500 sm:block">
           {compare.map((item, i) => (
             <p key={i} className="font-medium text-neutral-700">
-              {formatPrice(comparePrice(item).price, comparePrice(item).currency, {
-                compact: true,
-              })}
+              {priceFmt(comparePrice(item).price, { compact: true })}
             </p>
           ))}
         </div>
@@ -54,7 +55,7 @@ export function CompareTray() {
           disabled={compare.length < 2}
           className="rounded-control bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Compare {compare.length}/2
+          {t("compare.button", { count: compare.length })}
         </button>
       </div>
     </div>

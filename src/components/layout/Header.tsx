@@ -7,6 +7,8 @@ import { ChevronDown, Heart, Menu, SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { useCompareHint } from "@/hooks/useCompareHint";
+import { useSavedHint } from "@/hooks/useSavedHint";
+import { useT } from "@/lib/i18n/useT";
 import { CompareHint } from "@/components/compare/CompareHint";
 import { Logo } from "./Logo";
 import { LanguageCurrencySelector } from "./LanguageCurrencySelector";
@@ -17,6 +19,7 @@ import { cn } from "@/lib/utils";
 function ResourcesDropdown() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const { t } = useT();
   useClickOutside(ref, () => setOpen(false), open);
   return (
     <div className="relative" ref={ref}>
@@ -25,7 +28,7 @@ function ResourcesDropdown() {
         aria-expanded={open}
         className="flex items-center gap-1 rounded-control px-2 py-2 text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
       >
-        Resources <ChevronDown className="h-3.5 w-3.5" />
+        {t("nav.resources")} <ChevronDown className="h-3.5 w-3.5" />
       </button>
       {open && (
         <div className="absolute left-0 z-40 mt-2 w-56 rounded-card border border-neutral-200 bg-white p-1.5 shadow-xl">
@@ -34,21 +37,21 @@ function ResourcesDropdown() {
             onClick={() => setOpen(false)}
             className="block rounded-lg px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
           >
-            Mortgage calculator
+            {t("nav.mortgageCalculator")}
           </Link>
           <Link
             href="/developers"
             onClick={() => setOpen(false)}
             className="block rounded-lg px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
           >
-            Verified developers
+            {t("nav.verifiedDevelopers")}
           </Link>
           <Link
             href="/help"
             onClick={() => setOpen(false)}
             className="block rounded-lg px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
           >
-            Help center
+            {t("nav.helpCenter")}
           </Link>
         </div>
       )}
@@ -62,22 +65,20 @@ export function Header() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const filters = useAppStore((s) => s.filters);
   const setFilters = useAppStore((s) => s.setFilters);
+  const setTransaction = useAppStore((s) => s.setTransaction);
   const compareCount = useAppStore((s) => s.compare.length);
   const savedCount = useAppStore((s) => s.saved.listings.length + s.saved.projects.length);
-  const { hint, hintRef, handleCompareClick } = useCompareHint();
+  const { hint: compareHint, hintRef: compareHintRef, handleCompareClick } = useCompareHint();
+  const { hint: savedHint, hintRef: savedHintRef, handleSavedClick } = useSavedHint();
+  const { t } = useT();
 
-  function goHomeWithTransaction(transaction: "buy" | "rent") {
-    setFilters({ transaction, projectsOnly: false });
+  function goSearch() {
+    setTransaction("buy");
     if (pathname !== "/") router.push("/");
   }
 
   function goNewProjects() {
     setFilters({ projectsOnly: true });
-    if (pathname !== "/") router.push("/");
-  }
-
-  function goCommercial() {
-    setFilters({ propertyTypes: ["commercial", "office"], projectsOnly: false });
     if (pathname !== "/") router.push("/");
   }
 
@@ -89,53 +90,36 @@ export function Header() {
       <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-neutral-200 bg-white/95 px-4 backdrop-blur lg:px-6">
         <Logo />
 
-        <nav className="ml-2 hidden items-center gap-0.5 lg:flex" aria-label="Primary">
+        <nav className="ml-2 hidden items-center gap-0.5 lg:flex" aria-label={t("common.primaryNav")}>
           <button
-            onClick={() => goHomeWithTransaction("buy")}
+            onClick={goSearch}
             className={cn(
               navLinkClass,
               filters.transaction === "buy" && !filters.projectsOnly && "text-neutral-900"
             )}
           >
-            Buy
-          </button>
-          <button
-            onClick={() => goHomeWithTransaction("rent")}
-            className={cn(
-              navLinkClass,
-              filters.transaction === "rent" && "text-neutral-900"
-            )}
-          >
-            Rent
+            {t("nav.search")}
           </button>
           <button
             onClick={goNewProjects}
             className={cn(navLinkClass, filters.projectsOnly && "text-neutral-900")}
           >
-            New Projects
-          </button>
-          <button onClick={goCommercial} className={navLinkClass}>
-            Commercial
+            {t("nav.newProjects")}
           </button>
           <Link href="/developers" className={navLinkClass}>
-            Find Agents
+            {t("nav.findAgents")}
           </Link>
           <ResourcesDropdown />
         </nav>
 
         <div className="ml-auto flex items-center gap-1 lg:gap-2">
           <Link
-            href="/dashboard"
-            className="hidden rounded-control px-3 py-2 text-sm font-medium text-neutral-600 hover:text-neutral-900 md:block"
-          >
-            List your property
-          </Link>
-          <Link
             href="/saved"
+            onClick={handleSavedClick}
             className="hidden items-center gap-1.5 rounded-control px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 sm:flex"
           >
             <Heart className="h-4 w-4" />
-            Saved
+            {t("nav.saved")}
             {savedCount > 0 && (
               <span className="ml-0.5 rounded-full bg-neutral-200 px-1.5 py-0.5 text-[11px] font-semibold text-neutral-700">
                 {savedCount}
@@ -147,7 +131,7 @@ export function Header() {
             className="hidden items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 sm:flex"
           >
             <SquareStack className="h-4 w-4" />
-            Compare
+            {t("nav.compare")}
             {compareCount > 0 && (
               <span className="ml-0.5 rounded-full bg-brand-500 px-1.5 py-0.5 text-[11px] font-semibold text-white">
                 {compareCount}
@@ -162,7 +146,7 @@ export function Header() {
           </div>
           <button
             onClick={() => setMobileNavOpen(true)}
-            aria-label="Open menu"
+            aria-label={t("nav.openMenu")}
             className="rounded-control p-2 text-neutral-700 hover:bg-neutral-100 lg:hidden"
           >
             <Menu className="h-5 w-5" />
@@ -170,7 +154,8 @@ export function Header() {
         </div>
       </header>
       <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
-      <CompareHint hint={hint} hintRef={hintRef} />
+      <CompareHint hint={compareHint} hintRef={compareHintRef} />
+      <CompareHint hint={savedHint} hintRef={savedHintRef} />
     </>
   );
 }

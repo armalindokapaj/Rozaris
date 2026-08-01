@@ -5,10 +5,14 @@ import type {
   Currency,
   FilterState,
   GeoPoint,
+  Locale,
   MobileSheet,
   SavedSearch,
   ViewMode,
 } from "./types";
+
+// Default until an admin sets a real rate in the Admin Console.
+export const DEFAULT_EUR_TO_ALL_RATE = 97;
 
 export const defaultFilters: FilterState = {
   transaction: "buy",
@@ -59,6 +63,7 @@ interface AppState {
   // Filters
   filters: FilterState;
   setFilters: (partial: Partial<FilterState>) => void;
+  setTransaction: (transaction: FilterState["transaction"]) => void;
   resetFilters: () => void;
 
   // Map / selection
@@ -101,8 +106,16 @@ interface AppState {
   // Locale / currency
   currency: Currency;
   setCurrency: (c: Currency) => void;
-  locale: "en" | "sq";
-  setLocale: (l: "en" | "sq") => void;
+  locale: Locale;
+  setLocale: (l: Locale) => void;
+
+  // EUR -> ALL exchange rate — set manually by an admin in the Admin Console
+  // (not fetched from any external source), rounded to a whole number (ALL
+  // has no meaningful decimal usage). Applies to every listing/project price
+  // shown in ALL immediately.
+  eurToAllRate: number;
+  eurToAllRateUpdatedAt: string | null;
+  setEurToAllRate: (rate: number, updatedAt: string) => void;
 
   // Onboarding (Section 25.1)
   onboardingDismissed: boolean;
@@ -120,6 +133,21 @@ export const useAppStore = create<AppState>()(
       filters: defaultFilters,
       setFilters: (partial) =>
         set((s) => ({ filters: { ...s.filters, ...partial } })),
+      // Buy and rent use entirely different price/area slider scales, so a
+      // value picked under one is meaningless (and out of range) under the
+      // other — switching transaction always clears them.
+      setTransaction: (transaction) =>
+        set((s) => ({
+          filters: {
+            ...s.filters,
+            transaction,
+            projectsOnly: false,
+            priceMin: null,
+            priceMax: null,
+            areaMin: null,
+            areaMax: null,
+          },
+        })),
       resetFilters: () => set({ filters: defaultFilters }),
 
       mapBounds: null,
@@ -211,8 +239,13 @@ export const useAppStore = create<AppState>()(
 
       currency: "EUR",
       setCurrency: (currency) => set({ currency }),
-      locale: "en",
+      locale: "sq",
       setLocale: (locale) => set({ locale }),
+
+      eurToAllRate: DEFAULT_EUR_TO_ALL_RATE,
+      eurToAllRateUpdatedAt: null,
+      setEurToAllRate: (eurToAllRate, eurToAllRateUpdatedAt) =>
+        set({ eurToAllRate, eurToAllRateUpdatedAt }),
 
       onboardingDismissed: false,
       dismissOnboarding: () => set({ onboardingDismissed: true }),
@@ -229,6 +262,8 @@ export const useAppStore = create<AppState>()(
         locale: s.locale,
         onboardingDismissed: s.onboardingDismissed,
         compare: s.compare,
+        eurToAllRate: s.eurToAllRate,
+        eurToAllRateUpdatedAt: s.eurToAllRateUpdatedAt,
       }),
     }
   )

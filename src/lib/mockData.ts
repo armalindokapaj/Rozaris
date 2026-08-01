@@ -253,9 +253,12 @@ function buildListing(i: number, neighborhood: Neighborhood): Listing {
     city: CITY,
     images: ["a", "b", "c", "d"],
     floorPlanImage: "floorplan",
-    facadeImage: "facade",
-    description:
-      "A well-proportioned home with strong natural light, close to essential family amenities and public transport. Includes an approved floor plan, facade diagram and interior photography set as required for ROZARIS listing quality standards.",
+    facadeImage: i % 4 !== 0 ? "facade" : undefined,
+    videoUrl: i % 3 === 0 ? `mock://tour/${i}` : undefined,
+    description: {
+      en: "A well-proportioned home with strong natural light, close to essential family amenities and public transport. Includes an approved floor plan, facade diagram and interior photography set as required for ROZARIS listing quality standards.",
+      sq: "Një banesë e përmasave të mira me dritë natyrale të bollshme, pranë shërbimeve thelbësore familjare dhe transportit publik. Përfshin planimetrinë e miratuar, diagramin e fasadës dhe një set fotografish të brendshme sipas standardeve të cilësisë së listimit në ROZARIS.",
+    },
     publisher,
     premium,
     status: "active",
@@ -295,6 +298,8 @@ function buildUnits(
       status: statusRoll === 0 ? "sold" : statusRoll === 1 ? "reserved" : "available",
       images: ["a", "b", "c"],
       floorPlanImage: "floorplan",
+      facadeImage: i % 3 !== 0 ? "facade" : undefined,
+      videoUrl: i % 4 === 0 ? `mock://tour/${projectId}-${i}` : undefined,
     };
   });
 }
@@ -346,8 +351,10 @@ export const projects: Project[] = [
     totalUnits: 96,
     heroImage: "marina",
     gallery: ["a", "b", "c", "d", "e"],
-    description:
-      "A landmark residential tower on the lake park corridor, combining premium finishes with panoramic city and lake views across two phases.",
+    description: {
+      en: "A landmark residential tower on the lake park corridor, combining premium finishes with panoramic city and lake views across two phases.",
+      sq: "Një kullë banimi emblematike përgjatë korridorit të parkut të liqenit, që kombinon finiturat premium me pamje panoramike nga qyteti dhe liqeni, në dy faza ndërtimi.",
+    },
     buildings: ["A", "B"],
     amenities: ["elevator", "parking", "pool", "garden", "accessibility"],
     premium: true,
@@ -369,8 +376,10 @@ export const projects: Project[] = [
     totalUnits: 72,
     heroImage: "cityview",
     gallery: ["a", "b", "c", "d"],
-    description:
-      "Compact-footprint tower with efficient one and two-bedroom units designed for young professionals near the university campus.",
+    description: {
+      en: "Compact-footprint tower with efficient one and two-bedroom units designed for young professionals near the university campus.",
+      sq: "Kullë me gjurmë kompakte dhe njësi funksionale me një ose dy dhoma gjumi, të projektuara për profesionistë të rinj pranë kampusit universitar.",
+    },
     buildings: ["Tower 1"],
     amenities: ["elevator", "parking", "balcony"],
     premium: false,
@@ -392,8 +401,10 @@ export const projects: Project[] = [
     totalUnits: 40,
     heroImage: "boulevard",
     gallery: ["a", "b", "c"],
-    description:
-      "Near-complete boutique residence in the heart of Bllok with full concierge services and rooftop amenities.",
+    description: {
+      en: "Near-complete boutique residence in the heart of Bllok with full concierge services and rooftop amenities.",
+      sq: "Rezidencë butik pothuajse e përfunduar në zemër të Bllokut, me shërbim concierge të plotë dhe hapësira mikpritëse në tarracën e sipërme.",
+    },
     buildings: ["A"],
     amenities: ["elevator", "parking", "terrace", "pool", "accessibility"],
     premium: true,
@@ -415,8 +426,10 @@ export const projects: Project[] = [
     totalUnits: 120,
     heroImage: "greenpark",
     gallery: ["a", "b"],
-    description:
-      "Master-planned low-rise community with private gardens, launching pre-construction reservations this quarter.",
+    description: {
+      en: "Master-planned low-rise community with private gardens, launching pre-construction reservations this quarter.",
+      sq: "Komunitet i planifikuar me ndërtesa të ulëta dhe kopshte private, me rezervime para-ndërtimit që nisin këtë tremujor.",
+    },
     buildings: ["A", "B", "C"],
     amenities: ["parking", "garden", "accessibility"],
     premium: false,
@@ -438,8 +451,10 @@ export const projects: Project[] = [
     totalUnits: 64,
     heroImage: "donbosko",
     gallery: ["a", "b", "c"],
-    description:
-      "Family-oriented development with larger three and four-bedroom layouts and dedicated play areas.",
+    description: {
+      en: "Family-oriented development with larger three and four-bedroom layouts and dedicated play areas.",
+      sq: "Zhvillim i orientuar për familje, me njësi më të mëdha me tre e katër dhoma gjumi dhe hapësira të dedikuara lojërash.",
+    },
     buildings: ["A", "B"],
     amenities: ["elevator", "parking", "garden", "balcony"],
     premium: false,

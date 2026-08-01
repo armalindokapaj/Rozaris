@@ -1,12 +1,10 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import type { Currency } from "./types";
+import type { Currency, Locale } from "./types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
-
-const EUR_TO_ALL = 99.5;
 
 export function formatPrice(
   amount: number,
@@ -27,34 +25,59 @@ export function formatPrice(
   return `${currency === "EUR" ? "€" : "L"}${formatter.format(value)}`;
 }
 
-export function convertCurrency(amount: number, to: Currency): number {
-  // amounts are stored in EUR in mock data
-  if (to === "EUR") return amount;
-  return Math.round(amount * EUR_TO_ALL);
-}
-
 export function formatArea(area: number) {
   return `${area} m²`;
 }
 
-export function formatRelativeDate(iso: string) {
+const RELATIVE_DATE_LABELS: Record<Locale, {
+  today: string;
+  oneDayAgo: string;
+  daysAgo: (n: number) => string;
+  moAgo: (n: number) => string;
+  yrAgo: (n: number) => string;
+}> = {
+  en: {
+    today: "Today",
+    oneDayAgo: "1 day ago",
+    daysAgo: (n) => `${n} days ago`,
+    moAgo: (n) => `${n} mo ago`,
+    yrAgo: (n) => `${n} yr ago`,
+  },
+  sq: {
+    today: "Sot",
+    oneDayAgo: "1 ditë më parë",
+    daysAgo: (n) => `${n} ditë më parë`,
+    moAgo: (n) => `${n} muaj më parë`,
+    yrAgo: (n) => `${n} vjet më parë`,
+  },
+};
+
+export function formatRelativeDate(iso: string, locale: Locale = "en") {
+  const labels = RELATIVE_DATE_LABELS[locale];
   const diffMs = Date.now() - new Date(iso).getTime();
   const days = Math.floor(diffMs / 86400000);
-  if (days <= 0) return "Today";
-  if (days === 1) return "1 day ago";
-  if (days < 30) return `${days} days ago`;
+  if (days <= 0) return labels.today;
+  if (days === 1) return labels.oneDayAgo;
+  if (days < 30) return labels.daysAgo(days);
   const months = Math.floor(days / 30);
-  if (months < 12) return `${months} mo ago`;
-  return `${Math.floor(months / 12)} yr ago`;
+  if (months < 12) return labels.moAgo(months);
+  return labels.yrAgo(Math.floor(months / 12));
 }
+
+const TRANSACTION_LABELS: Record<Locale, { sale: string; comingSoon: string; rent: string; rentDaily: string }> = {
+  en: { sale: "For Sale", comingSoon: "Coming Soon", rent: "For Rent", rentDaily: "For Rent · Daily" },
+  sq: { sale: "Në Shitje", comingSoon: "Së Shpejti", rent: "Me Qira", rentDaily: "Me Qira · Ditore" },
+};
 
 export function transactionLabel(
   transaction: "sale" | "rent" | "coming_soon",
-  rentSubtype?: "daily" | "long_term"
+  rentSubtype?: "daily" | "long_term",
+  locale: Locale = "en"
 ) {
-  if (transaction === "sale") return "For Sale";
-  if (transaction === "coming_soon") return "Coming Soon";
-  return rentSubtype === "daily" ? "For Rent · Daily" : "For Rent";
+  const labels = TRANSACTION_LABELS[locale];
+  if (transaction === "sale") return labels.sale;
+  if (transaction === "coming_soon") return labels.comingSoon;
+  return rentSubtype === "daily" ? labels.rentDaily : labels.rent;
 }
 
 export function whatsappHref(

@@ -3,12 +3,20 @@
 import { useMemo, useState } from "react";
 import { BedDouble, Bath, Ruler, X } from "lucide-react";
 import type { Project, Unit } from "@/lib/types";
-import { formatPrice, cn } from "@/lib/utils";
+import { usePriceFormat } from "@/hooks/usePriceFormat";
+import { useT } from "@/lib/i18n/useT";
+import { cn } from "@/lib/utils";
 
 const STATUS_STYLE: Record<Unit["status"], string> = {
   available: "border-listing-standard text-listing-standard bg-blue-50",
   reserved: "border-listing-premium text-listing-premium bg-amber-50",
   sold: "border-neutral-300 text-neutral-400 bg-neutral-50",
+};
+
+const STATUS_LABEL_KEY: Record<Unit["status"], string> = {
+  available: "unit.statusAvailable",
+  reserved: "unit.statusReserved",
+  sold: "unit.statusSold",
 };
 
 export function UnitDiscoveryPanel({
@@ -26,6 +34,8 @@ export function UnitDiscoveryPanel({
   const [bedrooms, setBedrooms] = useState<number | null>(null);
   const [maxPrice, setMaxPrice] = useState<number | null>(null);
   const [hideSold, setHideSold] = useState(true);
+  const priceFmt = usePriceFormat();
+  const { t } = useT();
 
   const units = useMemo(() => {
     return project.units.filter((u) => {
@@ -43,18 +53,18 @@ export function UnitDiscoveryPanel({
     <div
       className="fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-panel bg-white shadow-2xl lg:inset-y-0 lg:right-0 lg:left-auto lg:top-0 lg:h-full lg:max-h-none lg:w-[420px] lg:rounded-l-panel lg:rounded-tr-none"
       role="dialog"
-      aria-label="Explore available units"
+      aria-label={t("unit.availableUnitsTitle")}
     >
       <div className="flex shrink-0 items-center justify-between border-b border-neutral-100 px-5 py-4">
         <div>
-          <h2 className="text-base font-bold text-neutral-900">Available units</h2>
+          <h2 className="text-base font-bold text-neutral-900">{t("unit.availableUnitsTitle")}</h2>
           <p className="text-xs text-neutral-500">
-            {units.length} of {project.units.length} units match
+            {t("unit.unitsMatch", { matched: units.length, total: project.units.length })}
           </p>
         </div>
         <button
           onClick={onClose}
-          aria-label="Close unit discovery"
+          aria-label={t("unit.closeUnitDiscovery")}
           className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100"
         >
           <X className="h-4 w-4" />
@@ -64,25 +74,25 @@ export function UnitDiscoveryPanel({
       <div className="shrink-0 space-y-3 border-b border-neutral-100 p-4">
         <div className="flex flex-wrap gap-1.5">
           <FilterPill active={building === "all"} onClick={() => setBuilding("all")}>
-            All buildings
+            {t("unit.allBuildings")}
           </FilterPill>
           {project.buildings.map((b) => (
             <FilterPill key={b} active={building === b} onClick={() => setBuilding(b)}>
-              Building {b}
+              {t("unit.buildingLabel", { name: b })}
             </FilterPill>
           ))}
         </div>
         <div className="flex flex-wrap gap-1.5">
           {[null, 1, 2, 3, 4].map((v) => (
             <FilterPill key={String(v)} active={bedrooms === v} onClick={() => setBedrooms(v)}>
-              {v === null ? "Any beds" : `${v}+ bed`}
+              {v === null ? t("unit.anyBeds") : t("unit.bedPlus", { count: v })}
             </FilterPill>
           ))}
         </div>
         <div className="flex items-center gap-2">
           <input
             type="number"
-            placeholder="Max price (€)"
+            placeholder={t("unit.maxPricePlaceholder")}
             value={maxPrice ?? ""}
             onChange={(e) => setMaxPrice(e.target.value ? Number(e.target.value) : null)}
             className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
@@ -94,16 +104,14 @@ export function UnitDiscoveryPanel({
               onChange={(e) => setHideSold(e.target.checked)}
               className="h-3.5 w-3.5 accent-brand-500"
             />
-            Hide sold
+            {t("unit.hideSold")}
           </label>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto scroll-thin p-4">
         {units.length === 0 && (
-          <p className="py-10 text-center text-sm text-neutral-500">
-            No units match these filters yet.
-          </p>
+          <p className="py-10 text-center text-sm text-neutral-500">{t("unit.noUnitsMatch")}</p>
         )}
         {units.map((unit) => (
           <button
@@ -126,7 +134,7 @@ export function UnitDiscoveryPanel({
                     STATUS_STYLE[unit.status]
                   )}
                 >
-                  {unit.status}
+                  {t(STATUS_LABEL_KEY[unit.status])}
                 </span>
               </div>
               <div className="mt-1 flex items-center gap-3 text-xs text-neutral-500">
@@ -139,11 +147,11 @@ export function UnitDiscoveryPanel({
                 <span className="flex items-center gap-1">
                   <Ruler className="h-3.5 w-3.5" /> {unit.area} m²
                 </span>
-                <span>Floor {unit.floor}</span>
+                <span>{t("unit.floorLabel", { n: unit.floor })}</span>
               </div>
             </div>
             <p className="shrink-0 text-sm font-bold text-neutral-900">
-              {formatPrice(unit.price, unit.currency, { compact: true })}
+              {priceFmt(unit.price, { compact: true })}
             </p>
           </button>
         ))}

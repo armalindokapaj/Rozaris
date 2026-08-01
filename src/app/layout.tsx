@@ -14,11 +14,11 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "ROZARIS — Explore Property Differently",
+    default: "ROZARIS — Zbulo Pronën Ndryshe",
     template: "%s | ROZARIS",
   },
   description:
-    "ROZARIS is a 3D-first property discovery platform. Rotate the city, explore neighborhoods and discover verified listings and new developments in Tirana, Albania.",
+    "ROZARIS është një platformë zbulimi pronash që vendos 3D-në në radhë të parë. Rrotullo qytetin, eksploro zonat dhe zbulo listime të verifikuara dhe zhvillime të reja në Tiranë, Shqipëri.",
 };
 
 export default function RootLayout({
@@ -27,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
+    <html lang="sq" className={`${inter.variable} h-full antialiased`}>
       <body className="flex h-full min-h-full flex-col bg-background text-foreground">
         <SkipLink />
         <StoreHydration />

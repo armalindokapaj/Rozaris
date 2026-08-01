@@ -4,7 +4,9 @@ import Link from "next/link";
 import { BedDouble, Bath, Ruler, Heart, SquareStack, Check } from "lucide-react";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { useAppStore } from "@/lib/store";
-import { formatArea, formatPrice, transactionLabel, cn } from "@/lib/utils";
+import { usePriceFormat } from "@/hooks/usePriceFormat";
+import { useT } from "@/lib/i18n/useT";
+import { formatArea, transactionLabel, cn } from "@/lib/utils";
 import { getNeighborhood } from "@/lib/mockData";
 import type { Listing } from "@/lib/types";
 
@@ -16,6 +18,8 @@ export function ListingCard({
   variant?: "panel" | "grid";
 }) {
   const neighborhood = getNeighborhood(listing.neighborhoodId);
+  const priceFmt = usePriceFormat();
+  const { t, locale } = useT();
   const selectedListingId = useAppStore((s) => s.selectedListingId);
   const hoveredId = useAppStore((s) => s.hoveredId);
   const setHovered = useAppStore((s) => s.setHovered);
@@ -37,6 +41,7 @@ export function ListingCard({
   return (
     <Link
       href={`/listing/${listing.slug}`}
+      data-variant={variant}
       onMouseEnter={() => setHovered(listing.id)}
       onMouseLeave={() => setHovered(null)}
       onClick={() => {
@@ -44,11 +49,14 @@ export function ListingCard({
         requestFlyTo({ lat: listing.coords.lat, lng: listing.coords.lng, zoom: 16 });
       }}
       className={cn(
-        "group block overflow-hidden rounded-card border bg-white shadow-sm transition-all",
+        "group block overflow-hidden rounded-card border shadow-sm transition-all",
+        listing.premium ? "bg-amber-50/70" : "bg-white",
         isActive
           ? "border-brand-400 shadow-lg ring-1 ring-brand-200"
+          : listing.premium
+          ? "border-listing-premium/50 hover:border-listing-premium hover:shadow-md"
           : "border-neutral-200 hover:border-neutral-300 hover:shadow-md",
-        variant === "grid" ? "flex flex-col" : "flex flex-col"
+        "flex flex-col"
       )}
     >
       <div className="relative aspect-[4/3] w-full">
@@ -56,7 +64,7 @@ export function ListingCard({
         <div className="absolute left-2.5 top-2.5 flex gap-1.5">
           {listing.premium && (
             <span className="rounded-full bg-listing-premium px-2 py-1 text-[11px] font-semibold text-white shadow">
-              Premium
+              {t("results.premium")}
             </span>
           )}
           <span
@@ -67,7 +75,7 @@ export function ListingCard({
               listing.transaction === "coming_soon" && "bg-coming-soon"
             )}
           >
-            {transactionLabel(listing.transaction, listing.rentSubtype)}
+            {transactionLabel(listing.transaction, listing.rentSubtype, locale)}
           </span>
         </div>
         <div className="absolute right-2.5 top-2.5 flex flex-col gap-1.5">
@@ -78,7 +86,7 @@ export function ListingCard({
               if (!auth.signedIn) return;
               toggleSaved(listing.id);
             }}
-            aria-label={saved ? "Remove from saved" : "Save listing"}
+            aria-label={saved ? t("results.removeFromSaved") : t("results.saveListing")}
             aria-pressed={saved}
             className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-neutral-600 shadow hover:text-red-500"
           >
@@ -91,7 +99,7 @@ export function ListingCard({
               if (inCompare) removeCompareAt(compareIndex);
               else addCompare({ kind: "listing", entity: listing });
             }}
-            aria-label={inCompare ? "Remove from compare" : "Add to compare"}
+            aria-label={inCompare ? t("results.removeFromCompare") : t("results.addToCompare")}
             aria-pressed={inCompare}
             className={cn(
               "flex h-8 w-8 items-center justify-center rounded-full shadow",
@@ -108,10 +116,10 @@ export function ListingCard({
       </div>
       <div className="flex flex-1 flex-col gap-1.5 p-3.5">
         <p className="text-[15px] font-semibold text-neutral-900">
-          {formatPrice(listing.price, listing.currency)}
+          {priceFmt(listing.price)}
           {listing.transaction === "rent" && (
             <span className="text-xs font-normal text-neutral-500">
-              {listing.rentSubtype === "daily" ? "/night" : "/mo"}
+              {listing.rentSubtype === "daily" ? t("results.perNight") : t("results.perMonth")}
             </span>
           )}
         </p>

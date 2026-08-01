@@ -5,6 +5,8 @@ import Link from "next/link";
 import { X, SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
+import { usePriceFormat } from "@/hooks/usePriceFormat";
+import { useT } from "@/lib/i18n/useT";
 import {
   buildCompareRows,
   compareHref,
@@ -12,23 +14,24 @@ import {
   comparePrice,
   compareTitle,
 } from "@/lib/compare";
-import { formatPrice } from "@/lib/utils";
 
 export function CompareOverlay() {
   const open = useAppStore((s) => s.compareOverlayOpen);
   const setOpen = useAppStore((s) => s.setCompareOverlayOpen);
   const compare = useAppStore((s) => s.compare);
   const removeCompareAt = useAppStore((s) => s.removeCompareAt);
+  const priceFmt = usePriceFormat();
+  const { t, locale } = useT();
 
   if (!open) return null;
 
   const hasTwo = compare.length === 2;
-  const rows = hasTwo ? buildCompareRows([compare[0], compare[1]]) : [];
+  const rows = hasTwo ? buildCompareRows([compare[0], compare[1]], locale) : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center lg:items-center" role="dialog" aria-modal>
       <button
-        aria-label="Close comparison"
+        aria-label={t("compare.closeComparison")}
         onClick={() => setOpen(false)}
         className="absolute inset-0 bg-white/60 backdrop-blur-md"
       />
@@ -36,11 +39,11 @@ export function CompareOverlay() {
         <div className="flex shrink-0 items-center justify-between border-b border-neutral-100 px-5 py-4">
           <h2 className="flex items-center gap-2 text-base font-bold text-neutral-900">
             <SquareStack className="h-4.5 w-4.5 text-brand-500" />
-            Compare properties
+            {t("compare.title")}
           </h2>
           <button
             onClick={() => setOpen(false)}
-            aria-label="Close"
+            aria-label={t("common.close")}
             className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100"
           >
             <X className="h-4 w-4" />
@@ -51,10 +54,7 @@ export function CompareOverlay() {
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-16 text-center">
             <SquareStack className="h-8 w-8 text-neutral-300" />
             <p className="text-sm font-medium text-neutral-700">
-              Add one more property to compare
-            </p>
-            <p className="max-w-xs text-sm text-neutral-500">
-              Select up to two listings or units using the compare icon on any card.
+              {compare.length === 0 ? t("compare.hintNone") : t("compare.hintOne")}
             </p>
           </div>
         ) : (
@@ -74,7 +74,7 @@ export function CompareOverlay() {
                     />
                     <button
                       onClick={() => removeCompareAt(i)}
-                      aria-label="Remove from compare"
+                      aria-label={t("compare.removeFromCompareShort")}
                       className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-neutral-600 shadow"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -87,7 +87,7 @@ export function CompareOverlay() {
                     {compareTitle(item)}
                   </Link>
                   <p className="text-sm font-bold text-brand-600">
-                    {formatPrice(comparePrice(item).price, comparePrice(item).currency)}
+                    {priceFmt(comparePrice(item).price)}
                   </p>
                 </div>
               ))}

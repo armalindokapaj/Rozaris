@@ -19,16 +19,19 @@ import {
 import { useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
+import { useT } from "@/lib/i18n/useT";
+import { useSavedHint } from "@/hooks/useSavedHint";
+import { CompareHint } from "@/components/compare/CompareHint";
 import { LanguageCurrencySelector } from "./LanguageCurrencySelector";
 import { cn } from "@/lib/utils";
 
 const links = [
-  { href: "/", label: "Home", icon: Home },
-  { href: "/?mode=map", label: "Map", icon: MapIcon },
-  { href: "/?mode=list", label: "List", icon: List },
-  { href: "/saved", label: "Saved", icon: Heart },
-  { href: "/developers", label: "Find Agents", icon: Users },
-];
+  { href: "/", labelKey: "nav.home", icon: Home },
+  { href: "/?mode=map", labelKey: "nav.map", icon: MapIcon },
+  { href: "/?mode=list", labelKey: "nav.list", icon: List },
+  { href: "/saved", labelKey: "nav.saved", icon: Heart },
+  { href: "/developers", labelKey: "nav.findAgents", icon: Users },
+] as const;
 
 export function MobileNav({
   open,
@@ -39,7 +42,10 @@ export function MobileNav({
 }) {
   const router = useRouter();
   const { auth, signIn, signOut, compare, setMode, setFilters } = useAppStore();
+  const savedCount = useAppStore((s) => s.saved.listings.length + s.saved.projects.length);
   const [resourcesOpen, setResourcesOpen] = useState(false);
+  const { t } = useT();
+  const { hint: savedHint, hintRef: savedHintRef, handleSavedClick } = useSavedHint();
 
   useEffect(() => {
     if (open) {
@@ -65,7 +71,7 @@ export function MobileNav({
         </span>
         <button
           onClick={onClose}
-          aria-label="Close menu"
+          aria-label={t("nav.closeMenu")}
           className="rounded-control p-2 text-neutral-700 hover:bg-neutral-100"
         >
           <X className="h-5 w-5" />
@@ -73,20 +79,24 @@ export function MobileNav({
       </div>
 
       <div className="flex-1 overflow-y-auto scroll-thin px-3 py-3">
-        <nav className="flex flex-col gap-0.5" aria-label="Mobile primary">
-          {links.map(({ href, label, icon: Icon }) => (
+        <nav className="flex flex-col gap-0.5" aria-label={t("common.mobileNav")}>
+          {links.map(({ href, labelKey, icon: Icon }) => (
             <button
-              key={label}
-              onClick={() => {
-                if (label === "Map") setMode("map");
-                if (label === "List") setMode("list");
+              key={labelKey}
+              onClick={(e) => {
+                if (labelKey === "nav.saved") {
+                  handleSavedClick(e);
+                  if (savedCount === 0) return;
+                }
+                if (labelKey === "nav.map") setMode("map");
+                if (labelKey === "nav.list") setMode("list");
                 router.push(href.split("?")[0]);
                 onClose();
               }}
               className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] font-medium text-neutral-700 hover:bg-neutral-100"
             >
               <Icon className="h-5 w-5 text-neutral-500" />
-              {label}
+              {t(labelKey)}
             </button>
           ))}
           <button
@@ -97,7 +107,7 @@ export function MobileNav({
             className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] font-medium text-neutral-700 hover:bg-neutral-100"
           >
             <SquareStack className="h-5 w-5 text-neutral-500" />
-            Compare
+            {t("nav.compare")}
             {compare.length > 0 && (
               <span className="ml-auto rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-semibold text-white">
                 {compare.length}
@@ -113,7 +123,7 @@ export function MobileNav({
             className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] font-medium text-neutral-700 hover:bg-neutral-100"
           >
             <Building2 className="h-5 w-5 text-neutral-500" />
-            New Projects
+            {t("nav.newProjects")}
           </button>
 
           <button
@@ -122,7 +132,7 @@ export function MobileNav({
             className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] font-medium text-neutral-700 hover:bg-neutral-100"
           >
             <Info className="h-5 w-5 text-neutral-500" />
-            Resources
+            {t("nav.resources")}
             <ChevronDown
               className={cn(
                 "ml-auto h-4 w-4 transition-transform",
@@ -137,14 +147,14 @@ export function MobileNav({
                 onClick={onClose}
                 className="rounded-lg px-2 py-2 text-sm text-neutral-600 hover:bg-neutral-100"
               >
-                Mortgage calculator
+                {t("nav.mortgageCalculator")}
               </Link>
               <Link
                 href="/help"
                 onClick={onClose}
                 className="rounded-lg px-2 py-2 text-sm text-neutral-600 hover:bg-neutral-100"
               >
-                Help center
+                {t("nav.helpCenter")}
               </Link>
             </div>
           )}
@@ -155,7 +165,7 @@ export function MobileNav({
             className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] font-medium text-neutral-700 hover:bg-neutral-100"
           >
             <Info className="h-5 w-5 text-neutral-500" />
-            About Us
+            {t("nav.aboutUs")}
           </Link>
           <Link
             href="/help#contact"
@@ -163,7 +173,7 @@ export function MobileNav({
             className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] font-medium text-neutral-700 hover:bg-neutral-100"
           >
             <Mail className="h-5 w-5 text-neutral-500" />
-            Contact
+            {t("nav.contact")}
           </Link>
         </nav>
 
@@ -173,12 +183,10 @@ export function MobileNav({
           className="mt-4 flex items-center justify-between gap-3 rounded-card bg-brand-50 p-4"
         >
           <div>
-            <p className="text-sm font-semibold text-brand-700">List Your Property</p>
-            <p className="mt-0.5 text-xs text-brand-600/80">
-              Reach thousands of potential buyers and renters.
-            </p>
+            <p className="text-sm font-semibold text-brand-700">{t("nav.listCardTitle")}</p>
+            <p className="mt-0.5 text-xs text-brand-600/80">{t("nav.listCardBody")}</p>
             <span className="mt-3 inline-block rounded-control bg-brand-500 px-3.5 py-2 text-xs font-semibold text-white">
-              Become a Publisher
+              {t("nav.becomeAPublisher")}
             </span>
           </div>
           <Building2 className="h-14 w-14 shrink-0 text-brand-300" strokeWidth={1.25} />
@@ -202,7 +210,7 @@ export function MobileNav({
               onClick={() => {
                 signOut();
               }}
-              aria-label="Sign out"
+              aria-label={t("nav.signOut")}
               className="rounded-control p-2 text-neutral-500 hover:bg-neutral-100"
             >
               <LogOut className="h-4 w-4" />
@@ -213,14 +221,15 @@ export function MobileNav({
             onClick={() => signIn("John Doe", "publisher")}
             className="mb-2 w-full rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white"
           >
-            Sign in
+            {t("common.signIn")}
           </button>
         )}
         <div className="flex items-center justify-between pt-1">
-          <span className="text-xs text-neutral-500">Language</span>
+          <span className="text-xs text-neutral-500">{t("nav.language")}</span>
           <LanguageCurrencySelector />
         </div>
       </div>
+      <CompareHint hint={savedHint} hintRef={savedHintRef} />
     </div>
   );
 }

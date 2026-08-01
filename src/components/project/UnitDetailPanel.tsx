@@ -5,9 +5,17 @@ import { BedDouble, Bath, Ruler, Layers, X, Heart, SquareStack, Palette } from "
 import { Gallery } from "@/components/listing/Gallery";
 import { PublisherCard } from "@/components/listing/PublisherCard";
 import { useAppStore } from "@/lib/store";
-import { formatPrice, cn } from "@/lib/utils";
+import { usePriceFormat } from "@/hooks/usePriceFormat";
+import { useT } from "@/lib/i18n/useT";
+import { cn } from "@/lib/utils";
 import { SITE_URL } from "@/lib/constants";
 import type { Project, Unit } from "@/lib/types";
+
+const STATUS_LABEL_KEY: Record<Unit["status"], string> = {
+  available: "unit.statusAvailable",
+  reserved: "unit.statusReserved",
+  sold: "unit.statusSold",
+};
 
 export function UnitDetailPanel({
   project,
@@ -25,6 +33,8 @@ export function UnitDetailPanel({
   const auth = useAppStore((s) => s.auth);
   const saved = useAppStore((s) => s.saved.projects.includes(project.id));
   const toggleSaved = useAppStore((s) => s.toggleSavedProject);
+  const priceFmt = usePriceFormat();
+  const { t } = useT();
 
   const compareIndex = compare.findIndex((c) => c.kind === "unit" && c.entity.id === unit.id);
   const inCompare = compareIndex !== -1;
@@ -33,7 +43,7 @@ export function UnitDetailPanel({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center lg:items-center" role="dialog" aria-modal>
       <button
-        aria-label="Close unit detail"
+        aria-label={t("unit.closeUnitDetail")}
         onClick={onClose}
         className="absolute inset-0 bg-neutral-900/45 backdrop-blur-sm"
       />
@@ -45,7 +55,7 @@ export function UnitDetailPanel({
           </div>
           <button
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t("common.close")}
             className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100"
           >
             <X className="h-4 w-4" />
@@ -53,12 +63,15 @@ export function UnitDetailPanel({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto scroll-thin p-5">
-          <Gallery seedBase={unit.id} photoCount={3} />
+          <Gallery
+            seedBase={unit.id}
+            photoCount={3}
+            hasFacade={!!unit.facadeImage}
+            hasVideo={!!unit.videoUrl}
+          />
 
           <div className="mt-4 flex items-center justify-between">
-            <p className="text-xl font-bold text-neutral-900">
-              {formatPrice(unit.price, unit.currency)}
-            </p>
+            <p className="text-xl font-bold text-neutral-900">{priceFmt(unit.price)}</p>
             <span
               className={cn(
                 "rounded-full px-2.5 py-1 text-xs font-semibold capitalize",
@@ -67,15 +80,15 @@ export function UnitDetailPanel({
                 unit.status === "sold" && "bg-neutral-100 text-neutral-500"
               )}
             >
-              {unit.status}
+              {t(STATUS_LABEL_KEY[unit.status])}
             </span>
           </div>
 
           <div className="mt-4 grid grid-cols-4 gap-2">
-            <MiniFact icon={BedDouble} value={unit.bedrooms} label="Beds" />
-            <MiniFact icon={Bath} value={unit.bathrooms} label="Baths" />
-            <MiniFact icon={Ruler} value={`${unit.area} m²`} label="Area" />
-            <MiniFact icon={Layers} value={unit.floor} label="Floor" />
+            <MiniFact icon={BedDouble} value={unit.bedrooms} label={t("unit.beds")} />
+            <MiniFact icon={Bath} value={unit.bathrooms} label={t("unit.baths")} />
+            <MiniFact icon={Ruler} value={`${unit.area} m²`} label={t("listing.area")} />
+            <MiniFact icon={Layers} value={unit.floor} label={t("listing.floor")} />
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
@@ -85,7 +98,7 @@ export function UnitDetailPanel({
               className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3.5 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
             >
               <Heart className={cn("h-4 w-4", saved && "fill-red-500 text-red-500")} />
-              {saved ? "Saved" : "Save project"}
+              {saved ? t("unit.savedProject") : t("unit.saveProject")}
             </button>
             <button
               onClick={() =>
@@ -107,7 +120,7 @@ export function UnitDetailPanel({
               )}
             >
               <SquareStack className="h-4 w-4" />
-              {inCompare ? "In compare" : "Compare"}
+              {inCompare ? t("listing.inCompare") : t("nav.compare")}
             </button>
             {eligibleForDesign && (
               <button
@@ -116,7 +129,7 @@ export function UnitDetailPanel({
                 className="flex items-center gap-1.5 rounded-control bg-listing-new-dev px-3.5 py-2 text-sm font-semibold text-white hover:brightness-95 disabled:opacity-60"
               >
                 <Palette className="h-4 w-4" />
-                {designLeadSent ? "Request sent" : "Design this Apartment"}
+                {designLeadSent ? t("unit.requestSent") : t("unit.designThisApartment")}
               </button>
             )}
           </div>

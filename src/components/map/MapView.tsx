@@ -14,7 +14,9 @@ import { MapControls } from "./MapControls";
 import { MapFallback } from "./MapFallback";
 import { ProjectPopupCard } from "./ProjectPopupCard";
 import { BuildingPopupCard } from "./BuildingPopupCard";
-import { formatPrice, cn } from "@/lib/utils";
+import { usePriceFormat } from "@/hooks/usePriceFormat";
+import { useT } from "@/lib/i18n/useT";
+import { cn } from "@/lib/utils";
 
 type ZoomTier = "cluster" | "icon" | "price";
 
@@ -53,11 +55,11 @@ export function MapView({
   const flyToToken = useAppStore((s) => s.flyToToken);
   const flyToTarget = useAppStore((s) => s.flyToTarget);
   const setMode = useAppStore((s) => s.setMode);
+  const priceFmt = usePriceFormat();
+  const { t } = useT();
 
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  const noTokenReason = !token
-    ? "Add a Mapbox access token to enable the interactive 3D city map."
-    : null;
+  const noTokenReason = !token ? t("map.addTokenHint") : null;
   const failReason = noTokenReason ?? webglFailReason;
 
   const visibleListings = useMemo(
@@ -76,9 +78,7 @@ export function MapView({
       // Capability can only be known once running in the browser — a
       // legitimate, one-time synchronous effect update.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setWebglFailReason(
-        "Your browser does not support WebGL, which is required for the 3D map."
-      );
+      setWebglFailReason(t("map.noWebglBrowser"));
       return;
     }
 
@@ -192,9 +192,7 @@ export function MapView({
       visibleListings.forEach((listing) => {
         const el = buildListingMarker({
           tier,
-          priceLabel: formatPrice(listing.price, listing.currency, {
-            compact: true,
-          }),
+          priceLabel: priceFmt(listing.price, { compact: true }),
           premium: listing.premium,
           selected: listing.id === selectedListingId,
           propertyType: listing.propertyType,
@@ -236,6 +234,7 @@ export function MapView({
     selectedProjectId,
     selectListing,
     selectProject,
+    priceFmt,
   ]);
 
   // --- Popup positioning (tracks camera moves while a popup is open) ---
@@ -272,7 +271,7 @@ export function MapView({
       {failReason ? (
         <MapFallback
           reason={failReason}
-          actionLabel="Browse properties as a list"
+          actionLabel={t("map.browsePropertiesAsList")}
           onAction={() => setMode("list")}
         />
       ) : (

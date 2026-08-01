@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { MapFallback } from "./MapFallback";
 import { COLORS } from "./markerFactory";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import type { GeoPoint } from "@/lib/types";
 
@@ -21,7 +22,8 @@ export function StaticContextMap({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  const noTokenReason = !token ? "Map preview requires a Mapbox access token." : null;
+  const { t } = useT();
+  const noTokenReason = !token ? t("map.mapPreviewTokenHint") : null;
   const [webglFailReason, setWebglFailReason] = useState<string | null>(null);
   const failReason = noTokenReason ?? webglFailReason;
 
@@ -29,7 +31,7 @@ export function StaticContextMap({
     if (!containerRef.current || noTokenReason || !token) return;
     if (!mapboxgl.supported()) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- capability only known client-side
-      setWebglFailReason("Your browser does not support WebGL.");
+      setWebglFailReason(t("map.noWebglShort"));
       return;
     }
     mapboxgl.accessToken = token;

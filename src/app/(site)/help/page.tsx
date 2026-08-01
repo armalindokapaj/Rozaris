@@ -2,52 +2,52 @@ import type { Metadata } from "next";
 import { Box, Mail, MessageCircle, Rotate3d, ShieldCheck } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "Help center",
-  description: "Answers about how ROZARIS works, 3D discovery, and getting in touch.",
+  title: "Qendra e ndihmës",
+  description: "Përgjigje rreth mënyrës si funksionon ROZARIS, zbulimi 3D dhe si të na kontaktoni.",
 };
 
 const FAQS = [
   {
-    q: "How does the 3D map work?",
-    a: "ROZARIS renders Tirana as a real 3D city. Drag to rotate, scroll or pinch to zoom, and tilt to see buildings from an angle. As you zoom in, neighborhoods reveal individual buildings, listings and new-development projects.",
+    q: "Si funksionon harta 3D?",
+    a: "ROZARIS e paraqet Tiranën si një qytet të vërtetë 3D. Rrotullo duke tërhequr, zmadho me scroll ose majë gishtash, dhe anoje për të parë ndërtesat nga një kënd. Ndërsa zmadhon, zonat zbulojnë ndërtesa, listime dhe projekte të reja individuale.",
   },
   {
-    q: "What is Explore in 3D?",
-    a: "New developments show a lightweight 3D model on the main map. Tapping a project opens a dedicated ArchViz viewer in a new tab with the full exterior model, live unit availability and construction progress.",
+    q: "Çfarë është \"Shiko në 3D\"?",
+    a: "Zhvillimet e reja shfaqin një model 3D të lehtë në hartën kryesore. Duke prekur një projekt hapet një pamje e dedikuar ArchViz në një skedë të re, me modelin e plotë të jashtëm, disponueshmërinë e njësive në kohë reale dhe progresin e ndërtimit.",
   },
   {
-    q: "Why can I only compare two properties?",
-    a: "Comparison is intentionally limited to two items to keep the experience focused and preserve your map context.",
+    q: "Pse mund të krahasoj vetëm dy prona?",
+    a: "Krahasimi është kufizuar qëllimisht në dy artikuj për ta mbajtur përvojën të fokusuar dhe për të ruajtur kontekstin tënd të hartës.",
   },
   {
-    q: "How do I contact a publisher?",
-    a: "Every listing and project exposes WhatsApp and phone actions. ROZARIS does not read the contents of external conversations.",
+    q: "Si të kontaktoj një botues?",
+    a: "Çdo listim dhe projekt ofron veprime WhatsApp dhe telefoni. ROZARIS nuk lexon përmbajtjen e bisedave të jashtme.",
   },
   {
-    q: "How are listings verified?",
-    a: "Every listing and publisher-submitted update requires Admin approval before it becomes public, and each listing has exactly one publisher to avoid duplicates.",
+    q: "Si verifikohen listimet?",
+    a: "Çdo listim dhe përditësim i dërguar nga botuesit kërkon miratimin e administratorit përpara se të bëhet publik, dhe çdo listim ka saktësisht një botues për të shmangur dublikatat.",
   },
 ];
 
 export default function HelpPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 lg:px-8">
-      <h1 className="text-2xl font-bold text-neutral-900">Help center</h1>
+      <h1 className="text-2xl font-bold text-neutral-900">Qendra e ndihmës</h1>
       <p className="mt-1 text-sm text-neutral-500">
-        Answers about how ROZARIS works. Can&apos;t find what you need? Reach out below.
+        Përgjigje rreth mënyrës si funksionon ROZARIS. Nuk gjete çfarë kërkoje? Na kontakto më poshtë.
       </p>
 
       <section id="3d-map" className="mt-8 rounded-panel border border-neutral-200 bg-white p-5">
         <div className="flex items-center gap-2">
           <Rotate3d className="h-5 w-5 text-brand-500" />
-          <h2 className="text-base font-bold text-neutral-900">Explore Property in 3D</h2>
+          <h2 className="text-base font-bold text-neutral-900">Eksploro Pronën në 3D</h2>
         </div>
         <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-          ROZARIS is a 3D-first discovery platform — the map is the primary way to browse,
-          not a secondary widget beside a list. New developments additionally open a
-          dedicated ArchViz viewer with real-time availability and construction progress,
-          which developers can also license as an embeddable digital twin for their own
-          websites.
+          ROZARIS është një platformë zbulimi që vendos 3D-në në radhë të parë — harta është
+          mënyra kryesore për të shfletuar, jo një widget dytësor pranë një liste. Zhvillimet
+          e reja hapin gjithashtu një pamje të dedikuar ArchViz me disponueshmëri në kohë reale
+          dhe progres ndërtimi, të cilën zhvilluesit mund ta licencojnë edhe si binjak dixhital
+          të integrueshëm për faqet e tyre.
         </p>
       </section>
 
@@ -65,18 +65,18 @@ export default function HelpPage() {
       <section id="about" className="mt-10 rounded-panel border border-neutral-200 bg-white p-5">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-brand-500" />
-          <h2 className="text-base font-bold text-neutral-900">About ROZARIS</h2>
+          <h2 className="text-base font-bold text-neutral-900">Rreth ROZARIS</h2>
         </div>
         <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-          ROZARIS enables people to discover, evaluate and contact real-estate opportunities
-          through a fast, elegant and spatially accurate 3D environment — launching first in
-          Tirana, Albania, with architecture ready to expand across the Balkans and wider
-          Europe.
+          ROZARIS u mundëson njerëzve të zbulojnë, vlerësojnë dhe kontaktojnë mundësi pasurish
+          të paluajtshme përmes një mjedisi 3D të shpejtë, elegant dhe hapësinorisht të saktë —
+          duke nisur së pari në Tiranë, Shqipëri, me një arkitekturë gati për t&apos;u zgjeruar
+          në Ballkan dhe Evropën më të gjerë.
         </p>
       </section>
 
       <section id="contact" className="mt-8 rounded-panel border border-neutral-200 bg-white p-5">
-        <h2 className="text-base font-bold text-neutral-900">Contact</h2>
+        <h2 className="text-base font-bold text-neutral-900">Kontakt</h2>
         <div className="mt-3 flex flex-col gap-2 text-sm">
           <a href="mailto:hello@rozaris.al" className="flex items-center gap-2 text-neutral-600 hover:text-brand-600">
             <Mail className="h-4 w-4" /> hello@rozaris.al
@@ -87,14 +87,14 @@ export default function HelpPage() {
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-neutral-600 hover:text-brand-600"
           >
-            <MessageCircle className="h-4 w-4" /> Chat with support on WhatsApp
+            <MessageCircle className="h-4 w-4" /> Bisedo me mbështetjen në WhatsApp
           </a>
         </div>
       </section>
 
       <p className="mt-8 flex items-center gap-1.5 text-xs text-neutral-400">
         <Box className="h-3.5 w-3.5" />
-        This is a product prototype — content and inventory shown are illustrative.
+        Ky është një prototip produkti — përmbajtja dhe inventari i shfaqur janë ilustrues.
       </p>
     </div>
   );

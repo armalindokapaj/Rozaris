@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "@/lib/store";
+import { useT } from "@/lib/i18n/useT";
 import { getVisibleListings, getVisibleProjects } from "@/lib/filtering";
 import { ListingCard } from "./ListingCard";
 import { ProjectCard } from "./ProjectCard";
@@ -24,6 +25,7 @@ export function ResultsList({
   const filters = useAppStore((s) => s.filters);
   const mapBounds = useAppStore((s) => s.mapBounds);
   const [page, setPage] = useState(1);
+  const { t } = useT();
 
   // Reset to page 1 whenever the result set changes — adjusted during
   // render (React's recommended pattern) rather than in an effect.
@@ -57,19 +59,35 @@ export function ResultsList({
   const pageRows =
     layout === "grid" ? rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : rows;
 
+  const countBlock = (
+    <div>
+      <p className="text-sm font-semibold text-neutral-900">
+        {total === 1
+          ? t("results.resultSingular", { count: total })
+          : t("results.resultPlural", { count: total })}
+      </p>
+      <p className="text-xs text-neutral-500">
+        {restrictToBounds ? t("results.inThisMapArea") : t("results.acrossAllOfCity")}
+      </p>
+    </div>
+  );
+
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-100 px-4 py-3">
-        <div>
-          <p className="text-sm font-semibold text-neutral-900">
-            {total} {total === 1 ? "result" : "results"}
-          </p>
-          <p className="text-xs text-neutral-500">
-            {restrictToBounds ? "In this map area" : "Across all of Tirana"}
-          </p>
+      {layout === "panel" ? (
+        // Map mode's side panel: sort control on top, result count below.
+        <div className="flex shrink-0 flex-col gap-2 border-b border-neutral-100 px-4 py-3">
+          <div className="flex justify-center">
+            <SortDropdown />
+          </div>
+          {countBlock}
         </div>
-        <SortDropdown />
-      </div>
+      ) : (
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-100 px-4 py-3">
+          {countBlock}
+          <SortDropdown />
+        </div>
+      )}
 
       {total === 0 ? (
         <div className="flex-1 overflow-y-auto scroll-thin">
@@ -101,18 +119,18 @@ export function ResultsList({
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                aria-label="Previous page"
+                aria-label={t("results.previousPage")}
                 className="flex h-9 w-9 items-center justify-center rounded-control border border-neutral-200 text-neutral-600 disabled:opacity-40"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <span className="text-sm text-neutral-600">
-                Page {page} of {totalPages}
+                {t("results.pageOf", { page, total: totalPages })}
               </span>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                aria-label="Next page"
+                aria-label={t("results.nextPage")}
                 className="flex h-9 w-9 items-center justify-center rounded-control border border-neutral-200 text-neutral-600 disabled:opacity-40"
               >
                 <ChevronRight className="h-4 w-4" />

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAppStore } from "@/lib/store";
+import { useT } from "@/lib/i18n/useT";
 import { MapView } from "@/components/map/MapView";
 import { FiltersPanel } from "@/components/search/FiltersPanel";
 import { FiltersForm } from "@/components/search/FiltersForm";
@@ -24,6 +25,7 @@ export default function HomePage() {
 
   const [listingsSnap, setListingsSnap] = useState<SheetSnap>("half");
   const [filtersSnap, setFiltersSnap] = useState<SheetSnap>("expanded");
+  const { t } = useT();
 
   // Note: mobile vs. desktop chrome below is switched with Tailwind's `lg:`
   // breakpoint classes (both trees are always in the DOM), not a JS media
@@ -34,8 +36,11 @@ export default function HomePage() {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col lg:flex-row lg:gap-4 lg:p-4">
-      {/* Desktop filters sidebar (~20%) */}
-      <aside className="hidden lg:block lg:h-full lg:w-[20%] lg:shrink-0">
+      {/* Desktop filters sidebar (~20%). Width is calc()-adjusted because
+          flexbox `gap` isn't automatically subtracted from percentage-based
+          flex-item widths — three columns at 20/60/20% plus two lg:gap-4
+          gaps (32px) would overflow the row by 32px without this. */}
+      <aside className="hidden lg:block lg:h-full lg:w-[calc(20%-11px)] lg:shrink-0">
         <FiltersPanel />
       </aside>
 
@@ -46,7 +51,7 @@ export default function HomePage() {
       <div
         className={cn(
           "relative min-h-0 w-full flex-1 lg:flex-none lg:h-full",
-          mode === "map" ? "lg:w-[60%]" : "lg:w-[40%]"
+          mode === "map" ? "lg:w-[calc(60%-11px)]" : "lg:w-[calc(40%-11px)]"
         )}
       >
         <MapView className="lg:rounded-panel" controlsClassName="top-3 right-3" />
@@ -78,7 +83,7 @@ export default function HomePage() {
           snap={filtersSnap}
           onSnapChange={setFiltersSnap}
           snapPoints={["expanded"]}
-          title="Filters"
+          title={t("home.filters")}
         >
           <FiltersForm compact />
           <div className="sticky bottom-0 border-t border-neutral-100 bg-white p-4">
@@ -86,7 +91,7 @@ export default function HomePage() {
               onClick={() => setMobileSheet("listings")}
               className="w-full rounded-control bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-600"
             >
-              Show results
+              {t("home.showResults")}
             </button>
           </div>
         </BottomSheet>
@@ -97,7 +102,7 @@ export default function HomePage() {
             className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-pill bg-neutral-900 px-5 py-3 text-sm font-semibold text-white shadow-lg lg:hidden"
           >
             <List className="h-4 w-4" />
-            Show list
+            {t("home.showList")}
           </button>
         )}
       </div>
@@ -106,7 +111,7 @@ export default function HomePage() {
       <div
         className={cn(
           "hidden min-h-0 lg:block lg:h-full lg:shrink-0",
-          mode === "map" ? "lg:w-[20%]" : "lg:w-[40%]"
+          mode === "map" ? "lg:w-[calc(20%-11px)]" : "lg:w-[calc(40%-11px)]"
         )}
       >
         <div className="glass-panel h-full overflow-hidden rounded-panel shadow-sm">

@@ -1,6 +1,13 @@
 // ROZARIS core domain types — mirrors PRD Section 26 (Data Model and Entity Specification)
 
 export type Currency = "EUR" | "ALL";
+export type Locale = "en" | "sq";
+
+/** Bilingual free-text field — publishers must supply both languages. */
+export interface Bilingual {
+  en: string;
+  sq: string;
+}
 
 export type Transaction = "sale" | "rent" | "coming_soon";
 export type RentSubtype = "daily" | "long_term";
@@ -91,8 +98,9 @@ export interface Listing {
   city: string;
   images: string[];
   floorPlanImage: string;
-  facadeImage: string;
-  description: string;
+  facadeImage?: string;
+  videoUrl?: string;
+  description: Bilingual;
   publisher: Publisher;
   premium: boolean;
   status: ListingStatus;
@@ -126,6 +134,8 @@ export interface Unit {
   status: "available" | "reserved" | "sold";
   images: string[];
   floorPlanImage: string;
+  facadeImage?: string;
+  videoUrl?: string;
 }
 
 export interface Project {
@@ -142,7 +152,7 @@ export interface Project {
   totalUnits: number;
   heroImage: string;
   gallery: string[];
-  description: string;
+  description: Bilingual;
   buildings: string[];
   amenities: Amenity[];
   premium: boolean;

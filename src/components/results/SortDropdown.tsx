@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { ArrowUpDown, Check, ChevronDown } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
+import { useT } from "@/lib/i18n/useT";
 import { SORT_LABELS } from "@/lib/constants";
 import type { SortOption } from "@/lib/types";
 
@@ -23,6 +24,8 @@ export function SortDropdown() {
   const ref = useRef<HTMLDivElement>(null);
   const sort = useAppStore((s) => s.filters.sort);
   const setFilters = useAppStore((s) => s.setFilters);
+  const { locale } = useT();
+  const sortLabels = SORT_LABELS[locale];
   useClickOutside(ref, () => setOpen(false), open);
 
   return (
@@ -33,7 +36,7 @@ export function SortDropdown() {
         className="flex items-center gap-1.5 rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50"
       >
         <ArrowUpDown className="h-3.5 w-3.5" />
-        {SORT_LABELS[sort]}
+        {sortLabels[sort]}
         <ChevronDown className="h-3 w-3" />
       </button>
       {open && (
@@ -52,7 +55,7 @@ export function SortDropdown() {
               }}
               className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
             >
-              {SORT_LABELS[opt]}
+              {sortLabels[opt]}
               {sort === opt && <Check className="h-3.5 w-3.5 text-brand-500" />}
             </button>
           ))}

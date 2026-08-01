@@ -3,24 +3,25 @@ import Link from "next/link";
 import { BadgeCheck } from "lucide-react";
 import { publishers, projectsByDeveloper, listingsByPublisher } from "@/lib/mockData";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
+import sq from "@/lib/i18n/sq";
 
 export const metadata: Metadata = {
-  title: "Verified developers & agencies",
-  description: "Browse verified real-estate developers and agencies on ROZARIS.",
+  title: "Zhvillues & agjenci të verifikuara",
+  description: "Shfleto zhvilluesit dhe agjencitë e verifikuara të pasurive të paluajtshme në ROZARIS.",
 };
 
 const TYPE_LABEL: Record<string, string> = {
-  private_owner: "Private Owner",
-  agency: "Agency",
-  developer: "Developer",
+  private_owner: sq.publisher.typePrivateOwner,
+  agency: sq.publisher.typeAgency,
+  developer: sq.publisher.typeDeveloper,
 };
 
 export default function DevelopersDirectoryPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 lg:px-8">
-      <h1 className="text-2xl font-bold text-neutral-900">Find agents & developers</h1>
+      <h1 className="text-2xl font-bold text-neutral-900">Gjej agjentë & zhvillues</h1>
       <p className="mt-1 text-sm text-neutral-500">
-        Verified publishers with quality-controlled inventory across Tirana.
+        Botues të verifikuar me inventar të kontrolluar në cilësi në gjithë Tiranën.
       </p>
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -46,8 +47,8 @@ export default function DevelopersDirectoryPage() {
                 </p>
                 <p className="text-xs text-neutral-500">{TYPE_LABEL[p.type]}</p>
                 <p className="mt-0.5 text-xs text-neutral-400">
-                  {projectCount > 0 && `${projectCount} projects · `}
-                  {listingCount} listings
+                  {projectCount > 0 && `${projectCount} projekte · `}
+                  {listingCount} listime
                 </p>
               </div>
             </Link>

@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { BadgeCheck, MessageCircle, Phone } from "lucide-react";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
+import { useT } from "@/lib/i18n/useT";
 import { telHref, whatsappHref } from "@/lib/utils";
 import type { Publisher } from "@/lib/types";
 
-const TYPE_LABEL: Record<Publisher["type"], string> = {
-  private_owner: "Private Owner",
-  agency: "Agency",
-  developer: "Developer",
+const TYPE_LABEL_KEY: Record<Publisher["type"], string> = {
+  private_owner: "publisher.typePrivateOwner",
+  agency: "publisher.typeAgency",
+  developer: "publisher.typeDeveloper",
 };
 
 export function PublisherCard({
@@ -23,6 +24,7 @@ export function PublisherCard({
   contentTitle: string;
   contentUrl: string;
 }) {
+  const { t } = useT();
   return (
     <div className="rounded-panel border border-neutral-200 bg-white p-5">
       <Link
@@ -42,7 +44,7 @@ export function PublisherCard({
               <BadgeCheck className="h-4 w-4 shrink-0 text-brand-500" />
             )}
           </p>
-          <p className="text-xs text-neutral-500">{TYPE_LABEL[publisher.type]}</p>
+          <p className="text-xs text-neutral-500">{t(TYPE_LABEL_KEY[publisher.type])}</p>
         </div>
       </Link>
 
@@ -55,7 +57,7 @@ export function PublisherCard({
           className="flex items-center justify-center gap-1.5 rounded-control bg-[#25D366] py-2.5 text-sm font-semibold text-white hover:brightness-95"
         >
           <MessageCircle className="h-4 w-4" />
-          WhatsApp
+          {t("publisher.whatsapp")}
         </a>
         <a
           href={telHref(publisher.phone)}
@@ -63,7 +65,7 @@ export function PublisherCard({
           className="flex items-center justify-center gap-1.5 rounded-control border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
         >
           <Phone className="h-4 w-4" />
-          Call
+          {t("publisher.call")}
         </a>
       </div>
     </div>

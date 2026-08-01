@@ -3,10 +3,12 @@
 import { Rotate3d, X } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useHasMounted } from "@/hooks/useHasMounted";
+import { useT } from "@/lib/i18n/useT";
 
 export function OnboardingHint() {
   const dismissed = useAppStore((s) => s.onboardingDismissed);
   const dismiss = useAppStore((s) => s.dismissOnboarding);
+  const { t } = useT();
   // Avoid a hydration flash: only decide visibility after the persisted
   // store has rehydrated on the client.
   const mounted = useHasMounted();
@@ -22,17 +24,12 @@ export function OnboardingHint() {
         <Rotate3d className="h-4.5 w-4.5" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-neutral-900">
-          Explore property through the 3D map
-        </p>
-        <p className="mt-0.5 text-xs text-neutral-500">
-          Drag to rotate, pinch or scroll to zoom, and tap any building or project to see
-          what&apos;s inside.
-        </p>
+        <p className="text-sm font-semibold text-neutral-900">{t("home.onboardingTitle")}</p>
+        <p className="mt-0.5 text-xs text-neutral-500">{t("home.onboardingBody")}</p>
       </div>
       <button
         onClick={dismiss}
-        aria-label="Dismiss onboarding tip"
+        aria-label={t("home.dismissOnboarding")}
         className="shrink-0 rounded-full p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
       >
         <X className="h-4 w-4" />

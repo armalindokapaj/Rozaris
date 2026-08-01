@@ -5,6 +5,7 @@ import { Search, MapPin, Building2, LandPlot, X } from "lucide-react";
 import { neighborhoods, projects, publishers, CITY } from "@/lib/mockData";
 import { useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 
 type Suggestion = {
@@ -15,27 +16,27 @@ type Suggestion = {
   target?: { lat: number; lng: number; zoom?: number };
 };
 
-function buildSuggestions(query: string): Suggestion[] {
+function buildSuggestions(query: string, t: ReturnType<typeof useT>["t"]): Suggestion[] {
   const q = query.trim().toLowerCase();
   const all: Suggestion[] = [
     {
       id: "city-tirana",
       label: CITY,
-      sublabel: "City",
+      sublabel: t("search.cityLabel"),
       type: "city",
       target: { lat: 41.3275, lng: 19.8187, zoom: 12.2 },
     },
     ...neighborhoods.map((n) => ({
       id: n.id,
       label: n.name,
-      sublabel: `Neighborhood · ${n.listingCount} listings`,
+      sublabel: t("search.neighborhoodSuffix", { count: n.listingCount }),
       type: "neighborhood" as const,
       target: { lat: n.coords.lat, lng: n.coords.lng, zoom: 15.2 },
     })),
     ...projects.map((p) => ({
       id: p.id,
       label: p.name,
-      sublabel: `Project · ${p.developer.name}`,
+      sublabel: t("search.projectSuffix", { developer: p.developer.name }),
       type: "project" as const,
       target: { lat: p.coords.lat, lng: p.coords.lng, zoom: 16.5 },
     })),
@@ -44,7 +45,7 @@ function buildSuggestions(query: string): Suggestion[] {
       .map((p) => ({
         id: p.id,
         label: p.name,
-        sublabel: "Developer",
+        sublabel: t("search.developerLabel"),
         type: "developer" as const,
       })),
   ];
@@ -66,9 +67,10 @@ export function SearchBar({ className }: { className?: string }) {
   const setFilters = useAppStore((s) => s.setFilters);
   const requestFlyTo = useAppStore((s) => s.requestFlyTo);
   const setMode = useAppStore((s) => s.setMode);
+  const { t } = useT();
   useClickOutside(ref, () => setOpen(false), open);
 
-  const suggestions = useMemo(() => buildSuggestions(query), [query]);
+  const suggestions = useMemo(() => buildSuggestions(query, t), [query, t]);
 
   function selectSuggestion(s: Suggestion) {
     setQuery(s.label);
@@ -92,13 +94,13 @@ export function SearchBar({ className }: { className?: string }) {
           }}
           onFocus={() => setOpen(true)}
           type="text"
-          placeholder="Search by city, neighborhood, developer or project"
-          aria-label="Search location or project"
+          placeholder={t("search.placeholder")}
+          aria-label={t("search.ariaLabel")}
           className="w-full bg-transparent text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none"
         />
         {query && (
           <button
-            aria-label="Clear search"
+            aria-label={t("search.clear")}
             onClick={() => setQuery("")}
             className="shrink-0 rounded-full p-0.5 text-neutral-400 hover:bg-neutral-100"
           >

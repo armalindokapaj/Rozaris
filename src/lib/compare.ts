@@ -1,7 +1,11 @@
 import { getNeighborhood } from "./mockData";
-import type { CompareEntity } from "./types";
+import type { CompareEntity, Locale } from "./types";
 import { AMENITY_LABELS, PROPERTY_TYPE_LABELS } from "./constants";
 import { transactionLabel } from "./utils";
+import en from "./i18n/en";
+import sq from "./i18n/sq";
+
+const fieldLabels = { en: en.compareFields, sq: sq.compareFields };
 
 export interface CompareRow {
   label: string;
@@ -29,8 +33,14 @@ export function comparePrice(item: CompareEntity) {
   return { price: e.price, currency: e.currency };
 }
 
-export function buildCompareRows(items: [CompareEntity, CompareEntity]): CompareRow[] {
+export function buildCompareRows(
+  items: [CompareEntity, CompareEntity],
+  locale: Locale
+): CompareRow[] {
   const [a, b] = items;
+  const f = fieldLabels[locale];
+  const propertyTypeLabels = PROPERTY_TYPE_LABELS[locale];
+  const yesNo = (v: boolean) => (v ? f.yes : f.no);
 
   const field = (
     label: string,
@@ -48,51 +58,45 @@ export function buildCompareRows(items: [CompareEntity, CompareEntity]): Compare
   };
 
   return [
-    field("Price", (i) => `${i.entity.currency === "EUR" ? "€" : "L"}${i.entity.price.toLocaleString()}`),
-    field("Price / m²", (i) =>
+    field(f.price, (i) => `${i.entity.currency === "EUR" ? "€" : "L"}${i.entity.price.toLocaleString()}`),
+    field(f.pricePerSqm, (i) =>
       i.kind === "listing" && i.entity.pricePerSqm
         ? `${i.entity.currency === "EUR" ? "€" : "L"}${Math.round(i.entity.pricePerSqm).toLocaleString()}`
         : i.kind === "unit"
         ? `${i.entity.currency === "EUR" ? "€" : "L"}${Math.round(i.entity.price / i.entity.area).toLocaleString()}`
         : null
     ),
-    field("Area", (i) => `${i.entity.area} m²`),
-    field("Bedrooms", (i) => i.entity.bedrooms),
-    field("Bathrooms", (i) => i.entity.bathrooms),
-    field("Floor", (i) =>
+    field(f.area, (i) => `${i.entity.area} m²`),
+    field(f.bedrooms, (i) => i.entity.bedrooms),
+    field(f.bathrooms, (i) => i.entity.bathrooms),
+    field(f.floor, (i) =>
       i.kind === "listing" ? i.entity.floor ?? null : i.entity.floor
     ),
-    field("Property type", (i) =>
-      i.kind === "listing" ? PROPERTY_TYPE_LABELS[i.entity.propertyType] : "Project unit"
+    field(f.propertyType, (i) =>
+      i.kind === "listing" ? propertyTypeLabels[i.entity.propertyType] : f.projectUnit
     ),
-    field("Transaction", (i) =>
+    field(f.transaction, (i) =>
       i.kind === "listing"
-        ? transactionLabel(i.entity.transaction, i.entity.rentSubtype)
-        : transactionLabel(i.entity.transaction)
+        ? transactionLabel(i.entity.transaction, i.entity.rentSubtype, locale)
+        : transactionLabel(i.entity.transaction, undefined, locale)
     ),
-    field("Parking", (i) =>
+    field(f.parking, (i) =>
+      i.kind === "listing" ? yesNo(i.entity.amenities.includes("parking")) : null
+    ),
+    field(f.balconyTerrace, (i) =>
       i.kind === "listing"
-        ? i.entity.amenities.includes("parking")
-          ? "Yes"
-          : "No"
+        ? yesNo(i.entity.amenities.includes("balcony") || i.entity.amenities.includes("terrace"))
         : null
     ),
-    field("Balcony / terrace", (i) =>
-      i.kind === "listing"
-        ? i.entity.amenities.includes("balcony") || i.entity.amenities.includes("terrace")
-          ? "Yes"
-          : "No"
-        : null
+    field(f.furnished, (i) =>
+      i.kind === "listing" ? yesNo(i.entity.amenities.includes("furnished")) : null
     ),
-    field("Furnished", (i) =>
-      i.kind === "listing" ? (i.entity.amenities.includes("furnished") ? "Yes" : "No") : null
-    ),
-    field("Neighborhood", (i) =>
+    field(f.neighborhood, (i) =>
       i.kind === "listing" ? getNeighborhood(i.entity.neighborhoodId)?.name ?? null : null
     ),
-    field("Publisher", (i) => (i.kind === "listing" ? i.entity.publisher.name : i.projectName)),
-    field("Availability", (i) =>
-      i.kind === "listing" ? "Available" : i.entity.status === "available" ? "Available" : i.entity.status
+    field(f.publisher, (i) => (i.kind === "listing" ? i.entity.publisher.name : i.projectName)),
+    field(f.availability, (i) =>
+      i.kind === "listing" ? f.available : i.entity.status === "available" ? f.available : i.entity.status
     ),
   ];
 }

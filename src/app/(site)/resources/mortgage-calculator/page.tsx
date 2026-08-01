@@ -3,8 +3,8 @@ import { Landmark } from "lucide-react";
 import { MortgageCalculator } from "@/components/listing/MortgageCalculator";
 
 export const metadata: Metadata = {
-  title: "Mortgage calculator",
-  description: "Estimate your monthly mortgage payment for a property in Albania.",
+  title: "Kalkulatori i kredisë",
+  description: "Vlerëso pagesën tënde mujore të kredisë për një pronë në Shqipëri.",
 };
 
 export default function MortgageCalculatorPage() {
@@ -15,19 +15,19 @@ export default function MortgageCalculatorPage() {
           <Landmark className="h-5 w-5 text-brand-600" />
         </span>
         <div>
-          <h1 className="text-xl font-bold text-neutral-900">Mortgage calculator</h1>
+          <h1 className="text-xl font-bold text-neutral-900">Kalkulatori i kredisë</h1>
           <p className="text-sm text-neutral-500">
-            Get an illustrative monthly payment estimate for sale listings.
+            Merr një vlerësim ilustrues të pagesës mujore për listimet në shitje.
           </p>
         </div>
       </div>
       <MortgageCalculator />
 
       <div className="mt-8 rounded-panel border border-dashed border-neutral-300 bg-white p-5">
-        <p className="text-sm font-semibold text-neutral-800">Sponsored by our banking partners</p>
+        <p className="text-sm font-semibold text-neutral-800">Sponsorizuar nga partnerët tanë bankarë</p>
         <p className="mt-1 text-xs text-neutral-500">
-          Admin can assign a local bank sponsor with disclosed rates and lead routing
-          (Section 19.2). No sponsor is currently configured for this market.
+          Admini mund të caktojë një bankë sponsorizuese lokale me norma të deklaruara dhe
+          drejtim kontaktesh. Aktualisht nuk ka sponsor të konfiguruar për këtë treg.
         </p>
       </div>
     </div>

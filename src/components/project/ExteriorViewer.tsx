@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { MapFallback } from "@/components/map/MapFallback";
 import { COLORS } from "@/components/map/markerFactory";
+import { useT } from "@/lib/i18n/useT";
 import type { Project } from "@/lib/types";
 
 /**
@@ -29,10 +30,9 @@ export function ExteriorViewer({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
+  const { t } = useT();
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  const noTokenReason = !token
-    ? "Add a Mapbox access token to render the exterior model."
-    : null;
+  const noTokenReason = !token ? t("project.addTokenExteriorHint") : null;
   const [webglFailReason, setWebglFailReason] = useState<string | null>(null);
   const failReason = noTokenReason ?? webglFailReason;
   const [ready, setReady] = useState(false);
@@ -41,7 +41,7 @@ export function ExteriorViewer({
     if (!containerRef.current || noTokenReason || !token) return;
     if (!mapboxgl.supported()) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- capability only known client-side
-      setWebglFailReason("Your browser does not support WebGL.");
+      setWebglFailReason(t("map.noWebglShort"));
       return;
     }
     mapboxgl.accessToken = token;
@@ -91,7 +91,7 @@ export function ExteriorViewer({
       <div className={className}>
         <MapFallback
           reason={failReason}
-          actionLabel="Browse available units"
+          actionLabel={t("project.browseAvailableUnits")}
           onAction={onExploreUnits}
         />
       </div>

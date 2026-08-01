@@ -3,14 +3,50 @@
 import { useState } from "react";
 import { ChevronDown, MapPin, RotateCcw } from "lucide-react";
 import { useAppStore, defaultFilters } from "@/lib/store";
+import { useT } from "@/lib/i18n/useT";
 import {
   AMENITY_LABELS,
   CONDITION_LABELS,
   POI_LABELS,
   PROPERTY_TYPE_LABELS,
 } from "@/lib/constants";
-import type { Amenity, Condition, EssentialPOI, PropertyType } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import type { Amenity, Condition, EssentialPOI, FilterState, PropertyType } from "@/lib/types";
+import { cn, formatArea, formatPrice } from "@/lib/utils";
+import { RangeSlider, type SliderScale } from "./RangeSlider";
+
+// Buy: fine 10k-EUR snapping from 10k-300k (the range most buyers search
+// within) packed into 70% of the track width; coarser steps beyond that.
+const BUY_PRICE_SCALE: SliderScale = {
+  min: 10_000,
+  max: 1_000_000,
+  breakpoint: 300_000,
+  breakpointFraction: 0.7,
+  step: 10_000,
+  stepAfterBreakpoint: 50_000,
+};
+const BUY_AREA_SCALE: SliderScale = {
+  min: 30,
+  max: 400,
+  breakpoint: 200,
+  breakpointFraction: 0.7,
+  step: 10,
+  stepAfterBreakpoint: 50,
+};
+// Long-term rent
+const RENT_PRICE_SCALE: SliderScale = { min: 100, max: 1_500, step: 50 };
+const RENT_AREA_SCALE: SliderScale = { min: 30, max: 1_500, step: 10 };
+// Daily (short-term) rent — much lower price/area domain than long-term
+const DAILY_RENT_PRICE_SCALE: SliderScale = { min: 20, max: 300, step: 10 };
+const DAILY_RENT_AREA_SCALE: SliderScale = { min: 30, max: 150, step: 10 };
+
+function priceScaleFor(filters: FilterState): SliderScale {
+  if (filters.transaction !== "rent") return BUY_PRICE_SCALE;
+  return filters.rentSubtype === "daily" ? DAILY_RENT_PRICE_SCALE : RENT_PRICE_SCALE;
+}
+function areaScaleFor(filters: FilterState): SliderScale {
+  if (filters.transaction !== "rent") return BUY_AREA_SCALE;
+  return filters.rentSubtype === "daily" ? DAILY_RENT_AREA_SCALE : RENT_AREA_SCALE;
+}
 
 const PROPERTY_TYPES: PropertyType[] = [
   "apartment",
@@ -79,25 +115,31 @@ function toggleInArray<T>(arr: T[], value: T): T[] {
 export function FiltersForm({ compact = false }: { compact?: boolean }) {
   const filters = useAppStore((s) => s.filters);
   const setFilters = useAppStore((s) => s.setFilters);
+  const setTransaction = useAppStore((s) => s.setTransaction);
   const resetFilters = useAppStore((s) => s.resetFilters);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const { t, locale } = useT();
+  const propertyTypeLabels = PROPERTY_TYPE_LABELS[locale];
+  const conditionLabels = CONDITION_LABELS[locale];
+  const amenityLabels = AMENITY_LABELS[locale];
+  const poiLabels = POI_LABELS[locale];
 
   return (
     <div className={cn("space-y-5", compact ? "px-4 py-4" : "p-5")}>
       {/* Buy / Rent */}
       <div className="grid grid-cols-2 gap-2 rounded-control bg-neutral-100 p-1">
-        {(["buy", "rent"] as const).map((t) => (
+        {(["buy", "rent"] as const).map((txn) => (
           <button
-            key={t}
-            onClick={() => setFilters({ transaction: t })}
+            key={txn}
+            onClick={() => setTransaction(txn)}
             className={cn(
-              "rounded-[10px] py-2 text-sm font-semibold capitalize transition-colors",
-              filters.transaction === t
+              "rounded-[10px] py-2 text-sm font-semibold transition-colors",
+              filters.transaction === txn
                 ? "bg-white text-neutral-900 shadow-sm"
                 : "text-neutral-500 hover:text-neutral-700"
             )}
           >
-            {t}
+            {txn === "buy" ? t("nav.buy") : t("nav.rent")}
           </button>
         ))}
       </div>
@@ -109,102 +151,81 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
               key={s}
               active={filters.rentSubtype === s}
               onClick={() =>
-                setFilters({ rentSubtype: filters.rentSubtype === s ? undefined : s })
+                setFilters({
+                  rentSubtype: filters.rentSubtype === s ? undefined : s,
+                  // Daily and long-term rent use different price/area
+                  // scales, so a value picked under one is out of range
+                  // under the other.
+                  priceMin: null,
+                  priceMax: null,
+                  areaMin: null,
+                  areaMax: null,
+                })
               }
             >
-              {s === "daily" ? "Daily rent" : "Long-term rent"}
+              {s === "daily" ? t("filters.dailyRent") : t("filters.longTermRent")}
             </Pill>
           ))}
         </div>
       )}
 
       {/* Location */}
-      <Section label="Location">
+      <Section label={t("filters.location")}>
         <div className="flex items-center gap-2 rounded-control border border-neutral-200 px-3 py-2.5">
           <MapPin className="h-4 w-4 shrink-0 text-neutral-400" />
           <input
             value={filters.location}
             onChange={(e) => setFilters({ location: e.target.value })}
-            placeholder="City or neighborhood"
+            placeholder={t("filters.locationPlaceholder")}
             className="w-full bg-transparent text-sm text-neutral-800 focus:outline-none"
           />
         </div>
       </Section>
 
       {/* Property type */}
-      <Section label="Property type">
+      <Section label={t("filters.propertyType")}>
         <div className="flex flex-wrap gap-1.5">
-          {PROPERTY_TYPES.map((t) => (
+          {PROPERTY_TYPES.map((pt) => (
             <Pill
-              key={t}
-              active={filters.propertyTypes.includes(t)}
+              key={pt}
+              active={filters.propertyTypes.includes(pt)}
               onClick={() =>
-                setFilters({ propertyTypes: toggleInArray(filters.propertyTypes, t) })
+                setFilters({ propertyTypes: toggleInArray(filters.propertyTypes, pt) })
               }
             >
-              {PROPERTY_TYPE_LABELS[t]}
+              {propertyTypeLabels[pt]}
             </Pill>
           ))}
         </div>
       </Section>
 
       {/* Price */}
-      <Section label="Price range (EUR)">
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            inputMode="numeric"
-            placeholder="Min"
-            value={filters.priceMin ?? ""}
-            onChange={(e) =>
-              setFilters({ priceMin: e.target.value ? Number(e.target.value) : null })
-            }
-            className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
-          />
-          <span className="text-neutral-300">—</span>
-          <input
-            type="number"
-            inputMode="numeric"
-            placeholder="Max"
-            value={filters.priceMax ?? ""}
-            onChange={(e) =>
-              setFilters({ priceMax: e.target.value ? Number(e.target.value) : null })
-            }
-            className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
-          />
-        </div>
+      <Section label={t("filters.priceRangeEur")}>
+        <RangeSlider
+          scale={priceScaleFor(filters)}
+          valueMin={filters.priceMin}
+          valueMax={filters.priceMax}
+          onChange={(priceMin, priceMax) => setFilters({ priceMin, priceMax })}
+          formatValue={(v) => formatPrice(v, "EUR")}
+          ariaLabel={t("filters.priceRangeAria")}
+        />
       </Section>
 
       {/* Area */}
-      <Section label="Area (m²)">
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            inputMode="numeric"
-            placeholder="Min"
-            value={filters.areaMin ?? ""}
-            onChange={(e) =>
-              setFilters({ areaMin: e.target.value ? Number(e.target.value) : null })
-            }
-            className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
-          />
-          <span className="text-neutral-300">—</span>
-          <input
-            type="number"
-            inputMode="numeric"
-            placeholder="Max"
-            value={filters.areaMax ?? ""}
-            onChange={(e) =>
-              setFilters({ areaMax: e.target.value ? Number(e.target.value) : null })
-            }
-            className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
-          />
-        </div>
+      <Section label={t("filters.areaM2")}>
+        <RangeSlider
+          scale={areaScaleFor(filters)}
+          valueMin={filters.areaMin}
+          valueMax={filters.areaMax}
+          onChange={(areaMin, areaMax) => setFilters({ areaMin, areaMax })}
+          formatValue={formatArea}
+          ariaLabel={t("filters.areaRangeAria")}
+        />
       </Section>
 
       {/* Bedrooms / Bathrooms */}
       <div className="grid grid-cols-2 gap-4">
-        <Section label="Bedrooms">
+        <Section label={t("filters.bedrooms")}>
           <div className="flex flex-wrap gap-1.5">
             {[null, 1, 2, 3, 4].map((v) => (
               <Pill
@@ -212,12 +233,12 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
                 active={filters.bedrooms === v}
                 onClick={() => setFilters({ bedrooms: v })}
               >
-                {v === null ? "Any" : `${v}+`}
+                {v === null ? t("common.any") : t("filters.countPlus", { count: v })}
               </Pill>
             ))}
           </div>
         </Section>
-        <Section label="Bathrooms">
+        <Section label={t("filters.bathrooms")}>
           <div className="flex flex-wrap gap-1.5">
             {[null, 1, 2, 3].map((v) => (
               <Pill
@@ -225,7 +246,7 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
                 active={filters.bathrooms === v}
                 onClick={() => setFilters({ bathrooms: v })}
               >
-                {v === null ? "Any" : `${v}+`}
+                {v === null ? t("common.any") : t("filters.countPlus", { count: v })}
               </Pill>
             ))}
           </div>
@@ -238,7 +259,7 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
         aria-expanded={advancedOpen}
         className="flex w-full items-center justify-between rounded-control border border-neutral-200 px-3.5 py-2.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
       >
-        More filters
+        {t("filters.moreFilters")}
         <ChevronDown
           className={cn("h-4 w-4 transition-transform", advancedOpen && "rotate-180")}
         />
@@ -246,7 +267,7 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
 
       {advancedOpen && (
         <div className="space-y-5 rounded-card bg-neutral-50 p-4">
-          <Section label="Condition">
+          <Section label={t("filters.condition")}>
             <div className="flex flex-wrap gap-1.5">
               {CONDITIONS.map((c) => (
                 <Pill
@@ -254,12 +275,12 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
                   active={filters.condition.includes(c)}
                   onClick={() => setFilters({ condition: toggleInArray(filters.condition, c) })}
                 >
-                  {CONDITION_LABELS[c]}
+                  {conditionLabels[c]}
                 </Pill>
               ))}
             </div>
           </Section>
-          <Section label="Amenities">
+          <Section label={t("filters.amenities")}>
             <div className="flex flex-wrap gap-1.5">
               {AMENITIES.map((a) => (
                 <Pill
@@ -269,12 +290,12 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
                     setFilters({ amenities: toggleInArray(filters.amenities, a) })
                   }
                 >
-                  {AMENITY_LABELS[a]}
+                  {amenityLabels[a]}
                 </Pill>
               ))}
             </div>
           </Section>
-          <Section label="Nearby essentials">
+          <Section label={t("filters.nearbyEssentials")}>
             <div className="flex flex-wrap gap-1.5">
               {POIS.map((p) => (
                 <Pill
@@ -284,24 +305,24 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
                     setFilters({ essentialPOIs: toggleInArray(filters.essentialPOIs, p) })
                   }
                 >
-                  {POI_LABELS[p]}
+                  {poiLabels[p]}
                 </Pill>
               ))}
             </div>
           </Section>
-          <Section label="Publisher">
+          <Section label={t("filters.publisher")}>
             <div className="flex flex-wrap gap-1.5">
               <Pill
                 active={filters.verifiedOnly}
                 onClick={() => setFilters({ verifiedOnly: !filters.verifiedOnly })}
               >
-                Verified only
+                {t("filters.verifiedOnly")}
               </Pill>
               <Pill
                 active={filters.premiumOnly}
                 onClick={() => setFilters({ premiumOnly: !filters.premiumOnly })}
               >
-                Premium only
+                {t("filters.premiumOnly")}
               </Pill>
             </div>
           </Section>
@@ -314,7 +335,7 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
         className="flex w-full items-center justify-center gap-1.5 rounded-control py-2 text-sm font-medium text-neutral-500 hover:text-neutral-800 disabled:opacity-40"
       >
         <RotateCcw className="h-3.5 w-3.5" />
-        Reset all filters
+        {t("filters.resetAllFilters")}
       </button>
     </div>
   );

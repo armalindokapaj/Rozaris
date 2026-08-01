@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Info, Landmark } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
+import { useT } from "@/lib/i18n/useT";
 
 function monthlyPayment(principal: number, annualRatePct: number, years: number) {
   const r = annualRatePct / 100 / 12;
@@ -22,6 +23,7 @@ export function MortgageCalculator({
   const [downPct, setDownPct] = useState(20);
   const [years, setYears] = useState(25);
   const [rate, setRate] = useState(4.2);
+  const { t } = useT();
 
   const downPayment = Math.round((price * downPct) / 100);
   const principal = price - downPayment;
@@ -34,15 +36,20 @@ export function MortgageCalculator({
     <div className={compact ? "" : "rounded-panel border border-neutral-200 bg-white p-5"}>
       <div className="mb-4 flex items-center gap-2">
         <Landmark className="h-4.5 w-4.5 text-brand-500" />
-        <h3 className="text-sm font-bold text-neutral-900">Mortgage calculator</h3>
+        <h3 className="text-sm font-bold text-neutral-900">{t("mortgage.title")}</h3>
       </div>
 
       <div className="space-y-4">
-        <Field label="Property price">
+        <Field label={t("mortgage.propertyPrice")}>
           <NumberInput value={price} onChange={setPrice} suffix="€" step={1000} min={0} />
         </Field>
 
-        <Field label={`Down payment — ${downPct}% (${formatPrice(downPayment, "EUR")})`}>
+        <Field
+          label={t("mortgage.downPayment", {
+            pct: downPct,
+            amount: formatPrice(downPayment, "EUR"),
+          })}
+        >
           <input
             type="range"
             min={0}
@@ -51,32 +58,31 @@ export function MortgageCalculator({
             value={downPct}
             onChange={(e) => setDownPct(Number(e.target.value))}
             className="w-full accent-brand-500"
-            aria-label="Down payment percentage"
+            aria-label={t("mortgage.downPaymentAria")}
           />
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Loan term (years)">
+          <Field label={t("mortgage.loanTerm")}>
             <NumberInput value={years} onChange={setYears} min={5} max={35} step={1} />
           </Field>
-          <Field label="Interest rate (%)">
+          <Field label={t("mortgage.interestRate")}>
             <NumberInput value={rate} onChange={setRate} min={0} max={15} step={0.1} />
           </Field>
         </div>
       </div>
 
       <div className="mt-5 rounded-card bg-brand-50 p-4">
-        <p className="text-xs font-medium text-brand-700">Estimated monthly payment</p>
+        <p className="text-xs font-medium text-brand-700">{t("mortgage.estimatedMonthly")}</p>
         <p className="mt-1 text-2xl font-bold text-brand-800">
           {formatPrice(Math.round(monthly), "EUR")}
-          <span className="text-sm font-medium text-brand-600">/mo</span>
+          <span className="text-sm font-medium text-brand-600">{t("results.perMonth")}</span>
         </p>
       </div>
 
       <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-neutral-400">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        This estimate is illustrative only and does not constitute financial advice or a
-        loan offer. Contact a sponsored bank partner for a personalized quote.
+        {t("mortgage.disclaimer")}
       </p>
     </div>
   );
