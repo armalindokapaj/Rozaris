@@ -1,26 +1,239 @@
 @import "tailwindcss";
+@import "mapbox-gl/dist/mapbox-gl.css";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f7fb;
+  --foreground: #14131f;
+
+  /* Brand */
+  --color-brand-50: #f2f0ff;
+  --color-brand-100: #e6e2ff;
+  --color-brand-200: #cfc8ff;
+  --color-brand-300: #ac9fff;
+  --color-brand-400: #8874ff;
+  --color-brand-500: #6d5bf6;
+  --color-brand-600: #5b45e8;
+  --color-brand-700: #4c37c4;
+  --color-brand-800: #3d2c9c;
+  --color-brand-900: #302577;
+
+  /* Neutrals */
+  --color-neutral-0: #ffffff;
+  --color-neutral-50: #f8f8fb;
+  --color-neutral-100: #f0f0f6;
+  --color-neutral-200: #e4e3ee;
+  --color-neutral-300: #d0cee1;
+  --color-neutral-400: #a7a4bf;
+  --color-neutral-500: #7f7c9c;
+  --color-neutral-600: #5e5b78;
+  --color-neutral-700: #45435b;
+  --color-neutral-800: #2c2a3d;
+  --color-neutral-900: #14131f;
+
+  /* Status / semantic */
+  --color-listing-standard: #6f9bff;
+  --color-listing-selected: #6d5bf6;
+  --color-listing-new-dev: #8b5cf6;
+  --color-listing-premium: #c9973f;
+  --color-listing-unavailable: #b9b6c9;
+
+  --color-sale: #2f8f6f;
+  --color-rent: #2f74c9;
+  --color-coming-soon: #b5822f;
+
+  --radius-panel: 28px;
+  --radius-card: 22px;
+  --radius-control: 16px;
+  --radius-pill: 999px;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
+
+  --color-brand-50: var(--color-brand-50);
+  --color-brand-100: var(--color-brand-100);
+  --color-brand-200: var(--color-brand-200);
+  --color-brand-300: var(--color-brand-300);
+  --color-brand-400: var(--color-brand-400);
+  --color-brand-500: var(--color-brand-500);
+  --color-brand-600: var(--color-brand-600);
+  --color-brand-700: var(--color-brand-700);
+  --color-brand-800: var(--color-brand-800);
+  --color-brand-900: var(--color-brand-900);
+
+  --color-neutral-0: var(--color-neutral-0);
+  --color-neutral-50: var(--color-neutral-50);
+  --color-neutral-100: var(--color-neutral-100);
+  --color-neutral-200: var(--color-neutral-200);
+  --color-neutral-300: var(--color-neutral-300);
+  --color-neutral-400: var(--color-neutral-400);
+  --color-neutral-500: var(--color-neutral-500);
+  --color-neutral-600: var(--color-neutral-600);
+  --color-neutral-700: var(--color-neutral-700);
+  --color-neutral-800: var(--color-neutral-800);
+  --color-neutral-900: var(--color-neutral-900);
+
+  --color-listing-standard: var(--color-listing-standard);
+  --color-listing-selected: var(--color-listing-selected);
+  --color-listing-new-dev: var(--color-listing-new-dev);
+  --color-listing-premium: var(--color-listing-premium);
+  --color-listing-unavailable: var(--color-listing-unavailable);
+
+  --color-sale: var(--color-sale);
+  --color-rent: var(--color-rent);
+  --color-coming-soon: var(--color-coming-soon);
+
+  --radius-panel: var(--radius-panel);
+  --radius-card: var(--radius-card);
+  --radius-control: var(--radius-control);
+  --radius-pill: var(--radius-pill);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior-y: none;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
+
+/* Utility: glass panel per PRD 24.1 (~10% translucent + blur) */
+.glass-panel {
+  background: color-mix(in srgb, white 88%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid color-mix(in srgb, white 60%, #d0cee1 40%);
+}
+
+.glass-panel-dark {
+  background: color-mix(in srgb, #14131f 82%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid color-mix(in srgb, white 12%, transparent);
+}
+
+/* Scrollbars: slim, unobtrusive */
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--color-neutral-300);
+  border-radius: 999px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Mapbox popup reset so we can fully restyle */
+.mapboxgl-popup-content {
+  padding: 0 !important;
+  border-radius: var(--radius-card) !important;
+  box-shadow: 0 12px 40px -8px rgba(23, 22, 38, 0.28) !important;
+  overflow: hidden;
+}
+.mapboxgl-popup-tip {
+  display: none !important;
+}
+.mapboxgl-ctrl-logo,
+.mapboxgl-ctrl-bottom-right,
+.mapboxgl-ctrl-bottom-left {
+  display: none !important;
+}
+
+/* Map markers — plain DOM (Mapbox GL markers), styled outside Tailwind's
+   scan so colors can be assigned dynamically via inline style. */
+.rz-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 4px 14px -2px rgba(23, 22, 38, 0.35);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+  color: white;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.rz-marker:hover {
+  transform: scale(1.08);
+  box-shadow: 0 8px 20px -2px rgba(23, 22, 38, 0.4);
+}
+.rz-marker-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+}
+.rz-marker-price {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+}
+.rz-marker-cluster {
+  min-width: 46px;
+  height: 46px;
+  padding: 0 10px;
+  border-radius: 999px;
+  flex-direction: column;
+  gap: 0;
+  font-size: 11px;
+  line-height: 1.15;
+  color: #2c2a3d;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(23, 22, 38, 0.08);
+}
+.rz-marker-cluster strong {
+  font-size: 13px;
+}
+.rz-marker-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #14131f;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
+}
+.rz-marker-project {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Focus visibility (A11Y-004) */
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+  border-radius: 6px;
 }

@@ -1,0 +1,482 @@
+import type {
+  Listing,
+  Neighborhood,
+  Project,
+  Publisher,
+  Unit,
+  ConstructionStage,
+} from "./types";
+
+// Tirana, Albania is the PRD's primary launch market (Section 0.3 / 1).
+export const CITY = "Tirana";
+export const CITY_CENTER = { lat: 41.3275, lng: 19.8187 };
+
+export const neighborhoods: Neighborhood[] = [
+  {
+    id: "n-blloku",
+    slug: "blloku",
+    name: "Bllok",
+    city: CITY,
+    coords: { lat: 41.3229, lng: 19.8172 },
+    listingCount: 128,
+    description:
+      "Tirana's most vibrant district — cafés, boutiques and a dense mix of renovated and new-build apartments minutes from the center.",
+    essentialPOIs: ["school", "bus_stop", "hospital"],
+  },
+  {
+    id: "n-komuna",
+    slug: "komuna-e-parisit",
+    name: "Komuna e Parisit",
+    city: CITY,
+    coords: { lat: 41.3266, lng: 19.8104 },
+    listingCount: 96,
+    description:
+      "A quieter, tree-lined residential pocket close to the university campus, popular with young professionals and families.",
+    essentialPOIs: ["university", "bus_stop"],
+  },
+  {
+    id: "n-liqeni",
+    slug: "liqeni-i-thate",
+    name: "Liqeni i Thatë",
+    city: CITY,
+    coords: { lat: 41.3336, lng: 19.8262 },
+    listingCount: 83,
+    description:
+      "New-development corridor along the lake park with the highest concentration of ArchViz-ready projects.",
+    essentialPOIs: ["school", "hospital"],
+  },
+  {
+    id: "n-donbosko",
+    slug: "don-bosko",
+    name: "Don Bosko",
+    city: CITY,
+    coords: { lat: 41.3096, lng: 19.8253 },
+    listingCount: 61,
+    description:
+      "Established family neighborhood with larger floor plans and easy access to the ring road.",
+    essentialPOIs: ["school", "bus_stop", "hospital"],
+  },
+  {
+    id: "n-21dhjetori",
+    slug: "21-dhjetori",
+    name: "21 Dhjetori",
+    city: CITY,
+    coords: { lat: 41.3312, lng: 19.8341 },
+    listingCount: 57,
+    description:
+      "Central business corridor mixing office towers with premium residential addresses.",
+    essentialPOIs: ["bus_stop", "hospital"],
+  },
+  {
+    id: "n-kombinat",
+    slug: "kombinat",
+    name: "Kombinat",
+    city: CITY,
+    coords: { lat: 41.3009, lng: 19.7738 },
+    listingCount: 44,
+    description:
+      "Fast-growing suburban edge with the city's largest concentration of new-development land plots.",
+    essentialPOIs: ["school", "bus_stop"],
+  },
+];
+
+const agencyLogo = (letter: string) => letter;
+
+export const publishers: Publisher[] = [
+  {
+    id: "p-alba",
+    slug: "alba-construction",
+    name: "ALBA Construction",
+    type: "developer",
+    verified: true,
+    logoUrl: agencyLogo("A"),
+    phone: "+355691234567",
+    whatsapp: "355691234567",
+    bio: "Award-winning residential developer delivering premium mixed-use projects across Tirana since 2011.",
+  },
+  {
+    id: "p-skyline",
+    slug: "skyline-developers",
+    name: "Skyline Developers",
+    type: "developer",
+    verified: true,
+    logoUrl: agencyLogo("S"),
+    phone: "+355692345678",
+    whatsapp: "355692345678",
+    bio: "Vertical living specialists focused on the 21 Dhjetori business corridor.",
+  },
+  {
+    id: "p-lakeside",
+    slug: "lakeside-homes",
+    name: "Lakeside Homes",
+    type: "developer",
+    verified: true,
+    logoUrl: agencyLogo("L"),
+    phone: "+355693456789",
+    whatsapp: "355693456789",
+    bio: "Boutique developer building low-density residences around the Liqeni i Thatë park corridor.",
+  },
+  {
+    id: "p-vega",
+    slug: "vega-real-estate",
+    name: "Vega Real Estate",
+    type: "agency",
+    verified: true,
+    logoUrl: agencyLogo("V"),
+    phone: "+355694567890",
+    whatsapp: "355694567890",
+    bio: "Full-service agency with verified inventory across Bllok and Komuna e Parisit.",
+  },
+  {
+    id: "p-prime",
+    slug: "prime-properties",
+    name: "Prime Properties",
+    type: "agency",
+    verified: true,
+    logoUrl: agencyLogo("P"),
+    phone: "+355695678901",
+    whatsapp: "355695678901",
+  },
+  {
+    id: "p-elira",
+    slug: "elira-gashi",
+    name: "Elira Gashi",
+    type: "private_owner",
+    verified: false,
+    phone: "+355696789012",
+    whatsapp: "355696789012",
+  },
+  {
+    id: "p-andi",
+    slug: "andi-hoxha",
+    name: "Andi Hoxha",
+    type: "private_owner",
+    verified: false,
+    phone: "+355697890123",
+    whatsapp: "355697890123",
+  },
+];
+
+// Deterministic pseudo-random in [0, 1), seeded by an integer. Mock data is
+// generated identically on the server and in the browser — using
+// Math.random() here would make every field differ between the SSR pass and
+// client hydration, causing React hydration-mismatch errors.
+function seededRandom(seed: number): number {
+  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function jitter(base: number, spread: number, seed: number) {
+  return base + (seededRandom(seed) - 0.5) * spread;
+}
+
+function hashSeed(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+const propertyTypeMix: Listing["propertyType"][] = [
+  "apartment",
+  "apartment",
+  "apartment",
+  "house",
+  "studio",
+  "villa",
+];
+
+const listingTitles = [
+  "Sunlit Corner Apartment",
+  "Modern Family Residence",
+  "Renovated City Flat",
+  "Panoramic Top-Floor Unit",
+  "Quiet Courtyard Home",
+  "Contemporary Studio",
+  "Garden-Level Duplex",
+  "Boulevard-Facing Apartment",
+  "Newly Built Residence",
+  "Classic Renovated Villa",
+  "Compact Investment Flat",
+  "Spacious Family Apartment",
+];
+
+function buildListing(i: number, neighborhood: Neighborhood): Listing {
+  const isRent = i % 3 === 0;
+  const type = propertyTypeMix[i % propertyTypeMix.length];
+  const bedrooms = type === "studio" ? 0 : 1 + (i % 4);
+  const area = Math.round(40 + bedrooms * 22 + (i % 5) * 6);
+  const pricePerSqm = isRent ? 0 : Math.round(jitter(1650, 700, i * 11 + 1));
+  const price = isRent
+    ? Math.round(jitter(350, 300, i * 11 + 2) + bedrooms * 120)
+    : Math.round(pricePerSqm * area);
+  const publisher = publishers[i % publishers.length];
+  const premium = i % 5 === 0;
+
+  return {
+    id: `l-${i}`,
+    slug: `${listingTitles[i % listingTitles.length]
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")}-${i}`,
+    title: listingTitles[i % listingTitles.length],
+    transaction: isRent ? "rent" : "sale",
+    rentSubtype: isRent ? (i % 6 === 0 ? "daily" : "long_term") : undefined,
+    propertyType: type,
+    price,
+    currency: "EUR",
+    pricePerSqm: isRent ? undefined : pricePerSqm,
+    negotiable: i % 4 === 0,
+    area,
+    bedrooms,
+    bathrooms: Math.max(1, Math.round(bedrooms * 0.7)),
+    floor: 1 + (i % 8),
+    totalFloors: 6 + (i % 5),
+    yearBuilt: 1998 + (i % 26),
+    condition: (["new", "renovated", "good", "needs_renovation"] as const)[
+      i % 4
+    ],
+    amenities: (
+      [
+        "elevator",
+        "parking",
+        "balcony",
+        "terrace",
+        "furnished",
+        "garden",
+        "accessibility",
+      ] as const
+    ).filter((_, idx) => (i + idx) % 3 === 0),
+    coords: {
+      lat: jitter(neighborhood.coords.lat, 0.012, i * 11 + 3),
+      lng: jitter(neighborhood.coords.lng, 0.014, i * 11 + 4),
+    },
+    neighborhoodId: neighborhood.id,
+    city: CITY,
+    images: ["a", "b", "c", "d"],
+    floorPlanImage: "floorplan",
+    facadeImage: "facade",
+    description:
+      "A well-proportioned home with strong natural light, close to essential family amenities and public transport. Includes an approved floor plan, facade diagram and interior photography set as required for ROZARIS listing quality standards.",
+    publisher,
+    premium,
+    status: "active",
+    createdAt: new Date(Date.now() - i * 86400000 * 2.2).toISOString(),
+    buildingListingCount: i % 7 === 0 ? 2 + (i % 3) : undefined,
+  };
+}
+
+export const listings: Listing[] = neighborhoods.flatMap((n, ni) =>
+  Array.from({ length: 6 }, (_, i) => buildListing(ni * 6 + i, n))
+);
+
+function buildUnits(
+  projectId: string,
+  buildingNames: string[],
+  currency: "EUR",
+  basePrice: number,
+  count: number
+): Unit[] {
+  return Array.from({ length: count }, (_, i) => {
+    const building = buildingNames[i % buildingNames.length];
+    const bedrooms = 1 + (i % 4);
+    const area = Math.round(45 + bedrooms * 20 + (i % 4) * 5);
+    const statusRoll = i % 5;
+    return {
+      id: `${projectId}-u-${i}`,
+      code: `${building}-${100 + i}`,
+      type: i % 9 === 0 ? "commercial" : "residential",
+      buildingName: building,
+      floor: 1 + (i % 9),
+      area,
+      bedrooms,
+      bathrooms: Math.max(1, Math.round(bedrooms * 0.7)),
+      price: Math.round(basePrice + area * jitter(1500, 300, hashSeed(projectId) + i * 7)),
+      currency,
+      transaction: "sale",
+      status: statusRoll === 0 ? "sold" : statusRoll === 1 ? "reserved" : "available",
+      images: ["a", "b", "c"],
+      floorPlanImage: "floorplan",
+    };
+  });
+}
+
+const stageTemplate = (percent: number): ConstructionStage[] => {
+  const names = [
+    "Site preparation",
+    "Excavation",
+    "Foundation",
+    "Structure",
+    "Walls & enclosure",
+    "Facade",
+    "MEP & interior finishing",
+    "Landscaping",
+  ];
+  return names.map((name, idx) => {
+    const stagePercent = ((idx + 1) / names.length) * 100;
+    return {
+      id: `stage-${idx}`,
+      name,
+      order: idx,
+      status:
+        percent >= stagePercent
+          ? "done"
+          : percent >= stagePercent - 100 / names.length
+          ? "active"
+          : "upcoming",
+      progressPercent: Math.min(
+        100,
+        Math.max(0, Math.round((percent - idx * (100 / names.length)) * (names.length)))
+      ),
+      dateLabel: `Q${1 + (idx % 4)} ${2025 + Math.floor(idx / 4)}`,
+    };
+  });
+};
+
+export const projects: Project[] = [
+  {
+    id: "pr-marina",
+    slug: "marina-residence",
+    name: "Marina Residence",
+    developer: publishers[0],
+    status: "under_construction",
+    progressPercent: 70,
+    coords: { lat: 41.3345, lng: 19.8278 },
+    neighborhoodId: "n-liqeni",
+    city: CITY,
+    availableUnits: 42,
+    totalUnits: 96,
+    heroImage: "marina",
+    gallery: ["a", "b", "c", "d", "e"],
+    description:
+      "A landmark residential tower on the lake park corridor, combining premium finishes with panoramic city and lake views across two phases.",
+    buildings: ["A", "B"],
+    amenities: ["elevator", "parking", "pool", "garden", "accessibility"],
+    premium: true,
+    completionLabel: "Q3 2026",
+    units: buildUnits("pr-marina", ["A", "B"], "EUR", 90000, 48),
+    constructionStages: stageTemplate(70),
+  },
+  {
+    id: "pr-cityview",
+    slug: "city-view-residence",
+    name: "City View Residence",
+    developer: publishers[1],
+    status: "under_construction",
+    progressPercent: 35,
+    coords: { lat: 41.3268, lng: 19.8103 },
+    neighborhoodId: "n-komuna",
+    city: CITY,
+    availableUnits: 58,
+    totalUnits: 72,
+    heroImage: "cityview",
+    gallery: ["a", "b", "c", "d"],
+    description:
+      "Compact-footprint tower with efficient one and two-bedroom units designed for young professionals near the university campus.",
+    buildings: ["Tower 1"],
+    amenities: ["elevator", "parking", "balcony"],
+    premium: false,
+    completionLabel: "Q1 2027",
+    units: buildUnits("pr-cityview", ["T1"], "EUR", 60000, 36),
+    constructionStages: stageTemplate(35),
+  },
+  {
+    id: "pr-luxapt",
+    slug: "the-boulevard-luxury",
+    name: "The Boulevard Luxury",
+    developer: publishers[2],
+    status: "under_construction",
+    progressPercent: 88,
+    coords: { lat: 41.3223, lng: 19.8181 },
+    neighborhoodId: "n-blloku",
+    city: CITY,
+    availableUnits: 12,
+    totalUnits: 40,
+    heroImage: "boulevard",
+    gallery: ["a", "b", "c"],
+    description:
+      "Near-complete boutique residence in the heart of Bllok with full concierge services and rooftop amenities.",
+    buildings: ["A"],
+    amenities: ["elevator", "parking", "terrace", "pool", "accessibility"],
+    premium: true,
+    completionLabel: "Q4 2025",
+    units: buildUnits("pr-luxapt", ["A"], "EUR", 140000, 20),
+    constructionStages: stageTemplate(88),
+  },
+  {
+    id: "pr-greenpark",
+    slug: "green-park-residences",
+    name: "Green Park Residences",
+    developer: publishers[0],
+    status: "coming_soon",
+    progressPercent: 5,
+    coords: { lat: 41.3006, lng: 19.7714 },
+    neighborhoodId: "n-kombinat",
+    city: CITY,
+    availableUnits: 120,
+    totalUnits: 120,
+    heroImage: "greenpark",
+    gallery: ["a", "b"],
+    description:
+      "Master-planned low-rise community with private gardens, launching pre-construction reservations this quarter.",
+    buildings: ["A", "B", "C"],
+    amenities: ["parking", "garden", "accessibility"],
+    premium: false,
+    completionLabel: "Q2 2028",
+    units: buildUnits("pr-greenpark", ["A", "B", "C"], "EUR", 55000, 60),
+    constructionStages: stageTemplate(5),
+  },
+  {
+    id: "pr-donbosko",
+    slug: "don-bosko-heights",
+    name: "Don Bosko Heights",
+    developer: publishers[1],
+    status: "under_construction",
+    progressPercent: 52,
+    coords: { lat: 41.3082, lng: 19.8241 },
+    neighborhoodId: "n-donbosko",
+    city: CITY,
+    availableUnits: 30,
+    totalUnits: 64,
+    heroImage: "donbosko",
+    gallery: ["a", "b", "c"],
+    description:
+      "Family-oriented development with larger three and four-bedroom layouts and dedicated play areas.",
+    buildings: ["A", "B"],
+    amenities: ["elevator", "parking", "garden", "balcony"],
+    premium: false,
+    completionLabel: "Q2 2026",
+    units: buildUnits("pr-donbosko", ["A", "B"], "EUR", 70000, 40),
+    constructionStages: stageTemplate(52),
+  },
+];
+
+export function getNeighborhood(id: string): Neighborhood | undefined {
+  return neighborhoods.find((n) => n.id === id);
+}
+
+export function getListingBySlug(slug: string): Listing | undefined {
+  return listings.find((l) => l.slug === slug);
+}
+
+export function getProjectBySlug(slug: string): Project | undefined {
+  return projects.find((p) => p.slug === slug);
+}
+
+export function getPublisherBySlug(slug: string): Publisher | undefined {
+  return publishers.find((p) => p.slug === slug);
+}
+
+export function relatedListings(listing: Listing, count = 4): Listing[] {
+  return listings
+    .filter(
+      (l) => l.id !== listing.id && l.neighborhoodId === listing.neighborhoodId
+    )
+    .slice(0, count);
+}
+
+export function projectsByDeveloper(publisherId: string): Project[] {
+  return projects.filter((p) => p.developer.id === publisherId);
+}
+
+export function listingsByPublisher(publisherId: string): Listing[] {
+  return listings.filter((l) => l.publisher.id === publisherId);
+}

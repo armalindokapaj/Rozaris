@@ -1,0 +1,262 @@
+"use client";
+
+import Link from "next/link";
+import {
+  BedDouble,
+  Bath,
+  Ruler,
+  Layers,
+  Calendar,
+  Heart,
+  SquareStack,
+  ChevronRight,
+  ShieldCheck,
+} from "lucide-react";
+import { useAppStore } from "@/lib/store";
+import { getNeighborhood } from "@/lib/mockData";
+import { Gallery } from "@/components/listing/Gallery";
+import { PublisherCard } from "@/components/listing/PublisherCard";
+import { MortgageCalculator } from "@/components/listing/MortgageCalculator";
+import { StaticContextMap } from "@/components/map/StaticContextMap";
+import { ListingCard } from "@/components/results/ListingCard";
+import { AMENITY_LABELS, SITE_URL } from "@/lib/constants";
+import {
+  formatArea,
+  formatPrice,
+  formatRelativeDate,
+  transactionLabel,
+  cn,
+} from "@/lib/utils";
+import type { Listing } from "@/lib/types";
+
+export function ListingDetailClient({
+  listing,
+  related,
+}: {
+  listing: Listing;
+  related: Listing[];
+}) {
+  const neighborhood = getNeighborhood(listing.neighborhoodId);
+  const auth = useAppStore((s) => s.auth);
+  const saved = useAppStore((s) => s.saved.listings.includes(listing.id));
+  const toggleSaved = useAppStore((s) => s.toggleSavedListing);
+  const compare = useAppStore((s) => s.compare);
+  const addCompare = useAppStore((s) => s.addCompare);
+  const removeCompareAt = useAppStore((s) => s.removeCompareAt);
+  const compareIndex = compare.findIndex(
+    (c) => c.kind === "listing" && c.entity.id === listing.id
+  );
+  const inCompare = compareIndex !== -1;
+
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-6 lg:px-8 lg:py-10">
+      <nav aria-label="Breadcrumb" className="mb-4 flex items-center gap-1.5 text-xs text-neutral-500">
+        <Link href="/" className="hover:text-neutral-700">
+          Home
+        </Link>
+        <ChevronRight className="h-3 w-3" />
+        <span>{listing.city}</span>
+        <ChevronRight className="h-3 w-3" />
+        <span>{neighborhood?.name}</span>
+        <ChevronRight className="h-3 w-3" />
+        <span className="truncate text-neutral-700">{listing.title}</span>
+      </nav>
+
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px]">
+        <div className="min-w-0 space-y-6">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-xs font-semibold text-white",
+                  listing.transaction === "sale" && "bg-sale",
+                  listing.transaction === "rent" && "bg-rent"
+                )}
+              >
+                {transactionLabel(listing.transaction, listing.rentSubtype)}
+              </span>
+              {listing.premium && (
+                <span className="rounded-full bg-listing-premium px-2.5 py-1 text-xs font-semibold text-white">
+                  Premium
+                </span>
+              )}
+              <span className="text-xs text-neutral-400">
+                Listed {formatRelativeDate(listing.createdAt)}
+              </span>
+            </div>
+            <h1 className="mt-2 text-2xl font-bold text-neutral-900 sm:text-3xl">
+              {listing.title}
+            </h1>
+            <p className="mt-1 text-sm text-neutral-500">
+              {neighborhood?.name}, {listing.city}
+            </p>
+          </div>
+
+          <Gallery seedBase={listing.id} />
+
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-neutral-200 bg-white p-5">
+            <div>
+              <p className="text-2xl font-bold text-neutral-900">
+                {formatPrice(listing.price, listing.currency)}
+                {listing.transaction === "rent" && (
+                  <span className="text-sm font-medium text-neutral-500">
+                    {listing.rentSubtype === "daily" ? "/night" : "/mo"}
+                  </span>
+                )}
+              </p>
+              {listing.pricePerSqm && (
+                <p className="text-xs text-neutral-500">
+                  {formatPrice(Math.round(listing.pricePerSqm), listing.currency)}/m²
+                  {listing.negotiable && " · Negotiable"}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => auth.signedIn && toggleSaved(listing.id)}
+                disabled={!auth.signedIn}
+                aria-pressed={saved}
+                className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3.5 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+              >
+                <Heart className={cn("h-4 w-4", saved && "fill-red-500 text-red-500")} />
+                {saved ? "Saved" : "Save"}
+              </button>
+              <button
+                onClick={() =>
+                  inCompare
+                    ? removeCompareAt(compareIndex)
+                    : addCompare({ kind: "listing", entity: listing })
+                }
+                aria-pressed={inCompare}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-control px-3.5 py-2.5 text-sm font-semibold",
+                  inCompare
+                    ? "bg-brand-500 text-white"
+                    : "border border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+                )}
+              >
+                <SquareStack className="h-4 w-4" />
+                {inCompare ? "In compare" : "Compare"}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Fact icon={BedDouble} label="Bedrooms" value={listing.bedrooms} />
+            <Fact icon={Bath} label="Bathrooms" value={listing.bathrooms} />
+            <Fact icon={Ruler} label="Area" value={formatArea(listing.area)} />
+            <Fact
+              icon={Layers}
+              label="Floor"
+              value={listing.floor ? `${listing.floor}/${listing.totalFloors}` : "—"}
+            />
+          </div>
+
+          <section>
+            <h2 className="text-base font-bold text-neutral-900">Description</h2>
+            <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-neutral-600">
+              {listing.description}
+            </p>
+          </section>
+
+          {listing.amenities.length > 0 && (
+            <section>
+              <h2 className="text-base font-bold text-neutral-900">Amenities</h2>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {listing.amenities.map((a) => (
+                  <span
+                    key={a}
+                    className="rounded-pill border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600"
+                  >
+                    {AMENITY_LABELS[a]}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <h2 className="text-base font-bold text-neutral-900">Location & building context</h2>
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-neutral-500">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Exact unit position may be approximated for privacy; the building is accurate.
+            </p>
+            <StaticContextMap
+              center={listing.coords}
+              className="mt-3 aspect-[16/9] w-full"
+            />
+          </section>
+
+          <div className="grid grid-cols-2 gap-3 rounded-panel border border-neutral-200 bg-white p-5 text-sm sm:grid-cols-3">
+            <MetaRow icon={Calendar} label="Year built" value={listing.yearBuilt ?? "—"} />
+            <MetaRow label="Condition" value={listing.condition.replace("_", " ")} />
+            <MetaRow label="Property type" value={listing.propertyType} />
+          </div>
+
+          {related.length > 0 && (
+            <section>
+              <h2 className="text-base font-bold text-neutral-900">
+                More in {neighborhood?.name}
+              </h2>
+              <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
+                {related.map((l) => (
+                  <ListingCard key={l.id} listing={l} variant="grid" />
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+
+        <aside className="space-y-5 lg:sticky lg:top-20 lg:self-start">
+          <PublisherCard
+            publisher={listing.publisher}
+            whatsappMessage={`Hi, I'm interested in "${listing.title}"`}
+            contentTitle={listing.title}
+            contentUrl={`${SITE_URL}/listing/${listing.slug}`}
+          />
+          {listing.transaction === "sale" && (
+            <MortgageCalculator initialPrice={listing.price} />
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function Fact({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof BedDouble;
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-card border border-neutral-200 bg-white p-3.5 text-center">
+      <Icon className="mx-auto h-4.5 w-4.5 text-brand-500" />
+      <p className="mt-1.5 text-sm font-bold text-neutral-900">{value}</p>
+      <p className="text-[11px] text-neutral-500">{label}</p>
+    </div>
+  );
+}
+
+function MetaRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon?: typeof Calendar;
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div>
+      <p className="flex items-center gap-1.5 text-xs text-neutral-500">
+        {Icon && <Icon className="h-3.5 w-3.5" />}
+        {label}
+      </p>
+      <p className="mt-0.5 font-medium capitalize text-neutral-800">{value}</p>
+    </div>
+  );
+}

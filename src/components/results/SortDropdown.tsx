@@ -1,0 +1,63 @@
+"use client";
+
+import { useRef, useState } from "react";
+import { ArrowUpDown, Check, ChevronDown } from "lucide-react";
+import { useAppStore } from "@/lib/store";
+import { useClickOutside } from "@/hooks/useClickOutside";
+import { SORT_LABELS } from "@/lib/constants";
+import type { SortOption } from "@/lib/types";
+
+const OPTIONS: SortOption[] = [
+  "recommended",
+  "premium",
+  "newest",
+  "price_asc",
+  "price_desc",
+  "area_desc",
+  "area_asc",
+  "distance",
+];
+
+export function SortDropdown() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const sort = useAppStore((s) => s.filters.sort);
+  const setFilters = useAppStore((s) => s.setFilters);
+  useClickOutside(ref, () => setOpen(false), open);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50"
+      >
+        <ArrowUpDown className="h-3.5 w-3.5" />
+        {SORT_LABELS[sort]}
+        <ChevronDown className="h-3 w-3" />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="absolute right-0 z-30 mt-2 w-52 rounded-card border border-neutral-200 bg-white p-1.5 shadow-xl"
+        >
+          {OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              role="option"
+              aria-selected={sort === opt}
+              onClick={() => {
+                setFilters({ sort: opt });
+                setOpen(false);
+              }}
+              className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              {SORT_LABELS[opt]}
+              {sort === opt && <Check className="h-3.5 w-3.5 text-brand-500" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
