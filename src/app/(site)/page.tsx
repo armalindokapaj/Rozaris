@@ -46,7 +46,7 @@ export default function HomePage() {
       <div
         className={cn(
           "relative min-h-0 w-full flex-1 lg:flex-none lg:h-full",
-          mode === "map" ? "lg:w-[60%]" : "lg:w-[20%]"
+          mode === "map" ? "lg:w-[60%]" : "lg:w-[40%]"
         )}
       >
         <MapView className="lg:rounded-panel" controlsClassName="top-3 right-3" />
@@ -106,7 +106,7 @@ export default function HomePage() {
       <div
         className={cn(
           "hidden min-h-0 lg:block lg:h-full lg:shrink-0",
-          mode === "map" ? "lg:w-[20%]" : "lg:w-[60%]"
+          mode === "map" ? "lg:w-[20%]" : "lg:w-[40%]"
         )}
       >
         <div className="glass-panel h-full overflow-hidden rounded-panel shadow-sm">

@@ -6,6 +6,8 @@ import { useRouter, usePathname } from "next/navigation";
 import { ChevronDown, Heart, Menu, SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
+import { useCompareHint } from "@/hooks/useCompareHint";
+import { CompareHint } from "@/components/compare/CompareHint";
 import { Logo } from "./Logo";
 import { LanguageCurrencySelector } from "./LanguageCurrencySelector";
 import { AccountMenu } from "./AccountMenu";
@@ -61,8 +63,8 @@ export function Header() {
   const filters = useAppStore((s) => s.filters);
   const setFilters = useAppStore((s) => s.setFilters);
   const compareCount = useAppStore((s) => s.compare.length);
-  const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
   const savedCount = useAppStore((s) => s.saved.listings.length + s.saved.projects.length);
+  const { hint, hintRef, handleCompareClick } = useCompareHint();
 
   function goHomeWithTransaction(transaction: "buy" | "rent") {
     setFilters({ transaction, projectsOnly: false });
@@ -141,7 +143,7 @@ export function Header() {
             )}
           </Link>
           <button
-            onClick={() => setCompareOverlayOpen(true)}
+            onClick={handleCompareClick}
             className="hidden items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 sm:flex"
           >
             <SquareStack className="h-4 w-4" />
@@ -168,6 +170,7 @@ export function Header() {
         </div>
       </header>
       <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+      <CompareHint hint={hint} hintRef={hintRef} />
     </>
   );
 }

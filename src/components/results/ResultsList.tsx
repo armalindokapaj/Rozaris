@@ -87,7 +87,7 @@ export function ResultsList({
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto scroll-thin p-4">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-3 gap-4">
             {pageRows.map((row) =>
               row.kind === "listing" ? (
                 <ListingCard key={row.item.id} listing={row.item} variant="grid" />
