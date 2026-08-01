@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { ChevronDown, Heart, Menu, SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
@@ -33,6 +33,14 @@ function ResourcesDropdown() {
       {open && (
         <div className="absolute left-0 z-40 mt-2 w-56 rounded-card border border-neutral-200 bg-white p-1.5 shadow-xl">
           <Link
+            href="/buyer/signup"
+            onClick={() => setOpen(false)}
+            className="block rounded-lg px-3 py-2 text-sm font-medium text-brand-600 hover:bg-brand-50"
+          >
+            {t("buyer.becomeABuyer")}
+          </Link>
+          <div className="my-1.5 h-px bg-neutral-100" />
+          <Link
             href="/resources/mortgage-calculator"
             onClick={() => setOpen(false)}
             className="block rounded-lg px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
@@ -60,27 +68,13 @@ function ResourcesDropdown() {
 }
 
 export function Header() {
-  const router = useRouter();
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const filters = useAppStore((s) => s.filters);
-  const setFilters = useAppStore((s) => s.setFilters);
-  const setTransaction = useAppStore((s) => s.setTransaction);
   const compareCount = useAppStore((s) => s.compare.length);
   const savedCount = useAppStore((s) => s.saved.listings.length + s.saved.projects.length);
   const { hint: compareHint, hintRef: compareHintRef, handleCompareClick } = useCompareHint();
   const { hint: savedHint, hintRef: savedHintRef, handleSavedClick } = useSavedHint();
   const { t } = useT();
-
-  function goSearch() {
-    setTransaction("buy");
-    if (pathname !== "/") router.push("/");
-  }
-
-  function goNewProjects() {
-    setFilters({ projectsOnly: true });
-    if (pathname !== "/") router.push("/");
-  }
 
   const navLinkClass =
     "rounded-control px-2 py-2 text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors";
@@ -91,21 +85,15 @@ export function Header() {
         <Logo />
 
         <nav className="ml-2 hidden items-center gap-0.5 lg:flex" aria-label={t("common.primaryNav")}>
-          <button
-            onClick={goSearch}
+          <Link
+            href="/new-projects"
             className={cn(
-              navLinkClass,
-              filters.transaction === "buy" && !filters.projectsOnly && "text-neutral-900"
+              "rounded-control px-2 py-2 text-sm font-medium text-neutral-600 transition-all duration-200 hover:scale-105 hover:bg-brand-50 hover:text-brand-600",
+              pathname === "/new-projects" && "text-neutral-900"
             )}
           >
-            {t("nav.search")}
-          </button>
-          <button
-            onClick={goNewProjects}
-            className={cn(navLinkClass, filters.projectsOnly && "text-neutral-900")}
-          >
             {t("nav.newProjects")}
-          </button>
+          </Link>
           <Link href="/developers" className={navLinkClass}>
             {t("nav.findAgents")}
           </Link>

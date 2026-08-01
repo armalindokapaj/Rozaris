@@ -36,9 +36,12 @@ export function ProjectCard({ project }: { project: Project }) {
       role="button"
       tabIndex={0}
       className={cn(
-        "block cursor-pointer overflow-hidden rounded-card border bg-white shadow-sm transition-all",
+        "block cursor-pointer overflow-hidden rounded-card border shadow-sm transition-all",
+        project.premium ? "bg-amber-50/70" : "bg-white",
         isActive
           ? "border-listing-new-dev shadow-lg ring-1 ring-brand-200"
+          : project.premium
+          ? "border-listing-premium/50 hover:z-10 hover:scale-[1.02] hover:border-listing-premium hover:shadow-lg"
           : "border-neutral-200 hover:border-neutral-300 hover:shadow-md"
       )}
     >
@@ -58,7 +61,7 @@ export function ProjectCard({ project }: { project: Project }) {
       <div className="flex flex-col gap-1.5 p-3.5">
         <p className="truncate text-sm font-semibold text-neutral-900">{project.name}</p>
         <p className="truncate text-xs text-neutral-500">
-          {project.developer.name} · {neighborhood?.name}
+          {project.developer.name} · {neighborhood?.name ?? project.city}
         </p>
         <div className="mt-1 flex flex-col gap-0.5 text-xs text-neutral-500">
           <span>{t(STATUS_LABEL_KEY[project.status])}</span>

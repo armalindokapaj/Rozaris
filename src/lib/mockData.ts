@@ -1,4 +1,5 @@
 import type {
+  Conversation,
   Listing,
   Neighborhood,
   Project,
@@ -347,6 +348,8 @@ export const projects: Project[] = [
     coords: { lat: 41.3345, lng: 19.8278 },
     neighborhoodId: "n-liqeni",
     city: CITY,
+    setting: "tower",
+    propertyType: "apartment",
     availableUnits: 42,
     totalUnits: 96,
     heroImage: "marina",
@@ -372,6 +375,8 @@ export const projects: Project[] = [
     coords: { lat: 41.3268, lng: 19.8103 },
     neighborhoodId: "n-komuna",
     city: CITY,
+    setting: "tower",
+    propertyType: "studio",
     availableUnits: 58,
     totalUnits: 72,
     heroImage: "cityview",
@@ -397,6 +402,8 @@ export const projects: Project[] = [
     coords: { lat: 41.3223, lng: 19.8181 },
     neighborhoodId: "n-blloku",
     city: CITY,
+    setting: "tower",
+    propertyType: "apartment",
     availableUnits: 12,
     totalUnits: 40,
     heroImage: "boulevard",
@@ -422,6 +429,8 @@ export const projects: Project[] = [
     coords: { lat: 41.3006, lng: 19.7714 },
     neighborhoodId: "n-kombinat",
     city: CITY,
+    setting: "residential_complex",
+    propertyType: "villa",
     availableUnits: 120,
     totalUnits: 120,
     heroImage: "greenpark",
@@ -447,6 +456,8 @@ export const projects: Project[] = [
     coords: { lat: 41.3082, lng: 19.8241 },
     neighborhoodId: "n-donbosko",
     city: CITY,
+    setting: "residential_complex",
+    propertyType: "villa",
     availableUnits: 30,
     totalUnits: 64,
     heroImage: "donbosko",
@@ -461,6 +472,60 @@ export const projects: Project[] = [
     completionLabel: "Q2 2026",
     units: buildUnits("pr-donbosko", ["A", "B"], "EUR", 70000, 40),
     constructionStages: stageTemplate(52),
+  },
+  {
+    id: "pr-riviera",
+    slug: "riviera-bay-residence",
+    name: "Riviera Bay Residence",
+    developer: publishers[4],
+    status: "under_construction",
+    progressPercent: 45,
+    coords: { lat: 40.4667, lng: 19.4903 },
+    neighborhoodId: "n-vlore-riviera",
+    city: "Vlorë",
+    setting: "beach",
+    propertyType: "apartment",
+    availableUnits: 54,
+    totalUnits: 80,
+    heroImage: "riviera",
+    gallery: ["a", "b", "c"],
+    description: {
+      en: "Beachfront residence on the Vlorë riviera with private beach access, sea-view terraces and a resort-style pool deck.",
+      sq: "Rezidencë buzë detit në rivierën e Vlorës me akses privat në plazh, tarraca me pamje nga deti dhe pishinë në stil resort.",
+    },
+    buildings: ["A", "B"],
+    amenities: ["elevator", "parking", "pool", "terrace", "accessibility"],
+    premium: true,
+    completionLabel: "Q2 2026",
+    units: buildUnits("pr-riviera", ["A", "B"], "EUR", 75000, 44),
+    constructionStages: stageTemplate(45),
+  },
+  {
+    id: "pr-alpine",
+    slug: "alpine-ridge-residences",
+    name: "Alpine Ridge Residences",
+    developer: publishers[0],
+    status: "coming_soon",
+    progressPercent: 8,
+    coords: { lat: 40.6186, lng: 20.7808 },
+    neighborhoodId: "n-korce-ridge",
+    city: "Korçë",
+    setting: "residential_complex",
+    propertyType: "villa",
+    availableUnits: 36,
+    totalUnits: 36,
+    heroImage: "alpine",
+    gallery: ["a", "b"],
+    description: {
+      en: "Mountain-view chalet-style residences near Korçë, designed as four-season homes with panoramic ridge views.",
+      sq: "Rezidenca në stil shale me pamje nga mali pranë Korçës, të projektuara si shtëpi katërsezonale me pamje panoramike nga kodrat.",
+    },
+    buildings: ["A"],
+    amenities: ["parking", "garden", "balcony"],
+    premium: false,
+    completionLabel: "Q4 2027",
+    units: buildUnits("pr-alpine", ["A"], "EUR", 65000, 20),
+    constructionStages: stageTemplate(8),
   },
 ];
 
@@ -495,3 +560,85 @@ export function projectsByDeveloper(publisherId: string): Project[] {
 export function listingsByPublisher(publisherId: string): Listing[] {
   return listings.filter((l) => l.publisher.id === publisherId);
 }
+
+// --- Demo publisher account + buyer<->seller messaging seed data ---
+// (used by the mock Publisher and Buyer dashboards; nothing here is fetched
+// from or delivered to a real backend)
+
+export const DEMO_PUBLISHER: Publisher = publishers[0];
+export const DEMO_BUYER_ID = "buyer-demo-1";
+
+const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
+
+export const seedConversations: Conversation[] = [
+  {
+    id: "conv-1",
+    buyerId: DEMO_BUYER_ID,
+    buyerName: "Andi Hoxha",
+    publisherId: publishers[0].id,
+    publisherName: publishers[0].name,
+    listingTitle: projects[0].name,
+    listingSlug: projects[0].slug,
+    messages: [
+      {
+        id: "conv-1-m1",
+        senderId: DEMO_BUYER_ID,
+        senderName: "Andi Hoxha",
+        senderRole: "buyer",
+        text: `Hi, is a 2-bedroom unit in ${projects[0].name} still available? Interested in the lake-view side.`,
+        createdAt: hoursAgo(30),
+      },
+      {
+        id: "conv-1-m2",
+        senderId: publishers[0].id,
+        senderName: publishers[0].name,
+        senderRole: "publisher",
+        text: "Hello! Yes, we have a few 2-bedroom units left in Building A with lake views. Would you like the floor plans?",
+        createdAt: hoursAgo(27),
+      },
+      {
+        id: "conv-1-m3",
+        senderId: DEMO_BUYER_ID,
+        senderName: "Andi Hoxha",
+        senderRole: "buyer",
+        text: "Yes please, and what's the earliest handover date?",
+        createdAt: hoursAgo(26),
+      },
+      {
+        id: "conv-1-m4",
+        senderId: publishers[0].id,
+        senderName: publishers[0].name,
+        senderRole: "publisher",
+        text: `We're at ${projects[0].progressPercent}% construction — handover is targeted for ${projects[0].completionLabel}.`,
+        createdAt: hoursAgo(25),
+      },
+    ],
+  },
+  {
+    id: "conv-2",
+    buyerId: DEMO_BUYER_ID,
+    buyerName: "Andi Hoxha",
+    publisherId: publishers[3].id,
+    publisherName: publishers[3].name,
+    listingTitle: listings[0].title,
+    listingSlug: listings[0].slug,
+    messages: [
+      {
+        id: "conv-2-m1",
+        senderId: DEMO_BUYER_ID,
+        senderName: "Andi Hoxha",
+        senderRole: "buyer",
+        text: `Hi, is "${listings[0].title}" still on the market? Is the price negotiable?`,
+        createdAt: hoursAgo(5),
+      },
+      {
+        id: "conv-2-m2",
+        senderId: publishers[3].id,
+        senderName: publishers[3].name,
+        senderRole: "publisher",
+        text: "Hi Andi, yes it's still available. There's some room to negotiate — happy to arrange a viewing this week.",
+        createdAt: hoursAgo(4),
+      },
+    ],
+  },
+];

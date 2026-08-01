@@ -50,7 +50,6 @@ function areaScaleFor(filters: FilterState): SliderScale {
 
 const PROPERTY_TYPES: PropertyType[] = [
   "apartment",
-  "house",
   "villa",
   "studio",
   "land",
@@ -126,17 +125,25 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
 
   return (
     <div className={cn("space-y-5", compact ? "px-4 py-4" : "p-5")}>
-      {/* Buy / Rent */}
-      <div className="grid grid-cols-2 gap-2 rounded-control bg-neutral-100 p-1">
+      {/* Buy / Rent — a sliding accent-colored "switch" so toggling reads as
+          on/off rather than an abrupt background swap. */}
+      <div className="relative grid grid-cols-2 rounded-control bg-neutral-100 p-1">
+        <div
+          className={cn(
+            "absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-[10px] bg-brand-500 shadow-sm transition-transform duration-300 ease-in-out",
+            filters.transaction === "rent" && "translate-x-full"
+          )}
+          aria-hidden="true"
+        />
         {(["buy", "rent"] as const).map((txn) => (
           <button
             key={txn}
             onClick={() => setTransaction(txn)}
             className={cn(
-              "rounded-[10px] py-2 text-sm font-semibold transition-colors",
+              "relative z-10 rounded-[10px] py-2 text-sm font-semibold transition-colors duration-200",
               filters.transaction === txn
-                ? "bg-white text-neutral-900 shadow-sm"
-                : "text-neutral-500 hover:text-neutral-700"
+                ? "text-white"
+                : "text-neutral-500 hover:text-neutral-700 hover:bg-white/60"
             )}
           >
             {txn === "buy" ? t("nav.buy") : t("nav.rent")}
@@ -206,7 +213,7 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
           valueMin={filters.priceMin}
           valueMax={filters.priceMax}
           onChange={(priceMin, priceMax) => setFilters({ priceMin, priceMax })}
-          formatValue={(v) => formatPrice(v, "EUR")}
+          formatValue={(v) => formatPrice(v, "EUR", { compact: v > 99_000 })}
           ariaLabel={t("filters.priceRangeAria")}
         />
       </Section>
@@ -227,26 +234,26 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
       <div className="grid grid-cols-2 gap-4">
         <Section label={t("filters.bedrooms")}>
           <div className="flex flex-wrap gap-1.5">
-            {[null, 1, 2, 3, 4].map((v) => (
+            {[1, 2, 3].map((v) => (
               <Pill
-                key={String(v)}
+                key={v}
                 active={filters.bedrooms === v}
-                onClick={() => setFilters({ bedrooms: v })}
+                onClick={() => setFilters({ bedrooms: filters.bedrooms === v ? null : v })}
               >
-                {v === null ? t("common.any") : t("filters.countPlus", { count: v })}
+                {t("filters.countPlus", { count: v })}
               </Pill>
             ))}
           </div>
         </Section>
         <Section label={t("filters.bathrooms")}>
           <div className="flex flex-wrap gap-1.5">
-            {[null, 1, 2, 3].map((v) => (
+            {[1, 2].map((v) => (
               <Pill
-                key={String(v)}
+                key={v}
                 active={filters.bathrooms === v}
-                onClick={() => setFilters({ bathrooms: v })}
+                onClick={() => setFilters({ bathrooms: filters.bathrooms === v ? null : v })}
               >
-                {v === null ? t("common.any") : t("filters.countPlus", { count: v })}
+                {t("filters.countPlus", { count: v })}
               </Pill>
             ))}
           </div>

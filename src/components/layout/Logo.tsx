@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 
 export function Logo({ className }: { className?: string }) {
   const { t } = useT();
+  const setTransaction = useAppStore((s) => s.setTransaction);
   return (
     <Link
       href="/"
+      onClick={() => setTransaction("buy")}
       className={cn(
         "flex items-center gap-2 shrink-0 font-semibold tracking-tight text-neutral-900",
         className

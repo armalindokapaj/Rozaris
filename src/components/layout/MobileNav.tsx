@@ -41,7 +41,7 @@ export function MobileNav({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const { auth, signIn, signOut, compare, setMode, setFilters } = useAppStore();
+  const { auth, signIn, signOut, compare, setMode } = useAppStore();
   const savedCount = useAppStore((s) => s.saved.listings.length + s.saved.projects.length);
   const [resourcesOpen, setResourcesOpen] = useState(false);
   const { t } = useT();
@@ -116,8 +116,7 @@ export function MobileNav({
           </button>
           <button
             onClick={() => {
-              setFilters({ projectsOnly: true });
-              router.push("/");
+              router.push("/new-projects");
               onClose();
             }}
             className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] font-medium text-neutral-700 hover:bg-neutral-100"
@@ -125,6 +124,15 @@ export function MobileNav({
             <Building2 className="h-5 w-5 text-neutral-500" />
             {t("nav.newProjects")}
           </button>
+
+          <Link
+            href="/buyer/signup"
+            onClick={onClose}
+            className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] font-medium text-brand-600 hover:bg-brand-50"
+          >
+            <Heart className="h-5 w-5 text-brand-500" />
+            {t("buyer.becomeABuyer")}
+          </Link>
 
           <button
             onClick={() => setResourcesOpen((v) => !v)}
@@ -195,6 +203,14 @@ export function MobileNav({
 
       <div className="shrink-0 border-t border-neutral-200 px-4 py-3">
         {auth.signedIn ? (
+          <>
+            <Link
+              href="/buyer/dashboard"
+              onClick={onClose}
+              className="mb-2 flex items-center gap-2 rounded-control px-2 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+            >
+              <Heart className="h-4 w-4" /> {t("nav.buyerDashboard")}
+            </Link>
           <div className="flex items-center gap-3 py-2">
             <PlaceholderImage
               seed={auth.name ?? "user"}
@@ -216,6 +232,7 @@ export function MobileNav({
               <LogOut className="h-4 w-4" />
             </button>
           </div>
+          </>
         ) : (
           <button
             onClick={() => signIn("John Doe", "publisher")}

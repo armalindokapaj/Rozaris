@@ -138,6 +138,11 @@ export interface Unit {
   videoUrl?: string;
 }
 
+/** Broad setting a new-development project sits in — used by the New Projects
+ * directory's filters, which browse across cities/regions rather than a
+ * single map viewport. */
+export type ProjectSetting = "residential_complex" | "beach" | "tower";
+
 export interface Project {
   id: string;
   slug: string;
@@ -148,6 +153,10 @@ export interface Project {
   coords: GeoPoint;
   neighborhoodId: string;
   city: string;
+  setting: ProjectSetting;
+  /** Predominant unit type in this development — used by the New Projects
+   * directory's property-type filter. */
+  propertyType: PropertyType;
   availableUnits: number;
   totalUnits: number;
   heroImage: string;
@@ -207,3 +216,40 @@ export interface FilterState {
 
 export type ViewMode = "map" | "list";
 export type MobileSheet = "listings" | "filters" | "compare" | null;
+
+// --- Buyer account, saved-preference feed, and buyer<->seller messaging ---
+
+export interface BuyerPreferences {
+  transaction: "buy" | "rent";
+  propertyTypes: PropertyType[];
+  priceMax: number | null;
+  location: string;
+}
+
+export interface BuyerProfile {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  preferences: BuyerPreferences;
+}
+
+export interface Message {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: "buyer" | "publisher";
+  text: string;
+  createdAt: string;
+}
+
+export interface Conversation {
+  id: string;
+  buyerId: string;
+  buyerName: string;
+  publisherId: string;
+  publisherName: string;
+  listingTitle?: string;
+  listingSlug?: string;
+  messages: Message[];
+}

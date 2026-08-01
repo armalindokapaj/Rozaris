@@ -54,7 +54,7 @@ export function ListingCard({
         isActive
           ? "border-brand-400 shadow-lg ring-1 ring-brand-200"
           : listing.premium
-          ? "border-listing-premium/50 hover:border-listing-premium hover:shadow-md"
+          ? "border-listing-premium/50 hover:z-10 hover:scale-[1.02] hover:border-listing-premium hover:shadow-lg"
           : "border-neutral-200 hover:border-neutral-300 hover:shadow-md",
         "flex flex-col"
       )}

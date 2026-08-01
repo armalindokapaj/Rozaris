@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type {
+  BuyerPreferences,
+  BuyerProfile,
   CompareEntity,
+  Conversation,
   Currency,
   FilterState,
   GeoPoint,
@@ -10,6 +13,14 @@ import type {
   SavedSearch,
   ViewMode,
 } from "./types";
+import { DEMO_PUBLISHER, seedConversations } from "./mockData";
+
+export const defaultBuyerPreferences: BuyerPreferences = {
+  transaction: "buy",
+  propertyTypes: [],
+  priceMax: null,
+  location: "Tirana, Albania",
+};
 
 // Default until an admin sets a real rate in the Admin Console.
 export const DEFAULT_EUR_TO_ALL_RATE = 97;
@@ -44,7 +55,7 @@ export interface MapBounds {
 interface AuthState {
   signedIn: boolean;
   name: string | null;
-  role: "visitor" | "publisher" | "admin";
+  role: "visitor" | "publisher" | "admin" | "buyer";
 }
 
 interface SavedState {
@@ -120,6 +131,15 @@ interface AppState {
   // Onboarding (Section 25.1)
   onboardingDismissed: boolean;
   dismissOnboarding: () => void;
+
+  // Buyer account: profile + saved-preference feed
+  buyerProfile: BuyerProfile | null;
+  setBuyerProfile: (profile: BuyerProfile) => void;
+  updateBuyerPreferences: (partial: Partial<BuyerPreferences>) => void;
+
+  // Buyer <-> Seller messaging (mock — nothing is delivered off-device)
+  conversations: Conversation[];
+  sendMessage: (conversationId: string, text: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -249,6 +269,45 @@ export const useAppStore = create<AppState>()(
 
       onboardingDismissed: false,
       dismissOnboarding: () => set({ onboardingDismissed: true }),
+
+      buyerProfile: null,
+      setBuyerProfile: (buyerProfile) => set({ buyerProfile }),
+      updateBuyerPreferences: (partial) =>
+        set((s) =>
+          s.buyerProfile
+            ? { buyerProfile: { ...s.buyerProfile, preferences: { ...s.buyerProfile.preferences, ...partial } } }
+            : s
+        ),
+
+      conversations: seedConversations,
+      sendMessage: (conversationId, text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        const { auth, buyerProfile } = get();
+        const isBuyer = auth.role === "buyer";
+        const senderId = isBuyer ? buyerProfile?.id ?? "buyer-unknown" : DEMO_PUBLISHER.id;
+        const senderName = isBuyer ? buyerProfile?.name ?? auth.name ?? "Buyer" : auth.name ?? DEMO_PUBLISHER.name;
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === conversationId
+              ? {
+                  ...c,
+                  messages: [
+                    ...c.messages,
+                    {
+                      id: `${conversationId}-m${c.messages.length + 1}-${Date.now()}`,
+                      senderId,
+                      senderName,
+                      senderRole: isBuyer ? "buyer" : "publisher",
+                      text: trimmed,
+                      createdAt: new Date().toISOString(),
+                    },
+                  ],
+                }
+              : c
+          ),
+        }));
+      },
     }),
     {
       name: "rozaris-store",
@@ -264,6 +323,8 @@ export const useAppStore = create<AppState>()(
         compare: s.compare,
         eurToAllRate: s.eurToAllRate,
         eurToAllRateUpdatedAt: s.eurToAllRateUpdatedAt,
+        buyerProfile: s.buyerProfile,
+        conversations: s.conversations,
       }),
     }
   )

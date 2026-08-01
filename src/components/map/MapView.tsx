@@ -277,6 +277,7 @@ export function MapView({
       ) : (
         <>
           <div ref={containerRef} className="h-full w-full" />
+          <div className="cloud-texture" aria-hidden="true" />
           {!ready && (
             <div className="absolute inset-0 flex items-center justify-center bg-neutral-100">
               <div className="h-10 w-10 animate-spin rounded-full border-[3px] border-brand-200 border-t-brand-500" />

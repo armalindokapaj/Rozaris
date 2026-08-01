@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, LayoutDashboard, LogOut, ShieldCheck, User } from "lucide-react";
+import { ChevronDown, Heart, LayoutDashboard, LogOut, ShieldCheck, User } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { useT } from "@/lib/i18n/useT";
@@ -68,6 +68,13 @@ export function AccountMenu() {
             className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
           >
             <LayoutDashboard className="h-4 w-4" /> {t("nav.publisherDashboard")}
+          </Link>
+          <Link
+            href="/buyer/dashboard"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
+          >
+            <Heart className="h-4 w-4" /> {t("nav.buyerDashboard")}
           </Link>
           <Link
             href="/admin"

@@ -108,12 +108,57 @@ body {
   font-feature-settings: "tnum" 1, "cv11" 1;
 }
 
-/* Utility: glass panel per PRD 24.1 (~10% translucent + blur) */
-.glass-panel {
-  background: color-mix(in srgb, white 88%, transparent);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  border: 1px solid color-mix(in srgb, white 60%, #d0cee1 40%);
+/* Utility: glass panel per PRD 24.1 (~10% translucent + blur), with a soft
+   "cloud" texture — a gentle light-glow gradient plus a faint grain — so
+   panels read as soft/natural rather than a flat tinted rectangle.
+   Wrapped in @layer components so Tailwind utility classes on the same
+   element (e.g. `absolute` on ModeSwitch/OnboardingHint) still win — custom
+   CSS declared after `@import "tailwindcss"` without a layer is unlayered
+   and would otherwise always beat Tailwind's own (layered) utilities. */
+@layer components {
+  .glass-panel {
+    position: relative;
+    /* Isolates z-index of the grain pseudo-element (and any popovers a
+       consumer opens inside) to this panel, so a negative z-index below
+       can put the grain behind real content without having to bump every
+       child to its own stacking context (which used to cap child popovers
+       like NewProjectsClient's PopoverFilter from ever stacking above a
+       sibling section). */
+    isolation: isolate;
+    background-color: color-mix(in srgb, white 88%, transparent);
+    background-image:
+      radial-gradient(120% 90% at 8% 0%, rgba(255, 255, 255, 0.65), transparent 55%),
+      radial-gradient(100% 85% at 100% 100%, rgba(139, 124, 255, 0.08), transparent 60%);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid color-mix(in srgb, white 60%, #d0cee1 40%);
+  }
+
+  .glass-panel::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    border-radius: inherit;
+    opacity: 0.05;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+  }
+
+  .cloud-texture {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    opacity: 0.05;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+  }
 }
 
 .glass-panel-dark {

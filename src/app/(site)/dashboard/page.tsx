@@ -9,6 +9,7 @@ import {
   CreditCard,
   LayoutDashboard,
   ListChecks,
+  MessageCircle,
   User,
   Plus,
   Upload,
@@ -19,18 +20,18 @@ import {
   MessageSquareWarning,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { listingsByPublisher, projectsByDeveloper, publishers } from "@/lib/mockData";
+import { listingsByPublisher, projectsByDeveloper, DEMO_PUBLISHER } from "@/lib/mockData";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
+import { MessagesPanel } from "@/components/messages/MessagesPanel";
 import { cn } from "@/lib/utils";
-
-const DEMO_PUBLISHER = publishers[0]; // ALBA Construction — demo account
 
 const TABS = [
   { id: "overview", labelKey: "dashboard.tabOverview", icon: LayoutDashboard },
   { id: "listings", labelKey: "dashboard.tabListings", icon: ListChecks },
   { id: "projects", labelKey: "dashboard.tabProjectsUnits", icon: Building2 },
+  { id: "messages", labelKey: "dashboard.tabMessages", icon: MessageCircle },
   { id: "media", labelKey: "dashboard.tabMediaModels", icon: Camera },
   { id: "billing", labelKey: "dashboard.tabBillingPremium", icon: CreditCard },
   { id: "notifications", labelKey: "dashboard.tabNotifications", icon: Bell },
@@ -103,6 +104,7 @@ export default function DashboardPage() {
         {tab === "overview" && <OverviewTab listingCount={myListings.length} projectCount={myProjects.length} />}
         {tab === "listings" && <ListingsTab listings={myListings} />}
         {tab === "projects" && <ProjectsTab projects={myProjects} />}
+        {tab === "messages" && <MessagesTab />}
         {tab === "media" && <MediaTab />}
         {tab === "billing" && <BillingTab />}
         {tab === "notifications" && <NotificationsTab />}
@@ -356,6 +358,19 @@ function ProjectsTab({ projects }: { projects: ReturnType<typeof projectsByDevel
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function MessagesTab() {
+  const { t } = useT();
+  const conversations = useAppStore((s) => s.conversations);
+  const myConversations = conversations.filter((c) => c.publisherId === DEMO_PUBLISHER.id);
+
+  return (
+    <div className="space-y-4">
+      <h1 className="text-xl font-bold text-neutral-900">{t("dashboard.tabMessages")}</h1>
+      <MessagesPanel conversations={myConversations} viewerId={DEMO_PUBLISHER.id} />
     </div>
   );
 }

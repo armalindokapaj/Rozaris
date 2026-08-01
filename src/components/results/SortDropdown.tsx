@@ -29,20 +29,20 @@ export function SortDropdown() {
   useClickOutside(ref, () => setOpen(false), open);
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative min-w-0 max-w-full" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex items-center gap-1.5 rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50"
+        className="flex w-full min-w-0 max-w-full items-center justify-center gap-1 rounded-control border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-medium text-neutral-600 hover:bg-neutral-50"
       >
-        <ArrowUpDown className="h-3.5 w-3.5" />
-        {sortLabels[sort]}
-        <ChevronDown className="h-3 w-3" />
+        <ArrowUpDown className="h-3 w-3 shrink-0" />
+        <span className="truncate">{sortLabels[sort]}</span>
+        <ChevronDown className="h-3 w-3 shrink-0" />
       </button>
       {open && (
         <div
           role="listbox"
-          className="absolute right-0 z-30 mt-2 w-52 rounded-card border border-neutral-200 bg-white p-1.5 shadow-xl"
+          className="absolute left-1/2 z-30 mt-2 w-48 max-w-[90vw] -translate-x-1/2 rounded-card border border-neutral-200 bg-white p-1.5 shadow-xl"
         >
           {OPTIONS.map((opt) => (
             <button
