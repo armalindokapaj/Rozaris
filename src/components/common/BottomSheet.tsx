@@ -12,10 +12,14 @@ import { X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 
-export type SheetSnap = "collapsed" | "half" | "expanded";
+export type SheetSnap = "collapsed" | "preview" | "half" | "expanded";
 
 const SNAP_VH: Record<SheetSnap, number> = {
   collapsed: 0.16,
+  // Just tall enough for the listings sheet's category-quick-filters row
+  // and popular-areas row — the default state, with results cropped out
+  // until the visitor drags the sheet up further.
+  preview: 0.28,
   half: 0.52,
   expanded: 0.92,
 };

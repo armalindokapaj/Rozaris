@@ -5,11 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   Building2,
   ChevronDown,
-  Home,
   Info,
-  List,
   LogOut,
-  Mail,
   Map as MapIcon,
   SquareStack,
   Users,
@@ -26,9 +23,7 @@ import { LanguageCurrencySelector } from "./LanguageCurrencySelector";
 import { cn } from "@/lib/utils";
 
 const links = [
-  { href: "/", labelKey: "nav.home", icon: Home },
   { href: "/?mode=map", labelKey: "nav.map", icon: MapIcon },
-  { href: "/?mode=list", labelKey: "nav.list", icon: List },
   { href: "/saved", labelKey: "nav.saved", icon: Heart },
   { href: "/developers", labelKey: "nav.findAgents", icon: Users },
 ] as const;
@@ -89,7 +84,6 @@ export function MobileNav({
                   if (savedCount === 0) return;
                 }
                 if (labelKey === "nav.map") setMode("map");
-                if (labelKey === "nav.list") setMode("list");
                 router.push(href.split("?")[0]);
                 onClose();
               }}
@@ -174,14 +168,6 @@ export function MobileNav({
           >
             <Info className="h-5 w-5 text-neutral-500" />
             {t("nav.aboutUs")}
-          </Link>
-          <Link
-            href="/help#contact"
-            onClick={onClose}
-            className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] font-medium text-neutral-700 hover:bg-neutral-100"
-          >
-            <Mail className="h-5 w-5 text-neutral-500" />
-            {t("nav.contact")}
           </Link>
         </nav>
 

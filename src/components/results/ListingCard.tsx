@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BedDouble, Bath, Ruler, Heart, SquareStack, Check } from "lucide-react";
+import { BedDouble, Bath, Ruler, Heart, SquareStack, Check, ArrowRight } from "lucide-react";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { useAppStore } from "@/lib/store";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
@@ -37,19 +37,33 @@ export function ListingCard({
   const inCompare = compareIndex !== -1;
 
   const isActive = selectedListingId === listing.id || hoveredId === listing.id;
+  // First click centers this listing on the map and reveals "View Unit" —
+  // it does not navigate. Only a second, explicit click on "View Unit"
+  // (a real Link, so it still works with ctrl/cmd-click and middle-click)
+  // goes to the detail page.
+  const isSelected = selectedListingId === listing.id;
+
+  function selectOnMap() {
+    selectListing(listing.id);
+    requestFlyTo({ lat: listing.coords.lat, lng: listing.coords.lng, zoom: 16 });
+  }
 
   return (
-    <Link
-      href={`/listing/${listing.slug}`}
+    <div
+      role="button"
+      tabIndex={0}
       data-variant={variant}
       onMouseEnter={() => setHovered(listing.id)}
       onMouseLeave={() => setHovered(null)}
-      onClick={() => {
-        selectListing(listing.id);
-        requestFlyTo({ lat: listing.coords.lat, lng: listing.coords.lng, zoom: 16 });
+      onClick={selectOnMap}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          selectOnMap();
+        }
       }}
       className={cn(
-        "group block overflow-hidden rounded-card border shadow-sm transition-all",
+        "group block rounded-card border shadow-sm transition-all",
         listing.premium ? "bg-amber-50/70" : "bg-white",
         isActive
           ? "border-brand-400 shadow-lg ring-1 ring-brand-200"
@@ -60,10 +74,23 @@ export function ListingCard({
         // otherwise hovering the card sets hoveredId (for map-marker sync),
         // which flips isActive and would silently swallow the zoom effect.
         listing.premium && "hover:z-10 hover:scale-[1.02] hover:border-listing-premium hover:shadow-lg",
-        "flex flex-col"
+        // Horizontal on small screens so more results fit per scroll — same
+        // row spec (inset image, p-4/gap-4) as New Projects' ProjectListRow
+        // on desktop — then back to a stacked, flush-image card at lg+
+        // (grid variant is always a stacked, flush-image card).
+        variant === "panel"
+          ? "flex flex-row gap-4 overflow-visible p-4 lg:flex-col lg:gap-0 lg:overflow-hidden lg:p-0"
+          : "flex flex-col overflow-hidden"
       )}
     >
-      <div className="relative aspect-[4/3] w-full">
+      <div
+        className={cn(
+          "relative shrink-0 overflow-hidden rounded-card",
+          variant === "panel"
+            ? "w-52 lg:w-full lg:aspect-[4/3] lg:rounded-none"
+            : "aspect-[4/3] w-full rounded-none"
+        )}
+      >
         <PlaceholderImage seed={listing.id} kind="interior" className="h-full w-full" />
         {variant !== "grid" && (
           <div className="absolute left-2.5 top-2.5 flex gap-1.5">
@@ -117,7 +144,12 @@ export function ListingCard({
           </button>
         </div>
       </div>
-      <div className="flex flex-1 flex-col gap-1.5 p-3.5">
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 flex-col gap-1",
+          variant === "panel" ? "lg:gap-1.5 lg:p-3.5" : "gap-1.5 p-3.5"
+        )}
+      >
         <p className="text-[15px] font-semibold text-neutral-900">
           {priceFmt(listing.price)}
           {listing.transaction === "rent" && (
@@ -143,7 +175,18 @@ export function ListingCard({
             <Ruler className="h-3.5 w-3.5" /> {formatArea(listing.area)}
           </span>
         </div>
+
+        {isSelected && (
+          <Link
+            href={`/listing/${listing.slug}`}
+            onClick={(e) => e.stopPropagation()}
+            className="mt-2 flex items-center justify-center gap-1.5 rounded-control bg-neutral-900 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
+          >
+            {t("results.viewUnit")}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        )}
       </div>
-    </Link>
+    </div>
   );
 }

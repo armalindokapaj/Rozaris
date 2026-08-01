@@ -95,6 +95,7 @@ const sq: Dictionary = {
     explore3dBody: "Mënyra më bindëse për të zbuluar pronën tënde të radhës.",
     learnMore: "Mëso Më Shumë",
     openFilters: "Hap filtrat",
+    filterButton: "Filtro",
     onboardingTitle: "Eksploro pronat përmes hartës 3D",
     onboardingBody:
       "Rrotullo duke tërhequr, zmadho me majë gishtash ose me scroll, dhe prek çdo ndërtesë apo projekt për të parë çfarë ka brenda.",
@@ -151,6 +152,7 @@ const sq: Dictionary = {
     newProject: "Projekt i Ri",
     unitsLeft: "{count} njësi të mbetura",
     exploreIn3d: "Shiko në 3D",
+    viewUnit: "Shiko Njësinë",
     statusComingSoon: "Së Shpejti",
     statusUnderConstruction: "Në Ndërtim",
     statusCompleted: "Përfunduar",
@@ -183,6 +185,11 @@ const sq: Dictionary = {
     yearBuilt: "Viti i ndërtimit",
     moreIn: "Më shumë në {area}",
     contactPublisher: "Kontakto botuesin",
+    share: "Ndaj",
+    shareViaWhatsapp: "WhatsApp",
+    shareViaEmail: "Email",
+    copyLink: "Kopjo URL-në",
+    linkCopied: "Linku u kopjua",
   },
   gallery: {
     tabPhotos: "Foto",
@@ -208,6 +215,23 @@ const sq: Dictionary = {
     estimatedMonthly: "Pagesa mujore e vlerësuar",
     disclaimer:
       "Ky vlerësim është vetëm ilustrues dhe nuk përbën këshillë financiare apo ofertë kredie. Kontakto një bankë partnere për një ofertë të personalizuar.",
+    tabLabel: "Kredia",
+  },
+  insurance: {
+    title: "Kalkulatori i sigurimit të shtëpisë",
+    tabLabel: "Sigurimi",
+    coverageLevel: "Niveli i mbulimit",
+    coverageBasic: "Bazik",
+    coverageComprehensive: "I gjerë",
+    estimatedMonthly: "Primi mujor i vlerësuar",
+    disclaimer:
+      "Ky vlerësim është vetëm ilustrues dhe nuk përbën ofertë sigurimi. Kontakto një partner sigurimi sponsorizues për një ofertë të personalizuar.",
+  },
+  adBanner: {
+    eyebrow: "Sponsorizuar",
+    studioName: "Vega Interiors Studio",
+    tagline: "Shndërro këtë hapësirë në shtëpinë e ëndrrave — dizajn interior & arkitekturë.",
+    cta: "Merr një konsultim falas",
   },
   publisher: {
     typePrivateOwner: "Pronar Privat",
@@ -230,6 +254,7 @@ const sq: Dictionary = {
     noWebglBrowser: "Shfletuesi juaj nuk mbështet WebGL, i cili kërkohet për hartën 3D.",
     noWebglShort: "Shfletuesi juaj nuk mbështet WebGL.",
     mapPreviewTokenHint: "Parapamja e hartës kërkon një token aksesi Mapbox.",
+    clickToInteract: "Kliko për të ndërvepruar me hartën",
     resetCompass: "Rivendos veriun / busullën",
     toggle3d: "Ndrysho perspektivën 3D",
     zoomIn: "Zmadho",

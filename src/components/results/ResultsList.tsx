@@ -86,12 +86,14 @@ export function ResultsList({
   return (
     <div className="flex h-full flex-col">
       {layout === "panel" ? (
-        // Map mode's side panel: sort control on top, result count below.
+        // Mobile: results count on the left, sort on the right, one row.
+        // Desktop map-mode side panel (narrower): sort centered on top,
+        // result count below.
         <div
           onWheel={forwardWheelToList}
-          className="flex shrink-0 flex-col gap-2 border-b border-neutral-100 px-4 py-3"
+          className="flex shrink-0 flex-row-reverse items-center justify-between gap-2 border-b border-neutral-100 px-4 py-3 lg:flex-col lg:items-stretch lg:justify-start"
         >
-          <div className="flex justify-center">
+          <div className="lg:flex lg:justify-center">
             <SortDropdown />
           </div>
           {countBlock}

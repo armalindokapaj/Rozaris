@@ -93,6 +93,7 @@ const en = {
     explore3dBody: "The most immersive way to discover your next property.",
     learnMore: "Learn More",
     openFilters: "Open filters",
+    filterButton: "Filter",
     onboardingTitle: "Explore property through the 3D map",
     onboardingBody:
       "Drag to rotate, pinch or scroll to zoom, and tap any building or project to see what's inside.",
@@ -149,6 +150,7 @@ const en = {
     newProject: "New Project",
     unitsLeft: "{count} units left",
     exploreIn3d: "View in 3D",
+    viewUnit: "View Unit",
     statusComingSoon: "Coming Soon",
     statusUnderConstruction: "Under Construction",
     statusCompleted: "Completed",
@@ -181,6 +183,11 @@ const en = {
     yearBuilt: "Year built",
     moreIn: "More in {area}",
     contactPublisher: "Contact the publisher",
+    share: "Share",
+    shareViaWhatsapp: "WhatsApp",
+    shareViaEmail: "Email",
+    copyLink: "Copy URL",
+    linkCopied: "Link copied",
   },
   gallery: {
     tabPhotos: "Photos",
@@ -206,6 +213,23 @@ const en = {
     estimatedMonthly: "Estimated monthly payment",
     disclaimer:
       "This estimate is illustrative only and does not constitute financial advice or a loan offer. Contact a sponsored bank partner for a personalized quote.",
+    tabLabel: "Mortgage",
+  },
+  insurance: {
+    title: "Home insurance calculator",
+    tabLabel: "Insurance",
+    coverageLevel: "Coverage level",
+    coverageBasic: "Basic",
+    coverageComprehensive: "Comprehensive",
+    estimatedMonthly: "Estimated monthly premium",
+    disclaimer:
+      "This estimate is illustrative only and does not constitute an insurance offer. Contact a sponsored insurance partner for a personalized quote.",
+  },
+  adBanner: {
+    eyebrow: "Sponsored",
+    studioName: "Vega Interiors Studio",
+    tagline: "Turn this space into your dream home — interior design & architecture.",
+    cta: "Get a free consultation",
   },
   publisher: {
     typePrivateOwner: "Private Owner",
@@ -228,6 +252,7 @@ const en = {
     noWebglBrowser: "Your browser does not support WebGL, which is required for the 3D map.",
     noWebglShort: "Your browser does not support WebGL.",
     mapPreviewTokenHint: "Map preview requires a Mapbox access token.",
+    clickToInteract: "Click to interact with the map",
     resetCompass: "Reset north / compass",
     toggle3d: "Toggle 3D perspective",
     zoomIn: "Zoom in",

@@ -60,7 +60,14 @@ const TYPE_ICON = {
   project: LandPlot,
 };
 
-export function SearchBar({ className }: { className?: string }) {
+export function SearchBar({
+  className,
+  compact = false,
+}: {
+  className?: string;
+  /** Smaller padding/icon/text — for the mobile top search row. */
+  compact?: boolean;
+}) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -84,8 +91,13 @@ export function SearchBar({ className }: { className?: string }) {
 
   return (
     <div className={cn("relative", className)} ref={ref}>
-      <div className="flex items-center gap-2 rounded-control border border-neutral-200 bg-white px-3.5 py-2.5 shadow-sm focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100">
-        <Search className="h-4 w-4 shrink-0 text-neutral-400" />
+      <div
+        className={cn(
+          "flex items-center gap-2 rounded-control border border-neutral-200 bg-white shadow-sm focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100",
+          compact ? "px-2.5 py-2" : "px-3.5 py-2.5"
+        )}
+      >
+        <Search className={cn("shrink-0 text-neutral-400", compact ? "h-3.5 w-3.5" : "h-4 w-4")} />
         <input
           value={query}
           onChange={(e) => {

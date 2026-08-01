@@ -13,7 +13,6 @@ import { OnboardingHint } from "@/components/common/OnboardingHint";
 import { MobileSearchRow } from "@/components/home/MobileSearchRow";
 import { CategoryQuickFilters } from "@/components/home/CategoryQuickFilters";
 import { PopularAreasRow } from "@/components/home/PopularAreasRow";
-import { Explore3DPromoCard } from "@/components/home/Explore3DPromoCard";
 import { BottomSheet, type SheetSnap } from "@/components/common/BottomSheet";
 import { List } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,7 +22,7 @@ export default function HomePage() {
   const mobileSheet = useAppStore((s) => s.mobileSheet);
   const setMobileSheet = useAppStore((s) => s.setMobileSheet);
 
-  const [listingsSnap, setListingsSnap] = useState<SheetSnap>("half");
+  const [listingsSnap, setListingsSnap] = useState<SheetSnap>("preview");
   const [filtersSnap, setFiltersSnap] = useState<SheetSnap>("expanded");
   const { t } = useT();
 
@@ -65,12 +64,11 @@ export default function HomePage() {
           onClose={() => setMobileSheet(null)}
           snap={listingsSnap}
           onSnapChange={setListingsSnap}
-          snapPoints={["collapsed", "half", "expanded"]}
+          snapPoints={["preview", "half", "expanded"]}
         >
           <div className="space-y-3 pb-2 pt-1">
             <CategoryQuickFilters onMore={() => setMobileSheet("filters")} />
             <PopularAreasRow />
-            <Explore3DPromoCard />
             <div className="mx-4 h-px bg-neutral-100" />
             <ResultsList layout="panel" />
           </div>

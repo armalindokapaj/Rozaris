@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Info, Landmark } from "lucide-react";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/useT";
 
 function monthlyPayment(principal: number, annualRatePct: number, years: number) {
@@ -34,14 +34,14 @@ export function MortgageCalculator({
 
   return (
     <div className={compact ? "" : "rounded-panel border border-neutral-200 bg-white p-5"}>
-      <div className="mb-4 flex items-center gap-2">
+      <div className={cn("flex items-center gap-2", compact ? "mb-2.5" : "mb-4")}>
         <Landmark className="h-4.5 w-4.5 text-brand-500" />
         <h3 className="text-sm font-bold text-neutral-900">{t("mortgage.title")}</h3>
       </div>
 
-      <div className="space-y-4">
-        <Field label={t("mortgage.propertyPrice")}>
-          <NumberInput value={price} onChange={setPrice} suffix="€" step={1000} min={0} />
+      <div className={compact ? "space-y-2.5" : "space-y-4"}>
+        <Field label={t("mortgage.propertyPrice")} compact={compact}>
+          <NumberInput value={price} onChange={setPrice} suffix="€" step={1000} min={0} compact={compact} />
         </Field>
 
         <Field
@@ -49,6 +49,7 @@ export function MortgageCalculator({
             pct: downPct,
             amount: formatPrice(downPayment, "EUR"),
           })}
+          compact={compact}
         >
           <input
             type="range"
@@ -62,25 +63,30 @@ export function MortgageCalculator({
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t("mortgage.loanTerm")}>
-            <NumberInput value={years} onChange={setYears} min={5} max={35} step={1} />
+        <div className={cn("grid grid-cols-2", compact ? "gap-2" : "gap-3")}>
+          <Field label={t("mortgage.loanTerm")} compact={compact}>
+            <NumberInput value={years} onChange={setYears} min={5} max={35} step={1} compact={compact} />
           </Field>
-          <Field label={t("mortgage.interestRate")}>
-            <NumberInput value={rate} onChange={setRate} min={0} max={15} step={0.1} />
+          <Field label={t("mortgage.interestRate")} compact={compact}>
+            <NumberInput value={rate} onChange={setRate} min={0} max={15} step={0.1} compact={compact} />
           </Field>
         </div>
       </div>
 
-      <div className="mt-5 rounded-card bg-brand-50 p-4">
+      <div className={cn("rounded-card bg-brand-50", compact ? "mt-3 p-3" : "mt-5 p-4")}>
         <p className="text-xs font-medium text-brand-700">{t("mortgage.estimatedMonthly")}</p>
-        <p className="mt-1 text-2xl font-bold text-brand-800">
+        <p className={cn("font-bold text-brand-800", compact ? "mt-0.5 text-xl" : "mt-1 text-2xl")}>
           {formatPrice(Math.round(monthly), "EUR")}
           <span className="text-sm font-medium text-brand-600">{t("results.perMonth")}</span>
         </p>
       </div>
 
-      <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-neutral-400">
+      <p
+        className={cn(
+          "flex items-start gap-1.5 text-[11px] leading-relaxed text-neutral-400",
+          compact ? "mt-2" : "mt-3"
+        )}
+      >
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         {t("mortgage.disclaimer")}
       </p>
@@ -88,10 +94,20 @@ export function MortgageCalculator({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+  compact = false,
+}: {
+  label: string;
+  children: React.ReactNode;
+  compact?: boolean;
+}) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-medium text-neutral-500">{label}</span>
+      <span className={cn("block text-xs font-medium text-neutral-500", compact ? "mb-1" : "mb-1.5")}>
+        {label}
+      </span>
       {children}
     </label>
   );
@@ -104,6 +120,7 @@ function NumberInput({
   min,
   max,
   step,
+  compact = false,
 }: {
   value: number;
   onChange: (v: number) => void;
@@ -111,9 +128,15 @@ function NumberInput({
   min?: number;
   max?: number;
   step?: number;
+  compact?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-control border border-neutral-200 px-3 py-2">
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-control border border-neutral-200",
+        compact ? "px-2.5 py-1.5" : "px-3 py-2"
+      )}
+    >
       {suffix && <span className="text-sm text-neutral-400">{suffix}</span>}
       <input
         type="number"

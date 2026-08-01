@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { BadgeCheck, MessageCircle, Phone } from "lucide-react";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
@@ -28,6 +29,9 @@ export function PublisherCard({
   bare?: boolean;
 }) {
   const { t } = useT();
+  // The number reads first so people can see who they're about to reach;
+  // clicking it (which also fires the tel: link) swaps the label to "Call".
+  const [phoneClicked, setPhoneClicked] = useState(false);
   return (
     <div className={cn(!bare && "rounded-panel border border-neutral-200 bg-white p-5")}>
       <Link
@@ -65,10 +69,11 @@ export function PublisherCard({
         <a
           href={telHref(publisher.phone)}
           data-analytics="phone_clicked"
+          onClick={() => setPhoneClicked(true)}
           className="flex items-center justify-center gap-1.5 rounded-control border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
         >
-          <Phone className="h-4 w-4" />
-          {t("publisher.call")}
+          <Phone className="h-4 w-4 shrink-0" />
+          <span className="truncate">{phoneClicked ? t("publisher.call") : publisher.phone}</span>
         </a>
       </div>
     </div>

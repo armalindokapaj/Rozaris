@@ -65,6 +65,9 @@ export function Header() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const compareCount = useAppStore((s) => s.compare.length);
   const savedCount = useAppStore((s) => s.saved.listings.length + s.saved.projects.length);
+  const filters = useAppStore((s) => s.filters);
+  const setFilters = useAppStore((s) => s.setFilters);
+  const setTransaction = useAppStore((s) => s.setTransaction);
   const { hint: compareHint, hintRef: compareHintRef, handleCompareClick } = useCompareHint();
   const { hint: savedHint, hintRef: savedHintRef, handleSavedClick } = useSavedHint();
   const { t } = useT();
@@ -92,6 +95,39 @@ export function Header() {
           </Link>
           <ResourcesDropdown />
         </nav>
+
+        {/* Mobile-only: Buy/Rent/New Projects live in the top bar next to
+            the logo instead of their own search-row above the map. */}
+        <div className="ml-1 flex min-w-0 items-center gap-1 lg:hidden">
+          {(
+            [
+              ["buy", "nav.buy"],
+              ["rent", "nav.rent"],
+            ] as const
+          ).map(([txn, labelKey]) => (
+            <button
+              key={txn}
+              onClick={() => setTransaction(txn)}
+              className={cn(
+                "shrink-0 rounded-control px-2.5 py-1.5 text-xs font-semibold transition-colors",
+                filters.transaction === txn && !filters.projectsOnly
+                  ? "bg-brand-500 text-white"
+                  : "bg-neutral-100 text-neutral-600"
+              )}
+            >
+              {t(labelKey)}
+            </button>
+          ))}
+          <button
+            onClick={() => setFilters({ projectsOnly: true })}
+            className={cn(
+              "shrink truncate rounded-control px-2.5 py-1.5 text-xs font-semibold transition-colors",
+              filters.projectsOnly ? "bg-brand-500 text-white" : "bg-neutral-100 text-neutral-600"
+            )}
+          >
+            {t("nav.newProjects")}
+          </button>
+        </div>
 
         <div className="ml-auto flex items-center gap-1 lg:gap-2">
           <Link

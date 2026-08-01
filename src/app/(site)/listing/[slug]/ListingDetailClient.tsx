@@ -16,7 +16,10 @@ import { useT } from "@/lib/i18n/useT";
 import { getNeighborhood } from "@/lib/mockData";
 import { Gallery } from "@/components/listing/Gallery";
 import { PublisherCard } from "@/components/listing/PublisherCard";
+import { ShareButton } from "@/components/listing/ShareButton";
+import { AdBanner } from "@/components/listing/AdBanner";
 import { MortgageCalculator } from "@/components/listing/MortgageCalculator";
+import { InsuranceCalculator } from "@/components/listing/InsuranceCalculator";
 import { StaticContextMap } from "@/components/map/StaticContextMap";
 import { ListingCard } from "@/components/results/ListingCard";
 import { AMENITY_LABELS, CONDITION_LABELS, PROPERTY_TYPE_LABELS, SITE_URL } from "@/lib/constants";
@@ -137,8 +140,11 @@ export function ListingDetailClient({
                 <SquareStack className="h-4 w-4" />
                 {inCompare ? t("listing.inCompare") : t("nav.compare")}
               </button>
+              <ShareButton url={`${SITE_URL}/listing/${listing.slug}`} title={listing.title} />
             </div>
           </div>
+
+          <AdBanner />
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Fact icon={BedDouble} label={t("filters.bedrooms")} value={listing.bedrooms} />
@@ -209,9 +215,6 @@ export function ListingDetailClient({
         </div>
 
         <aside className="glass-panel overflow-hidden rounded-panel shadow-sm lg:sticky lg:top-20 lg:self-start">
-          <div className="border-b border-neutral-100 px-5 pt-5 pb-4">
-            <h2 className="text-[15px] font-bold text-neutral-900">{t("listing.contactPublisher")}</h2>
-          </div>
           <div className="p-5">
             <PublisherCard
               bare
@@ -222,9 +225,14 @@ export function ListingDetailClient({
             />
           </div>
           {listing.transaction === "sale" && (
-            <div className="border-t border-neutral-100 p-5">
-              <MortgageCalculator compact initialPrice={listing.price} />
-            </div>
+            <>
+              <div className="border-t border-neutral-100 p-4">
+                <MortgageCalculator compact initialPrice={listing.price} />
+              </div>
+              <div className="border-t border-neutral-100 p-4">
+                <InsuranceCalculator compact initialPrice={listing.price} />
+              </div>
+            </>
           )}
         </aside>
       </div>

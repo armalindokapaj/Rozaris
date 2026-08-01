@@ -112,6 +112,9 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
   const [settings, setSettings] = useState<ProjectSetting[]>([]);
   const [propertyTypes, setPropertyTypes] = useState<PropertyType[]>([]);
   const [priceBuckets, setPriceBuckets] = useState<PriceBucketId[]>([]);
+  // Mobile-only: the filter body is a click-to-show accordion, collapsed by
+  // default. On desktop (lg+) it's always shown regardless of this state.
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const cityOptions = useMemo(
     () => Array.from(new Set(projects.map((p) => p.city))).sort(),
@@ -152,14 +155,27 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
             glass-panel shell, header treatment, and width as the Front
             Page's left filters panel for visual consistency. */}
         <aside className="glass-panel shrink-0 overflow-hidden rounded-panel shadow-sm lg:sticky lg:top-20 lg:w-72">
-          <div className="border-b border-neutral-100 px-5 pt-5 pb-4">
-            <h1 className="text-[17px] font-bold text-neutral-900">
-              {t("newProjectsPage.title")}
-            </h1>
-            <p className="mt-1.5 text-sm text-neutral-500">{t("newProjectsPage.subtitle")}</p>
-          </div>
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen((v) => !v)}
+            aria-expanded={mobileFiltersOpen}
+            className="flex w-full items-center justify-between gap-2 border-b border-neutral-100 px-5 pt-5 pb-4 text-left lg:cursor-default"
+          >
+            <div>
+              <h1 className="text-[17px] font-bold text-neutral-900">
+                {t("newProjectsPage.title")}
+              </h1>
+              <p className="mt-1.5 text-sm text-neutral-500">{t("newProjectsPage.subtitle")}</p>
+            </div>
+            <ChevronDown
+              className={cn(
+                "h-5 w-5 shrink-0 text-neutral-400 transition-transform lg:hidden",
+                mobileFiltersOpen && "rotate-180"
+              )}
+            />
+          </button>
 
-          <div className="p-5">
+          <div className={cn(mobileFiltersOpen ? "block" : "hidden", "p-5 lg:block")}>
           {activeFilterCount > 0 && (
             <button
               onClick={() => {
