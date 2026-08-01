@@ -60,7 +60,7 @@ export function ProjectCard({ project }: { project: Project }) {
         <p className="truncate text-xs text-neutral-500">
           {project.developer.name} · {neighborhood?.name}
         </p>
-        <div className="mt-1 flex items-center justify-between text-xs text-neutral-500">
+        <div className="mt-1 flex flex-col gap-0.5 text-xs text-neutral-500">
           <span>{t(STATUS_LABEL_KEY[project.status])}</span>
           <span className="font-semibold text-neutral-800">
             {t("results.unitsLeft", { count: project.availableUnits })}
