@@ -195,6 +195,7 @@ const en = {
     linkCopied: "Link copied",
     partOfProject: "Part of {project}",
     experienceIn3d: "Experience Project in 3D",
+    experienceIn3dShort: "3D Tour",
   },
   gallery: {
     tabPhotos: "Photos",

@@ -197,6 +197,7 @@ const sq: Dictionary = {
     linkCopied: "Linku u kopjua",
     partOfProject: "Pjesë e {project}",
     experienceIn3d: "Përjeto Projektin në 3D",
+    experienceIn3dShort: "Turë 3D",
   },
   gallery: {
     tabPhotos: "Foto",

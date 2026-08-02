@@ -98,29 +98,42 @@ export function ListingDetailClient({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-neutral-200 bg-white p-5">
-            <div>
-              <p className="text-2xl font-bold text-neutral-900">
-                {priceFmt(listing.price)}
-                {listing.transaction === "rent" && (
-                  <span className="text-sm font-medium text-neutral-500">
-                    {listing.rentSubtype === "daily" ? t("results.perNight") : t("results.perMonth")}
-                  </span>
-                )}
-              </p>
-              {listing.pricePerSqm && (
-                <p className="text-xs text-neutral-500">
-                  {priceFmt(Math.round(listing.pricePerSqm))}/m²
-                  {listing.negotiable && t("listing.negotiable")}
+          <div className="flex flex-col gap-3 rounded-panel border border-neutral-200 bg-white p-5 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-4">
+            <div className="flex items-stretch gap-2.5">
+              <div className="flex flex-col justify-center">
+                <p className="text-2xl font-bold text-neutral-900">
+                  {priceFmt(listing.price)}
+                  {listing.transaction === "rent" && (
+                    <span className="text-sm font-medium text-neutral-500">
+                      {listing.rentSubtype === "daily" ? t("results.perNight") : t("results.perMonth")}
+                    </span>
+                  )}
                 </p>
+                {listing.pricePerSqm && (
+                  <p className="text-xs text-neutral-500">
+                    {priceFmt(Math.round(listing.pricePerSqm))}/m²
+                    {listing.negotiable && t("listing.negotiable")}
+                  </p>
+                )}
+              </div>
+              {listing.fromProjectSlug && (
+                <Link
+                  href={`/project/${listing.fromProjectSlug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-control bg-neutral-900 px-3 text-xs font-semibold text-white hover:bg-neutral-800 lg:hidden"
+                >
+                  <Box className="h-4 w-4" />
+                  {t("listing.experienceIn3dShort")}
+                </Link>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2 lg:flex-wrap">
               <button
                 onClick={() => auth.signedIn && toggleSaved(listing.id)}
                 disabled={!auth.signedIn}
                 aria-pressed={saved}
-                className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3.5 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-control border border-neutral-200 px-3.5 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40 lg:flex-none"
               >
                 <Heart className={cn("h-4 w-4", saved && "fill-red-500 text-red-500")} />
                 {saved ? t("listing.saved") : t("listing.save")}
@@ -133,7 +146,7 @@ export function ListingDetailClient({
                 }
                 aria-pressed={inCompare}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-control px-3.5 py-2.5 text-sm font-semibold",
+                  "flex flex-1 items-center justify-center gap-1.5 rounded-control px-3.5 py-2.5 text-sm font-semibold lg:flex-none",
                   inCompare
                     ? "bg-brand-500 text-white"
                     : "border border-neutral-200 text-neutral-700 hover:bg-neutral-50"
@@ -142,7 +155,11 @@ export function ListingDetailClient({
                 <SquareStack className="h-4 w-4" />
                 {inCompare ? t("listing.inCompare") : t("nav.compare")}
               </button>
-              <ShareButton url={`${SITE_URL}/listing/${listing.slug}`} title={listing.title} />
+              <ShareButton
+                url={`${SITE_URL}/listing/${listing.slug}`}
+                title={listing.title}
+                className="flex-1 lg:flex-none"
+              />
             </div>
           </div>
 
@@ -239,7 +256,7 @@ export function ListingDetailClient({
                 href={`/project/${listing.fromProjectSlug}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-3 flex items-center justify-center gap-1.5 rounded-control bg-neutral-900 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800"
+                className="mt-3 hidden items-center justify-center gap-1.5 rounded-control bg-neutral-900 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 lg:flex"
               >
                 <Box className="h-4 w-4" />
                 {t("listing.experienceIn3d")}

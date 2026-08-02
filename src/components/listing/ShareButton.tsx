@@ -6,7 +6,15 @@ import { useClickOutside } from "@/hooks/useClickOutside";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 
-export function ShareButton({ url, title }: { url: string; title: string }) {
+export function ShareButton({
+  url,
+  title,
+  className,
+}: {
+  url: string;
+  title: string;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -20,11 +28,11 @@ export function ShareButton({ url, title }: { url: string; title: string }) {
   }
 
   return (
-    <div className="relative" ref={ref}>
+    <div className={cn("relative", className)} ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3.5 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
+        className="flex w-full items-center justify-center gap-1.5 rounded-control border border-neutral-200 px-3.5 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
       >
         <Share2 className="h-4 w-4" />
         {t("listing.share")}
