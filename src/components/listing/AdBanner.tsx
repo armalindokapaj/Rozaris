@@ -1,15 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 
 /** Static sponsored-slot creative — not wired to any real ad system, just a
- * fixed placement in the sidebar above the Mortgage calculator. */
+ * fixed placement in the sidebar above the Mortgage calculator. Links to
+ * the sponsor's own dedicated page (/resources/interior-design). */
 export function AdBanner() {
   const { t } = useT();
 
   return (
-    <div className="flex items-center gap-3 rounded-card bg-gradient-to-br from-neutral-900 to-neutral-700 p-4 text-white">
+    <Link
+      href="/resources/interior-design"
+      className="flex items-center gap-3 rounded-card bg-gradient-to-br from-neutral-900 to-neutral-700 p-4 text-white transition-transform hover:scale-[1.01]"
+    >
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/10">
         <Sparkles className="h-5 w-5 text-brand-300" />
       </span>
@@ -22,6 +27,6 @@ export function AdBanner() {
         </p>
         <p className="mt-0.5 truncate text-xs text-white/60">{t("adBanner.tagline")}</p>
       </div>
-    </div>
+    </Link>
   );
 }

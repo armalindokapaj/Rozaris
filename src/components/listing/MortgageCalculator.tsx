@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Info, Landmark } from "lucide-react";
 import { formatPrice, cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/useT";
@@ -15,9 +15,14 @@ function monthlyPayment(principal: number, annualRatePct: number, years: number)
 export function MortgageCalculator({
   initialPrice = 120000,
   compact = false,
+  onMonthlyChange,
 }: {
   initialPrice?: number;
   compact?: boolean;
+  /** Fires whenever the computed monthly payment changes — lets a parent
+   * page (e.g. the affordability check below) stay in sync without owning
+   * a duplicate copy of this calculator's inputs. */
+  onMonthlyChange?: (monthly: number) => void;
 }) {
   const [price, setPrice] = useState(initialPrice);
   const [downPct, setDownPct] = useState(20);
@@ -31,6 +36,10 @@ export function MortgageCalculator({
     () => monthlyPayment(principal, rate, years),
     [principal, rate, years]
   );
+
+  useEffect(() => {
+    onMonthlyChange?.(monthly);
+  }, [monthly, onMonthlyChange]);
 
   return (
     <div className={compact ? "" : "rounded-panel border border-neutral-200 bg-white p-5"}>

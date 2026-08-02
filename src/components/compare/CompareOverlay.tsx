@@ -71,6 +71,7 @@ export function CompareOverlay() {
                       seed={compareImage(item)}
                       kind="interior"
                       className="aspect-[4/3] w-full rounded-card"
+                      watermark
                     />
                     <button
                       onClick={() => removeCompareAt(i)}

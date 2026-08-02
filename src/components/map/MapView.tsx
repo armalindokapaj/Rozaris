@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { useAppStore } from "@/lib/store";
 import { getVisibleListings, getVisibleProjects } from "@/lib/filtering";
-import { getNeighborhood, listings, projects, CITY_CENTER } from "@/lib/mockData";
+import { getNeighborhood, searchableListings, projects, CITY_CENTER } from "@/lib/mockData";
 import {
   buildClusterMarker,
   buildListingMarker,
@@ -128,7 +128,12 @@ export function MapView({
 
     map.on("zoom", () => setTier(tierForZoom(map.getZoom())));
 
-    map.on("click", () => {
+    map.on("click", (e) => {
+      // Defensive: a marker's own click handler already stops propagation,
+      // but skip deselecting here too if the click somehow still targeted
+      // a marker element.
+      const target = e.originalEvent.target as HTMLElement | null;
+      if (target?.closest(".mapboxgl-marker")) return;
       selectListing(null);
       selectProject(null);
     });
@@ -190,18 +195,32 @@ export function MapView({
       });
     } else {
       visibleListings.forEach((listing) => {
+        const isSelected = listing.id === selectedListingId;
         const el = buildListingMarker({
           tier,
           priceLabel: priceFmt(listing.price, { compact: true }),
+          viewUnitLabel: t("results.viewUnit"),
           premium: listing.premium,
-          selected: listing.id === selectedListingId,
+          selected: isSelected,
           propertyType: listing.propertyType,
           buildingCount: listing.buildingListingCount,
+          seed: listing.id,
         });
         el.addEventListener("click", (e) => {
           e.stopPropagation();
+          // First click centers this listing on the map and swaps the
+          // mini card's price for "View Unit" — a second click on the
+          // now-selected marker is what actually navigates.
+          if (tier === "price" && isSelected) {
+            window.location.href = `/listing/${listing.slug}`;
+            return;
+          }
+          // selectListing already clears selectedProjectId itself — do not
+          // also call selectProject(null) here, since that action's own
+          // reciprocal clearing (selectedListingId: null) would immediately
+          // wipe out the selection just made, one tick later.
           selectListing(listing.id);
-          selectProject(null);
+          map.easeTo({ center: [listing.coords.lng, listing.coords.lat], duration: 500 });
         });
         const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
           .setLngLat([listing.coords.lng, listing.coords.lat])
@@ -216,8 +235,9 @@ export function MapView({
         });
         el.addEventListener("click", (e) => {
           e.stopPropagation();
+          // Same fix as the listing marker above: selectProject already
+          // clears selectedListingId itself.
           selectProject(project.id);
-          selectListing(null);
         });
         const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
           .setLngLat([project.coords.lng, project.coords.lat])
@@ -235,6 +255,7 @@ export function MapView({
     selectListing,
     selectProject,
     priceFmt,
+    t,
   ]);
 
   // --- Popup positioning (tracks camera moves while a popup is open) ---
@@ -243,7 +264,7 @@ export function MapView({
     : null;
   const activeBuildingListing =
     !activeProject && selectedListingId
-      ? listings.find(
+      ? searchableListings.find(
           (l) => l.id === selectedListingId && (l.buildingListingCount ?? 0) > 1
         ) ?? null
       : null;

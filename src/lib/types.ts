@@ -111,6 +111,13 @@ export interface Listing {
   status: ListingStatus;
   createdAt: string;
   buildingListingCount?: number;
+  /** Set only on listings synthesized from a new-development project's
+   * units, so the unit's own detail page can link back to the project's
+   * 3D view. Absent on regular publisher-submitted listings. */
+  fromProjectSlug?: string;
+  /** The project's display name, paired with fromProjectSlug for the
+   * detail page's "part of this project" tag. */
+  fromProjectName?: string;
 }
 
 export type ProjectStatus = "coming_soon" | "under_construction" | "completed";

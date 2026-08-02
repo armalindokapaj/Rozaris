@@ -152,6 +152,13 @@ export function MobileNav({
                 {t("nav.mortgageCalculator")}
               </Link>
               <Link
+                href="/resources/redo-unit-design"
+                onClick={onClose}
+                className="rounded-lg px-2 py-2 text-sm text-neutral-600 hover:bg-neutral-100"
+              >
+                {t("nav.redoUnitDesign")}
+              </Link>
+              <Link
                 href="/help"
                 onClick={onClose}
                 className="rounded-lg px-2 py-2 text-sm text-neutral-600 hover:bg-neutral-100"

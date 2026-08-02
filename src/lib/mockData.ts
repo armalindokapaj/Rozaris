@@ -544,12 +544,68 @@ export const projects: Project[] = [
   },
 ];
 
+// New-development units are their own searchable inventory too — each
+// available residential unit gets a synthetic Listing (reusing the
+// project's location/developer/amenities) so it flows through the exact
+// same Front Page search, filter, map and detail-page pipeline as any
+// other listing, with no separate code paths to keep in sync.
+function unitToListing(unit: Unit, project: Project): Listing {
+  // Every unit in a project shares its building's location — jitter each
+  // one slightly so their map markers don't stack exactly on top of each
+  // other (or the project's own marker).
+  const seed = hashSeed(`${project.id}-${unit.id}`);
+  return {
+    id: `unit-${project.id}-${unit.id}`,
+    slug: `${project.slug}-${unit.code.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    title: `${project.name} — Unit ${unit.code}`,
+    transaction: unit.transaction,
+    propertyType: project.propertyType,
+    price: unit.price,
+    currency: unit.currency,
+    pricePerSqm: unit.area > 0 ? Math.round(unit.price / unit.area) : undefined,
+    negotiable: false,
+    area: unit.area,
+    bedrooms: unit.bedrooms,
+    bathrooms: unit.bathrooms,
+    floor: unit.floor,
+    condition: "new",
+    amenities: project.amenities,
+    coords: {
+      lat: jitter(project.coords.lat, 0.0012, seed),
+      lng: jitter(project.coords.lng, 0.0014, seed + 1),
+    },
+    neighborhoodId: project.neighborhoodId,
+    city: project.city,
+    images: unit.images,
+    floorPlanImage: unit.floorPlanImage,
+    facadeImage: unit.facadeImage,
+    videoUrl: unit.videoUrl,
+    description: project.description,
+    publisher: project.developer,
+    premium: project.premium,
+    status: "active",
+    createdAt: "2025-06-01T00:00:00.000Z",
+    fromProjectSlug: project.slug,
+    fromProjectName: project.name,
+  };
+}
+
+export const projectUnitListings: Listing[] = projects.flatMap((p) =>
+  p.units
+    .filter((u) => u.status === "available" && u.type === "residential")
+    .map((u) => unitToListing(u, p))
+);
+
+/** Everything searchable on the Front Page: publisher-submitted listings
+ * plus every available unit inside a new-development project. */
+export const searchableListings: Listing[] = [...listings, ...projectUnitListings];
+
 export function getNeighborhood(id: string): Neighborhood | undefined {
   return neighborhoods.find((n) => n.id === id);
 }
 
 export function getListingBySlug(slug: string): Listing | undefined {
-  return listings.find((l) => l.slug === slug);
+  return searchableListings.find((l) => l.slug === slug);
 }
 
 export function getProjectBySlug(slug: string): Project | undefined {
@@ -561,7 +617,7 @@ export function getPublisherBySlug(slug: string): Publisher | undefined {
 }
 
 export function relatedListings(listing: Listing, count = 4): Listing[] {
-  return listings
+  return searchableListings
     .filter(
       (l) => l.id !== listing.id && l.neighborhoodId === listing.neighborhoodId
     )

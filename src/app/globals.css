@@ -220,11 +220,43 @@ body {
   height: 34px;
   border-radius: 11px;
 }
-.rz-marker-price {
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 12.5px;
+/* Price-tier marker: a small version of the listing card (thumbnail +
+   price) rather than a plain pill, so it reads as the same card, smaller. */
+.rz-marker-price-card {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 3px 8px 3px 3px;
+  border-radius: 9px;
+  background: white;
+  border: 1px solid rgba(23, 22, 38, 0.1);
+  box-shadow: 0 4px 14px -2px rgba(23, 22, 38, 0.25);
+  color: #17161f;
+  font-weight: 700;
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.rz-marker-price-card:hover {
+  transform: scale(1.06);
+  box-shadow: 0 8px 20px -2px rgba(23, 22, 38, 0.3);
+}
+.rz-marker-price-card-selected {
+  color: white;
+  background: #6d5bf6;
+  border-color: #6d5bf6;
+}
+.rz-marker-price-card-premium:not(.rz-marker-price-card-selected) {
+  border-color: #c9973f;
+}
+.rz-marker-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background-size: cover;
 }
 .rz-marker-cluster {
   min-width: 46px;
@@ -263,6 +295,29 @@ body {
   width: 40px;
   height: 40px;
   border-radius: 13px;
+}
+
+/* Sponsor ad "GIF-style" visual: a slowly drifting gradient standing in for
+   an animated creative, since no real ad assets exist here. */
+@keyframes rz-ad-shimmer {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+@layer components {
+  .rz-ad-shimmer {
+    background-size: 220% 220%;
+    animation: rz-ad-shimmer 6s ease-in-out infinite;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rz-ad-shimmer {
+    animation: none;
+  }
 }
 
 /* Dual-thumb range slider (search filters): two overlaid native inputs,

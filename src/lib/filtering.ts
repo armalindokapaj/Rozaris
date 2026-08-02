@@ -1,4 +1,4 @@
-import { listings, projects, getNeighborhood } from "./mockData";
+import { searchableListings, projects, getNeighborhood } from "./mockData";
 import type { FilterState, Listing, Project } from "./types";
 import type { MapBounds } from "./store";
 
@@ -104,7 +104,7 @@ export function getVisibleListings(
   bounds: MapBounds | null,
   restrictToBounds: boolean
 ): Listing[] {
-  const filtered = listings.filter(
+  const filtered = searchableListings.filter(
     (l) =>
       matchesListingFilters(l, f) &&
       (!restrictToBounds || inBounds(l.coords, bounds))

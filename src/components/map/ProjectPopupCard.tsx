@@ -27,7 +27,7 @@ export function ProjectPopupCard({
       aria-label={`${project.name} project`}
     >
       <div className="relative h-28">
-        <PlaceholderImage seed={project.slug} kind="hero" className="h-full w-full" />
+        <PlaceholderImage seed={project.slug} kind="hero" className="h-full w-full" watermark />
         <button
           onClick={onClose}
           aria-label={t("map.closePopup")}

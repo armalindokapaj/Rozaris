@@ -49,7 +49,7 @@ export function ProjectListRow({ project }: { project: Project }) {
       )}
     >
       <div className="relative h-40 w-full shrink-0 overflow-hidden rounded-card sm:h-auto sm:w-52">
-        <PlaceholderImage seed={project.slug} kind="hero" className="h-full w-full" />
+        <PlaceholderImage seed={project.slug} kind="hero" className="h-full w-full" watermark />
         <div className="absolute left-2 top-2 flex gap-1.5">
           <span className="rounded-full bg-listing-new-dev px-2 py-0.5 text-[10px] font-semibold text-white shadow">
             {t("results.newProject")}

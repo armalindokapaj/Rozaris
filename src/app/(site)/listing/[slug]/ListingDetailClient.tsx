@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   BedDouble,
   Bath,
@@ -9,6 +10,7 @@ import {
   Heart,
   SquareStack,
   ShieldCheck,
+  Box,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
@@ -113,7 +115,7 @@ export function ListingDetailClient({
                 </p>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => auth.signedIn && toggleSaved(listing.id)}
                 disabled={!auth.signedIn}
@@ -224,6 +226,26 @@ export function ListingDetailClient({
               contentUrl={`${SITE_URL}/listing/${listing.slug}`}
             />
           </div>
+          {listing.fromProjectSlug && (
+            <div className="border-t border-neutral-100 p-4">
+              <Link
+                href={`/project/${listing.fromProjectSlug}`}
+                className="inline-flex items-center gap-1.5 rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-200"
+              >
+                <Box className="h-3.5 w-3.5" />
+                {t("listing.partOfProject", { project: listing.fromProjectName ?? "" })}
+              </Link>
+              <Link
+                href={`/project/${listing.fromProjectSlug}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 flex items-center justify-center gap-1.5 rounded-control bg-neutral-900 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800"
+              >
+                <Box className="h-4 w-4" />
+                {t("listing.experienceIn3d")}
+              </Link>
+            </div>
+          )}
           {listing.transaction === "sale" && (
             <>
               <div className="border-t border-neutral-100 p-4">

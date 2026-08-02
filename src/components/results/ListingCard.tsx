@@ -91,7 +91,7 @@ export function ListingCard({
             : "aspect-[4/3] w-full rounded-none"
         )}
       >
-        <PlaceholderImage seed={listing.id} kind="interior" className="h-full w-full" />
+        <PlaceholderImage seed={listing.id} kind="interior" className="h-full w-full" watermark />
         {variant !== "grid" && (
           <div className="absolute left-2.5 top-2.5 flex gap-1.5">
             {/* No "Premium" text badge on the card itself — premium status

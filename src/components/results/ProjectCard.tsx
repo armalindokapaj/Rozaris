@@ -52,7 +52,7 @@ export function ProjectCard({ project }: { project: Project }) {
       )}
     >
       <div className="relative aspect-[4/3] w-full">
-        <PlaceholderImage seed={project.slug} kind="hero" className="h-full w-full" />
+        <PlaceholderImage seed={project.slug} kind="hero" className="h-full w-full" watermark />
         <div className="absolute left-2.5 top-2.5 flex gap-1.5">
           <span className="rounded-full bg-listing-new-dev px-2 py-1 text-[11px] font-semibold text-white shadow">
             {t("results.newProject")}

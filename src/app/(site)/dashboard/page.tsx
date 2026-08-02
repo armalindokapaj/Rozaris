@@ -18,6 +18,10 @@ import {
   CheckCircle2,
   XCircle,
   MessageSquareWarning,
+  BarChart3,
+  MousePointerClick,
+  Heart,
+  Crown,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { listingsByPublisher, projectsByDeveloper, DEMO_PUBLISHER } from "@/lib/mockData";
@@ -27,12 +31,14 @@ import { useProjectConstruction } from "@/hooks/useProjectConstruction";
 import { useT } from "@/lib/i18n/useT";
 import { MessagesPanel } from "@/components/messages/MessagesPanel";
 import { ConstructionTimelineEditor } from "@/components/dashboard/ConstructionTimelineEditor";
+import { NewListingForm } from "@/components/dashboard/NewListingForm";
 import { cn } from "@/lib/utils";
 
 const TABS = [
   { id: "overview", labelKey: "dashboard.tabOverview", icon: LayoutDashboard },
   { id: "listings", labelKey: "dashboard.tabListings", icon: ListChecks },
   { id: "projects", labelKey: "dashboard.tabProjectsUnits", icon: Building2 },
+  { id: "analytics", labelKey: "dashboard.tabAnalytics", icon: BarChart3 },
   { id: "messages", labelKey: "dashboard.tabMessages", icon: MessageCircle },
   { id: "media", labelKey: "dashboard.tabMediaModels", icon: Camera },
   { id: "billing", labelKey: "dashboard.tabBillingPremium", icon: CreditCard },
@@ -106,6 +112,7 @@ export default function DashboardPage() {
         {tab === "overview" && <OverviewTab listingCount={myListings.length} projectCount={myProjects.length} />}
         {tab === "listings" && <ListingsTab listings={myListings} />}
         {tab === "projects" && <ProjectsTab projects={myProjects} />}
+        {tab === "analytics" && <AnalyticsTab listings={myListings} projects={myProjects} />}
         {tab === "messages" && <MessagesTab />}
         {tab === "media" && <MediaTab />}
         {tab === "billing" && <BillingTab />}
@@ -181,20 +188,6 @@ function ListingsTab({ listings }: { listings: ReturnType<typeof listingsByPubli
   const { t } = useT();
   const [formOpen, setFormOpen] = useState(false);
   const [savedMessage, setSavedMessage] = useState(false);
-  const [title, setTitle] = useState("");
-  const [descEn, setDescEn] = useState("");
-  const [descSq, setDescSq] = useState("");
-  const canSave = title.trim() !== "" && descEn.trim() !== "" && descSq.trim() !== "";
-
-  function handleSave() {
-    if (!canSave) return;
-    setSavedMessage(true);
-    setFormOpen(false);
-    setTitle("");
-    setDescEn("");
-    setDescSq("");
-    setTimeout(() => setSavedMessage(false), 3000);
-  }
 
   return (
     <div className="space-y-4">
@@ -218,59 +211,14 @@ function ListingsTab({ listings }: { listings: ReturnType<typeof listingsByPubli
       )}
 
       {formOpen && (
-        <div className="space-y-4 rounded-panel border border-neutral-200 bg-white p-5">
-          <h2 className="text-sm font-bold text-neutral-900">{t("dashboard.newListingFormTitle")}</h2>
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-medium text-neutral-500">
-              {t("dashboard.titleLabel")}
-            </span>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
-            />
-          </label>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-neutral-500">
-                {t("dashboard.descriptionEnLabel")}
-              </span>
-              <textarea
-                value={descEn}
-                onChange={(e) => setDescEn(e.target.value)}
-                rows={4}
-                className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-neutral-500">
-                {t("dashboard.descriptionSqLabel")}
-              </span>
-              <textarea
-                value={descSq}
-                onChange={(e) => setDescSq(e.target.value)}
-                rows={4}
-                className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
-              />
-            </label>
-          </div>
-          <p className="text-xs text-neutral-400">{t("dashboard.descriptionRequiredHint")}</p>
-          <div className="flex gap-2">
-            <button
-              onClick={handleSave}
-              disabled={!canSave}
-              className="rounded-control bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {t("dashboard.saveListing")}
-            </button>
-            <button
-              onClick={() => setFormOpen(false)}
-              className="rounded-control border border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
-            >
-              {t("common.cancel")}
-            </button>
-          </div>
-        </div>
+        <NewListingForm
+          onSaved={() => {
+            setFormOpen(false);
+            setSavedMessage(true);
+            setTimeout(() => setSavedMessage(false), 3000);
+          }}
+          onCancel={() => setFormOpen(false)}
+        />
       )}
 
       <div className="overflow-hidden rounded-panel border border-neutral-200 bg-white">
@@ -390,6 +338,179 @@ function ProjectRow({ project: p }: { project: ReturnType<typeof projectsByDevel
         <div className="mt-4">
           <ConstructionTimelineEditor project={p} />
         </div>
+      )}
+    </div>
+  );
+}
+
+// Deterministic mock performance numbers — a real backend would replace
+// this with actual view/lead counters. Premium-only: analytics are a
+// premium perk, so standard listings never call this.
+function metricHash(id: string, salt: number): number {
+  const s = `${id}-${salt}`;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function analyticsFor(id: string) {
+  return {
+    views: 180 + (metricHash(id, 1) % 2400),
+    leads: 4 + (metricHash(id, 2) % 46),
+    saves: 2 + (metricHash(id, 3) % 58),
+  };
+}
+
+function AnalyticsStat({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Eye;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="rounded-card bg-neutral-50 p-3 text-center">
+      <Icon className="mx-auto h-4 w-4 text-brand-500" />
+      <p className="mt-1 text-base font-bold tabular-nums text-neutral-900">{value}</p>
+      <p className="text-[11px] text-neutral-500">{label}</p>
+    </div>
+  );
+}
+
+function AnalyticsProjectCard({ project }: { project: ReturnType<typeof projectsByDeveloper>[number] }) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const metrics = analyticsFor(project.id);
+  const availableUnits = project.units.filter((u) => u.status === "available");
+
+  return (
+    <div className="rounded-panel border border-neutral-200 bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <p className="font-semibold text-neutral-900">{project.name}</p>
+          <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+            <Crown className="h-3 w-3" /> {t("results.premium")}
+          </span>
+        </div>
+        {availableUnits.length > 0 && (
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="text-xs font-semibold text-brand-600 hover:underline"
+          >
+            {open
+              ? t("dashboard.analyticsHideUnits")
+              : t("dashboard.analyticsShowUnits", { count: availableUnits.length })}
+          </button>
+        )}
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-3">
+        <AnalyticsStat icon={Eye} label={t("dashboard.analyticsViews")} value={metrics.views} />
+        <AnalyticsStat icon={MousePointerClick} label={t("dashboard.analyticsLeads")} value={metrics.leads} />
+        <AnalyticsStat icon={Heart} label={t("dashboard.analyticsSaves")} value={metrics.saves} />
+      </div>
+
+      {open && (
+        <div className="mt-4 overflow-hidden rounded-card border border-neutral-100">
+          <table className="w-full text-sm">
+            <thead className="border-b border-neutral-100 bg-neutral-50 text-left text-xs text-neutral-500">
+              <tr>
+                <th className="px-3 py-2 font-medium">{t("dashboard.analyticsUnit")}</th>
+                <th className="px-3 py-2 font-medium">{t("dashboard.analyticsViews")}</th>
+                <th className="px-3 py-2 font-medium">{t("dashboard.analyticsLeads")}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {availableUnits.map((u) => {
+                const m = analyticsFor(`${project.id}-${u.id}`);
+                return (
+                  <tr key={u.id}>
+                    <td className="px-3 py-2 text-neutral-700">{u.code}</td>
+                    <td className="px-3 py-2 tabular-nums text-neutral-600">{m.views}</td>
+                    <td className="px-3 py-2 tabular-nums text-neutral-600">{m.leads}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AnalyticsTab({
+  listings,
+  projects,
+}: {
+  listings: ReturnType<typeof listingsByPublisher>;
+  projects: ReturnType<typeof projectsByDeveloper>;
+}) {
+  const { t } = useT();
+  const priceFmt = usePriceFormat();
+  const premiumListings = listings.filter((l) => l.premium);
+  const premiumProjects = projects.filter((p) => p.premium);
+  const hasPremium = premiumListings.length > 0 || premiumProjects.length > 0;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-neutral-900">{t("dashboard.analyticsTitle")}</h1>
+        <p className="text-sm text-neutral-500">{t("dashboard.analyticsSubtitle")}</p>
+      </div>
+
+      {!hasPremium ? (
+        <div className="rounded-panel border border-dashed border-neutral-300 bg-white p-10 text-center">
+          <Crown className="mx-auto h-8 w-8 text-neutral-300" />
+          <p className="mt-3 text-sm font-semibold text-neutral-700">{t("dashboard.analyticsEmptyTitle")}</p>
+          <p className="mt-1 text-xs text-neutral-400">{t("dashboard.analyticsEmptyBody")}</p>
+        </div>
+      ) : (
+        <>
+          {premiumProjects.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-sm font-bold text-neutral-900">{t("dashboard.tabProjectsUnits")}</h2>
+              {premiumProjects.map((p) => (
+                <AnalyticsProjectCard key={p.id} project={p} />
+              ))}
+            </div>
+          )}
+
+          {premiumListings.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-sm font-bold text-neutral-900">{t("dashboard.listingsTitle")}</h2>
+              <div className="overflow-hidden rounded-panel border border-neutral-200 bg-white">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-neutral-100 bg-neutral-50 text-left text-xs text-neutral-500">
+                    <tr>
+                      <th className="px-4 py-2.5 font-medium">{t("dashboard.colListing")}</th>
+                      <th className="px-4 py-2.5 font-medium">{t("dashboard.colPrice")}</th>
+                      <th className="px-4 py-2.5 font-medium">{t("dashboard.analyticsViews")}</th>
+                      <th className="px-4 py-2.5 font-medium">{t("dashboard.analyticsLeads")}</th>
+                      <th className="px-4 py-2.5 font-medium">{t("dashboard.analyticsSaves")}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {premiumListings.map((l) => {
+                      const m = analyticsFor(l.id);
+                      return (
+                        <tr key={l.id}>
+                          <td className="px-4 py-3 font-medium text-neutral-800">{l.title}</td>
+                          <td className="px-4 py-3 tabular-nums text-neutral-600">{priceFmt(l.price)}</td>
+                          <td className="px-4 py-3 tabular-nums text-neutral-600">{m.views}</td>
+                          <td className="px-4 py-3 tabular-nums text-neutral-600">{m.leads}</td>
+                          <td className="px-4 py-3 tabular-nums text-neutral-600">{m.saves}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

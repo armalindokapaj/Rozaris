@@ -38,11 +38,17 @@ export function PlaceholderImage({
   kind = "interior",
   className,
   iconClassName,
+  watermark = false,
 }: {
   seed: string;
   kind?: Kind;
   className?: string;
   iconClassName?: string;
+  /** Stands in for what a real upload pipeline would stamp onto a listing
+   * photo — opt in only where this is genuinely a property photo being
+   * viewed (galleries, card hero images), not small icon-sized thumbnails
+   * (compare chips, neighborhood avatars) where a badge would overwhelm it. */
+  watermark?: boolean;
 }) {
   const idx = hash(seed) % GRADIENTS.length;
   const [from, to] = GRADIENTS[idx];
@@ -75,6 +81,14 @@ export function PlaceholderImage({
         )}
         strokeWidth={1.5}
       />
+      {watermark && (
+        <span
+          aria-hidden
+          className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[8px] bg-brand-500 text-xs font-bold text-white opacity-50"
+        >
+          R
+        </span>
+      )}
     </div>
   );
 }

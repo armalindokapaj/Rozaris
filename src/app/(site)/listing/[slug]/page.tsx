@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getListingBySlug, getNeighborhood, relatedListings, listings } from "@/lib/mockData";
+import { getListingBySlug, getNeighborhood, relatedListings, searchableListings } from "@/lib/mockData";
 import { formatPrice } from "@/lib/utils";
 import { SITE_URL } from "@/lib/constants";
 import { ListingDetailClient } from "./ListingDetailClient";
 
 export function generateStaticParams() {
-  return listings.map((l) => ({ slug: l.slug }));
+  return searchableListings.map((l) => ({ slug: l.slug }));
 }
 
 export async function generateMetadata({

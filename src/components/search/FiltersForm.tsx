@@ -12,6 +12,7 @@ import {
 } from "@/lib/constants";
 import type { Amenity, Condition, EssentialPOI, FilterState, PropertyType } from "@/lib/types";
 import { cn, formatArea, formatPrice } from "@/lib/utils";
+import { mainFieldsFor } from "@/lib/propertyTypeFields";
 import { RangeSlider, type SliderScale } from "./RangeSlider";
 
 // Buy: fine 10k-EUR snapping from 10k-300k (the range most buyers search
@@ -66,21 +67,6 @@ const PROPERTY_TYPES: PropertyType[] = [
   "office",
 ];
 
-// Each property type surfaces only the "main filters" that actually apply
-// to it — e.g. a studio has no bedrooms field, land has no bedrooms/baths
-// but does have a building-permit filter. Selecting a type (the most
-// recently toggled one) swaps which fields show; with none selected, the
-// broadest generic set is shown.
-type FilterField = "bedrooms" | "bathrooms" | "area" | "landSize" | "buildingPermit";
-const TYPE_FIELDS: Partial<Record<PropertyType, FilterField[]>> = {
-  apartment: ["bedrooms", "bathrooms", "area"],
-  villa: ["bedrooms", "bathrooms", "area", "landSize"],
-  studio: ["area"],
-  land: ["area", "buildingPermit"],
-  office: ["area"],
-  commercial: ["area"],
-};
-const DEFAULT_FIELDS: FilterField[] = ["area", "bedrooms", "bathrooms"];
 const CONDITIONS: Condition[] = ["new", "renovated", "good", "needs_renovation"];
 const AMENITIES: Amenity[] = [
   "elevator",
@@ -151,7 +137,7 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
   // The most recently toggled type drives which fields show — e.g.
   // clicking Apartment surfaces its main filters (bedrooms/bathrooms/area).
   const activeType = filters.propertyTypes[filters.propertyTypes.length - 1];
-  const activeFields = activeType ? TYPE_FIELDS[activeType] ?? DEFAULT_FIELDS : DEFAULT_FIELDS;
+  const activeFields = mainFieldsFor(activeType);
   const showArea = activeFields.includes("area");
   const showBedBath = activeFields.includes("bedrooms") || activeFields.includes("bathrooms");
   const showLandSize = activeFields.includes("landSize");

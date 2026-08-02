@@ -44,6 +44,7 @@ export function Gallery({
               kind="interior"
               className="h-full w-full"
               iconClassName="h-10 w-10"
+              watermark
             />
             {photoCount > 1 && (
               <>
@@ -92,6 +93,7 @@ export function Gallery({
             kind="facade"
             className="h-full w-full"
             iconClassName="h-10 w-10"
+            watermark
           />
         )}
         {tab === "video" && (
