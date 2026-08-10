@@ -21,7 +21,7 @@ export function ProjectPopupCard({
   const { t } = useT();
   return (
     <div
-      className="absolute z-30 w-72 -translate-x-1/2 -translate-y-[calc(100%+16px)] overflow-hidden rounded-card border border-neutral-200 bg-white shadow-2xl"
+      className="absolute z-40 w-72 -translate-x-1/2 -translate-y-[calc(100%+16px)] overflow-hidden rounded-card border border-neutral-200 bg-white shadow-2xl"
       style={style}
       role="dialog"
       aria-label={`${project.name} project`}

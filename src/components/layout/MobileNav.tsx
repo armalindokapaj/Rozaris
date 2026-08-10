@@ -23,7 +23,7 @@ import { LanguageCurrencySelector } from "./LanguageCurrencySelector";
 import { cn } from "@/lib/utils";
 
 const links = [
-  { href: "/?mode=map", labelKey: "nav.map", icon: MapIcon },
+  { href: "/search", labelKey: "nav.map", icon: MapIcon },
   { href: "/saved", labelKey: "nav.saved", icon: Heart },
   { href: "/developers", labelKey: "nav.findAgents", icon: Users },
 ] as const;
@@ -36,7 +36,7 @@ export function MobileNav({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const { auth, signIn, signOut, compare, setMode } = useAppStore();
+  const { auth, openSignIn, signOut, compare, setMode } = useAppStore();
   const savedCount = useAppStore((s) => s.saved.listings.length + s.saved.projects.length);
   const [resourcesOpen, setResourcesOpen] = useState(false);
   const { t } = useT();
@@ -228,7 +228,7 @@ export function MobileNav({
           </>
         ) : (
           <button
-            onClick={() => signIn("John Doe", "publisher")}
+            onClick={openSignIn}
             className="mb-2 w-full rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white"
           >
             {t("common.signIn")}

@@ -1,134 +1,102 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { Building2, ShieldCheck, Sparkles, Star } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
-import { MapView } from "@/components/map/MapView";
-import { FiltersPanel } from "@/components/search/FiltersPanel";
-import { FiltersForm } from "@/components/search/FiltersForm";
-import { ResultsList } from "@/components/results/ResultsList";
-import { CompareTray } from "@/components/compare/CompareTray";
-import { ModeSwitch } from "@/components/home/ModeSwitch";
-import { OnboardingHint } from "@/components/common/OnboardingHint";
-import { MobileSearchRow } from "@/components/home/MobileSearchRow";
-import { CategoryQuickFilters } from "@/components/home/CategoryQuickFilters";
-import { PopularAreasRow } from "@/components/home/PopularAreasRow";
-import { BottomSheet, type SheetSnap } from "@/components/common/BottomSheet";
-import { List } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { SearchBar } from "@/components/search/SearchBar";
 
-export default function HomePage() {
-  const mode = useAppStore((s) => s.mode);
-  const mobileSheet = useAppStore((s) => s.mobileSheet);
-  const setMobileSheet = useAppStore((s) => s.setMobileSheet);
+// Placeholder marketing landing page for "/". The map + filters + results
+// experience that used to live here now lives at /search (see PRD:
+// ROZARIS_Landing_UIUX_PRD / ROZARIS_Search_UIUX_PRD). This page is a
+// lightweight stand-in until the real landing page design is dropped in.
 
-  const [listingsSnap, setListingsSnap] = useState<SheetSnap>("preview");
-  const [filtersSnap, setFiltersSnap] = useState<SheetSnap>("expanded");
+const STATS: { value: string; labelKey: string }[] = [
+  { value: "12,450+", labelKey: "landing.statProperties" },
+  { value: "1,250+", labelKey: "landing.statNewProjects" },
+  { value: "8,500+", labelKey: "landing.statHappyClients" },
+  { value: "320+", labelKey: "landing.statTrustedAgents" },
+];
+
+const FEATURES: { icon: typeof Sparkles; labelKey: string; bodyKey: string }[] = [
+  { icon: Sparkles, labelKey: "landing.feature3dTitle", bodyKey: "landing.feature3dBody" },
+  { icon: ShieldCheck, labelKey: "landing.featureTrustedTitle", bodyKey: "landing.featureTrustedBody" },
+  { icon: Building2, labelKey: "landing.featureListingsTitle", bodyKey: "landing.featureListingsBody" },
+  { icon: Star, labelKey: "landing.featureSaveTitle", bodyKey: "landing.featureSaveBody" },
+];
+
+export default function LandingPage() {
+  const router = useRouter();
+  const setTransaction = useAppStore((s) => s.setTransaction);
   const { t } = useT();
 
-  // Note: mobile vs. desktop chrome below is switched with Tailwind's `lg:`
-  // breakpoint classes (both trees are always in the DOM), not a JS media
-  // query — a client-only mount/unmount split here would make the server
-  // and first client render disagree on tree shape and trigger a hydration
-  // mismatch. The CSS-only approach costs a second (hidden, cheap) results
-  // list in the DOM, which is the standard, hydration-safe tradeoff.
-
   return (
-    <div className="relative flex h-full min-h-0 flex-col lg:flex-row lg:gap-4 lg:p-4">
-      {/* Desktop filters sidebar (~20%). Width is calc()-adjusted because
-          flexbox `gap` isn't automatically subtracted from percentage-based
-          flex-item widths — three columns at 20/60/20% plus two lg:gap-4
-          gaps (32px) would overflow the row by 32px without this. */}
-      <aside className="hidden lg:block lg:h-full lg:w-[calc(20%-11px)] lg:shrink-0">
-        <FiltersPanel />
-      </aside>
-
-      {/* Mobile-only search row */}
-      <MobileSearchRow onOpenFilters={() => setMobileSheet("filters")} />
-
-      {/* Persistent map column — one Mapbox instance shared across map/list modes and breakpoints */}
-      <div
-        className={cn(
-          "relative min-h-0 w-full flex-1 lg:flex-none lg:h-full",
-          mode === "map" ? "lg:w-[calc(60%-11px)]" : "lg:w-[calc(40%-11px)]"
-        )}
-      >
+    <div className="min-h-full overflow-y-auto scroll-thin bg-neutral-0">
+      <section className="relative overflow-hidden bg-neutral-900 px-4 py-20 sm:px-6 lg:px-8">
         <div
-          // Mobile only: tapping the map collapses the listings sheet back
-          // to its default preview size, giving the map its full height
-          // back (the sheet only auto-expands via the handle-bar tap below).
-          onClick={() => {
-            if (mobileSheet === "listings" && listingsSnap !== "preview") {
-              setListingsSnap("preview");
-            }
-          }}
-          className="absolute inset-0"
-        >
-          <MapView className="lg:rounded-panel" controlsClassName="top-3 right-3" />
-        </div>
-        <ModeSwitch className="absolute left-1/2 top-4 z-20 hidden -translate-x-1/2 lg:flex" />
-        <OnboardingHint />
-        <CompareTray />
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(109,91,246,0.35),transparent_45%),radial-gradient(circle_at_80%_0%,rgba(109,91,246,0.25),transparent_40%)]"
+        />
+        <div className="relative mx-auto max-w-3xl text-center">
+          <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
+            {t("landing.heroTitle")}
+          </h1>
+          <p className="mx-auto mt-4 max-w-xl text-base text-white/70 sm:text-lg">
+            {t("landing.heroSubtitle")}
+          </p>
 
-        {/* Mobile listings sheet */}
-        <BottomSheet
-          open={mobileSheet === "listings"}
-          onClose={() => setMobileSheet(null)}
-          snap={listingsSnap}
-          onSnapChange={setListingsSnap}
-          snapPoints={["preview", "half", "expanded"]}
-          tapToExpand="half"
-        >
-          <div className="space-y-3 pb-2 pt-1">
-            <CategoryQuickFilters onMore={() => setMobileSheet("filters")} />
-            <PopularAreasRow />
-            <div className="mx-4 h-px bg-neutral-100" />
-            <ResultsList layout="panel" />
+          <div className="mx-auto mt-8 max-w-xl">
+            <SearchBar />
           </div>
-        </BottomSheet>
 
-        {/* Mobile filters sheet */}
-        <BottomSheet
-          open={mobileSheet === "filters"}
-          onClose={() => setMobileSheet("listings")}
-          snap={filtersSnap}
-          onSnapChange={setFiltersSnap}
-          snapPoints={["expanded"]}
-          title={t("home.filters")}
-        >
-          <FiltersForm compact />
-          <div className="sticky bottom-0 border-t border-neutral-100 bg-white p-4">
-            <button
-              onClick={() => setMobileSheet("listings")}
-              className="w-full rounded-control bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-600"
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            {(["buy", "rent"] as const).map((txn) => (
+              <button
+                key={txn}
+                onClick={() => {
+                  setTransaction(txn);
+                  router.push("/search");
+                }}
+                className="rounded-pill border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/20"
+              >
+                {txn === "buy" ? t("nav.buy") : t("nav.rent")}
+              </button>
+            ))}
+            <Link
+              href="/search"
+              className="rounded-pill bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-600"
             >
-              {t("home.showResults")}
-            </button>
+              {t("landing.browseAll")}
+            </Link>
           </div>
-        </BottomSheet>
-
-        {!mobileSheet && (
-          <button
-            onClick={() => setMobileSheet("listings")}
-            className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-pill bg-neutral-900 px-5 py-3 text-sm font-semibold text-white shadow-lg lg:hidden"
-          >
-            <List className="h-4 w-4" />
-            {t("home.showList")}
-          </button>
-        )}
-      </div>
-
-      {/* Desktop results panel */}
-      <div
-        className={cn(
-          "hidden min-h-0 lg:block lg:h-full lg:shrink-0",
-          mode === "map" ? "lg:w-[calc(20%-11px)]" : "lg:w-[calc(40%-11px)]"
-        )}
-      >
-        <div className="glass-panel h-full overflow-hidden rounded-panel shadow-sm">
-          <ResultsList layout={mode === "map" ? "panel" : "grid"} />
         </div>
-      </div>
+      </section>
+
+      <section className="border-b border-neutral-100 px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {FEATURES.map(({ icon: Icon, labelKey, bodyKey }) => (
+            <div key={labelKey} className="rounded-card border border-neutral-100 p-5">
+              <span className="flex h-10 w-10 items-center justify-center rounded-control bg-brand-50 text-brand-600">
+                <Icon className="h-5 w-5" strokeWidth={1.75} />
+              </span>
+              <h3 className="mt-3 text-sm font-bold text-neutral-900">{t(labelKey)}</h3>
+              <p className="mt-1 text-sm text-neutral-500">{t(bodyKey)}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="px-4 py-12 sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-5xl grid-cols-2 gap-6 sm:grid-cols-4">
+          {STATS.map(({ value, labelKey }) => (
+            <div key={labelKey} className="text-center">
+              <p className="text-2xl font-bold text-neutral-900">{value}</p>
+              <p className="mt-1 text-sm text-neutral-500">{t(labelKey)}</p>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

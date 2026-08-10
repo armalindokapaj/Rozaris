@@ -7,6 +7,7 @@ import { useProjectConstruction } from "@/hooks/useProjectConstruction";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { getNeighborhood } from "@/lib/mockData";
+import { SELECTED_UNIT_ZOOM } from "@/lib/constants";
 import type { Project } from "@/lib/types";
 
 const STATUS_LABEL_KEY: Record<Project["status"], string> = {
@@ -33,12 +34,12 @@ export function ProjectCard({ project }: { project: Project }) {
       onMouseLeave={() => setHovered(null)}
       onClick={() => {
         selectProject(project.id);
-        requestFlyTo({ lat: project.coords.lat, lng: project.coords.lng, zoom: 16.5 });
+        requestFlyTo({ lat: project.coords.lat, lng: project.coords.lng, zoom: SELECTED_UNIT_ZOOM });
       }}
       role="button"
       tabIndex={0}
       className={cn(
-        "block cursor-pointer overflow-hidden rounded-card border shadow-sm transition-all",
+        "flex h-full cursor-pointer flex-col overflow-hidden rounded-card border shadow-sm transition-all",
         project.premium ? "bg-amber-50/70" : "bg-white",
         isActive
           ? "border-listing-new-dev shadow-lg ring-1 ring-brand-200"
@@ -51,7 +52,7 @@ export function ProjectCard({ project }: { project: Project }) {
         project.premium && "hover:z-10 hover:scale-[1.02] hover:border-listing-premium hover:shadow-lg"
       )}
     >
-      <div className="relative aspect-[4/3] w-full">
+      <div className="relative aspect-[4/3] w-full shrink-0">
         <PlaceholderImage seed={project.slug} kind="hero" className="h-full w-full" watermark />
         <div className="absolute left-2.5 top-2.5 flex gap-1.5">
           <span className="rounded-full bg-listing-new-dev px-2 py-1 text-[11px] font-semibold text-white shadow">
@@ -61,7 +62,7 @@ export function ProjectCard({ project }: { project: Project }) {
               amber tint/border and hover treatment only. */}
         </div>
       </div>
-      <div className="flex flex-col gap-1.5 p-3.5">
+      <div className="flex flex-1 flex-col gap-1.5 p-3.5">
         <p className="truncate text-sm font-semibold text-neutral-900">{project.name}</p>
         <p className="truncate text-xs text-neutral-500">
           {project.developer.name} · {neighborhood?.name ?? project.city}
@@ -85,7 +86,7 @@ export function ProjectCard({ project }: { project: Project }) {
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="mt-2 flex items-center justify-center gap-1.5 rounded-control bg-neutral-900 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
+          className="mt-auto flex items-center justify-center gap-1.5 rounded-control bg-neutral-900 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
         >
           <Box className="h-3.5 w-3.5" />
           {t("results.exploreIn3d")}

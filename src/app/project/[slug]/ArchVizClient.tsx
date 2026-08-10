@@ -28,7 +28,7 @@ export function ArchVizClient({ project }: { project: Project }) {
     <div id="main-content" className="relative h-dvh w-full overflow-hidden bg-neutral-900">
       <header className="absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-3 p-3 sm:p-4">
         <div className="glass-panel-dark flex items-center gap-3 rounded-panel px-3.5 py-2.5 sm:px-4">
-          <Link href="/" className="flex items-center gap-2 text-sm font-bold text-white">
+          <Link href="/search" className="flex items-center gap-2 text-sm font-bold text-white">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500">
               R
             </span>

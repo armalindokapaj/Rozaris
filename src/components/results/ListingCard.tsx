@@ -8,6 +8,7 @@ import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import { formatArea, transactionLabel, cn } from "@/lib/utils";
 import { getNeighborhood } from "@/lib/mockData";
+import { SELECTED_UNIT_ZOOM } from "@/lib/constants";
 import type { Listing } from "@/lib/types";
 
 export function ListingCard({
@@ -45,7 +46,7 @@ export function ListingCard({
 
   function selectOnMap() {
     selectListing(listing.id);
-    requestFlyTo({ lat: listing.coords.lat, lng: listing.coords.lng, zoom: 16 });
+    requestFlyTo({ lat: listing.coords.lat, lng: listing.coords.lng, zoom: SELECTED_UNIT_ZOOM });
   }
 
   return (

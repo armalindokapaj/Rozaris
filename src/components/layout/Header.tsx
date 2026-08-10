@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Heart, Menu, SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
@@ -69,6 +69,7 @@ function ResourcesDropdown() {
 
 export function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const compareCount = useAppStore((s) => s.compare.length);
   const savedCount = useAppStore((s) => s.saved.listings.length + s.saved.projects.length);
@@ -88,6 +89,15 @@ export function Header() {
         <Logo />
 
         <nav className="ml-2 hidden items-center gap-0.5 lg:flex" aria-label={t("common.primaryNav")}>
+          <Link
+            href="/search"
+            className={cn(
+              "rounded-control px-2 py-2 text-sm font-medium text-neutral-600 transition-all duration-200 hover:scale-105 hover:bg-brand-50 hover:text-brand-600",
+              pathname === "/search" && "text-neutral-900"
+            )}
+          >
+            {t("nav.search")}
+          </Link>
           <Link
             href="/new-projects"
             className={cn(
@@ -114,7 +124,10 @@ export function Header() {
           ).map(([txn, labelKey]) => (
             <button
               key={txn}
-              onClick={() => setTransaction(txn)}
+              onClick={() => {
+                setTransaction(txn);
+                if (pathname !== "/search") router.push("/search");
+              }}
               className={cn(
                 "shrink-0 rounded-control px-2.5 py-1.5 text-xs font-semibold transition-colors",
                 filters.transaction === txn && !filters.projectsOnly
@@ -126,7 +139,10 @@ export function Header() {
             </button>
           ))}
           <button
-            onClick={() => setFilters({ projectsOnly: true })}
+            onClick={() => {
+              setFilters({ projectsOnly: true });
+              if (pathname !== "/search") router.push("/search");
+            }}
             className={cn(
               "shrink truncate rounded-control px-2.5 py-1.5 text-xs font-semibold transition-colors",
               filters.projectsOnly ? "bg-brand-500 text-white" : "bg-neutral-100 text-neutral-600"

@@ -220,43 +220,44 @@ body {
   height: 34px;
   border-radius: 11px;
 }
-/* Price-tier marker: a small version of the listing card (thumbnail +
-   price) rather than a plain pill, so it reads as the same card, smaller. */
+/* Price-tier marker: a tight, pill-shaped badge with just the price —
+   standalone listings only (a unit that's part of a New Project shows the
+   project's own marker instead, so the map stays uncluttered). Fully
+   rounded and snug around the text (rather than a wide rounded-rect card)
+   so it reads as a premium little price tag, not a stretched-out chip. */
 .rz-marker-price-card {
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 3px 8px 3px 3px;
-  border-radius: 9px;
-  background: white;
-  border: 1px solid rgba(23, 22, 38, 0.1);
-  box-shadow: 0 4px 14px -2px rgba(23, 22, 38, 0.25);
+  justify-content: center;
+  height: 25px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff, #fbfafe);
+  border: 1px solid rgba(23, 22, 38, 0.08);
+  box-shadow: 0 3px 10px -2px rgba(23, 22, 38, 0.22);
   color: #17161f;
   font-weight: 700;
-  font-size: 11.5px;
+  font-size: 12px;
+  letter-spacing: -0.01em;
   cursor: pointer;
   white-space: nowrap;
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
 .rz-marker-price-card:hover {
-  transform: scale(1.06);
-  box-shadow: 0 8px 20px -2px rgba(23, 22, 38, 0.3);
+  transform: scale(1.08);
+  box-shadow: 0 8px 18px -2px rgba(23, 22, 38, 0.3);
 }
 .rz-marker-price-card-selected {
   color: white;
-  background: #6d5bf6;
-  border-color: #6d5bf6;
+  background: linear-gradient(135deg, #6d5bf6, #8874ff);
+  border-color: transparent;
+  box-shadow: 0 4px 14px -2px rgba(109, 91, 246, 0.55);
 }
 .rz-marker-price-card-premium:not(.rz-marker-price-card-selected) {
-  border-color: #c9973f;
-}
-.rz-marker-thumb {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  flex-shrink: 0;
-  background-size: cover;
+  background: linear-gradient(135deg, #fff8ec, #fdeecb);
+  border-color: rgba(201, 151, 63, 0.55);
+  color: #7a5a1e;
+  box-shadow: 0 3px 10px -2px rgba(201, 151, 63, 0.35);
 }
 .rz-marker-cluster {
   min-width: 46px;

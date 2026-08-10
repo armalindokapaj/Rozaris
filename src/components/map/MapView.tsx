@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { useAppStore } from "@/lib/store";
+import { SELECTED_UNIT_ZOOM } from "@/lib/constants";
 import { getVisibleListings, getVisibleProjects } from "@/lib/filtering";
 import { getNeighborhood, searchableListings, projects, CITY_CENTER } from "@/lib/mockData";
 import {
@@ -14,6 +15,7 @@ import { MapControls } from "./MapControls";
 import { MapFallback } from "./MapFallback";
 import { ProjectPopupCard } from "./ProjectPopupCard";
 import { BuildingPopupCard } from "./BuildingPopupCard";
+import { UnitPopupCard } from "./UnitPopupCard";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
@@ -62,12 +64,16 @@ export function MapView({
   const noTokenReason = !token ? t("map.addTokenHint") : null;
   const failReason = noTokenReason ?? webglFailReason;
 
+  // Markers reflect the search filters, not the current viewport — panning
+  // or zooming the map must not hide matches that are simply off-screen, so
+  // bounds are not used to restrict what's plotted (mapBounds is still
+  // tracked above for anything that keys off the visible area later).
   const visibleListings = useMemo(
-    () => getVisibleListings(filters, mapBounds, true),
+    () => getVisibleListings(filters, mapBounds, false),
     [filters, mapBounds]
   );
   const visibleProjects = useMemo(
-    () => getVisibleProjects(filters, mapBounds, true),
+    () => getVisibleProjects(filters, mapBounds, false),
     [filters, mapBounds]
   );
 
@@ -85,7 +91,7 @@ export function MapView({
     mapboxgl.accessToken = token;
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/mapbox/standard",
+      style: "mapbox://styles/armalindokapaj/cms9jpj8b008x01s9g1fib0f7",
       center: [CITY_CENTER.lng, CITY_CENTER.lat],
       zoom: 12.4,
       pitch: 55,
@@ -165,6 +171,54 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyToToken]);
 
+  // --- Slow auto-rotate while a unit is selected ---
+  // A gentle bearing drift while a listing/project is focused, so the
+  // camera doesn't just sit static on the selection. Cancels the instant
+  // the user actually touches the map (drag/wheel/pinch) rather than
+  // fighting their input, and stops outright once nothing is selected.
+  useEffect(() => {
+    const map = mapRef.current;
+    const isUnitSelected = !!(selectedListingId || selectedProjectId);
+    if (!map || !ready || !isUnitSelected) return;
+
+    const DEG_PER_SEC = 1.2;
+    let raf = 0;
+    let lastTs: number | null = null;
+
+    function tick(ts: number) {
+      // setBearing (like every camera method) calls the map's internal
+      // stop() first, which would abort the selection's own flyTo/easeTo
+      // mid-flight — skip ticking while the camera is already animating
+      // (isMoving covers both, whether user- or code-driven) and resume
+      // once it settles, instead of fighting it.
+      if (map && !map.isMoving()) {
+        if (lastTs != null) {
+          const dt = (ts - lastTs) / 1000;
+          map.setBearing(map.getBearing() + DEG_PER_SEC * dt);
+        }
+        lastTs = ts;
+      } else {
+        lastTs = null;
+      }
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+
+    function stopRotation() {
+      cancelAnimationFrame(raf);
+    }
+    map.once("dragstart", stopRotation);
+    map.once("wheel", stopRotation);
+    map.once("touchstart", stopRotation);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      map.off("dragstart", stopRotation);
+      map.off("wheel", stopRotation);
+      map.off("touchstart", stopRotation);
+    };
+  }, [ready, selectedListingId, selectedProjectId]);
+
   // --- Marker reconciliation ---
   useEffect(() => {
     const map = mapRef.current;
@@ -173,9 +227,45 @@ export function MapView({
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
 
+    // Projects get a marker pinned to the map at every zoom tier — unlike
+    // listings, they never fold into a neighborhood cluster count. Keeping
+    // them out of that tier switch means the pin doesn't pop away and
+    // reappear (feeling laggy) as you cross the cluster/icon zoom threshold.
+    visibleProjects.forEach((project) => {
+      const el = buildProjectMarker({
+        selected: project.id === selectedProjectId,
+        premium: project.premium,
+      });
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        // Same fix as the listing marker below: selectProject already
+        // clears selectedListingId itself.
+        selectProject(project.id);
+        map.easeTo({
+          center: [project.coords.lng, project.coords.lat],
+          zoom: Math.max(map.getZoom(), SELECTED_UNIT_ZOOM),
+          duration: 500,
+        });
+      });
+      // anchor: "center" (not "bottom") so the coordinate sits at the
+      // marker's exact visual middle — otherwise easeTo/flyTo's `center`
+      // lands the coordinate at the map's center pixel while the marker's
+      // body, hanging above a bottom anchor, renders visibly off-center.
+      const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
+        .setLngLat([project.coords.lng, project.coords.lat])
+        .addTo(map);
+      markersRef.current.push(marker);
+    });
+
+    // Listings synthesized from a New Project's units already get that
+    // project's own marker above — plotting them individually too would
+    // just duplicate the same pin and clutter the map, so only standalone
+    // listings get their own marker/cluster here.
+    const standaloneListings = visibleListings.filter((l) => !l.fromProjectSlug);
+
     if (tier === "cluster") {
       const counts = new Map<string, number>();
-      visibleListings.forEach((l) =>
+      standaloneListings.forEach((l) =>
         counts.set(l.neighborhoodId, (counts.get(l.neighborhoodId) ?? 0) + 1)
       );
       counts.forEach((count, nId) => {
@@ -194,7 +284,7 @@ export function MapView({
         markersRef.current.push(marker);
       });
     } else {
-      visibleListings.forEach((listing) => {
+      standaloneListings.forEach((listing) => {
         const isSelected = listing.id === selectedListingId;
         const el = buildListingMarker({
           tier,
@@ -204,7 +294,6 @@ export function MapView({
           selected: isSelected,
           propertyType: listing.propertyType,
           buildingCount: listing.buildingListingCount,
-          seed: listing.id,
         });
         el.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -220,27 +309,15 @@ export function MapView({
           // reciprocal clearing (selectedListingId: null) would immediately
           // wipe out the selection just made, one tick later.
           selectListing(listing.id);
-          map.easeTo({ center: [listing.coords.lng, listing.coords.lat], duration: 500 });
+          map.easeTo({
+            center: [listing.coords.lng, listing.coords.lat],
+            zoom: Math.max(map.getZoom(), SELECTED_UNIT_ZOOM),
+            duration: 500,
+          });
         });
-        const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
+        // anchor: "center" — see the project marker above for why.
+        const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
           .setLngLat([listing.coords.lng, listing.coords.lat])
-          .addTo(map);
-        markersRef.current.push(marker);
-      });
-
-      visibleProjects.forEach((project) => {
-        const el = buildProjectMarker({
-          selected: project.id === selectedProjectId,
-          premium: project.premium,
-        });
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          // Same fix as the listing marker above: selectProject already
-          // clears selectedListingId itself.
-          selectProject(project.id);
-        });
-        const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
-          .setLngLat([project.coords.lng, project.coords.lat])
           .addTo(map);
         markersRef.current.push(marker);
       });
@@ -262,13 +339,30 @@ export function MapView({
   const activeProject = selectedProjectId
     ? projects.find((p) => p.id === selectedProjectId) ?? null
     : null;
+  // A building with multiple independent (non-project) listings — excludes
+  // project units explicitly, even though those never set buildingListingCount
+  // anyway, since they get their own dedicated popup below instead.
   const activeBuildingListing =
     !activeProject && selectedListingId
       ? searchableListings.find(
-          (l) => l.id === selectedListingId && (l.buildingListingCount ?? 0) > 1
+          (l) =>
+            l.id === selectedListingId &&
+            !l.fromProjectSlug &&
+            (l.buildingListingCount ?? 0) > 1
         ) ?? null
       : null;
-  const activeCoords = activeProject?.coords ?? activeBuildingListing?.coords ?? null;
+  // A specific unit belonging to a New Project, selected from the results
+  // list — the project's marker is the only pin plotted at its location, so
+  // this popup is the only way the map shows *which* unit is selected
+  // (rather than falling back to the generic project overview popup).
+  const activeProjectUnit =
+    !activeProject && !activeBuildingListing && selectedListingId
+      ? searchableListings.find(
+          (l) => l.id === selectedListingId && l.fromProjectSlug
+        ) ?? null
+      : null;
+  const activeCoords =
+    activeProject?.coords ?? activeBuildingListing?.coords ?? activeProjectUnit?.coords ?? null;
 
   useEffect(() => {
     const map = mapRef.current;
@@ -288,22 +382,30 @@ export function MapView({
   }, [activeCoords]);
 
   return (
-    <div className={cn("relative h-full w-full overflow-hidden bg-neutral-100", className)}>
+    <div className="relative h-full w-full">
       {failReason ? (
-        <MapFallback
-          reason={failReason}
-          actionLabel={t("map.browsePropertiesAsList")}
-          onAction={() => setMode("list")}
-        />
+        <div className={cn("h-full w-full overflow-hidden bg-neutral-100", className)}>
+          <MapFallback
+            reason={failReason}
+            actionLabel={t("map.browsePropertiesAsList")}
+            onAction={() => setMode("list")}
+          />
+        </div>
       ) : (
         <>
-          <div ref={containerRef} className="h-full w-full" />
-          <div className="cloud-texture" aria-hidden="true" />
-          {!ready && (
-            <div className="absolute inset-0 flex items-center justify-center bg-neutral-100">
-              <div className="h-10 w-10 animate-spin rounded-full border-[3px] border-brand-200 border-t-brand-500" />
-            </div>
-          )}
+          {/* Rounded-corner clipping lives on this inner wrapper only — the
+              canvas/texture/spinner need it, but controls and popups sit
+              on the outer (unclipped) root below so a popup near the top
+              edge of the map isn't cut off by it. */}
+          <div className={cn("absolute inset-0 overflow-hidden bg-neutral-100", className)}>
+            <div ref={containerRef} className="h-full w-full" />
+            <div className="cloud-texture" aria-hidden="true" />
+            {!ready && (
+              <div className="absolute inset-0 flex items-center justify-center bg-neutral-100">
+                <div className="h-10 w-10 animate-spin rounded-full border-[3px] border-brand-200 border-t-brand-500" />
+              </div>
+            )}
+          </div>
           <MapControls
             map={mapInstance}
             className={cn("absolute right-3 top-3 z-20", controlsClassName)}
@@ -323,6 +425,16 @@ export function MapView({
               onClose={() => selectListing(null)}
               onViewListing={() => {
                 window.location.href = `/listing/${activeBuildingListing.slug}`;
+              }}
+            />
+          )}
+          {activeProjectUnit && popupPos && (
+            <UnitPopupCard
+              listing={activeProjectUnit}
+              style={{ left: popupPos.x, top: popupPos.y }}
+              onClose={() => selectListing(null)}
+              onViewUnit={() => {
+                window.location.href = `/listing/${activeProjectUnit.slug}`;
               }}
             />
           )}

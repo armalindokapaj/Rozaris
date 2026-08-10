@@ -49,16 +49,16 @@ const LAND_SIZE_SCALE: SliderScale = {
   stepAfterBreakpoint: 200,
 };
 
-function priceScaleFor(filters: FilterState): SliderScale {
+export function priceScaleFor(filters: FilterState): SliderScale {
   if (filters.transaction !== "rent") return BUY_PRICE_SCALE;
   return filters.rentSubtype === "daily" ? DAILY_RENT_PRICE_SCALE : RENT_PRICE_SCALE;
 }
-function areaScaleFor(filters: FilterState): SliderScale {
+export function areaScaleFor(filters: FilterState): SliderScale {
   if (filters.transaction !== "rent") return BUY_AREA_SCALE;
   return filters.rentSubtype === "daily" ? DAILY_RENT_AREA_SCALE : RENT_AREA_SCALE;
 }
 
-const PROPERTY_TYPES: PropertyType[] = [
+export const PROPERTY_TYPES: PropertyType[] = [
   "apartment",
   "villa",
   "studio",

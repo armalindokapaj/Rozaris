@@ -101,4 +101,9 @@ export const SORT_LABELS: Record<Locale, Record<SortOption, string>> = {
 
 export const MOBILE_BREAKPOINT = 1024;
 
+/** Camera zoom the map flies/eases to when a specific listing or project
+ * marker is selected — close enough to read as "zoomed into the unit"
+ * rather than just its neighborhood. */
+export const SELECTED_UNIT_ZOOM = 17.5;
+
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://rozaris.al";

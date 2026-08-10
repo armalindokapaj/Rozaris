@@ -125,7 +125,7 @@ export default function SavedPage() {
       {!isEmpty && (
         <p className="mt-10 text-center text-xs text-neutral-400">
           {t("saved.lookingForMore")}{" "}
-          <Link href="/" className="text-brand-600 hover:underline">
+          <Link href="/search" className="text-brand-600 hover:underline">
             {t("saved.backToMap")}
           </Link>
         </p>

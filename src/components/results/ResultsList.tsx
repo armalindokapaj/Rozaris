@@ -15,12 +15,24 @@ const PAGE_SIZE = 12;
 
 type Row = { kind: "listing"; item: Listing } | { kind: "project"; item: Project };
 
+const GRID_COLS_CLASS: Record<2 | 3 | 4, string> = {
+  2: "grid-cols-2",
+  3: "grid-cols-3",
+  4: "grid-cols-4",
+};
+
 export function ResultsList({
   layout,
-  restrictToBounds = true,
+  // Matches the map: results reflect the search filters, not whatever
+  // happens to be panned into view, so an off-screen match isn't dropped
+  // from the list either.
+  restrictToBounds = false,
+  columns = 3,
 }: {
   layout: "panel" | "grid";
   restrictToBounds?: boolean;
+  /** Grid column count — only meaningful when layout is "grid". */
+  columns?: 2 | 3 | 4;
 }) {
   const filters = useAppStore((s) => s.filters);
   const mapBounds = useAppStore((s) => s.mapBounds);
@@ -124,7 +136,7 @@ export function ResultsList({
         </div>
       ) : (
         <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin p-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className={`grid ${GRID_COLS_CLASS[columns]} gap-4`}>
             {pageRows.map((row) =>
               row.kind === "listing" ? (
                 <ListingCard key={row.item.id} listing={row.item} variant="grid" />
