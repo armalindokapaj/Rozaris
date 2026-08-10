@@ -16,6 +16,10 @@ import type { Project, Unit } from "@/lib/types";
 export function ArchVizClient({ project }: { project: Project }) {
   const viewerRef = useRef<ThreeProjectViewerHandle>(null);
   const [unitPanelOpen, setUnitPanelOpen] = useState(false);
+  // The viewer's own filter bar is open by default and can be several rows
+  // tall on narrow screens — hide the "explore units" CTA below while it's
+  // showing instead of guessing a bottom offset that would overlap it.
+  const [unitBarOpen, setUnitBarOpen] = useState(true);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const compareCount = useAppStore((s) => s.compare.length);
   const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
@@ -69,10 +73,15 @@ export function ArchVizClient({ project }: { project: Project }) {
         selectedUnitId={selectedUnit?.id ?? null}
         onSelectUnit={(u) => setSelectedUnit(u)}
         constructionProgressPercent={construction.progressPercent}
+        onBarOpenChange={setUnitBarOpen}
       />
 
-      {!unitPanelOpen && (
-        <div className="absolute inset-x-0 bottom-5 z-20 flex flex-col items-center gap-3 px-4 sm:bottom-6">
+      {!unitPanelOpen && !unitBarOpen && (
+        // bottom-16, not the usual bottom-5/6: the viewer's own "reopen
+        // filter bar" pill (ThreeProjectViewer.tsx) is anchored at the same
+        // bottom-center spot and only shows in this exact same state (bar
+        // collapsed) — this clears it instead of stacking on top of it.
+        <div className="absolute inset-x-0 bottom-16 z-20 flex flex-col items-center gap-3 px-4">
           <button
             onClick={() => setUnitPanelOpen(true)}
             className="flex items-center gap-2 rounded-pill bg-brand-500 px-6 py-3.5 text-sm font-bold text-white shadow-[var(--shadow-1)] hover:bg-brand-600"

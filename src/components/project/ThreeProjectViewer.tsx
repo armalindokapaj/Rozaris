@@ -64,6 +64,12 @@ export const ThreeProjectViewer = forwardRef<
      * default; the Admin live-preview embed turns it off to keep the form
      * the only UI. */
     showChrome?: boolean;
+    /** Fires whenever the built-in filter bar (open by default) is
+     * opened/closed, so a parent floating its own bottom-anchored UI (e.g.
+     * ArchVizClient's "explore units" CTA) can avoid overlapping it instead
+     * of guessing a pixel offset — the bar's real height varies a lot by
+     * breakpoint (it wraps to multiple rows on narrow screens). */
+    onBarOpenChange?: (open: boolean) => void;
   }
 >(function ThreeProjectViewer(
   {
@@ -74,6 +80,7 @@ export const ThreeProjectViewer = forwardRef<
     onSelectUnit,
     constructionProgressPercent,
     showChrome = true,
+    onBarOpenChange,
   },
   ref
 ) {
@@ -106,6 +113,12 @@ export const ThreeProjectViewer = forwardRef<
   const [barOpen, setBarOpen] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const { t } = useT();
+
+  // showChrome=false (Admin's live-preview embed) never renders the bar
+  // regardless of barOpen's internal value, so report it as closed there.
+  useEffect(() => {
+    onBarOpenChange?.(barOpen && showChrome);
+  }, [barOpen, showChrome, onBarOpenChange]);
 
   const areaBounds = useMemo(() => {
     const areas = project.units.map((u) => u.area);
