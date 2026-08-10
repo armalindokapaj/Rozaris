@@ -235,6 +235,10 @@ export interface ProjectMapModel {
   altitudeOffset: number;
   /** Hidden on the public map without discarding the upload/config. */
   enabled: boolean;
+  /** Hides the basemap's real 3D building footprint at this project's
+   * coordinates (BuildingHider) — so the GLB replaces it cleanly instead of
+   * sitting alongside/inside a generic extruded box. */
+  hideBaseBuilding: boolean;
   updatedAt: string;
 }
 

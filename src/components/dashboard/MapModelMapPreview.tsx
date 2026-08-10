@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { ProjectModelLayer } from "@/components/map/ProjectModelLayer";
+import { BuildingHider } from "@/components/map/BuildingHider";
 import { MapFallback } from "@/components/map/MapFallback";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ export function MapModelMapPreview({
   scale,
   rotationDeg,
   altitudeOffset,
+  hideBaseBuilding,
   className,
 }: {
   coords: GeoPoint;
@@ -31,11 +33,13 @@ export function MapModelMapPreview({
   scale: number;
   rotationDeg: number;
   altitudeOffset: number;
+  hideBaseBuilding: boolean;
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const modelLayerRef = useRef<ProjectModelLayer | null>(null);
+  const buildingHiderRef = useRef<BuildingHider | null>(null);
   const [ready, setReady] = useState(false);
   const [webglFailReason, setWebglFailReason] = useState<string | null>(null);
   const { t } = useT();
@@ -69,10 +73,13 @@ export function MapModelMapPreview({
       const modelLayer = new ProjectModelLayer({ onPick: () => {} });
       map.addLayer(modelLayer);
       modelLayerRef.current = modelLayer;
+      buildingHiderRef.current = new BuildingHider(map);
       setReady(true);
     });
 
     return () => {
+      buildingHiderRef.current?.destroy();
+      buildingHiderRef.current = null;
       map.remove();
       mapRef.current = null;
       modelLayerRef.current = null;
@@ -105,6 +112,13 @@ export function MapModelMapPreview({
         : []
     );
   }, [ready, glbUrl, coords.lat, coords.lng, scale, rotationDeg, altitudeOffset]);
+
+  useEffect(() => {
+    if (!ready) return;
+    buildingHiderRef.current?.setTargets(
+      glbUrl && hideBaseBuilding ? [{ key: "preview", lng: coords.lng, lat: coords.lat }] : []
+    );
+  }, [ready, glbUrl, hideBaseBuilding, coords.lat, coords.lng]);
 
   if (failReason) {
     return (

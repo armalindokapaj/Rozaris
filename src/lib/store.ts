@@ -70,6 +70,7 @@ export const defaultProjectMapModel: ProjectMapModel = {
   rotationDeg: 0,
   altitudeOffset: 0,
   enabled: false,
+  hideBaseBuilding: false,
   updatedAt: "",
 };
 

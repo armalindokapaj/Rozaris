@@ -10,6 +10,7 @@ const mapModelSchema = z.object({
   rotationDeg: z.number(),
   altitudeOffset: z.number(),
   enabled: z.boolean(),
+  hideBaseBuilding: z.boolean(),
 });
 
 export async function GET(

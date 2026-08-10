@@ -711,6 +711,8 @@ const en = {
     mapModelRotation: "Rotation",
     mapModelAltitude: "Altitude offset",
     mapModelEnabled: "Show on the public map",
+    mapModelHideBuilding: "Remove the real building here",
+    mapModelHideBuildingNote: "Hides the basemap's default 3D building at this exact spot so your model replaces it cleanly instead of sitting inside/next to it.",
     mapModelSave: "Save placement",
     mapModelSaved: "Saved — now live on the map (if enabled).",
     mapModelSaveFailed: "Couldn't save — please try again.",

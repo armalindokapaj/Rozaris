@@ -460,6 +460,10 @@ model ProjectMapModel {
   rotationDeg     Float    @default(0)
   altitudeOffset  Float    @default(0)
   enabled         Boolean  @default(false)
+  /// Hides the basemap's real 3D building footprint at this project's
+  /// coordinates (see src/components/map/BuildingHider.ts) so the GLB
+  /// replaces it cleanly instead of sitting alongside/inside it.
+  hideBaseBuilding Boolean @default(false)
   updatedAt       DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

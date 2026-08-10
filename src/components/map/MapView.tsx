@@ -12,6 +12,7 @@ import {
   buildProjectMarker,
 } from "./markerFactory";
 import { ProjectModelLayer, type MapModelEntry } from "./ProjectModelLayer";
+import { BuildingHider } from "./BuildingHider";
 import { MapControls } from "./MapControls";
 import { MapFallback } from "./MapFallback";
 import { ProjectPopupCard } from "./ProjectPopupCard";
@@ -36,6 +37,7 @@ interface MapModelRow {
   rotationDeg: number;
   altitudeOffset: number;
   enabled: boolean;
+  hideBaseBuilding: boolean;
 }
 
 /** "3D Map Control" placement, keyed by project id — a real, shared Postgres
@@ -85,6 +87,7 @@ export function MapView({
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const modelLayerRef = useRef<ProjectModelLayer | null>(null);
+  const buildingHiderRef = useRef<BuildingHider | null>(null);
 
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const [ready, setReady] = useState(false);
@@ -173,6 +176,7 @@ export function MapView({
       });
       map.addLayer(modelLayer);
       modelLayerRef.current = modelLayer;
+      buildingHiderRef.current = new BuildingHider(map);
     });
 
     let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -205,6 +209,8 @@ export function MapView({
     });
 
     return () => {
+      buildingHiderRef.current?.destroy();
+      buildingHiderRef.current = null;
       map.remove();
       mapRef.current = null;
       modelLayerRef.current = null;
@@ -230,6 +236,19 @@ export function MapView({
       ];
     });
   }, [visibleProjects, projectMapModels]);
+
+  const buildingHideTargets = useMemo(() => {
+    return visibleProjects.flatMap((p) => {
+      const model = projectMapModels[p.id];
+      if (!model?.enabled || !model.glbUrl || !model.hideBaseBuilding) return [];
+      return [{ key: p.id, lng: p.coords.lng, lat: p.coords.lat }];
+    });
+  }, [visibleProjects, projectMapModels]);
+
+  useEffect(() => {
+    if (!ready) return;
+    buildingHiderRef.current?.setTargets(buildingHideTargets);
+  }, [ready, buildingHideTargets]);
 
   useEffect(() => {
     if (!ready) return;

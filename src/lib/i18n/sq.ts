@@ -713,6 +713,8 @@ const sq: Dictionary = {
     mapModelRotation: "Rrotullimi",
     mapModelAltitude: "Zhvendosja e lartësisë",
     mapModelEnabled: "Shfaqe në hartën publike",
+    mapModelHideBuilding: "Hiq ndërtesën reale këtu",
+    mapModelHideBuildingNote: "Fsheh ndërtesën 3D parazgjedhur të hartës bazë pikërisht në këtë vend, që modeli yt ta zëvendësojë atë pastër, në vend që të rrijë brenda/pranë saj.",
     mapModelSave: "Ruaj vendosjen",
     mapModelSaved: "U ruajt — tani është live në hartë (nëse është aktivizuar).",
     mapModelSaveFailed: "Ruajtja dështoi — provo përsëri.",

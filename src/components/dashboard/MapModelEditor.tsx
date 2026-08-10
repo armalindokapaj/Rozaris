@@ -134,6 +134,7 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
           rotationDeg: draft.rotationDeg,
           altitudeOffset: draft.altitudeOffset,
           enabled: draft.enabled,
+          hideBaseBuilding: draft.hideBaseBuilding,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -163,6 +164,7 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
             scale={draft.scale}
             rotationDeg={draft.rotationDeg}
             altitudeOffset={draft.altitudeOffset}
+            hideBaseBuilding={draft.hideBaseBuilding}
           />
         </div>
 
@@ -275,6 +277,14 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
               checked={draft.enabled}
               onChange={(v) => update({ enabled: v })}
             />
+            <ToggleField
+              label={t("admin.mapModelHideBuilding")}
+              checked={draft.hideBaseBuilding}
+              onChange={(v) => update({ hideBaseBuilding: v })}
+            />
+            <p className="-mt-3 text-[11px] text-neutral-400">
+              {t("admin.mapModelHideBuildingNote")}
+            </p>
           </div>
 
           <div className="shrink-0 space-y-2 border-t border-neutral-100 p-4">
