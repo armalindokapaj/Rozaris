@@ -12,6 +12,7 @@ import {
   SquareStack,
   ShieldCheck,
   Box,
+  Scale,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
@@ -260,7 +261,7 @@ export function ListingDetailClient({
           {listing.fromProjectSlug && (
             <div className="border-t border-neutral-100 p-4">
               <Link
-                href={`/project/${listing.fromProjectSlug}`}
+                href={`/projects/${listing.fromProjectSlug}`}
                 className="inline-flex items-center gap-1.5 rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-200"
               >
                 <Box className="h-3.5 w-3.5" />
@@ -284,6 +285,17 @@ export function ListingDetailClient({
               </div>
               <div className="border-t border-neutral-100 p-4">
                 <InsuranceCalculator compact initialPrice={listing.price} />
+              </div>
+              <div className="border-t border-neutral-100 p-4">
+                <Link
+                  href={`/rent-vs-buy?price=${listing.price}&location=${encodeURIComponent(
+                    `${neighborhood?.name ?? ""}, ${listing.city}`
+                  )}`}
+                  className="flex items-center justify-center gap-1.5 rounded-control border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
+                >
+                  <Scale className="h-4 w-4" />
+                  {t("listing.compareRentVsBuy")}
+                </Link>
               </div>
             </>
           )}

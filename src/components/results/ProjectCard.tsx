@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Box } from "lucide-react";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { useAppStore } from "@/lib/store";
@@ -81,16 +82,28 @@ export function ProjectCard({ project }: { project: Project }) {
             />
           </div>
         )}
-        <a
-          href={`/project/${project.slug}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="mt-auto flex items-center justify-center gap-1.5 rounded-control bg-neutral-900 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
-        >
-          <Box className="h-3.5 w-3.5" />
-          {t("results.exploreIn3d")}
-        </a>
+        {/* Details opens the editorial Project Detail Page (the authoritative
+            info/inventory page — PRD_Project_Detail_Page §1); 3D stays a
+            distinct, explicit escape hatch into the Three.js viewer. */}
+        <div className="mt-auto flex items-center gap-1.5">
+          <Link
+            href={`/projects/${project.slug}`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex flex-1 items-center justify-center rounded-control border border-neutral-200 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+          >
+            {t("results.viewDetails")}
+          </Link>
+          <a
+            href={`/project/${project.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={t("results.exploreIn3d")}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center justify-center rounded-control bg-neutral-900 px-2.5 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
+          >
+            <Box className="h-3.5 w-3.5" />
+          </a>
+        </div>
       </div>
     </div>
   );

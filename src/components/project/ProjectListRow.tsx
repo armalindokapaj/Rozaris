@@ -124,15 +124,24 @@ export function ProjectListRow({ project }: { project: Project }) {
         </span>
       </div>
 
-      <div className="flex shrink-0 items-center sm:pl-2">
+      <div className="flex shrink-0 items-center gap-2 sm:pl-2">
+        {/* Primary CTA leads to the editorial Project Detail Page (the
+            authoritative info/inventory page); 3D stays a distinct,
+            explicit secondary action into the Three.js viewer. */}
+        <Link
+          href={`/projects/${project.slug}`}
+          className="flex flex-1 items-center justify-center gap-2 rounded-control bg-neutral-900 px-6 py-3.5 text-sm font-semibold text-white hover:bg-neutral-800 sm:w-auto"
+        >
+          {t("results.viewDetails")}
+        </Link>
         <Link
           href={`/project/${project.slug}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex w-full items-center justify-center gap-2 rounded-control bg-neutral-900 px-6 py-3.5 text-sm font-semibold text-white hover:bg-neutral-800 sm:w-auto"
+          aria-label={t("results.exploreIn3d")}
+          className="flex items-center justify-center rounded-control border border-neutral-200 px-3.5 py-3.5 text-neutral-700 hover:bg-neutral-50"
         >
           <Box className="h-4 w-4" />
-          {t("results.exploreIn3d")}
         </Link>
       </div>
     </div>

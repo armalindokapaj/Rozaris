@@ -13,15 +13,56 @@ const STAGE_NAMES = { en: en.project.stageNames, sq: sq.project.stageNames };
 export function ConstructionTimelineStrip({
   stages,
   overallPercent,
+  compact = false,
 }: {
   stages: ConstructionStage[];
   overallPercent: number;
+  /** Small header-pill form — label, mini segment bar, percentage, nothing
+   * else (no scrub slider, no stage detail row). Used where the strip has
+   * to share a row with other chrome instead of floating as its own card. */
+  compact?: boolean;
 }) {
   const activeIndex = stages.findIndex((s) => s.status === "active");
   const [selected, setSelected] = useState(activeIndex >= 0 ? activeIndex : 0);
   const stage = stages[selected];
   const { t, locale } = useT();
   const stageName = (s: ConstructionStage) => STAGE_NAMES[locale][s.order] ?? s.name;
+
+  if (compact) {
+    const activeStage = stages[activeIndex >= 0 ? activeIndex : stages.length - 1];
+    const r = 15;
+    const circumference = 2 * Math.PI * r;
+    return (
+      <div className="glass-panel-dark flex items-center gap-3 rounded-pill py-2 pl-3 pr-4 text-white">
+        <span className="relative h-9 w-9 shrink-0">
+          <svg viewBox="0 0 36 36" className="h-9 w-9">
+            <circle cx="18" cy="18" r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2.5" />
+            <circle
+              cx="18"
+              cy="18"
+              r={r}
+              fill="none"
+              stroke="#a794fa"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={circumference * (1 - overallPercent / 100)}
+              transform="rotate(-90 18 18)"
+            />
+          </svg>
+          <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold">
+            {overallPercent}%
+          </span>
+        </span>
+        <div className="min-w-0">
+          <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.08em] text-white/50">
+            {t("project.progress")}
+          </p>
+          <p className="truncate text-sm font-semibold">{stageName(activeStage)}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="glass-panel-dark rounded-panel p-4 text-white">

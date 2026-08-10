@@ -615,6 +615,15 @@ export const projectUnitListings: Listing[] = projects.flatMap((p) =>
  * plus every available unit inside a new-development project. */
 export const searchableListings: Listing[] = [...listings, ...projectUnitListings];
 
+/** Looks up the synthetic Listing behind one of a project's units, for
+ * "View Unit" links on the Project Detail Page — only available residential
+ * units get one (see projectUnitListings above), so this returns undefined
+ * for parking/commercial/reserved/sold units, which the page renders
+ * without a link instead. */
+export function getListingForUnit(project: Project, unit: Unit): Listing | undefined {
+  return projectUnitListings.find((l) => l.id === `unit-${project.id}-${unit.id}`);
+}
+
 export function getNeighborhood(id: string): Neighborhood | undefined {
   return neighborhoods.find((n) => n.id === id);
 }
@@ -637,6 +646,21 @@ export function relatedListings(listing: Listing, count = 4): Listing[] {
       (l) => l.id !== listing.id && l.neighborhoodId === listing.neighborhoodId
     )
     .slice(0, count);
+}
+
+/** Same-neighborhood developments for a Project Detail Page's "Related
+ * Projects" section — falls back to same-city when the neighborhood alone
+ * doesn't have enough to fill the row, so the section isn't left half-empty
+ * on smaller neighborhoods. */
+export function relatedProjects(project: Project, count = 3): Project[] {
+  const sameNeighborhood = projects.filter(
+    (p) => p.id !== project.id && p.neighborhoodId === project.neighborhoodId
+  );
+  if (sameNeighborhood.length >= count) return sameNeighborhood.slice(0, count);
+  const sameCity = projects.filter(
+    (p) => p.id !== project.id && p.city === project.city && !sameNeighborhood.includes(p)
+  );
+  return [...sameNeighborhood, ...sameCity].slice(0, count);
 }
 
 export function projectsByDeveloper(publisherId: string): Project[] {

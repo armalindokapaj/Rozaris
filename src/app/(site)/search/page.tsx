@@ -58,7 +58,10 @@ export default function SearchPage() {
           <h1 className="font-serif text-3xl text-neutral-900">{location}</h1>
           <ChevronDown className="h-5 w-5 text-neutral-400" aria-hidden="true" />
         </div>
-        <TopFilterBar className="mt-3" />
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <TopFilterBar />
+          <ModeSwitch />
+        </div>
       </div>
 
       {/* Mobile-only search row */}
@@ -160,11 +163,11 @@ export default function SearchPage() {
           )}
         </div>
 
-        {/* Desktop results column — Map/List/Compare switch sits above it
-            (on the right), instead of floating over the map. */}
+        {/* Desktop results column — Map/List now lives up in the filter row
+            (see above), not floating over this column. */}
         <div
           className={cn(
-            "hidden min-h-0 flex-col gap-2 lg:flex lg:h-full lg:shrink-0 lg:transition-[width] lg:duration-300",
+            "hidden min-h-0 lg:flex lg:h-full lg:shrink-0 lg:transition-[width] lg:duration-300",
             resultsHidden
               ? "lg:w-0 lg:overflow-hidden lg:opacity-0"
               : mode === "list"
@@ -172,9 +175,6 @@ export default function SearchPage() {
               : "lg:w-[calc(50%-8px)]"
           )}
         >
-          <div className="flex shrink-0 justify-end">
-            <ModeSwitch />
-          </div>
           <div className="glass-panel min-h-0 flex-1 overflow-hidden rounded-panel">
             <ResultsList layout="grid" columns={mode === "list" ? 4 : 2} />
           </div>

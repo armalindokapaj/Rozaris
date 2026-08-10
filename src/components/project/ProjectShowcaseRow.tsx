@@ -143,7 +143,7 @@ export function ProjectShowcaseRow({ project }: { project: Project }) {
               {t("results.exploreIn3d")}
             </Link>
             <Link
-              href={`/project/${project.slug}`}
+              href={`/projects/${project.slug}`}
               className="flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline"
             >
               {t("results.viewDetails")}

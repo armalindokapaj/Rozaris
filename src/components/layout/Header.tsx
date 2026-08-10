@@ -149,6 +149,9 @@ export function Header() {
           <Link href="/developers" className={activeNavLinkClass(pathname === "/developers")}>
             {t("nav.findAgents")}
           </Link>
+          <Link href="/rent-vs-buy" className={activeNavLinkClass(pathname === "/rent-vs-buy")}>
+            {t("nav.rentVsBuy")}
+          </Link>
           <ResourcesDropdown />
           <Link href="/help#about" className={navLinkClass}>
             {t("nav.aboutUs")}

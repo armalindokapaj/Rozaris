@@ -10,18 +10,7 @@ import {
 } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import {
-  Box,
-  ChevronUp,
-  Expand,
-  Minimize,
-  Moon,
-  RotateCcw,
-  Sun,
-  Sunrise,
-  Sunset,
-  X,
-} from "lucide-react";
+import { Box, ChevronUp, Home, Palette, Search, Sun, X } from "lucide-react";
 import { computeProjectLayout, type UnitBox } from "@/lib/threeBuilding";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
@@ -35,35 +24,42 @@ export interface ThreeProjectViewerHandle {
   captureScreenshot: () => string | null;
 }
 
-type Season = "spring" | "summer" | "autumn" | "winter";
-
-const SEASON_GROUND: Record<Season, number> = {
-  spring: 0xd7e6d0,
-  summer: 0xd8d6e6,
-  autumn: 0xe0c9a0,
-  winter: 0xeceef2,
-};
-
-// 8-way orbit around the target, evenly spaced — labeled like a compass for
-// a familiar affordance, but this scene has no real geographic orientation
-// (it's a procedural, non-georeferenced building), so "N" is just theta=90°,
-// not true north.
-const COMPASS_POINTS: { label: string; theta: number }[] = [
-  { label: "N", theta: 90 },
-  { label: "NE", theta: 45 },
-  { label: "E", theta: 0 },
-  { label: "SE", theta: -45 },
-  { label: "S", theta: -90 },
-  { label: "SW", theta: -135 },
-  { label: "W", theta: 180 },
-  { label: "NW", theta: 135 },
-];
-
 function defaultHourForPreset(preset: Project3DConfig["lightingPreset"]): number {
   if (preset === "daylight") return 13;
   if (preset === "overcast") return 11;
   return 18.5; // sunset
 }
+
+const TIME_PRESETS: [string, number][] = [
+  ["project.presetMorning", 8],
+  ["project.presetMidday", 12],
+  ["project.presetAfternoon", 15],
+  ["project.presetEvening", 18.5],
+  ["project.presetNight", 21],
+];
+
+type ViewPreset = "realistic" | "conceptual" | "sketch";
+
+const VIEW_PRESETS: [ViewPreset, string][] = [
+  ["realistic", "project.viewPresetRealistic"],
+  ["conceptual", "project.viewPresetConceptual"],
+  ["sketch", "project.viewPresetSketch"],
+];
+
+// Material treatment per preset — Realistic keeps real per-unit status
+// colors and PBR-ish shading; Conceptual flattens to a uniform massing-
+// model gray with edge lines; Sketch goes further (near-white, more
+// pronounced edges), the classic "white card model + black outline" look.
+// Applies to the actual unit meshes, not a filter/overlay — this really
+// changes what's rendered.
+const VIEW_PRESET_MATERIAL: Record<
+  ViewPreset,
+  { color: number | null; roughness: number; metalness: number; edges: boolean; edgeOpacity: number }
+> = {
+  realistic: { color: null, roughness: 0.6, metalness: 0.05, edges: false, edgeOpacity: 0 },
+  conceptual: { color: 0xd9d4c8, roughness: 1, metalness: 0, edges: true, edgeOpacity: 0.35 },
+  sketch: { color: 0xfbfaf7, roughness: 1, metalness: 0, edges: true, edgeOpacity: 0.85 },
+};
 
 type AvailabilityFilter = "all" | Unit["status"];
 
@@ -104,15 +100,13 @@ export const ThreeProjectViewer = forwardRef<
     /** Live construction completion (0-100) — defaults to the project's own
      * seeded value; the Admin preview can override it while scrubbing. */
     constructionProgressPercent?: number;
-    /** Public viewer chrome (legend/building selector/fullscreen) is on by
-     * default; the Admin live-preview embed turns it off to keep the form
-     * the only UI. */
+    /** Public viewer chrome (bottom icon menu) is on by default; the Admin
+     * live-preview embed turns it off to keep the form the only UI. */
     showChrome?: boolean;
-    /** Fires whenever the built-in filter bar (open by default) is
-     * opened/closed, so a parent floating its own bottom-anchored UI (e.g.
-     * ArchVizClient's "explore units" CTA) can avoid overlapping it instead
-     * of guessing a pixel offset — the bar's real height varies a lot by
-     * breakpoint (it wraps to multiple rows on narrow screens). */
+    /** Fires whenever the bottom menu's Unit Search / Time of Day panel is
+     * expanded/collapsed, so a parent floating its own chrome (e.g.
+     * ArchVizClient's construction-progress pill) can react instead of
+     * guessing whether extra bottom-of-viewport height is in use. */
     onBarOpenChange?: (open: boolean) => void;
   }
 >(function ThreeProjectViewer(
@@ -140,6 +134,10 @@ export const ThreeProjectViewer = forwardRef<
     ambient: THREE.AmbientLight;
   } | null>(null);
   const unitMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
+  // One LineSegments edge-outline per unit, parented to its mesh so it
+  // inherits position/scale automatically — created once, just toggled
+  // visible/hidden per View Preset rather than rebuilt on every switch.
+  const unitEdgesRef = useRef<Map<string, THREE.LineSegments>>(new Map());
   const shellsRef = useRef<THREE.Mesh[]>([]);
   const unitBoxesRef = useRef<UnitBox[]>([]);
   const hoveredIdRef = useRef<string | null>(null);
@@ -150,62 +148,33 @@ export const ThreeProjectViewer = forwardRef<
   const [ready, setReady] = useState(false);
   const [webglFailReason, setWebglFailReason] = useState<string | null>(null);
   const [filter, setFilter] = useState<AvailabilityFilter>("all");
-  const [activeBuilding, setActiveBuilding] = useState<string | "all">("all");
-  const [typeFilter, setTypeFilter] = useState<Unit["type"] | "all">("all");
-  const [floorFilter, setFloorFilter] = useState<number | null>(null);
   const [bedroomFilter, setBedroomFilter] = useState<number | null>(null);
   const [bathroomFilter, setBathroomFilter] = useState<number | null>(null);
   const [minArea, setMinArea] = useState<number | null>(null);
-  const [maxArea, setMaxArea] = useState<number | null>(null);
-  const [barOpen, setBarOpen] = useState(true);
-  const [fullscreen, setFullscreen] = useState(false);
-  // Live scene controls — user-side, layered on top of the Admin config's
-  // defaults rather than replacing them (see the dedicated effects below).
+  // Only one of these is ever open at once — the bottom menu is either the
+  // icon-only row, or one expanded panel; there's no "both" state.
+  const [panel, setPanel] = useState<"search" | "time" | "viewPreset" | null>(null);
+  // Live scene controls — user-side, on top of Admin config's initial
+  // defaults (see the dedicated effect below).
   const [timeOfDay, setTimeOfDay] = useState(() => defaultHourForPreset(config.lightingPreset));
-  const [season, setSeason] = useState<Season>("summer");
-  const [landscapeVisible, setLandscapeVisible] = useState(() => config.groundEnabled);
-  const [outlineVisible, setOutlineVisible] = useState(true);
-  const [compassTheta, setCompassTheta] = useState(90);
+  const [sunAzimuth, setSunAzimuth] = useState(215);
+  const [viewPreset, setViewPreset] = useState<ViewPreset>("realistic");
   const { t } = useT();
-
-  const floorOptions = useMemo(
-    () => Array.from(new Set(project.units.map((u) => u.floor))).sort((a, b) => a - b),
-    [project.units]
-  );
 
   function matchesFilters(u: Unit): boolean {
     if (filter !== "all" && u.status !== filter) return false;
-    if (activeBuilding !== "all" && u.buildingName !== activeBuilding) return false;
-    if (typeFilter !== "all" && u.type !== typeFilter) return false;
-    if (floorFilter != null && u.floor !== floorFilter) return false;
     if (bedroomFilter != null && u.bedrooms < bedroomFilter) return false;
     if (bathroomFilter != null && u.bathrooms < bathroomFilter) return false;
     if (minArea != null && u.area < minArea) return false;
-    if (maxArea != null && u.area > maxArea) return false;
     return true;
   }
 
-  const visibleCount = useMemo(
-    () => project.units.filter(matchesFilters).length,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [project.units, filter, activeBuilding, typeFilter, floorFilter, bedroomFilter, bathroomFilter, minArea, maxArea]
-  );
-
-  function resetFilters() {
-    setFilter("all");
-    setTypeFilter("all");
-    setFloorFilter(null);
-    setBedroomFilter(null);
-    setBathroomFilter(null);
-    setMinArea(null);
-    setMaxArea(null);
-  }
-
-  // showChrome=false (Admin's live-preview embed) never renders the bar
-  // regardless of barOpen's internal value, so report it as closed there.
+  // Reports "is a panel expanded" (more bottom-of-viewport height in use),
+  // not the old barOpen concept — same callback contract ArchVizClient
+  // already reads for its "explore units" CTA clearance.
   useEffect(() => {
-    onBarOpenChange?.(barOpen && showChrome);
-  }, [barOpen, showChrome, onBarOpenChange]);
+    onBarOpenChange?.(panel !== null && showChrome);
+  }, [panel, showChrome, onBarOpenChange]);
 
   const areaBounds = useMemo(() => {
     const areas = project.units.map((u) => u.area);
@@ -222,28 +191,64 @@ export const ThreeProjectViewer = forwardRef<
     camera.position.copy(start.position);
     controls.target.copy(start.target);
     controls.update();
-    setActiveBuilding("all");
+  }
+
+  /** North Sign — rotates the camera to a canonical "north" heading
+   * (theta=0) around the current target, keeping distance/elevation. Real
+   * camera math, though — same as resetCamera — this procedural scene has
+   * no actual geographic orientation to align to. */
+  function resetToNorth() {
+    const controls = controlsRef.current;
+    const camera = cameraRef.current;
+    if (!controls || !camera) return;
+    const offset = camera.position.clone().sub(controls.target);
+    const spherical = new THREE.Spherical().setFromVector3(offset);
+    spherical.theta = 0;
+    offset.setFromSpherical(spherical);
+    camera.position.copy(controls.target).add(offset);
+    controls.update();
   }
 
   useImperativeHandle(ref, () => ({
     resetView: resetCamera,
-    captureScreenshot: () => rendererRef.current?.domElement.toDataURL("image/png") ?? null,
+    captureScreenshot: () => {
+      const renderer = rendererRef.current;
+      const scene = sceneRef.current;
+      const camera = cameraRef.current;
+      if (!renderer || !scene || !camera) return null;
+      // Force one synchronous render right before reading the buffer —
+      // the animate() loop's last frame is usually still there, but
+      // capturing right after a fresh render removes any doubt.
+      renderer.render(scene, camera);
+      return renderer.domElement.toDataURL("image/png");
+    },
   }));
 
   function applyUnitAppearance(mesh: THREE.Mesh, box: UnitBox) {
     const material = mesh.material as THREE.MeshStandardMaterial;
     const isSelected = box.unit.id === selectedUnitId;
     const isHovered = box.unit.id === hoveredIdRef.current;
-    material.color.setHex(isSelected ? SELECTED_COLOR : STATUS_COLOR[box.unit.status]);
+    const preset = VIEW_PRESET_MATERIAL[viewPreset];
+    const baseColor = preset.color ?? STATUS_COLOR[box.unit.status];
+    material.color.setHex(isSelected ? SELECTED_COLOR : baseColor);
     material.emissive.setHex(isSelected ? SELECTED_COLOR : isHovered ? 0x333333 : 0x000000);
     material.emissiveIntensity = isSelected ? 0.35 : isHovered ? 0.5 : 0;
+    material.roughness = preset.roughness;
+    material.metalness = preset.metalness;
 
     const progress = constructionProgressPercent ?? project.progressPercent;
     const isBuilt =
       !config.constructionStagesEnabled ||
       project.status !== "under_construction" ||
       box.floorIndex / Math.max(1, box.totalFloorsInBuilding) <= progress / 100;
-    mesh.visible = matchesFilters(box.unit) && isBuilt;
+    const visible = matchesFilters(box.unit) && isBuilt;
+    mesh.visible = visible;
+
+    const edges = unitEdgesRef.current.get(box.unit.id);
+    if (edges) {
+      edges.visible = visible && preset.edges;
+      (edges.material as THREE.LineBasicMaterial).opacity = preset.edgeOpacity;
+    }
   }
 
   function refreshAllAppearance() {
@@ -289,7 +294,11 @@ export const ThreeProjectViewer = forwardRef<
     );
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    // preserveDrawingBuffer: without it, the browser is free to clear the
+    // WebGL drawing buffer right after it's presented — toDataURL() then
+    // reads a blank/cleared buffer instead of the last rendered frame,
+    // which is exactly why the Screenshot button was producing empty PNGs.
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // §25 bounded DPR
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.shadowMap.enabled = true;
@@ -363,7 +372,12 @@ export const ThreeProjectViewer = forwardRef<
     }
 
     const geometry = new THREE.BoxGeometry(1, 1, 1);
+    // Shared by every unit's edge outline (View Preset: Conceptual/Sketch)
+    // — one LineSegments per unit, parented to its mesh so it inherits that
+    // mesh's own scale/position instead of needing per-unit geometry.
+    const edgeGeometry = new THREE.EdgesGeometry(geometry);
     unitMeshesRef.current = new Map();
+    unitEdgesRef.current = new Map();
     for (const box of layout.units) {
       const material = new THREE.MeshStandardMaterial({
         color: STATUS_COLOR[box.unit.status],
@@ -378,6 +392,14 @@ export const ThreeProjectViewer = forwardRef<
       mesh.userData.unitId = box.unit.id;
       scene.add(mesh);
       unitMeshesRef.current.set(box.unit.id, mesh);
+
+      const edges = new THREE.LineSegments(
+        edgeGeometry,
+        new THREE.LineBasicMaterial({ color: 0x2a2a33, transparent: true, opacity: 0 })
+      );
+      edges.visible = false;
+      mesh.add(edges);
+      unitEdgesRef.current.set(box.unit.id, edges);
     }
 
     setReady(true);
@@ -445,8 +467,12 @@ export const ThreeProjectViewer = forwardRef<
       renderer.domElement.removeEventListener("click", handleClick);
       controls.dispose();
       geometry.dispose();
+      edgeGeometry.dispose();
       unitMeshesRef.current.forEach((mesh) => {
         (mesh.material as THREE.Material).dispose();
+      });
+      unitEdgesRef.current.forEach((edges) => {
+        (edges.material as THREE.Material).dispose();
       });
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh && obj.geometry !== geometry) obj.geometry.dispose();
@@ -461,6 +487,7 @@ export const ThreeProjectViewer = forwardRef<
         container.removeChild(renderer.domElement);
       }
       unitMeshesRef.current.clear();
+      unitEdgesRef.current.clear();
       setReady(false);
     };
     // Geometry only depends on which project is loaded — config/selection
@@ -505,17 +532,11 @@ export const ThreeProjectViewer = forwardRef<
       lights.sun.position.set(-35, 18, 25);
     }
 
-    // The public viewer (showChrome) owns ground/shell visibility live via
-    // the Landscape/Building Outline toggles below, seeded from these same
-    // config defaults — only the Admin preview embed (no chrome, no
-    // toggles) stays purely config-driven here.
-    if (!showChrome) {
-      if (groundRef.current) groundRef.current.visible = config.groundEnabled;
-      const showShells = project.status === "under_construction" && config.constructionStagesEnabled;
-      shellsRef.current.forEach((shell) => {
-        shell.visible = showShells;
-      });
-    }
+    if (groundRef.current) groundRef.current.visible = config.groundEnabled;
+    const showShells = project.status === "under_construction" && config.constructionStagesEnabled;
+    shellsRef.current.forEach((shell) => {
+      shell.visible = showShells;
+    });
 
     if (controls) {
       const layout = computeProjectLayout(project);
@@ -524,12 +545,12 @@ export const ThreeProjectViewer = forwardRef<
       controls.maxPolarAngle = THREE.MathUtils.degToRad(config.cameraMaxPolarDeg);
       controls.autoRotate = config.autoRotate;
     }
-  }, [config, project, showChrome]);
+  }, [config, project]);
 
-  // --- Live scene controls (public viewer only) — Time of Day, Season,
-  // Landscape, Building Outline. Layered on top of / overriding the
-  // config-driven defaults above; the Admin preview (showChrome=false) never
-  // runs these, so it stays exactly as before. ---
+  // --- Time of Day + Sun Orientation (public viewer only) — continuous
+  // interpolation of the real scene lights, overriding the config-driven
+  // preset above; the Admin preview (showChrome=false) never runs this, so
+  // it stays exactly as before. ---
   useEffect(() => {
     if (!showChrome) return;
     const lights = lightsRef.current;
@@ -546,9 +567,11 @@ export const ThreeProjectViewer = forwardRef<
     const white = new THREE.Color(0xffffff);
     const night = new THREE.Color(0x8fa3ff);
 
+    const elevation = isNight ? 6 : 10 + dayPhase * 55;
+    const azimuthRad = THREE.MathUtils.degToRad(sunAzimuth);
     lights.sun.color.copy(isNight ? night : warm.clone().lerp(white, dayPhase));
     lights.sun.intensity = isNight ? 0.15 : 0.6 + dayPhase * 1.8;
-    lights.sun.position.set(30, isNight ? 6 : 10 + dayPhase * 55, 20);
+    lights.sun.position.set(Math.cos(azimuthRad) * 40, elevation, Math.sin(azimuthRad) * 40);
 
     lights.hemi.intensity = isNight ? 0.35 : 0.7 + dayPhase * 0.4;
     lights.hemi.color.copy(isNight ? new THREE.Color(0x1a1f3a) : white.clone().lerp(warm, 1 - dayPhase));
@@ -558,42 +581,7 @@ export const ThreeProjectViewer = forwardRef<
     const skyDusk = new THREE.Color(0xffc98a);
     const skyNight = new THREE.Color(0x0c1024);
     scene.background = isNight ? skyNight : skyDusk.clone().lerp(skyDay, dayPhase);
-  }, [timeOfDay, showChrome]);
-
-  useEffect(() => {
-    if (!showChrome || !groundRef.current) return;
-    (groundRef.current.material as THREE.MeshStandardMaterial).color.setHex(SEASON_GROUND[season]);
-  }, [season, showChrome]);
-
-  useEffect(() => {
-    if (!showChrome || !groundRef.current) return;
-    groundRef.current.visible = landscapeVisible;
-  }, [landscapeVisible, showChrome]);
-
-  useEffect(() => {
-    if (!showChrome) return;
-    const showShells =
-      project.status === "under_construction" && config.constructionStagesEnabled && outlineVisible;
-    shellsRef.current.forEach((shell) => {
-      shell.visible = showShells;
-    });
-  }, [outlineVisible, showChrome, project.status, config.constructionStagesEnabled]);
-
-  /** Rotates the camera to one of the 8 compass points around the current
-   * target, preserving distance/elevation — an orbit shortcut, not a real
-   * geographic heading (see COMPASS_POINTS). */
-  function setViewAngle(theta: number) {
-    setCompassTheta(theta);
-    const controls = controlsRef.current;
-    const camera = cameraRef.current;
-    if (!controls || !camera) return;
-    const offset = camera.position.clone().sub(controls.target);
-    const spherical = new THREE.Spherical().setFromVector3(offset);
-    spherical.theta = THREE.MathUtils.degToRad(theta);
-    offset.setFromSpherical(spherical);
-    camera.position.copy(controls.target).add(offset);
-    controls.update();
-  }
+  }, [timeOfDay, sunAzimuth, showChrome]);
 
   // --- Re-evaluate per-unit appearance whenever selection, filters or
   // construction progress change ---
@@ -603,50 +591,13 @@ export const ThreeProjectViewer = forwardRef<
   }, [
     selectedUnitId,
     filter,
-    activeBuilding,
-    typeFilter,
-    floorFilter,
     bedroomFilter,
     bathroomFilter,
     minArea,
-    maxArea,
+    viewPreset,
     constructionProgressPercent,
     config.constructionStagesEnabled,
   ]);
-
-  function frameBuilding(name: string | "all") {
-    setActiveBuilding(name);
-    const controls = controlsRef.current;
-    const camera = cameraRef.current;
-    if (!controls || !camera) return;
-    const layout = computeProjectLayout(project);
-    if (name === "all") {
-      const start = defaultCameraRef.current;
-      if (start) {
-        camera.position.copy(start.position);
-        controls.target.copy(start.target);
-      }
-    } else {
-      const b = layout.buildings.find((bl) => bl.name === name);
-      if (!b) return;
-      const dist = Math.max(b.width, b.height) * 1.4 + 6;
-      controls.target.set(b.centerX, b.height / 2, b.z);
-      camera.position.set(b.centerX + dist * 0.6, b.height / 2 + dist * 0.5, b.z + dist * 0.9);
-    }
-    controls.update();
-  }
-
-  function toggleFullscreen() {
-    const el = containerRef.current;
-    if (!el) return;
-    if (!document.fullscreenElement) {
-      el.requestFullscreen?.();
-      setFullscreen(true);
-    } else {
-      document.exitFullscreen?.();
-      setFullscreen(false);
-    }
-  }
 
   if (webglFailReason) {
     return (
@@ -672,246 +623,184 @@ export const ThreeProjectViewer = forwardRef<
       )}
 
       {showChrome && ready && (
-        <>
-          {barOpen ? (
-            <div className="absolute inset-x-3 bottom-3 z-10 flex flex-col items-stretch gap-2 sm:inset-x-auto sm:left-1/2 sm:max-w-[calc(100vw-1.5rem)] sm:-translate-x-1/2 sm:items-center">
-              {/* Scene controls — Building / View Angle / Time of Day /
-                  Season / Layers. All real: Building reuses frameBuilding's
-                  existing camera framing, View Angle drives OrbitControls'
-                  azimuthal angle, Time of Day continuously interpolates the
-                  actual scene lights, Season retints the real ground
-                  material, Layers toggles real mesh visibility. */}
-              <div className="glass-panel-dark w-full rounded-panel px-4 py-3.5 sm:w-auto">
-                <div className="flex flex-wrap gap-x-7 gap-y-4">
-                  {project.buildings.length > 1 && (
-                    <div className="min-w-[8rem]">
-                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                        {t("unit.viewerBuilding")}
-                      </p>
-                      <div className="flex flex-col gap-1.5">
-                        <RadioRow
-                          label={t("project.allBuildingsRadio")}
-                          active={activeBuilding === "all"}
-                          onClick={() => frameBuilding("all")}
-                        />
-                        {project.buildings.map((b) => (
-                          <RadioRow
-                            key={b}
-                            label={b}
-                            active={activeBuilding === b}
-                            onClick={() => frameBuilding(b)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
+        <button
+          onClick={resetToNorth}
+          aria-label={t("project.northSign")}
+          className="glass-panel-dark absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full text-white"
+        >
+          <span className="flex flex-col items-center leading-none">
+            <span className="text-[9px] font-bold">N</span>
+            <svg viewBox="0 0 24 24" className="mt-0.5 h-3 w-3" fill="currentColor" aria-hidden="true">
+              <path d="M12 3 L16 15 L12 12 L8 15 Z" />
+            </svg>
+          </span>
+        </button>
+      )}
 
-                  <div>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                      {t("project.viewAngle")}
-                    </p>
-                    <CompassWidget theta={compassTheta} onChange={setViewAngle} />
-                  </div>
-
-                  <div className="min-w-[11rem] flex-1">
-                    <div className="mb-2 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                      <span>{t("project.timeOfDay")}</span>
-                      <span className="text-white/80">{formatHour(timeOfDay)}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={6}
-                      max={22}
-                      step={0.5}
-                      value={timeOfDay}
-                      onChange={(e) => setTimeOfDay(Number(e.target.value))}
-                      className="h-6 w-full accent-white"
-                    />
-                    <div className="mt-1 flex items-center justify-between px-0.5">
-                      {TIME_PRESETS.map(({ hour, icon: Icon }) => (
-                        <button
-                          key={hour}
-                          onClick={() => setTimeOfDay(hour)}
-                          aria-label={formatHour(hour)}
-                          className={cn(
-                            "flex h-6 w-6 items-center justify-center rounded-full",
-                            Math.abs(timeOfDay - hour) < 0.25 ? "text-brand-400" : "text-white/40 hover:text-white/70"
-                          )}
-                        >
-                          <Icon className="h-3.5 w-3.5" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="min-w-[8rem]">
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                      {t("project.season")}
-                    </p>
-                    <DarkSelect
-                      label=""
-                      value={season}
-                      onChange={(v) => setSeason(v as Season)}
-                      options={(["spring", "summer", "autumn", "winter"] as Season[]).map(
-                        (s): [string, string] => [s, t(SEASON_LABEL_KEY[s])]
-                      )}
-                      hideLabel
-                    />
-                  </div>
-
-                  <div className="min-w-[9rem]">
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                      {t("project.layers")}
-                    </p>
-                    <div className="flex flex-col gap-2.5">
-                      <ToggleRow label={t("project.landscape")} checked={landscapeVisible} onChange={setLandscapeVisible} />
-                      {project.status === "under_construction" && config.constructionStagesEnabled && (
-                        <ToggleRow
-                          label={t("project.buildingOutline")}
-                          checked={outlineVisible}
-                          onChange={setOutlineVisible}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Filters — Use/Bedrooms/Bathrooms/Size/Floor/Availability,
-                  all real fields on Unit, plus Reset and a live results
-                  count computed from the same predicate that drives mesh
-                  visibility. */}
-              <div className="glass-panel-dark flex w-full flex-wrap items-end gap-4 rounded-panel px-4 py-3.5 sm:w-auto sm:flex-nowrap">
-                <DarkSelect
-                  label={t("unit.viewerUse")}
-                  value={typeFilter}
-                  onChange={(v) => setTypeFilter(v as Unit["type"] | "all")}
-                  options={[
-                    ["all", t("unit.viewerFilterAll")],
-                    ["residential", t("unit.typeResidential")],
-                    ["commercial", t("unit.typeCommercial")],
-                    ["parking", t("unit.typeParking")],
-                    ["storage", t("unit.typeStorage")],
-                  ]}
-                />
-
-                <DarkSelect
-                  label={t("unit.beds")}
-                  value={bedroomFilter == null ? "all" : String(bedroomFilter)}
-                  onChange={(v) => setBedroomFilter(v === "all" ? null : Number(v))}
-                  options={[
-                    ["all", t("unit.viewerFilterAll")],
-                    ["1", t("unit.bedPlus", { count: 1 })],
-                    ["2", t("unit.bedPlus", { count: 2 })],
-                    ["3", t("unit.bedPlus", { count: 3 })],
-                    ["4", t("unit.bedPlus", { count: 4 })],
-                  ]}
-                />
-
-                <DarkSelect
-                  label={t("unit.baths")}
-                  value={bathroomFilter == null ? "all" : String(bathroomFilter)}
-                  onChange={(v) => setBathroomFilter(v === "all" ? null : Number(v))}
-                  options={[
-                    ["all", t("unit.viewerFilterAll")],
-                    ["1", t("filters.countPlus", { count: 1 })],
-                    ["2", t("filters.countPlus", { count: 2 })],
-                  ]}
-                />
-
-                <div className="min-w-[9rem] flex-1 sm:flex-none sm:w-36">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                    {t("unit.viewerSurface")}
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      min={areaBounds.min}
-                      max={areaBounds.max}
-                      value={minArea ?? ""}
-                      onChange={(e) => setMinArea(e.target.value === "" ? null : Number(e.target.value))}
-                      placeholder={t("unit.viewerSizeMin")}
-                      className="w-full rounded-control border border-white/15 bg-white/10 px-2 py-2 text-xs text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
-                    />
-                    <span className="text-white/30">–</span>
-                    <input
-                      type="number"
-                      min={areaBounds.min}
-                      max={areaBounds.max}
-                      value={maxArea ?? ""}
-                      onChange={(e) => setMaxArea(e.target.value === "" ? null : Number(e.target.value))}
-                      placeholder={t("unit.viewerSizeMax")}
-                      className="w-full rounded-control border border-white/15 bg-white/10 px-2 py-2 text-xs text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <DarkSelect
-                  label={t("unit.viewerFloor")}
-                  value={floorFilter == null ? "all" : String(floorFilter)}
-                  onChange={(v) => setFloorFilter(v === "all" ? null : Number(v))}
-                  options={[
-                    ["all", t("unit.viewerFilterAll")],
-                    ...floorOptions.map((f): [string, string] => [String(f), t("unit.floorLabel", { n: f })]),
-                  ]}
-                />
-
-                <DarkSelect
-                  label={t("unit.viewerAvailability")}
-                  value={filter}
-                  onChange={(v) => setFilter(v as AvailabilityFilter)}
-                  options={(["all", "available", "reserved", "sold"] as const).map(
-                    (f): [string, string] => [
-                      f,
-                      t(f === "all" ? "unit.viewerFilterAll" : `unit.status${f[0].toUpperCase()}${f.slice(1)}`),
-                    ]
-                  )}
-                  dotColor={filter !== "all" ? STATUS_COLOR[filter] : undefined}
-                />
-
-                <div className="ml-auto flex shrink-0 items-center gap-3 self-center">
-                  <button
-                    onClick={resetFilters}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-white/60 hover:text-white"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    {t("unit.viewerReset")}
-                  </button>
-                  <span className="whitespace-nowrap text-xs font-semibold text-white/80">
-                    {t("unit.viewerResults", { count: visibleCount })}
-                  </span>
-                  <button
-                    onClick={() => setBarOpen(false)}
-                    aria-label={t("common.close")}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/60 hover:bg-white/10 hover:text-white"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
+      {showChrome && ready && (
+        <div className="absolute inset-x-3 bottom-3 z-10 flex justify-center sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2">
+          {panel === null && (
+            <div className="glass-panel-dark flex items-center gap-1 rounded-pill p-1.5">
+              <MenuIconButton icon={Home} label={t("project.home")} onClick={resetCamera} />
+              <MenuIconButton
+                icon={Search}
+                label={t("unit.viewerUnitSearch")}
+                onClick={() => setPanel("search")}
+              />
+              <MenuIconButton icon={Sun} label={t("project.timeOfDay")} onClick={() => setPanel("time")} />
+              <MenuIconButton
+                icon={Palette}
+                label={t("project.viewPreset")}
+                onClick={() => setPanel("viewPreset")}
+              />
             </div>
-          ) : (
-            <button
-              onClick={() => setBarOpen(true)}
-              className="glass-panel-dark absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-pill px-4 py-2.5 text-xs font-semibold text-white"
-            >
-              {t("unit.viewerShowFilters")}
-            </button>
           )}
 
-          {/* Fullscreen (PRD §6/§7.1) — the old floating "reset camera"
-              compass button is gone; the Building panel's "All Buildings"
-              radio + View Angle panel now cover that same job. */}
-          <div className="absolute bottom-4 right-4 z-10">
-            <button
-              onClick={toggleFullscreen}
-              aria-label={t("unit.viewerFullscreen")}
-              className="glass-panel-dark flex h-8 w-8 items-center justify-center rounded-full text-white/80"
-            >
-              {fullscreen ? <Minimize className="h-3.5 w-3.5" /> : <Expand className="h-3.5 w-3.5" />}
-            </button>
-          </div>
-        </>
+          {panel === "search" && (
+            <div className="glass-panel-dark relative flex w-full flex-wrap items-end gap-4 rounded-panel px-4 py-3.5 pr-11 sm:w-auto sm:flex-nowrap">
+              <div className="min-w-[9rem] flex-1 sm:flex-none sm:w-36">
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-white/50">
+                  {t("unit.viewerSurface")}{" "}
+                  <span className="text-white/80">
+                    {t("unit.viewerSurfaceMin", { area: minArea ?? areaBounds.min })}
+                  </span>
+                </p>
+                <input
+                  type="range"
+                  min={areaBounds.min}
+                  max={areaBounds.max}
+                  step={5}
+                  value={minArea ?? areaBounds.min}
+                  onChange={(e) => setMinArea(Number(e.target.value))}
+                  className="h-6 w-full accent-white"
+                />
+              </div>
+
+              <DarkSelect
+                label={t("unit.beds")}
+                value={bedroomFilter == null ? "all" : String(bedroomFilter)}
+                onChange={(v) => setBedroomFilter(v === "all" ? null : Number(v))}
+                options={[
+                  ["all", t("unit.viewerFilterAll")],
+                  ["1", t("unit.bedPlus", { count: 1 })],
+                  ["2", t("unit.bedPlus", { count: 2 })],
+                  ["3", t("unit.bedPlus", { count: 3 })],
+                  ["4", t("unit.bedPlus", { count: 4 })],
+                ]}
+              />
+
+              <DarkSelect
+                label={t("unit.baths")}
+                value={bathroomFilter == null ? "all" : String(bathroomFilter)}
+                onChange={(v) => setBathroomFilter(v === "all" ? null : Number(v))}
+                options={[
+                  ["all", t("unit.viewerFilterAll")],
+                  ["1", t("filters.countPlus", { count: 1 })],
+                  ["2", t("filters.countPlus", { count: 2 })],
+                ]}
+              />
+
+              <DarkSelect
+                label={t("unit.viewerAvailability")}
+                value={filter}
+                onChange={(v) => setFilter(v as AvailabilityFilter)}
+                options={(["all", "available", "reserved", "sold"] as const).map(
+                  (f): [string, string] => [
+                    f,
+                    t(f === "all" ? "unit.viewerFilterAll" : `unit.status${f[0].toUpperCase()}${f.slice(1)}`),
+                  ]
+                )}
+                dotColor={filter !== "all" ? STATUS_COLOR[filter] : undefined}
+              />
+
+              <button
+                onClick={() => setPanel(null)}
+                aria-label={t("common.close")}
+                className="absolute right-2.5 top-2.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/60 hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          {panel === "time" && (
+            <div className="glass-panel-dark relative flex w-full flex-wrap items-center gap-6 rounded-panel px-5 py-4 pr-11 sm:w-auto sm:flex-nowrap">
+              <div className="flex items-center gap-3">
+                <p className="font-serif text-2xl text-white">{formatHour(timeOfDay)}</p>
+                <DarkSelect
+                  label={t("project.preset")}
+                  value=""
+                  onChange={(v) => setTimeOfDay(Number(v))}
+                  options={[["", t("project.preset")], ...TIME_PRESETS.map(([key, hour]): [string, string] => [String(hour), t(key)])]}
+                />
+              </div>
+
+              <div className="min-w-[10rem] flex-1">
+                <div className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/50">
+                  <span>{t("project.timeOfDay")}</span>
+                </div>
+                <input
+                  type="range"
+                  min={6}
+                  max={22}
+                  step={0.5}
+                  value={timeOfDay}
+                  onChange={(e) => setTimeOfDay(Number(e.target.value))}
+                  className="h-6 w-full accent-white"
+                />
+              </div>
+
+              <div className="min-w-[10rem] flex-1">
+                <div className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/50">
+                  <span>{t("project.sunOrientation")}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={360}
+                  step={5}
+                  value={sunAzimuth}
+                  onChange={(e) => setSunAzimuth(Number(e.target.value))}
+                  className="h-6 w-full accent-white"
+                />
+              </div>
+
+              <button
+                onClick={() => setPanel(null)}
+                aria-label={t("common.close")}
+                className="absolute right-2.5 top-2.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/60 hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          {panel === "viewPreset" && (
+            <div className="glass-panel-dark relative flex w-full flex-wrap items-center gap-2 rounded-panel px-4 py-3.5 pr-11 sm:w-auto sm:flex-nowrap">
+              {VIEW_PRESETS.map(([id, labelKey]) => (
+                <button
+                  key={id}
+                  onClick={() => setViewPreset(id)}
+                  aria-pressed={viewPreset === id}
+                  className={cn(
+                    "rounded-control px-4 py-2.5 text-sm font-semibold transition-colors",
+                    viewPreset === id ? "bg-brand-500 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
+                  )}
+                >
+                  {t(labelKey)}
+                </button>
+              ))}
+
+              <button
+                onClick={() => setPanel(null)}
+                aria-label={t("common.close")}
+                className="absolute right-2.5 top-2.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/60 hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -970,20 +859,6 @@ function DarkSelect({
   );
 }
 
-const SEASON_LABEL_KEY: Record<Season, string> = {
-  spring: "project.seasonSpring",
-  summer: "project.seasonSummer",
-  autumn: "project.seasonAutumn",
-  winter: "project.seasonWinter",
-};
-
-const TIME_PRESETS: { hour: number; icon: typeof Sun }[] = [
-  { hour: 7, icon: Sunrise },
-  { hour: 11, icon: Sun },
-  { hour: 14, icon: Sun },
-  { hour: 18.5, icon: Sunset },
-  { hour: 21, icon: Moon },
-];
 
 function formatHour(h: number): string {
   const hour24 = Math.floor(h);
@@ -993,86 +868,34 @@ function formatHour(h: number): string {
   return `${hour12}:${String(minutes).padStart(2, "0")} ${period}`;
 }
 
-/** A single "○ Tower A" row in the Building panel. */
-function RadioRow({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="flex items-center gap-2 text-left text-xs text-white/70 hover:text-white">
-      <span
-        className={cn(
-          "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border",
-          active ? "border-brand-400" : "border-white/30"
-        )}
-      >
-        {active && <span className="h-1.5 w-1.5 rounded-full bg-brand-400" />}
-      </span>
-      <span className={active ? "text-white" : undefined}>{label}</span>
-    </button>
-  );
-}
-
-/** A single Layers row — label + switch. */
-function ToggleRow({
+/** A single bottom-menu icon — no visible label by default; a small
+ * tooltip fades in above it on hover/focus, per the reference design
+ * ("Main Menu at the bottom is only with Icons, when the mouse hovers then
+ * it shows what Menu it is"). */
+function MenuIconButton({
+  icon: Icon,
   label,
-  checked,
-  onChange,
+  onClick,
 }: {
+  icon: typeof Home;
   label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
+  onClick: () => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 text-xs text-white/70">
-      {label}
+    <div className="group relative">
       <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
+        onClick={onClick}
         aria-label={label}
-        onClick={() => onChange(!checked)}
-        className={cn(
-          "relative h-5 w-9 shrink-0 rounded-full transition-colors",
-          checked ? "bg-brand-500" : "bg-white/15"
-        )}
+        className="flex h-11 w-11 items-center justify-center rounded-full text-white/80 hover:bg-white/10 hover:text-white"
       >
-        <span
-          className={cn(
-            "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
-            checked ? "translate-x-4" : "translate-x-0.5"
-          )}
-        />
+        <Icon className="h-4.5 w-4.5" />
       </button>
-    </label>
-  );
-}
-
-/** 8-way compass dial — click a point to orbit the camera there (see
- * setViewAngle). Purely a UI ring; its layout isn't tied to Three.js'
- * Spherical.theta convention, only the resulting camera call is real. */
-function CompassWidget({ theta, onChange }: { theta: number; onChange: (theta: number) => void }) {
-  return (
-    <div className="relative h-[4.5rem] w-[4.5rem] shrink-0 rounded-full border border-white/15">
-      <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/25" />
-      {COMPASS_POINTS.map((p) => {
-        const rad = (p.theta * Math.PI) / 180;
-        const x = 50 + 40 * Math.cos(rad);
-        const y = 50 - 40 * Math.sin(rad);
-        const active = theta === p.theta;
-        return (
-          <button
-            key={p.label}
-            onClick={() => onChange(p.theta)}
-            aria-pressed={active}
-            aria-label={p.label}
-            style={{ left: `${x}%`, top: `${y}%` }}
-            className={cn(
-              "absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full text-[9px] font-bold",
-              active ? "bg-brand-500 text-white" : "text-white/50 hover:text-white"
-            )}
-          >
-            {p.label}
-          </button>
-        );
-      })}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[calc(100%+8px)] whitespace-nowrap rounded-control bg-neutral-900 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white opacity-0 shadow-[var(--shadow-2)] transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+      >
+        {label}
+      </span>
     </div>
   );
 }
