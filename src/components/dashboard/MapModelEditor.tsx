@@ -5,7 +5,7 @@ import { upload } from "@vercel/blob/client";
 import { Trash2, Upload, X } from "lucide-react";
 import { defaultProjectMapModel } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
-import { GlbPreviewCanvas } from "./GlbPreviewCanvas";
+import { MapModelMapPreview } from "./MapModelMapPreview";
 import type { Project, ProjectMapModel } from "@/lib/types";
 
 const MAX_FILE_BYTES = 60 * 1024 * 1024; // keep in sync with api/blob/upload's maximumSizeInBytes
@@ -20,12 +20,14 @@ function formatBytes(bytes: number) {
  * Admin's "3D Map Control" authoring surface — upload a GLB from disk (goes
  * straight to Vercel Blob, a real shared URL any visitor's browser can load
  * — see src/app/api/blob/upload), place it (scale/rotation/altitude)
- * against a live preview with a 5m reference grid, then publish it to the
- * real Mapbox map at this project's real lng/lat (ProjectModelLayer,
- * MapView.tsx). Save here writes the placement record to Postgres
- * (/api/map-models/[projectId]) — a real, shared row, not Zustand — so a
- * model an admin publishes shows up for every visitor, not just this
- * browser. Mirrors Project3DConfigEditor's draft/publish split next to it.
+ * against MapModelMapPreview — the SAME Mapbox map/style/ProjectModelLayer
+ * as every other map in Rozaris, centered on this project's real
+ * coordinates, so what Admin sees while dialing in the placement is exactly
+ * what a visitor sees on the live search map, not a stand-in for it. Save
+ * writes the placement record to Postgres (/api/map-models/[projectId]) —
+ * a real, shared row, not Zustand — so a model an admin publishes shows up
+ * for every visitor, not just this browser. Mirrors Project3DConfigEditor's
+ * draft/publish split next to it.
  */
 export function MapModelEditor({ project, onClose }: { project: Project; onClose: () => void }) {
   const { t } = useT();
@@ -155,8 +157,9 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
     >
       <div className="flex h-full w-full flex-col bg-white shadow-[0_8px_24px_rgba(17,17,24,0.10)] lg:max-w-4xl lg:flex-row">
         <div className="h-64 shrink-0 bg-neutral-900 lg:h-full lg:flex-1">
-          <GlbPreviewCanvas
-            blobUrl={previewUrl}
+          <MapModelMapPreview
+            coords={project.coords}
+            glbUrl={previewUrl}
             scale={draft.scale}
             rotationDeg={draft.rotationDeg}
             altitudeOffset={draft.altitudeOffset}
