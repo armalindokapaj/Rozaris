@@ -41,7 +41,7 @@ export function PublisherCard({
         <PlaceholderImage
           seed={publisher.id}
           kind="avatar"
-          className="h-12 w-12 shrink-0 rounded-2xl"
+          className="h-12 w-12 shrink-0 rounded-card"
           iconClassName="h-5 w-5"
         />
         <div className="min-w-0">

@@ -185,7 +185,7 @@ function PreferencesTab({ preferences }: { preferences: BuyerPreferences }) {
                 onClick={() => setTransaction(txn)}
                 className={cn(
                   "rounded-[10px] py-2 text-sm font-semibold transition-colors",
-                  transaction === txn ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"
+                  transaction === txn ? "bg-white text-neutral-900 shadow-[var(--shadow-1)]" : "text-neutral-500 hover:text-neutral-700"
                 )}
               >
                 {txn === "buy" ? t("nav.buy") : t("nav.rent")}

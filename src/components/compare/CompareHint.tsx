@@ -16,7 +16,7 @@ export function CompareHint({
     <div
       ref={hintRef}
       role="status"
-      className="pointer-events-none fixed z-50 max-w-[220px] -translate-x-1/2 rounded-control bg-neutral-900 px-3 py-2 text-xs font-medium leading-snug text-white shadow-lg"
+      className="pointer-events-none fixed z-50 max-w-[220px] -translate-x-1/2 rounded-control bg-neutral-900 px-3 py-2 text-xs font-medium leading-snug text-white shadow-[var(--shadow-1)]"
       style={{ left: hint.x, top: hint.y + 16 }}
     >
       {hint.text}

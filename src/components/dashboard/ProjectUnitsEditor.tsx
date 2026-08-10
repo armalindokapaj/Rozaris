@@ -70,7 +70,7 @@ export function ProjectUnitsEditor({
       role="dialog"
       aria-label={t("admin.projectUnitsTitle")}
     >
-      <div className="flex h-full w-full max-w-lg flex-col overflow-y-auto scroll-thin bg-white shadow-[0_8px_24px_rgba(17,17,24,0.10)]">
+      <div className="flex h-full w-full max-w-lg flex-col overflow-y-auto scroll-thin bg-white shadow-[var(--shadow-2)]">
         <div className="flex shrink-0 items-center justify-between border-b border-neutral-100 px-5 py-4">
           <div className="min-w-0">
             <h2 className="text-base font-bold text-neutral-900">{t("admin.projectUnitsTitle")}</h2>

@@ -18,7 +18,7 @@ export function ModeSwitch({ className }: { className?: string }) {
     <>
       <div
         className={cn(
-          "glass-panel flex items-center gap-0.5 rounded-panel p-1 shadow-md",
+          "glass-panel flex items-center gap-0.5 rounded-panel p-1",
           className
         )}
         role="tablist"
@@ -29,7 +29,7 @@ export function ModeSwitch({ className }: { className?: string }) {
           aria-selected={mode === "map"}
           onClick={() => setMode("map")}
           className={cn(
-            "flex items-center gap-1.5 rounded-[20px] px-3.5 py-2 text-sm font-semibold transition-colors",
+            "flex items-center gap-1.5 rounded-pill px-3.5 py-2 text-sm font-semibold transition-colors",
             mode === "map" ? "bg-neutral-900 text-white" : "text-neutral-600 hover:text-neutral-900"
           )}
         >
@@ -40,7 +40,7 @@ export function ModeSwitch({ className }: { className?: string }) {
           aria-selected={mode === "list"}
           onClick={() => setMode("list")}
           className={cn(
-            "flex items-center gap-1.5 rounded-[20px] px-3.5 py-2 text-sm font-semibold transition-colors",
+            "flex items-center gap-1.5 rounded-pill px-3.5 py-2 text-sm font-semibold transition-colors",
             mode === "list" ? "bg-neutral-900 text-white" : "text-neutral-600 hover:text-neutral-900"
           )}
         >
@@ -48,7 +48,7 @@ export function ModeSwitch({ className }: { className?: string }) {
         </button>
         <button
           onClick={handleCompareClick}
-          className="flex items-center gap-1.5 rounded-[20px] px-3.5 py-2 text-sm font-semibold text-neutral-600 hover:text-neutral-900"
+          className="flex items-center gap-1.5 rounded-pill px-3.5 py-2 text-sm font-semibold text-neutral-600 hover:text-neutral-900"
         >
           <SquareStack className="h-4 w-4" /> {t("nav.compare")}
           {compareCount > 0 && (

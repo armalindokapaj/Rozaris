@@ -76,7 +76,7 @@ function PopoverFilter({
         <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")} />
       </button>
       {open && (
-        <div className="absolute left-0 right-0 z-40 mt-1.5 rounded-card border border-neutral-200 bg-white p-1.5 shadow-[0_8px_24px_rgba(17,17,24,0.10)]">
+        <div className="absolute left-0 right-0 z-40 mt-1.5 rounded-card border border-neutral-200 bg-white p-1.5 shadow-[var(--shadow-2)]">
           {children}
         </div>
       )}
@@ -154,7 +154,7 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
             doesn't intervene with the right panel's results at all. Same
             glass-panel shell, header treatment, and width as the Front
             Page's left filters panel for visual consistency. */}
-        <aside className="glass-panel shrink-0 overflow-hidden rounded-panel shadow-sm lg:sticky lg:top-20 lg:w-72">
+        <aside className="glass-panel shrink-0 overflow-hidden rounded-panel lg:sticky lg:top-20 lg:w-72">
           <button
             type="button"
             onClick={() => setMobileFiltersOpen((v) => !v)}

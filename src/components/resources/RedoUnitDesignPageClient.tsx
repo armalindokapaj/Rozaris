@@ -221,7 +221,7 @@ export function RedoUnitDesignPageClient() {
           </section>
         </div>
 
-        <aside className="glass-panel overflow-hidden rounded-panel shadow-sm lg:sticky lg:top-20 lg:self-start">
+        <aside className="glass-panel overflow-hidden rounded-panel lg:sticky lg:top-20 lg:self-start">
           <div className="border-b border-neutral-100 px-5 pt-5 pb-4">
             <h2 className="text-[15px] font-bold text-neutral-900">{t("redoDesign.pickerTitle")}</h2>
             <p className="mt-1 text-xs text-neutral-500">{t("redoDesign.pickerSubtitle")}</p>

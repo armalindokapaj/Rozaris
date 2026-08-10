@@ -114,7 +114,7 @@ export function UnitDiscoveryPanel({
 
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-panel bg-white shadow-[0_8px_24px_rgba(17,17,24,0.10)] lg:inset-y-0 lg:right-0 lg:left-auto lg:top-0 lg:h-full lg:max-h-none lg:w-[560px] lg:rounded-l-panel lg:rounded-tr-none"
+      className="fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-panel bg-white shadow-[var(--shadow-2)] lg:inset-y-0 lg:right-0 lg:left-auto lg:top-0 lg:h-full lg:max-h-none lg:w-[560px] lg:rounded-l-panel lg:rounded-tr-none"
       role="dialog"
       aria-label={t("unit.availableUnitsTitle")}
     >
@@ -255,7 +255,7 @@ export function UnitDiscoveryPanel({
                   "flex flex-col overflow-hidden rounded-card border text-left transition-colors",
                   unit.status === "sold"
                     ? "cursor-not-allowed border-neutral-100 opacity-60"
-                    : "border-neutral-200 hover:border-brand-300 hover:shadow-md"
+                    : "border-neutral-200 hover:border-brand-300 hover:shadow-[var(--shadow-1)]"
                 )}
               >
                 <div className="relative aspect-[4/3] w-full shrink-0">

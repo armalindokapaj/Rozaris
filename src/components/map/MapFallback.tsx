@@ -29,7 +29,7 @@ export function MapFallback({
             "radial-gradient(circle at 20% 20%, rgba(109,91,246,0.18), transparent 45%), radial-gradient(circle at 80% 70%, rgba(139,92,246,0.15), transparent 40%)",
         }}
       />
-      <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-lg">
+      <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-[var(--shadow-1)]">
         <Box className="h-7 w-7 text-brand-500" strokeWidth={1.5} />
       </div>
       <h2 className="relative mt-4 text-lg font-semibold text-neutral-900">

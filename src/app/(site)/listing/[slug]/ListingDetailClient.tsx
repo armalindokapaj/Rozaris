@@ -233,7 +233,7 @@ export function ListingDetailClient({
           )}
         </div>
 
-        <aside className="glass-panel overflow-hidden rounded-panel shadow-sm lg:sticky lg:top-20 lg:self-start">
+        <aside className="glass-panel overflow-hidden rounded-panel lg:sticky lg:top-20 lg:self-start">
           <div className="p-5">
             <PublisherCard
               bare

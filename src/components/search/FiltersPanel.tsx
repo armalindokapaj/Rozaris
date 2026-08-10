@@ -20,7 +20,7 @@ export function FiltersPanel() {
   }
 
   return (
-    <div className="glass-panel flex h-full flex-col overflow-hidden rounded-panel shadow-sm">
+    <div className="glass-panel flex h-full flex-col overflow-hidden rounded-panel">
       <div
         onWheel={forwardWheelToFilters}
         className="shrink-0 border-b border-neutral-100 px-5 pt-5 pb-4"

@@ -77,7 +77,7 @@ export function HelpPageClient() {
 
       {copiedAt && (
         <span
-          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full rounded-full bg-neutral-900 px-2.5 py-1 text-xs font-medium text-white shadow-lg"
+          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full rounded-full bg-neutral-900 px-2.5 py-1 text-xs font-medium text-white shadow-[var(--shadow-1)]"
           style={{ left: copiedAt.x, top: copiedAt.y - 8 }}
         >
           {t("helpPage.emailCopied")}

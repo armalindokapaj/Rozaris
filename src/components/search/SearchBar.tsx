@@ -93,7 +93,7 @@ export function SearchBar({
     <div className={cn("relative", className)} ref={ref}>
       <div
         className={cn(
-          "flex items-center gap-2 rounded-control border border-neutral-200 bg-white shadow-sm focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100",
+          "flex items-center gap-2 rounded-control border border-neutral-200 bg-white shadow-[var(--shadow-1)] focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100",
           compact ? "px-2.5 py-2" : "px-3.5 py-2.5"
         )}
       >
@@ -123,7 +123,7 @@ export function SearchBar({
       {open && suggestions.length > 0 && (
         <div
           role="listbox"
-          className="absolute left-0 right-0 z-40 mt-2 max-h-80 overflow-y-auto scroll-thin rounded-card border border-neutral-200 bg-white p-1.5 shadow-[0_8px_24px_rgba(17,17,24,0.10)]"
+          className="absolute left-0 right-0 z-40 mt-2 max-h-80 overflow-y-auto scroll-thin rounded-card border border-neutral-200 bg-white p-1.5 shadow-[var(--shadow-2)]"
         >
           {suggestions.map((s) => {
             const Icon = TYPE_ICON[s.type];

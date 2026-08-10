@@ -42,7 +42,7 @@ export function SortDropdown() {
       {open && (
         <div
           role="listbox"
-          className="absolute left-1/2 z-30 mt-2 w-48 max-w-[90vw] -translate-x-1/2 rounded-card border border-neutral-200 bg-white p-1.5 shadow-[0_8px_24px_rgba(17,17,24,0.10)]"
+          className="absolute left-1/2 z-30 mt-2 w-48 max-w-[90vw] -translate-x-1/2 rounded-card border border-neutral-200 bg-white p-1.5 shadow-[var(--shadow-2)]"
         >
           {OPTIONS.map((opt) => (
             <button

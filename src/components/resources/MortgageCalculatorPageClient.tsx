@@ -30,7 +30,7 @@ export function MortgageCalculatorPageClient() {
         {/* Middle: the calculators themselves. */}
         <div className="min-w-0 flex-1 space-y-6">
           <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50">
+            <span className="flex h-11 w-11 items-center justify-center rounded-card bg-brand-50">
               <Landmark className="h-5 w-5 text-brand-600" />
             </span>
             <div>
@@ -44,7 +44,7 @@ export function MortgageCalculatorPageClient() {
 
         {/* Right panel: insurance calculator, then its sponsor below. */}
         <aside className="shrink-0 space-y-4 lg:sticky lg:top-20 lg:w-72">
-          <div className="glass-panel overflow-hidden rounded-panel shadow-sm">
+          <div className="glass-panel overflow-hidden rounded-panel">
             <div className="border-b border-neutral-100 px-5 pt-5 pb-4">
               <h2 className="text-[15px] font-bold text-neutral-900">{t("insurance.title")}</h2>
             </div>

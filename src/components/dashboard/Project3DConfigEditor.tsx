@@ -52,7 +52,7 @@ export function Project3DConfigEditor({
       role="dialog"
       aria-label={t("admin.viewer3DTitle")}
     >
-      <div className="flex h-full w-full flex-col bg-white shadow-[0_8px_24px_rgba(17,17,24,0.10)] lg:max-w-4xl lg:flex-row">
+      <div className="flex h-full w-full flex-col bg-white shadow-[var(--shadow-2)] lg:max-w-4xl lg:flex-row">
         <div className="h-64 shrink-0 bg-neutral-900 lg:h-full lg:flex-1">
           <ThreeProjectViewer project={project} config={draft} showChrome={false} />
         </div>

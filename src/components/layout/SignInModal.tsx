@@ -93,7 +93,7 @@ export function SignInModal() {
       />
       <form
         onSubmit={handleSubmit}
-        className="relative w-full max-w-sm rounded-panel bg-white p-5 shadow-[0_18px_48px_rgba(17,17,24,0.14)]"
+        className="relative w-full max-w-sm rounded-panel bg-white p-5 shadow-[var(--shadow-3)]"
       >
         <h2 id="signin-modal-title" className="text-base font-bold text-neutral-900">
           {t("signInModal.title")}
@@ -169,7 +169,7 @@ export function SignInModal() {
           <button
             type="submit"
             disabled={!canSubmit}
-            className="flex-1 rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-1 rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("signInModal.continue")}
           </button>

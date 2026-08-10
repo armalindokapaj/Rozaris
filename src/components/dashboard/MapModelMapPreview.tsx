@@ -154,7 +154,7 @@ export function MapModelMapPreview({
       )}
       {loadError && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-          <span className="rounded-pill bg-red-600/90 px-3.5 py-2 text-xs font-medium text-white shadow-lg">
+          <span className="rounded-pill bg-red-600/90 px-3.5 py-2 text-xs font-medium text-white shadow-[var(--shadow-2)]">
             {t("admin.mapModelLoadError")}
           </span>
         </div>

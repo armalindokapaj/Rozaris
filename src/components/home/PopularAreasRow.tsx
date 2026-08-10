@@ -23,7 +23,7 @@ export function PopularAreasRow() {
               setFilters({ location: n.name });
               requestFlyTo({ lat: n.coords.lat, lng: n.coords.lng, zoom: 15 });
             }}
-            className="flex shrink-0 items-center gap-2.5 rounded-2xl border border-neutral-200 bg-white py-1.5 pl-1.5 pr-3.5"
+            className="flex shrink-0 items-center gap-2.5 rounded-pill border border-neutral-200 bg-white py-1.5 pl-1.5 pr-3.5"
           >
             <PlaceholderImage
               seed={n.id}

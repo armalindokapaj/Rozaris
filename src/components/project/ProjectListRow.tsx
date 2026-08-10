@@ -44,8 +44,8 @@ export function ProjectListRow({ project }: { project: Project }) {
       className={cn(
         "flex flex-col gap-4 rounded-panel border p-4 transition-all sm:flex-row sm:items-stretch",
         project.premium
-          ? "border-listing-premium/50 bg-amber-50/70 hover:z-10 hover:scale-[1.015] hover:border-listing-premium hover:shadow-lg"
-          : "border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-sm"
+          ? "border-listing-premium/50 bg-amber-50/70 hover:z-10 hover:scale-[1.015] hover:border-listing-premium hover:shadow-[var(--shadow-1)]"
+          : "border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-[var(--shadow-1)]"
       )}
     >
       <div className="relative h-40 w-full shrink-0 overflow-hidden rounded-card sm:h-auto sm:w-52">

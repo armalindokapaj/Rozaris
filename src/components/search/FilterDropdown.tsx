@@ -50,7 +50,7 @@ export function FilterDropdown({
       {open && (
         <div
           className={cn(
-            "absolute top-[calc(100%+8px)] z-40 w-80 max-w-[min(90vw,22rem)] rounded-card border border-neutral-200 bg-white p-4 shadow-[0_8px_24px_rgba(17,17,24,0.10)]",
+            "absolute top-[calc(100%+8px)] z-40 w-80 max-w-[min(90vw,22rem)] rounded-card border border-neutral-200 bg-white p-4 shadow-[var(--shadow-2)]",
             align === "right" ? "right-0" : "left-0",
             panelClassName
           )}

@@ -31,12 +31,12 @@ export function DevelopersDirectoryClient({ publishers }: { publishers: Publishe
           <Link
             key={p.id}
             href={`/developer/${p.slug}`}
-            className="flex items-center gap-3 rounded-panel border border-neutral-200 bg-white p-4 hover:border-neutral-300 hover:shadow-sm"
+            className="flex items-center gap-3 rounded-panel border border-neutral-200 bg-white p-4 hover:border-neutral-300 hover:shadow-[var(--shadow-1)]"
           >
             <PlaceholderImage
               seed={p.id}
               kind="avatar"
-              className="h-12 w-12 shrink-0 rounded-2xl"
+              className="h-12 w-12 shrink-0 rounded-card"
               iconClassName="h-5 w-5"
             />
             <div className="min-w-0">

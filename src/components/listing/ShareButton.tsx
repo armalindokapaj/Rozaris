@@ -39,7 +39,7 @@ export function ShareButton({
       </button>
 
       {open && (
-        <div className="absolute right-0 z-30 mt-1.5 w-56 rounded-card border border-neutral-200 bg-white p-1.5 shadow-[0_8px_24px_rgba(17,17,24,0.10)]">
+        <div className="absolute right-0 z-30 mt-1.5 w-56 rounded-card border border-neutral-200 bg-white p-1.5 shadow-[var(--shadow-2)]">
           <a
             href={`https://wa.me/?text=${encodeURIComponent(`${title} — ${url}`)}`}
             target="_blank"

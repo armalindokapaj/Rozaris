@@ -139,7 +139,7 @@ export function TopFilterBar({ className }: { className?: string }) {
             <div className="relative grid grid-cols-2 rounded-control bg-neutral-100 p-1">
               <div
                 className={cn(
-                  "absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-[10px] bg-brand-500 shadow-sm transition-transform duration-300 ease-in-out",
+                  "absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-control bg-brand-500 shadow-[var(--shadow-1)] transition-transform duration-300 ease-in-out",
                   filters.transaction === "rent" && "translate-x-full"
                 )}
                 aria-hidden="true"
@@ -149,7 +149,7 @@ export function TopFilterBar({ className }: { className?: string }) {
                   key={txn}
                   onClick={() => setTransaction(txn)}
                   className={cn(
-                    "relative z-10 rounded-[10px] py-2 text-sm font-semibold transition-colors duration-200",
+                    "relative z-10 rounded-control py-2 text-sm font-semibold transition-colors duration-200",
                     filters.transaction === txn
                       ? "text-white"
                       : "text-neutral-500 hover:text-neutral-700 hover:bg-white/60"

@@ -21,7 +21,7 @@ export function CompareReplaceModal() {
         onClick={cancelReplace}
         className="absolute inset-0 bg-[rgba(15,15,20,0.28)]"
       />
-      <div className="relative w-full max-w-sm rounded-panel bg-white p-5 shadow-[0_18px_48px_rgba(17,17,24,0.14)]">
+      <div className="relative w-full max-w-sm rounded-panel bg-white p-5 shadow-[var(--shadow-3)]">
         <h2 className="text-base font-bold text-neutral-900">{t("compare.replaceTitle")}</h2>
         <p className="mt-1.5 text-sm text-neutral-500">
           {t("compare.replaceBody", { title: compareTitle(candidate) })}

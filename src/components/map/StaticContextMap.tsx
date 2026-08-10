@@ -106,7 +106,7 @@ export function StaticContextMap({
           onClick={activate}
           className="absolute inset-0 flex items-center justify-center gap-2 bg-neutral-900/0 text-sm font-medium text-white opacity-0 transition-opacity hover:bg-neutral-900/20 hover:opacity-100"
         >
-          <span className="flex items-center gap-1.5 rounded-pill bg-neutral-900/80 px-3.5 py-2 shadow-lg">
+          <span className="flex items-center gap-1.5 rounded-pill bg-neutral-900/80 px-3.5 py-2 shadow-[var(--shadow-1)]">
             <MousePointerClick className="h-4 w-4" />
             {t("map.clickToInteract")}
           </span>

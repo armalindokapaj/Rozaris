@@ -64,7 +64,7 @@ export default function BuyerSignupPage() {
   return (
     <div className="mx-auto max-w-xl px-4 py-10 lg:px-8">
       <div className="mb-6 flex items-center gap-3">
-        <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50">
+        <span className="flex h-11 w-11 items-center justify-center rounded-card bg-brand-50">
           <UserRound className="h-5 w-5 text-brand-600" />
         </span>
         <div>
@@ -112,7 +112,7 @@ export default function BuyerSignupPage() {
                 onClick={() => setTransaction(txn)}
                 className={cn(
                   "rounded-[10px] py-2 text-sm font-semibold transition-colors",
-                  transaction === txn ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"
+                  transaction === txn ? "bg-white text-neutral-900 shadow-[var(--shadow-1)]" : "text-neutral-500 hover:text-neutral-700"
                 )}
               >
                 {txn === "buy" ? t("nav.buy") : t("nav.rent")}

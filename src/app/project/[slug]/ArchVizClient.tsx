@@ -75,7 +75,7 @@ export function ArchVizClient({ project }: { project: Project }) {
         <div className="absolute inset-x-0 bottom-5 z-20 flex flex-col items-center gap-3 px-4 sm:bottom-6">
           <button
             onClick={() => setUnitPanelOpen(true)}
-            className="flex items-center gap-2 rounded-pill bg-brand-500 px-6 py-3.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(17,17,24,0.06)] hover:bg-brand-600"
+            className="flex items-center gap-2 rounded-pill bg-brand-500 px-6 py-3.5 text-sm font-bold text-white shadow-[var(--shadow-1)] hover:bg-brand-600"
           >
             <LayoutGrid className="h-4 w-4" />
             {t("project.exploreAvailableUnits", { count: project.availableUnits })}

@@ -123,7 +123,7 @@ export function NewProjectModal({
       role="dialog"
       aria-label={t("admin.newProjectTitle")}
     >
-      <div className="w-full max-w-md rounded-panel bg-white shadow-[0_18px_48px_rgba(17,17,24,0.14)]">
+      <div className="w-full max-w-md rounded-panel bg-white shadow-[var(--shadow-3)]">
         <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
           <h2 className="text-base font-bold text-neutral-900">{t("admin.newProjectTitle")}</h2>
           <button

@@ -30,7 +30,7 @@ export function MapControls({
         onClick={() =>
           withMap((m) => m.easeTo({ bearing: 0, duration: 400 }))
         }
-        className="glass-panel flex h-11 w-11 items-center justify-center rounded-full text-neutral-700 shadow-md hover:text-brand-600"
+        className="glass-panel flex h-11 w-11 items-center justify-center rounded-card text-neutral-700 hover:text-brand-600"
       >
         <CompassGlyph map={map} />
       </button>
@@ -42,11 +42,11 @@ export function MapControls({
             m.easeTo({ pitch: pitch > 10 ? 0 : 55, duration: 500 });
           })
         }
-        className="glass-panel flex h-11 w-11 items-center justify-center rounded-full text-neutral-700 shadow-md hover:text-brand-600"
+        className="glass-panel flex h-11 w-11 items-center justify-center rounded-card text-neutral-700 hover:text-brand-600"
       >
         <Box className="h-4.5 w-4.5" />
       </button>
-      <div className="glass-panel flex flex-col overflow-hidden rounded-full shadow-md">
+      <div className="glass-panel flex flex-col overflow-hidden rounded-card">
         <button
           aria-label={t("map.zoomIn")}
           onClick={() => withMap((m) => m.zoomIn({ duration: 300 }))}
@@ -77,7 +77,7 @@ export function MapControls({
             );
           });
         }}
-        className="glass-panel flex h-11 w-11 items-center justify-center rounded-full text-neutral-700 shadow-md hover:text-brand-600"
+        className="glass-panel flex h-11 w-11 items-center justify-center rounded-card text-neutral-700 hover:text-brand-600"
       >
         <LocateFixed className="h-4.5 w-4.5" />
       </button>

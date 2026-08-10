@@ -35,7 +35,7 @@ export function CompareOverlay() {
         onClick={() => setOpen(false)}
         className="absolute inset-0 bg-[rgba(15,15,20,0.28)]"
       />
-      <div className="relative flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-panel bg-white shadow-[0_18px_48px_rgba(17,17,24,0.14)] lg:max-h-[85vh] lg:rounded-panel">
+      <div className="relative flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-panel bg-white shadow-[var(--shadow-3)] lg:max-h-[85vh] lg:rounded-panel">
         <div className="flex shrink-0 items-center justify-between border-b border-neutral-100 px-5 py-4">
           <h2 className="flex items-center gap-2 text-base font-bold text-neutral-900">
             <SquareStack className="h-4.5 w-4.5 text-brand-500" />

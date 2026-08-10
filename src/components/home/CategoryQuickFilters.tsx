@@ -31,7 +31,7 @@ export function CategoryQuickFilters({ onMore }: { onMore: () => void }) {
             key={labelKey}
             onClick={() => setFilters({ propertyTypes: active ? [] : types })}
             className={cn(
-              "flex shrink-0 flex-col items-center gap-1.5 rounded-2xl px-3.5 py-2",
+              "flex shrink-0 flex-col items-center gap-1.5 rounded-pill px-3.5 py-2",
               active ? "bg-brand-500 text-white" : "text-neutral-600"
             )}
           >
@@ -42,7 +42,7 @@ export function CategoryQuickFilters({ onMore }: { onMore: () => void }) {
       })}
       <button
         onClick={onMore}
-        className="flex shrink-0 flex-col items-center gap-1.5 rounded-2xl px-3.5 py-2 text-neutral-600"
+        className="flex shrink-0 flex-col items-center gap-1.5 rounded-pill px-3.5 py-2 text-neutral-600"
       >
         <MoreHorizontal className="h-5 w-5" strokeWidth={1.75} />
         <span className="text-[11px] font-medium">{t("home.more")}</span>

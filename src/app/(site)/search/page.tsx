@@ -53,7 +53,7 @@ export default function SearchPage() {
       {/* Desktop top filter bar — collapsed pills that only expand into a
           popover when clicked, replacing the always-open sidebar. */}
       <div className="relative z-30 hidden shrink-0 lg:block">
-        <div className="glass-panel flex items-center justify-between gap-3 rounded-panel px-4 py-3 shadow-sm">
+        <div className="glass-panel flex items-center justify-between gap-3 rounded-panel px-4 py-3">
           <TopFilterBar className="flex-1" />
         </div>
       </div>
@@ -92,7 +92,7 @@ export default function SearchPage() {
           {mode === "map" && (
             <button
               onClick={() => setMapFullWidth((v) => !v)}
-              className="glass-panel absolute left-1/2 top-4 z-20 hidden -translate-x-1/2 items-center gap-1.5 rounded-pill px-4 py-2 text-sm font-semibold text-neutral-900 shadow-md lg:flex"
+              className="glass-panel absolute left-1/2 top-4 z-20 hidden -translate-x-1/2 items-center gap-1.5 rounded-pill px-4 py-2 text-sm font-semibold text-neutral-900 lg:flex"
             >
               {mapFullWidth ? (
                 <>
@@ -149,7 +149,7 @@ export default function SearchPage() {
           {!mobileSheet && (
             <button
               onClick={() => setMobileSheet("listings")}
-              className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-pill bg-neutral-900 px-5 py-3 text-sm font-semibold text-white shadow-lg lg:hidden"
+              className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-pill bg-neutral-900 px-5 py-3 text-sm font-semibold text-white shadow-[var(--shadow-2)] lg:hidden"
             >
               <List className="h-4 w-4" />
               {t("home.showList")}
@@ -172,7 +172,7 @@ export default function SearchPage() {
           <div className="flex shrink-0 justify-end">
             <ModeSwitch />
           </div>
-          <div className="glass-panel min-h-0 flex-1 overflow-hidden rounded-panel shadow-sm">
+          <div className="glass-panel min-h-0 flex-1 overflow-hidden rounded-panel">
             <ResultsList layout="grid" columns={mode === "list" ? 4 : 2} />
           </div>
         </div>

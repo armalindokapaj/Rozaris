@@ -69,7 +69,7 @@ export default async function DeveloperPage({
           <PlaceholderImage
             seed={publisher.id}
             kind="avatar"
-            className="h-16 w-16 shrink-0 rounded-2xl"
+            className="h-16 w-16 shrink-0 rounded-card"
             iconClassName="h-7 w-7"
           />
           <div>
