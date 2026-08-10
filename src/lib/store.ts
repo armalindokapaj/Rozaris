@@ -63,6 +63,7 @@ export const defaultProject3DConfig: Project3DConfig = {
  * source file needs correcting. Starts disabled: an upload alone shouldn't
  * go live on the public map until Admin explicitly enables it. */
 export const defaultProjectMapModel: ProjectMapModel = {
+  glbUrl: "",
   fileName: "",
   fileSize: 0,
   scale: 1,
@@ -250,8 +251,9 @@ interface AppState {
   resetProject3DConfig: (projectId: string) => void;
 
   // Admin's "3D Map Control" — GLB placement metadata per project (the
-  // binary itself lives in IndexedDB, see lib/glbStorage.ts). Distinct from
-  // project3DConfigs above, which is the *indoor* viewer's scene/camera.
+  // binary itself lives in Vercel Blob, see src/app/api/blob/upload).
+  // Distinct from project3DConfigs above, which is the *indoor* viewer's
+  // scene/camera.
   projectMapModels: Record<string, ProjectMapModel>;
   setProjectMapModel: (projectId: string, partial: Partial<ProjectMapModel>) => void;
   removeProjectMapModel: (projectId: string) => void;

@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { Trash2, Upload, X } from "lucide-react";
 import { useAppStore, defaultProjectMapModel } from "@/lib/store";
-import { getModelBlob, saveModelBlob, deleteModelBlob } from "@/lib/glbStorage";
 import { useT } from "@/lib/i18n/useT";
 import { GlbPreviewCanvas } from "./GlbPreviewCanvas";
 import type { Project, ProjectMapModel } from "@/lib/types";
 
-const MAX_FILE_BYTES = 60 * 1024 * 1024; // 60MB — generous for a "simple" GLB, still IndexedDB-safe.
+const MAX_FILE_BYTES = 60 * 1024 * 1024; // keep in sync with api/blob/upload's maximumSizeInBytes
 
 function formatBytes(bytes: number) {
   if (bytes <= 0) return "0 KB";
@@ -17,13 +17,14 @@ function formatBytes(bytes: number) {
 }
 
 /**
- * Admin's "3D Map Control" authoring surface — upload a GLB from disk, place
- * it (scale/rotation/altitude) against a live preview with a 5m reference
- * grid, then publish it to the real Mapbox map at this project's real lng/
- * lat (ProjectModelLayer, MapView.tsx). The binary is saved to IndexedDB
- * (lib/glbStorage.ts) the moment it's picked — Save here only publishes the
- * small placement record, mirroring Project3DConfigEditor's draft/publish
- * split next to it in the admin console.
+ * Admin's "3D Map Control" authoring surface — upload a GLB from disk (goes
+ * straight to Vercel Blob, a real shared URL any visitor's browser can load
+ * — see src/app/api/blob/upload), place it (scale/rotation/altitude)
+ * against a live preview with a 5m reference grid, then publish it to the
+ * real Mapbox map at this project's real lng/lat (ProjectModelLayer,
+ * MapView.tsx). Save here only publishes the small placement record
+ * (still Zustand-only for now, see the "rozaris-backend-plan" memory),
+ * mirroring Project3DConfigEditor's draft/publish split next to it.
  */
 export function MapModelEditor({ project, onClose }: { project: Project; onClose: () => void }) {
   const saved = useAppStore((s) => s.projectMapModels[project.id]);
@@ -31,29 +32,16 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
   const removeProjectMapModel = useAppStore((s) => s.removeProjectMapModel);
   const { t } = useT();
 
-  const [draft, setDraft] = useState<ProjectMapModel>(
-    saved ?? defaultProjectMapModel
-  );
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [draft, setDraft] = useState<ProjectMapModel>(saved ?? defaultProjectMapModel);
+  // Instant local preview (picked file, pre-upload) takes priority over the
+  // already-published glbUrl so Admin sees the *new* file immediately
+  // instead of waiting on the upload to finish.
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Load whatever's already stored for this project, once.
-  useEffect(() => {
-    let cancelled = false;
-    let url: string | null = null;
-    getModelBlob(project.id).then((blob) => {
-      if (cancelled || !blob) return;
-      url = URL.createObjectURL(blob);
-      setBlobUrl(url);
-    });
-    return () => {
-      cancelled = true;
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [project.id]);
 
   function update(partial: Partial<ProjectMapModel>) {
     setDraft((d) => ({ ...d, ...partial }));
@@ -69,25 +57,43 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
       setError(t("admin.mapModelTooLarge", { max: formatBytes(MAX_FILE_BYTES) }));
       return;
     }
+    setLocalPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
     setBusy(true);
+    setUploadProgress(0);
     try {
-      await saveModelBlob(project.id, file);
-      setBlobUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return URL.createObjectURL(file);
+      const blob = await upload(`project-map-models/${project.id}-${file.name}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/blob/upload",
+        onUploadProgress: (p) => setUploadProgress(p.percentage),
       });
-      update({ fileName: file.name, fileSize: file.size });
+      update({ glbUrl: blob.url, fileName: file.name, fileSize: file.size });
+    } catch {
+      setError(t("admin.mapModelUploadFailed"));
+      setLocalPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
     } finally {
       setBusy(false);
+      setUploadProgress(null);
     }
   }
 
   async function handleRemove() {
     setBusy(true);
     try {
-      await deleteModelBlob(project.id);
+      if (draft.glbUrl) {
+        await fetch("/api/blob/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: draft.glbUrl }),
+        });
+      }
       removeProjectMapModel(project.id);
-      setBlobUrl((prev) => {
+      setLocalPreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return null;
       });
@@ -104,6 +110,7 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
   }
 
   const hasModel = !!draft.fileName;
+  const previewUrl = localPreviewUrl ?? (draft.glbUrl || null);
 
   return (
     <div
@@ -114,7 +121,7 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
       <div className="flex h-full w-full flex-col bg-white shadow-[0_8px_24px_rgba(17,17,24,0.10)] lg:max-w-4xl lg:flex-row">
         <div className="h-64 shrink-0 bg-neutral-900 lg:h-full lg:flex-1">
           <GlbPreviewCanvas
-            blobUrl={blobUrl}
+            blobUrl={previewUrl}
             scale={draft.scale}
             rotationDeg={draft.rotationDeg}
             altitudeOffset={draft.altitudeOffset}
@@ -185,6 +192,14 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
                   </span>
                   <span className="text-xs text-neutral-400">{t("admin.mapModelAccepted")}</span>
                 </button>
+              )}
+              {uploadProgress != null && (
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+                  <div
+                    className="h-full rounded-full bg-brand-500 transition-all"
+                    style={{ width: `${Math.round(uploadProgress)}%` }}
+                  />
+                </div>
               )}
               {error && <p className="mt-2 text-xs font-medium text-red-600">{error}</p>}
               <p className="mt-2 text-[11px] text-neutral-400">{t("admin.mapModelStorageNote")}</p>

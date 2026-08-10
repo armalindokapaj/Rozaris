@@ -4,6 +4,7 @@ import mapboxgl from "mapbox-gl";
 
 export interface MapModelEntry {
   projectId: string;
+  glbUrl: string;
   lng: number;
   lat: number;
   scale: number;
@@ -43,17 +44,12 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
   private renderer: THREE.WebGLRenderer | null = null;
   private loader = new GLTFLoader();
   private loaded = new Map<string, LoadedModel>();
-  private pendingLoads = new Set<string>();
+  private pendingUrls = new Map<string, string>();
   private map: mapboxgl.Map | null = null;
   private onPick: (projectId: string) => void;
-  private getBlobUrl: (projectId: string) => Promise<string | null>;
 
-  constructor(opts: {
-    onPick: (projectId: string) => void;
-    getBlobUrl: (projectId: string) => Promise<string | null>;
-  }) {
+  constructor(opts: { onPick: (projectId: string) => void }) {
     this.onPick = opts.onPick;
-    this.getBlobUrl = opts.getBlobUrl;
     this.scene.add(new THREE.AmbientLight(0xffffff, 1.5));
     const sun = new THREE.DirectionalLight(0xffffff, 1.2);
     sun.position.set(0, -70, 100).normalize();
@@ -75,6 +71,7 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
     this.map?.getCanvas().removeEventListener("click", this.handleClick);
     this.loaded.forEach((m) => disposeObject3D(m.root));
     this.loaded.clear();
+    this.pendingUrls.clear();
     this.renderer = null;
     this.map = null;
   }
@@ -90,42 +87,49 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
         this.loaded.delete(id);
       }
     }
+    for (const id of this.pendingUrls.keys()) {
+      if (!nextIds.has(id)) this.pendingUrls.delete(id);
+    }
     entries.forEach((entry) => this.upsertEntry(entry));
   }
 
   private upsertEntry(entry: MapModelEntry) {
     const existing = this.loaded.get(entry.projectId);
-    if (existing) {
+    if (existing && existing.entry.glbUrl === entry.glbUrl) {
+      // Same file — just a placement (scale/rotation/altitude) change.
       existing.entry = entry;
       this.applyTransform(existing);
       return;
     }
-    if (this.pendingLoads.has(entry.projectId)) return;
-    this.pendingLoads.add(entry.projectId);
+    // New project, or Admin replaced the file — (re)load the geometry.
+    if (existing) {
+      this.scene.remove(existing.root);
+      disposeObject3D(existing.root);
+      this.loaded.delete(entry.projectId);
+    }
+    if (this.pendingUrls.get(entry.projectId) === entry.glbUrl) return;
+    this.pendingUrls.set(entry.projectId, entry.glbUrl);
 
-    this.getBlobUrl(entry.projectId).then((url) => {
-      if (!url) {
-        this.pendingLoads.delete(entry.projectId);
-        return;
-      }
-      this.loader.load(
-        url,
-        (gltf) => {
-          this.pendingLoads.delete(entry.projectId);
-          const root = gltf.scene;
-          root.traverse((child) => {
-            child.userData.projectId = entry.projectId;
-          });
-          this.scene.add(root);
-          const loaded: LoadedModel = { root, entry };
-          this.loaded.set(entry.projectId, loaded);
-          this.applyTransform(loaded);
-          this.map?.triggerRepaint();
-        },
-        undefined,
-        () => this.pendingLoads.delete(entry.projectId)
-      );
-    });
+    this.loader.load(
+      entry.glbUrl,
+      (gltf) => {
+        // The entry may have moved on (or been removed) while this request
+        // was in flight — only commit if it's still current.
+        if (this.pendingUrls.get(entry.projectId) !== entry.glbUrl) return;
+        this.pendingUrls.delete(entry.projectId);
+        const root = gltf.scene;
+        root.traverse((child) => {
+          child.userData.projectId = entry.projectId;
+        });
+        this.scene.add(root);
+        const loaded: LoadedModel = { root, entry };
+        this.loaded.set(entry.projectId, loaded);
+        this.applyTransform(loaded);
+        this.map?.triggerRepaint();
+      },
+      undefined,
+      () => this.pendingUrls.delete(entry.projectId)
+    );
   }
 
   private applyTransform(loaded: LoadedModel) {

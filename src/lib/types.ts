@@ -215,10 +215,13 @@ export interface Project3DConfig {
 /** Admin's "3D Map Control" — an outdoor GLB placed at a project's real
  * lng/lat on the search map (mapbox-gl custom layer), separate from
  * Project3DConfig above (which governs the *indoor* Pure Three.js viewer
- * at /project/[slug]). The uploaded binary itself lives in IndexedDB
- * (lib/glbStorage.ts) keyed by project id — far too large for localStorage
- * — this record is only the small, JSON-persistable metadata + placement. */
+ * at /project/[slug]). The uploaded binary lives in Vercel Blob (a real,
+ * shared, permanent URL — see src/app/api/blob/upload) — this record is
+ * just the small, JSON-persistable metadata + placement, still Zustand-only
+ * for now (see the "rozaris-backend-plan" memory for the Prisma table this
+ * moves to next). */
 export interface ProjectMapModel {
+  glbUrl: string;
   fileName: string;
   fileSize: number;
   /** Multiplies the model's authored size so it reads at real-world scale

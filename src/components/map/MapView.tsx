@@ -6,7 +6,6 @@ import { useAppStore } from "@/lib/store";
 import { SELECTED_UNIT_ZOOM } from "@/lib/constants";
 import { getVisibleListings, getVisibleProjects } from "@/lib/filtering";
 import { getNeighborhood, searchableListings, projects, CITY_CENTER } from "@/lib/mockData";
-import { getModelBlob } from "@/lib/glbStorage";
 import {
   buildClusterMarker,
   buildListingMarker,
@@ -41,10 +40,6 @@ export function MapView({
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const modelLayerRef = useRef<ProjectModelLayer | null>(null);
-  // GLBs live in IndexedDB (async) but the layer's loader wants a same-tick
-  // object URL — cache per project so a re-render doesn't re-hit IndexedDB
-  // or leak a fresh blob: URL every time.
-  const modelBlobUrlsRef = useRef<Map<string, string>>(new Map());
 
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const [ready, setReady] = useState(false);
@@ -122,18 +117,10 @@ export function MapView({
       }
       setTier(tierForZoom(map.getZoom()));
 
-      // "3D Map Control" — Admin-uploaded GLBs plotted as real georeferenced
-      // models rather than flat pins (see ProjectModelLayer.ts doc comment).
+      // "3D Map Control" — Admin-uploaded GLBs (real Vercel Blob URLs, see
+      // MapModelEditor.tsx) plotted as real georeferenced models rather than
+      // flat pins (see ProjectModelLayer.ts doc comment).
       const modelLayer = new ProjectModelLayer({
-        getBlobUrl: async (projectId) => {
-          const cached = modelBlobUrlsRef.current.get(projectId);
-          if (cached) return cached;
-          const blob = await getModelBlob(projectId);
-          if (!blob) return null;
-          const url = URL.createObjectURL(blob);
-          modelBlobUrlsRef.current.set(projectId, url);
-          return url;
-        },
         onPick: (projectId) => {
           const project = projects.find((p) => p.id === projectId);
           if (project) window.open(`/project/${project.slug}`, "_blank", "noopener");
@@ -172,13 +159,10 @@ export function MapView({
       selectProject(null);
     });
 
-    const blobUrls = modelBlobUrlsRef.current;
     return () => {
       map.remove();
       mapRef.current = null;
       modelLayerRef.current = null;
-      blobUrls.forEach((url) => URL.revokeObjectURL(url));
-      blobUrls.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
@@ -187,10 +171,11 @@ export function MapView({
   const mapModelEntries = useMemo<MapModelEntry[]>(() => {
     return visibleProjects.flatMap((p) => {
       const model = projectMapModels[p.id];
-      if (!model?.enabled || !model.fileName) return [];
+      if (!model?.enabled || !model.glbUrl) return [];
       return [
         {
           projectId: p.id,
+          glbUrl: model.glbUrl,
           lng: p.coords.lng,
           lat: p.coords.lat,
           scale: model.scale,

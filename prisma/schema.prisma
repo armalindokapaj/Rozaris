@@ -1,0 +1,520 @@
+// ROZARIS backend schema — see MEMORY note "rozaris-backend-plan" for the
+// phased rollout this belongs to. Mirrors src/lib/types.ts (the PRD data
+// model) wherever a domain is moving from Zustand/localStorage to a real,
+// shared, multi-user store.
+//
+// Scope note (deliberate, per product decision): the public browse/search
+// catalog (Listing/Project *reads*) stays on src/lib/mockData.ts for now —
+// that full catalog migration + geo search is a later phase. What lives here
+// already is: real auth, the publisher "submit a listing/project" ->
+// admin "approve/publish" workflow, and every per-user domain that used to
+// be private to one browser's localStorage (saved items, follows,
+// notifications, messaging, construction-timeline requests, the two 3D
+// admin configs). Newly-submitted Listings/Projects are real rows from day
+// one, they just aren't merged into the public search results yet.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Vercel Postgres (Neon) exposes both a pooled and a direct connection —
+  // migrations need the direct one to avoid pgbouncer issues.
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  buyer
+  publisher
+  admin
+}
+
+enum PublisherType {
+  private_owner
+  agency
+  developer
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String?   @unique
+  phone         String?   @unique
+  passwordHash  String?
+  name          String
+  role          UserRole  @default(buyer)
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+
+  // Auth.js
+  accounts Account[]
+  sessions Session[]
+
+  // Buyer-side profile fields (PRD_User) — null for publisher/admin accounts.
+  buyerPreferences Json?
+
+  // A publisher-role user owns exactly one Publisher org record.
+  publisher Publisher?
+
+  savedItems         SavedItem[]
+  savedSearches       SavedSearch[]
+  follows             Follow[]
+  recentlyViewed      RecentlyViewedEntry[]
+  notifications       Notification[]
+  sentConversationsAsBuyer Conversation[] @relation("BuyerConversations")
+  messages            Message[]
+  leadStatusOverrides LeadStatusOverride[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Publishers, Listings, Projects — the "submit -> admin approve -> publish"
+// pipeline (public browse still reads mockData.ts; see file header).
+// ---------------------------------------------------------------------------
+
+model Publisher {
+  id       String        @id @default(cuid())
+  slug     String        @unique
+  name     String
+  type     PublisherType
+  verified Boolean       @default(false)
+  logoUrl  String?
+  phone    String
+  whatsapp String?
+  bio      String?
+
+  ownerUserId String @unique
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  listings Listing[]
+  projects Project[]
+  leads    LeadItem[]
+
+  createdAt DateTime @default(now())
+
+  @@map("publishers")
+}
+
+enum ListingStatus {
+  pending // submitted, awaiting admin approval — not yet live anywhere
+  active
+  sold
+  rented
+  expired
+  suspended
+  archived
+}
+
+model Listing {
+  id             String        @id @default(cuid())
+  slug           String        @unique
+  title          String
+  transaction    String
+  rentSubtype    String?
+  propertyType   String
+  price          Float
+  currency       String        @default("EUR")
+  negotiable     Boolean       @default(false)
+  area           Float
+  landArea       Float?
+  buildingPermit Boolean?
+  bedrooms       Int
+  bathrooms      Int
+  floor          Int?
+  totalFloors    Int?
+  yearBuilt      Int?
+  condition      String
+  amenities      String[]
+  lat            Float
+  lng            Float
+  neighborhoodId String
+  city           String
+  images         String[]
+  floorPlanImage String?
+  facadeImage    String?
+  videoUrl       String?
+  descriptionEn  String
+  descriptionSq  String
+  premium        Boolean       @default(false)
+  status         ListingStatus @default(pending)
+  createdAt      DateTime      @default(now())
+  reviewedAt     DateTime?
+
+  publisherId String
+  publisher   Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+
+  leads LeadItem[]
+
+  @@map("listings")
+}
+
+enum ProjectStatus {
+  coming_soon
+  under_construction
+  completed
+}
+
+enum ProjectApprovalStatus {
+  pending
+  active
+  archived
+}
+
+model Project {
+  id              String                 @id @default(cuid())
+  slug            String                 @unique
+  name            String
+  status          ProjectStatus          @default(coming_soon)
+  approvalStatus  ProjectApprovalStatus  @default(pending)
+  progressPercent Int                    @default(0)
+  lat             Float
+  lng             Float
+  neighborhoodId  String
+  city            String
+  setting         String
+  propertyType    String
+  heroImage       String?
+  gallery         String[]
+  descriptionEn   String
+  descriptionSq   String
+  buildings       String[]
+  amenities       String[]
+  premium         Boolean                @default(false)
+  completionLabel String?
+  createdAt       DateTime               @default(now())
+  reviewedAt      DateTime?
+
+  publisherId String
+  publisher   Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+
+  units               Unit[]
+  constructionStages  ConstructionStage[]
+  timelineRequests    ConstructionTimelineRequest[]
+  threeDConfig        Project3DConfig?
+  mapModel            ProjectMapModel?
+  leads               LeadItem[]
+
+  @@map("projects")
+}
+
+model Unit {
+  id           String   @id @default(cuid())
+  code         String
+  type         String
+  buildingName String
+  floor        Int
+  area         Float
+  bedrooms     Int
+  bathrooms    Int
+  price        Float
+  currency     String   @default("EUR")
+  transaction  String
+  status       String   @default("available")
+  images       String[]
+  floorPlanImage String?
+  facadeImage  String?
+  videoUrl     String?
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("units")
+}
+
+model ConstructionStage {
+  id              String   @id @default(cuid())
+  name            String
+  order           Int
+  status          String
+  progressPercent Int
+  dateLabel       String
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("construction_stages")
+}
+
+// ---------------------------------------------------------------------------
+// Per-user domains — the "most important" phase: real, shared, durable state
+// that today lives only in one browser's localStorage.
+// ---------------------------------------------------------------------------
+
+enum SavedEntityType {
+  listing
+  project
+  neighborhood
+}
+
+model SavedItem {
+  id         String          @id @default(cuid())
+  userId     String
+  entityType SavedEntityType
+  entityId   String
+  createdAt  DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entityType, entityId])
+  @@map("saved_items")
+}
+
+model SavedSearch {
+  id              String   @id @default(cuid())
+  userId          String
+  name            String
+  filtersSummary  String
+  filters         Json
+  cadence         String   @default("off")
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("saved_searches")
+}
+
+enum FollowKind {
+  project
+  developer
+}
+
+model Follow {
+  id        String     @id @default(cuid())
+  userId    String
+  kind      FollowKind
+  targetId  String
+  createdAt DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, targetId])
+  @@map("follows")
+}
+
+model RecentlyViewedEntry {
+  id       String   @id @default(cuid())
+  userId   String
+  kind     String
+  entityId String
+  viewedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, entityId])
+  @@map("recently_viewed")
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  titleKey  String
+  bodyKey   String
+  vars      Json?
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Buyer <-> Publisher messaging
+// ---------------------------------------------------------------------------
+
+model Conversation {
+  id            String   @id @default(cuid())
+  buyerId       String
+  publisherId   String
+  listingTitle  String?
+  listingSlug   String?
+  createdAt     DateTime @default(now())
+
+  buyer    User      @relation("BuyerConversations", fields: [buyerId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderId       String
+  senderRole     String
+  text           String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+// ---------------------------------------------------------------------------
+// Admin-approved construction timeline edits
+// ---------------------------------------------------------------------------
+
+enum TimelineRequestStatus {
+  pending
+  approved
+  rejected
+}
+
+model ConstructionTimelineRequest {
+  id              String                 @id @default(cuid())
+  projectId       String
+  publisherId     String
+  progressPercent Int
+  stages          Json
+  status          TimelineRequestStatus  @default(pending)
+  submittedAt     DateTime               @default(now())
+  reviewedAt      DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("construction_timeline_requests")
+}
+
+// ---------------------------------------------------------------------------
+// Admin's two 3D authoring surfaces — one row per project each, replacing
+// the store's project3DConfigs / projectMapModels Records.
+// ---------------------------------------------------------------------------
+
+model Project3DConfig {
+  projectId                     String   @id
+  lightingPreset                String   @default("daylight")
+  backgroundPreset               String   @default("sky")
+  groundEnabled                  Boolean  @default(true)
+  cameraStartDistanceMultiplier  Float    @default(1)
+  cameraMinDistanceMultiplier    Float    @default(0.4)
+  cameraMaxDistanceMultiplier    Float    @default(2.5)
+  cameraMaxPolarDeg              Int      @default(85)
+  autoRotate                     Boolean  @default(true)
+  constructionStagesEnabled      Boolean  @default(true)
+  status                         String   @default("draft")
+  updatedAt                      DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_3d_configs")
+}
+
+/// Admin's "3D Map Control" GLB placement — glbUrl now points at a real
+/// Vercel Blob object (shared, public, permanent) instead of one browser's
+/// IndexedDB, which is exactly the gap flagged when this feature shipped:
+/// "nobody else sees Admin's own-browser upload".
+model ProjectMapModel {
+  projectId       String   @id
+  glbUrl          String
+  fileName        String
+  fileSize        Int
+  scale           Float    @default(1)
+  rotationDeg     Float    @default(0)
+  altitudeOffset  Float    @default(0)
+  enabled         Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_map_models")
+}
+
+// ---------------------------------------------------------------------------
+// Publisher leads
+// ---------------------------------------------------------------------------
+
+enum LeadStatus {
+  new
+  contacted
+  viewing
+  negotiating
+  closed
+  archived
+}
+
+model LeadItem {
+  id          String     @id @default(cuid())
+  publisherId String
+  listingId   String?
+  projectId   String?
+  source      String
+  status      LeadStatus @default(new)
+  createdAt   DateTime   @default(now())
+
+  publisher Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+  listing   Listing?  @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@map("leads")
+}
+
+model LeadStatusOverride {
+  id     String     @id @default(cuid())
+  userId String
+  leadId String     @unique
+  status LeadStatus
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("lead_status_overrides")
+}
+
+// ---------------------------------------------------------------------------
+// Platform settings — singleton row (id always "singleton").
+// ---------------------------------------------------------------------------
+
+model PlatformSettings {
+  id              String   @id @default("singleton")
+  eurToAllRate    Float    @default(97)
+  updatedAt       DateTime @updatedAt
+
+  @@map("platform_settings")
+}
