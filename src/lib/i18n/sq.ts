@@ -695,6 +695,7 @@ const sq: Dictionary = {
     viewer3DSaved: "U ruajt — tani është live në vizualizuesin publik.",
     mapModelTabTitle: "Kontrolli 3D i Hartës",
     mapModelTabSubtitle: "Ngarko një skedar GLB për çdo projekt dhe vendose në vendndodhjen e tij reale në hartën e kërkimit — vizitorët që klikojnë mbi të hapin faqen 3D të projektit në një skedë të re.",
+    mapModelNewProject: "Projekt i ri",
     mapModelStatusNone: "Nuk ka model të ngarkuar",
     mapModelStatusLive: "Live në hartë",
     mapModelStatusDraft: "I ngarkuar — jo ende live",

@@ -388,13 +388,12 @@ function MapControlTab() {
   const { t } = useT();
   const customProjects = useAppStore((s) => s.customProjects);
   const [editing, setEditing] = useState<Project | null>(null);
+  const [creating, setCreating] = useState(false);
   // A real Postgres row per project (src/app/api/map-models), not Zustand —
-  // see MapModelEditor.tsx/MapView.tsx's matching hooks. Custom
-  // (Admin-created) projects only exist in this browser's Zustand state
-  // though, with no matching Postgres `Project` row (that needs the
-  // submit/publish pipeline, deliberately deferred — see the
-  // "rozaris-backend-plan" memory) — saving a model for one of those will
-  // 404 until that lands.
+  // see MapModelEditor.tsx/MapView.tsx's matching hooks. A project created
+  // right here (via "New project" below) gets a matching Postgres row too
+  // (NewProjectModal.tsx posts to /api/projects immediately after), so its
+  // model can attach right away, same as a seeded mockData.ts project.
   const [mapModels, setMapModels] = useState<Record<string, { fileName: string; enabled: boolean }>>({});
 
   useEffect(() => {
@@ -418,9 +417,18 @@ function MapControlTab() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-bold text-neutral-900">{t("admin.mapModelTabTitle")}</h1>
-        <p className="text-sm text-neutral-500">{t("admin.mapModelTabSubtitle")}</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-neutral-900">{t("admin.mapModelTabTitle")}</h1>
+          <p className="text-sm text-neutral-500">{t("admin.mapModelTabSubtitle")}</p>
+        </div>
+        <button
+          onClick={() => setCreating(true)}
+          className="flex items-center gap-1.5 rounded-control bg-brand-500 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-brand-600"
+        >
+          <Plus className="h-4 w-4" />
+          {t("admin.mapModelNewProject")}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -457,6 +465,16 @@ function MapControlTab() {
           );
         })}
       </div>
+
+      {creating && (
+        <NewProjectModal
+          onClose={() => setCreating(false)}
+          onCreated={(p) => {
+            setCreating(false);
+            setEditing(p);
+          }}
+        />
+      )}
 
       {editing && <MapModelEditor project={editing} onClose={() => setEditing(null)} />}
     </div>

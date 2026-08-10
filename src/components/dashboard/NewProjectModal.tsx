@@ -81,6 +81,40 @@ export function NewProjectModal({
     };
     addProject(project);
     onCreated(project);
+
+    // Fire-and-forget: gives the project a real Postgres row so it can take
+    // a "3D Map Control" GLB or 3D Experience config right away, without
+    // blocking the (already-optimistic) local creation on the network.
+    fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: project.id,
+        slug: project.slug,
+        name: project.name,
+        publisherId: project.developer.id,
+        status: project.status,
+        progressPercent: project.progressPercent,
+        lat: project.coords.lat,
+        lng: project.coords.lng,
+        neighborhoodId: project.neighborhoodId,
+        city: project.city,
+        setting: project.setting,
+        propertyType: project.propertyType,
+        heroImage: project.heroImage,
+        gallery: project.gallery,
+        descriptionEn: project.description.en,
+        descriptionSq: project.description.sq,
+        buildings: project.buildings,
+        amenities: project.amenities,
+        premium: project.premium,
+        completionLabel: project.completionLabel,
+      }),
+    }).catch(() => {
+      // Non-fatal here — Admin can still browse/edit the project locally;
+      // attaching a map model/3D config will just 404 until this succeeds
+      // on a retry (no retry loop yet, see "rozaris-backend-plan" memory).
+    });
   }
 
   return (

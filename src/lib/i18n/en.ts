@@ -693,6 +693,7 @@ const en = {
     viewer3DSaved: "Saved — now live on the public viewer.",
     mapModelTabTitle: "3D Map Control",
     mapModelTabSubtitle: "Upload a GLB per project and place it at its real location on the search map — visitors who click it open the project's 3D page in a new tab.",
+    mapModelNewProject: "New project",
     mapModelStatusNone: "No model uploaded",
     mapModelStatusLive: "Live on the map",
     mapModelStatusDraft: "Uploaded — not yet live",
