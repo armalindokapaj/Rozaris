@@ -47,9 +47,14 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
   private pendingUrls = new Map<string, string>();
   private map: mapboxgl.Map | null = null;
   private onPick: (projectId: string) => void;
+  private onLoadError?: (projectId: string, error: unknown, glbUrl: string) => void;
 
-  constructor(opts: { onPick: (projectId: string) => void }) {
+  constructor(opts: {
+    onPick: (projectId: string) => void;
+    onLoadError?: (projectId: string, error: unknown, glbUrl: string) => void;
+  }) {
     this.onPick = opts.onPick;
+    this.onLoadError = opts.onLoadError;
     this.scene.add(new THREE.AmbientLight(0xffffff, 1.5));
     const sun = new THREE.DirectionalLight(0xffffff, 1.2);
     sun.position.set(0, -70, 100).normalize();
@@ -118,6 +123,9 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
         if (this.pendingUrls.get(entry.projectId) !== entry.glbUrl) return;
         this.pendingUrls.delete(entry.projectId);
         const root = gltf.scene;
+        // Manual matrix control (see applyTransform) — Three.js must not
+        // recompute this from position/quaternion/scale on its own.
+        root.matrixAutoUpdate = false;
         root.traverse((child) => {
           child.userData.projectId = entry.projectId;
         });
@@ -128,10 +136,40 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
         this.map?.triggerRepaint();
       },
       undefined,
-      () => this.pendingUrls.delete(entry.projectId)
+      (error) => {
+        this.pendingUrls.delete(entry.projectId);
+        this.onLoadError?.(entry.projectId, error, entry.glbUrl);
+      }
     );
   }
 
+  /**
+   * Positions/scales/rotates the model to sit at its real-world lng/lat —
+   * built as one explicit matrix (translate * scale * rotateX * rotateY *
+   * rotateZ), the exact composition Mapbox's own "Add a 3D model" example
+   * uses, rather than Three.js's automatic Object3D position/rotation/scale
+   * (which always composes as translate * rotate * scale). That distinction
+   * only matters once the scale is non-uniform — which it is here: the Y
+   * component is deliberately negative (see below) — so the two approaches
+   * would otherwise produce visibly different, wrong results.
+   *
+   * Two corrections a naive port of the position/rotation/scale is easy to
+   * miss, both confirmed as bugs in an earlier version of this file:
+   *  1. Heading (Admin's rotationDeg) must be the middle (Y) rotation in the
+   *     X→Y→Z chain, not the last (Z) one — since these multiply in that
+   *     order, only Y lands as "spin around the model's own still-upright
+   *     vertical axis, before it gets tipped onto its side by X". Putting it
+   *     in Z instead spins around the model's original forward/depth axis
+   *     (a roll, not a heading), which only matches "no rotation" by
+   *     accident when rotationDeg happens to be 0.
+   *  2. The Y scale must be negative. Converting a Y-up glTF into Mercator's
+   *     Z-up space via the X rotation flips handedness; without correcting
+   *     it, every face's winding is reversed and the model can render
+   *     back-face-culled — i.e. it "loads" (no error, geometry is present)
+   *     but appears broken/invisible/inside-out from the normal viewing
+   *     angle. This is the single most common gotcha in this integration
+   *     pattern.
+   */
   private applyTransform(loaded: LoadedModel) {
     const { root, entry } = loaded;
     const mercator = mapboxgl.MercatorCoordinate.fromLngLat(
@@ -139,16 +177,23 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
       0
     );
     const metersToMercator = mercator.meterInMercatorCoordinateUnits();
-    root.position.set(
-      mercator.x,
-      mercator.y,
-      mercator.z + entry.altitudeOffset * metersToMercator
-    );
     const s = metersToMercator * entry.scale;
-    root.scale.set(s, s, s);
-    // GLB convention (Y-up) -> Mercator space (Z-up): tip the model onto its
-    // Z axis, then apply Admin's heading offset around that new "up" axis.
-    root.rotation.set(Math.PI / 2, 0, THREE.MathUtils.degToRad(entry.rotationDeg));
+
+    const rotationX = new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+    const rotationY = new THREE.Matrix4().makeRotationAxis(
+      new THREE.Vector3(0, 1, 0),
+      THREE.MathUtils.degToRad(entry.rotationDeg)
+    );
+    const rotationZ = new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(0, 0, 1), 0);
+
+    const m = new THREE.Matrix4()
+      .makeTranslation(mercator.x, mercator.y, mercator.z + entry.altitudeOffset * metersToMercator)
+      .scale(new THREE.Vector3(s, -s, s))
+      .multiply(rotationX)
+      .multiply(rotationY)
+      .multiply(rotationZ);
+
+    root.matrix.copy(m);
   }
 
   private handleClick = (e: MouseEvent) => {

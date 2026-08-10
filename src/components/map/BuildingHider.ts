@@ -69,9 +69,16 @@ export class BuildingHider {
   private discoverBuildingLayers() {
     if (this.buildingLayerIds.length > 0) return;
     const layers = (this.map.getStyle()?.layers ?? []) as { id: string; type: string }[];
+    // "fill-extrusion"/"building" cover the generic extruded footprints
+    // (this style's 2d-building/3d-building/procedural-buildings); "model"
+    // additionally covers Mapbox's pre-modeled real-world landmark
+    // buildings (e.g. "building-models") — in the unlikely case a project
+    // sits at one of those, it needs hiding the same way.
     this.buildingLayerIds = layers
       .filter(
-        (l) => (l.type === "fill-extrusion" || l.type === "building") && l.id.toLowerCase().includes("building")
+        (l) =>
+          (l.type === "fill-extrusion" || l.type === "building" || l.type === "model") &&
+          l.id.toLowerCase().includes("building")
       )
       .map((l) => l.id);
   }

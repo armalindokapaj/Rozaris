@@ -173,6 +173,9 @@ export function MapView({
           const project = projects.find((p) => p.id === projectId);
           if (project) window.open(`/project/${project.slug}`, "_blank", "noopener");
         },
+        onLoadError: (projectId, error) => {
+          console.error(`3D Map Control: failed to load GLB for project "${projectId}"`, error);
+        },
       });
       map.addLayer(modelLayer);
       modelLayerRef.current = modelLayer;

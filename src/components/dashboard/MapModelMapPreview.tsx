@@ -42,6 +42,12 @@ export function MapModelMapPreview({
   const buildingHiderRef = useRef<BuildingHider | null>(null);
   const [ready, setReady] = useState(false);
   const [webglFailReason, setWebglFailReason] = useState<string | null>(null);
+  // Tracks which glbUrl (if any) last failed to load. Deriving `loadError`
+  // from this instead of a separate boolean means a new glbUrl clears the
+  // old error for free — no explicit reset needed in the reconcile effect
+  // below, which would otherwise be a setState called directly in an
+  // effect body.
+  const [failedGlbUrl, setFailedGlbUrl] = useState<string | null>(null);
   const { t } = useT();
 
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -70,7 +76,13 @@ export function MapModelMapPreview({
     map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
     map.on("load", () => {
-      const modelLayer = new ProjectModelLayer({ onPick: () => {} });
+      const modelLayer = new ProjectModelLayer({
+        onPick: () => {},
+        onLoadError: (_projectId, error, url) => {
+          console.error("3D Map Control: failed to load GLB", error);
+          setFailedGlbUrl(url);
+        },
+      });
       map.addLayer(modelLayer);
       modelLayerRef.current = modelLayer;
       buildingHiderRef.current = new BuildingHider(map);
@@ -113,6 +125,8 @@ export function MapModelMapPreview({
     );
   }, [ready, glbUrl, coords.lat, coords.lng, scale, rotationDeg, altitudeOffset]);
 
+  const loadError = glbUrl != null && failedGlbUrl === glbUrl;
+
   useEffect(() => {
     if (!ready) return;
     buildingHiderRef.current?.setTargets(
@@ -135,6 +149,13 @@ export function MapModelMapPreview({
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
           <span className="glass-panel-dark rounded-pill px-3.5 py-2 text-xs font-medium text-white">
             {t("admin.mapModelNoUpload")}
+          </span>
+        </div>
+      )}
+      {loadError && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+          <span className="rounded-pill bg-red-600/90 px-3.5 py-2 text-xs font-medium text-white shadow-lg">
+            {t("admin.mapModelLoadError")}
           </span>
         </div>
       )}
