@@ -34,7 +34,7 @@ export function MortgageCalculatorPageClient() {
               <Landmark className="h-5 w-5 text-brand-600" />
             </span>
             <div>
-              <h1 className="text-xl font-bold text-neutral-900">{t("mortgage.title")}</h1>
+              <h1 className="font-serif text-xl text-neutral-900">{t("mortgage.title")}</h1>
               <p className="text-sm text-neutral-500">{t("mortgage.pageSubtitle")}</p>
             </div>
           </div>

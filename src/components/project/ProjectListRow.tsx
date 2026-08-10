@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Box, Building2, Waves, Home as HomeIcon } from "lucide-react";
+import { Box, Building2, Heart, Waves, Home as HomeIcon } from "lucide-react";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
+import { useAppStore } from "@/lib/store";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useProjectConstruction } from "@/hooks/useProjectConstruction";
 import { useT } from "@/lib/i18n/useT";
@@ -34,6 +35,9 @@ export function ProjectListRow({ project }: { project: Project }) {
   const { t } = useT();
   const priceFmt = usePriceFormat();
   const construction = useProjectConstruction(project);
+  const auth = useAppStore((s) => s.auth);
+  const saved = useAppStore((s) => s.saved.projects.includes(project.id));
+  const toggleSaved = useAppStore((s) => s.toggleSavedProject);
   const SettingIcon = SETTING_ICON[project.setting];
   const fromPrice = project.units.length
     ? Math.min(...project.units.map((u) => u.price))
@@ -60,10 +64,23 @@ export function ProjectListRow({ project }: { project: Project }) {
             </span>
           )}
         </div>
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!auth.signedIn) return;
+            toggleSaved(project.id);
+          }}
+          aria-label={saved ? t("results.removeFromSaved") : t("results.saveProject")}
+          aria-pressed={saved}
+          className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-neutral-600 shadow hover:text-red-500"
+        >
+          <Heart className={cn("h-4 w-4", saved && "fill-red-500 text-red-500")} />
+        </button>
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-base font-bold text-neutral-900">{project.name}</p>
+        <p className="truncate font-serif text-lg text-neutral-900">{project.name}</p>
         <p className="truncate text-sm text-neutral-500">
           {project.developer.name} · {project.city}
         </p>

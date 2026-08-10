@@ -94,6 +94,9 @@ export const publishers: Publisher[] = [
     phone: "+355691234567",
     whatsapp: "355691234567",
     bio: "Award-winning residential developer delivering premium mixed-use projects across Tirana since 2011.",
+    city: "Tirana, Albania",
+    foundedYear: 2011,
+    awardsCount: 8,
   },
   {
     id: "p-skyline",
@@ -105,6 +108,9 @@ export const publishers: Publisher[] = [
     phone: "+355692345678",
     whatsapp: "355692345678",
     bio: "Vertical living specialists focused on the 21 Dhjetori business corridor.",
+    city: "Tirana, Albania",
+    foundedYear: 2015,
+    awardsCount: 3,
   },
   {
     id: "p-lakeside",
@@ -116,6 +122,9 @@ export const publishers: Publisher[] = [
     phone: "+355693456789",
     whatsapp: "355693456789",
     bio: "Boutique developer building low-density residences around the Liqeni i Thatë park corridor.",
+    city: "Tirana, Albania",
+    foundedYear: 2018,
+    awardsCount: 2,
   },
   {
     id: "p-vega",
@@ -127,6 +136,9 @@ export const publishers: Publisher[] = [
     phone: "+355694567890",
     whatsapp: "355694567890",
     bio: "Full-service agency with verified inventory across Bllok and Komuna e Parisit.",
+    city: "Tirana, Albania",
+    foundedYear: 2013,
+    awardsCount: 5,
   },
   {
     id: "p-prime",
@@ -137,6 +149,9 @@ export const publishers: Publisher[] = [
     logoUrl: agencyLogo("P"),
     phone: "+355695678901",
     whatsapp: "355695678901",
+    city: "Tirana, Albania",
+    foundedYear: 2019,
+    awardsCount: 1,
   },
   {
     id: "p-elira",

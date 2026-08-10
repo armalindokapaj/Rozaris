@@ -1,13 +1,17 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Building2, Waves, Home as HomeIcon, ChevronDown, Check } from "lucide-react";
+import { Building2, Waves, Home as HomeIcon, ChevronDown, Check, RotateCcw } from "lucide-react";
 import { ProjectListRow } from "@/components/project/ProjectListRow";
+import { MobileBottomTabBar } from "@/components/layout/MobileBottomTabBar";
 import { useT } from "@/lib/i18n/useT";
 import { useClickOutside } from "@/hooks/useClickOutside";
-import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
+import { PROPERTY_TYPE_LABELS, SORT_LABELS } from "@/lib/constants";
 import type { Project, ProjectSetting, PropertyType } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+type NewProjectsSort = "newest" | "price_asc" | "price_desc";
+const SORT_OPTIONS: NewProjectsSort[] = ["newest", "price_asc", "price_desc"];
 
 const SETTINGS: ProjectSetting[] = ["residential_complex", "beach", "tower"];
 
@@ -84,6 +88,61 @@ function PopoverFilter({
   );
 }
 
+/** Plain-text sort trigger matching the results panel's SortDropdown —
+ * local to this list (New Projects has its own filtered set, not the
+ * search page's shared `filters.sort`). */
+function SortMenu({
+  value,
+  onChange,
+  locale,
+}: {
+  value: NewProjectsSort;
+  onChange: (v: NewProjectsSort) => void;
+  locale: "en" | "sq";
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useClickOutside(ref, () => setOpen(false), open);
+  const { t } = useT();
+  const sortLabels = SORT_LABELS[locale];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 hover:text-neutral-900"
+      >
+        <span className="shrink-0">{t("results.sortByPrefix")}</span>
+        <span className="text-neutral-900">{sortLabels[value]}</span>
+        <ChevronDown className="h-3 w-3 shrink-0" />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="absolute right-0 z-30 mt-2 w-48 rounded-card border border-neutral-200 bg-white p-1.5 shadow-[var(--shadow-2)]"
+        >
+          {SORT_OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              role="option"
+              aria-selected={value === opt}
+              onClick={() => {
+                onChange(opt);
+                setOpen(false);
+              }}
+              className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              {sortLabels[opt]}
+              {value === opt && <Check className="h-3.5 w-3.5 text-brand-500" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PopoverOption({
   active,
   onClick,
@@ -112,6 +171,7 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
   const [settings, setSettings] = useState<ProjectSetting[]>([]);
   const [propertyTypes, setPropertyTypes] = useState<PropertyType[]>([]);
   const [priceBuckets, setPriceBuckets] = useState<PriceBucketId[]>([]);
+  const [sort, setSort] = useState<NewProjectsSort>("newest");
   // Mobile-only: the filter body is a click-to-show accordion, collapsed by
   // default. On desktop (lg+) it's always shown regardless of this state.
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -136,9 +196,19 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
           }
           return true;
         })
-        // Premium projects are always prioritized, here as everywhere else.
-        .sort((a, b) => Number(b.premium) - Number(a.premium)),
-    [projects, cities, settings, propertyTypes, priceBuckets]
+        .sort((a, b) => {
+          // Premium projects are always prioritized first, here as
+          // everywhere else — the chosen sort only orders within that.
+          const premiumDiff = Number(b.premium) - Number(a.premium);
+          if (premiumDiff !== 0) return premiumDiff;
+          if (sort === "price_asc" || sort === "price_desc") {
+            const pa = projectFromPrice(a) ?? Infinity;
+            const pb = projectFromPrice(b) ?? Infinity;
+            return sort === "price_asc" ? pa - pb : pb - pa;
+          }
+          return 0;
+        }),
+    [projects, cities, settings, propertyTypes, priceBuckets, sort]
   );
 
   const activeFilterCount =
@@ -148,7 +218,8 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
     // Same p-4 outer spacing as the Front Page's row container, so the left
     // panel sits the exact same distance from the header and viewport edge
     // as the Front Page's left filters panel.
-    <div className="px-4 py-4 lg:p-4">
+    <div className="px-4 py-4 pb-20 lg:p-4">
+      <MobileBottomTabBar />
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         {/* Left panel: page intro + all filters, self-contained and sticky —
             doesn't intervene with the right panel's results at all. Same
@@ -162,7 +233,7 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
             className="flex w-full items-center justify-between gap-2 border-b border-neutral-100 px-5 pt-5 pb-4 text-left lg:cursor-default"
           >
             <div>
-              <h1 className="text-[17px] font-bold text-neutral-900">
+              <h1 className="font-serif text-lg text-neutral-900">
                 {t("newProjectsPage.title")}
               </h1>
               <p className="mt-1.5 text-sm text-neutral-500">{t("newProjectsPage.subtitle")}</p>
@@ -176,21 +247,10 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
           </button>
 
           <div className={cn(mobileFiltersOpen ? "block" : "hidden", "p-5 lg:block")}>
-          {activeFilterCount > 0 && (
-            <button
-              onClick={() => {
-                setCities([]);
-                setSettings([]);
-                setPropertyTypes([]);
-                setPriceBuckets([]);
-              }}
-              className="mb-3 text-xs font-medium text-brand-600 hover:underline"
-            >
-              {t("newProjectsPage.clearAll")}
-            </button>
-          )}
-
-          <div className="space-y-2">
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-400">
+              {t("newProjectsPage.cityLabel")}
+            </p>
             <PopoverFilter label={t("newProjectsPage.cityLabel")} activeCount={cities.length}>
               {cityOptions.map((city) => (
                 <PopoverOption key={city} active={cities.includes(city)} onClick={() => setCities((c) => toggle(c, city))}>
@@ -200,7 +260,10 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
             </PopoverFilter>
           </div>
 
-          <div className="mt-3 space-y-2">
+          <div className="mt-4 space-y-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-400">
+              {t("newProjectsPage.priceLabel")}
+            </p>
             <PopoverFilter label={t("newProjectsPage.priceLabel")} activeCount={priceBuckets.length}>
               {PRICE_BUCKETS.map((b) => (
                 <PopoverOption
@@ -215,30 +278,36 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
           </div>
 
           <div className="mt-5 space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-400">
               {t("newProjectsPage.propertyTypeLabel")}
             </p>
-            <div className="flex flex-wrap gap-1.5">
-              {FILTERABLE_PROPERTY_TYPES.map((pt) => (
-                <button
-                  key={pt}
-                  onClick={() => setPropertyTypes((v) => toggle(v, pt))}
-                  aria-pressed={propertyTypes.includes(pt)}
-                  className={cn(
-                    "rounded-pill border px-3 py-1.5 text-xs font-medium transition-colors",
-                    propertyTypes.includes(pt)
-                      ? "border-brand-500 bg-brand-500 text-white"
-                      : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300"
-                  )}
-                >
-                  {propertyTypeLabels[pt]}
-                </button>
-              ))}
+            <div className="flex flex-col gap-1">
+              {FILTERABLE_PROPERTY_TYPES.map((pt) => {
+                const active = propertyTypes.includes(pt);
+                return (
+                  <button
+                    key={pt}
+                    onClick={() => setPropertyTypes((v) => toggle(v, pt))}
+                    aria-pressed={active}
+                    className="flex items-center gap-2.5 rounded-control px-1 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-50"
+                  >
+                    <span
+                      className={cn(
+                        "flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
+                        active ? "border-brand-500 bg-brand-500" : "border-neutral-300 bg-white"
+                      )}
+                    >
+                      {active && <Check className="h-3 w-3 text-white" />}
+                    </span>
+                    {propertyTypeLabels[pt]}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           <div className="mt-5 space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-400">
               {t("newProjectsPage.preferenceLabel")}
             </p>
             <div className="flex flex-col gap-1.5">
@@ -258,17 +327,39 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
                     )}
                   >
                     <Icon className="h-4 w-4 shrink-0" />
-                    {t(SETTING_LABEL_KEY[setting])}
+                    <span className="flex-1">{t(SETTING_LABEL_KEY[setting])}</span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 -rotate-90 text-neutral-300" />
                   </button>
                 );
               })}
             </div>
+
+            {activeFilterCount > 0 && (
+              <button
+                onClick={() => {
+                  setCities([]);
+                  setSettings([]);
+                  setPropertyTypes([]);
+                  setPriceBuckets([]);
+                }}
+                className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-control border border-neutral-200 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-600 hover:bg-neutral-50"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                {t("newProjectsPage.clearAll")}
+              </button>
+            )}
           </div>
           </div>
         </aside>
 
         {/* Right panel: results only. */}
         <div className="min-w-0 flex-1">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-sm text-neutral-500">
+              {t("newProjectsPage.resultsCount", { count: filtered.length })}
+            </p>
+            <SortMenu value={sort} onChange={setSort} locale={locale} />
+          </div>
           {filtered.length === 0 ? (
             <p className="rounded-panel border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-400">
               {t("newProjectsPage.noProjectsMatch")}

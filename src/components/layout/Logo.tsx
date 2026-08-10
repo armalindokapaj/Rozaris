@@ -12,16 +12,10 @@ export function Logo({ className }: { className?: string }) {
     <Link
       href="/"
       onClick={() => setTransaction("buy")}
-      className={cn(
-        "flex items-center gap-2 shrink-0 font-semibold tracking-tight text-neutral-900",
-        className
-      )}
+      className={cn("flex shrink-0 items-center font-serif text-neutral-900", className)}
       aria-label={`ROZARIS — ${t("nav.home")}`}
     >
-      <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-brand-500 text-white text-lg font-bold">
-        R
-      </span>
-      <span className="text-lg font-bold hidden sm:inline">ROZARIS</span>
+      <span className="text-base tracking-[0.14em] sm:text-xl sm:tracking-[0.22em]">ROZARIS</span>
     </Link>
   );
 }

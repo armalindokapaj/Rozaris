@@ -45,7 +45,7 @@ export function PublisherCard({
           iconClassName="h-5 w-5"
         />
         <div className="min-w-0">
-          <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-neutral-900">
+          <p className="flex items-center gap-1.5 truncate font-serif text-base text-neutral-900">
             {publisher.name}
             {publisher.verified && (
               <BadgeCheck className="h-4 w-4 shrink-0 text-brand-500" />

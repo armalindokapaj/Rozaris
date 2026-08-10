@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { List, Maximize2, Minimize2 } from "lucide-react";
+import { ChevronDown, List, Maximize2, Minimize2 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { MapView } from "@/components/map/MapView";
@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 
 export default function SearchPage() {
   const mode = useAppStore((s) => s.mode);
+  const location = useAppStore((s) => s.filters.location);
   const mobileSheet = useAppStore((s) => s.mobileSheet);
   const setMobileSheet = useAppStore((s) => s.setMobileSheet);
 
@@ -52,10 +53,12 @@ export default function SearchPage() {
     <div className="relative flex h-full min-h-0 flex-col lg:gap-3 lg:p-4">
       {/* Desktop top filter bar — collapsed pills that only expand into a
           popover when clicked, replacing the always-open sidebar. */}
-      <div className="relative z-30 hidden shrink-0 lg:block">
-        <div className="glass-panel flex items-center justify-between gap-3 rounded-panel px-4 py-3">
-          <TopFilterBar className="flex-1" />
+      <div className="relative z-30 hidden shrink-0 border-b border-neutral-200 pb-4 lg:block">
+        <div className="flex items-center gap-2">
+          <h1 className="font-serif text-3xl text-neutral-900">{location}</h1>
+          <ChevronDown className="h-5 w-5 text-neutral-400" aria-hidden="true" />
         </div>
+        <TopFilterBar className="mt-3" />
       </div>
 
       {/* Mobile-only search row */}

@@ -18,6 +18,7 @@ export const COLORS = {
 export function buildClusterMarker(name: string, count: number): HTMLDivElement {
   const el = document.createElement("div");
   el.className = "rz-marker rz-marker-cluster";
+  el.title = name;
   el.innerHTML = `<strong>${count}</strong><span>${name}</span>`;
   return el;
 }

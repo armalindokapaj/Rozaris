@@ -24,7 +24,7 @@ export default function SavedPage() {
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-24 text-center">
         <Heart className="h-10 w-10 text-brand-500" />
-        <h1 className="text-xl font-bold text-neutral-900">{t("saved.signInTitle")}</h1>
+        <h1 className="font-serif text-xl text-neutral-900">{t("saved.signInTitle")}</h1>
         <p className="text-sm text-neutral-500">{t("saved.signInBody")}</p>
         <button
           onClick={() => signIn("John Doe")}
@@ -48,7 +48,7 @@ export default function SavedPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 lg:px-8">
-      <h1 className="text-2xl font-bold text-neutral-900">{t("saved.pageTitle")}</h1>
+      <h1 className="font-serif text-2xl text-neutral-900">{t("saved.pageTitle")}</h1>
       <p className="mt-1 text-sm text-neutral-500">{t("saved.pageSubtitle")}</p>
 
       {isEmpty && (

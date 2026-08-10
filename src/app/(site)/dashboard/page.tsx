@@ -60,7 +60,7 @@ export default function DashboardPage() {
   if (!auth.signedIn) {
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-24 text-center">
-        <h1 className="text-xl font-bold text-neutral-900">{t("dashboard.signInTitle")}</h1>
+        <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.signInTitle")}</h1>
         <p className="text-sm text-neutral-500">{t("dashboard.signInBody")}</p>
         <button
           onClick={() => signIn("John Doe", "publisher")}
@@ -157,7 +157,7 @@ function OverviewTab({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-neutral-900">{t("dashboard.overviewTitle")}</h1>
+        <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.overviewTitle")}</h1>
         <p className="text-sm text-neutral-500">{t("dashboard.overviewSubtitle")}</p>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -193,7 +193,7 @@ function ListingsTab({ listings }: { listings: ReturnType<typeof listingsByPubli
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-neutral-900">{t("dashboard.listingsTitle")}</h1>
+          <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.listingsTitle")}</h1>
           <p className="text-sm text-neutral-500">{t("dashboard.listingsSubtitle")}</p>
         </div>
         <button
@@ -272,7 +272,7 @@ function ProjectsTab({ projects }: { projects: ReturnType<typeof projectsByDevel
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-neutral-900">{t("dashboard.projectsUnitsTitle")}</h1>
+          <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.projectsUnitsTitle")}</h1>
           <p className="text-sm text-neutral-500">{t("dashboard.projectsUnitsSubtitle")}</p>
         </div>
         <button className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3.5 py-2 text-sm font-semibold text-neutral-700">
@@ -457,7 +457,7 @@ function AnalyticsTab({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-neutral-900">{t("dashboard.analyticsTitle")}</h1>
+        <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.analyticsTitle")}</h1>
         <p className="text-sm text-neutral-500">{t("dashboard.analyticsSubtitle")}</p>
       </div>
 
@@ -523,7 +523,7 @@ function MessagesTab() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold text-neutral-900">{t("dashboard.tabMessages")}</h1>
+      <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.tabMessages")}</h1>
       <MessagesPanel conversations={myConversations} viewerId={DEMO_PUBLISHER.id} />
     </div>
   );
@@ -547,7 +547,7 @@ function BillingTab() {
   const { t } = useT();
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold text-neutral-900">{t("dashboard.billingTitle")}</h1>
+      <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.billingTitle")}</h1>
       <div className="rounded-panel border border-neutral-200 bg-white p-5">
         <p className="text-sm font-semibold text-neutral-900">{t("dashboard.subscriptionPlan")}</p>
         <p className="mt-1 text-xs text-neutral-500">{t("dashboard.renewsOn")}</p>
@@ -573,7 +573,7 @@ function NotificationsTab() {
   const notifications = [t("dashboard.notif1"), t("dashboard.notif2"), t("dashboard.notif3")];
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold text-neutral-900">{t("dashboard.notificationsTitle")}</h1>
+      <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.notificationsTitle")}</h1>
       <div className="divide-y divide-neutral-100 rounded-panel border border-neutral-200 bg-white">
         {notifications.map((msg) => (
           <p key={msg} className="px-4 py-3 text-sm text-neutral-700">
@@ -589,7 +589,7 @@ function ProfileTab() {
   const { t } = useT();
   return (
     <div id="profile" className="space-y-4">
-      <h1 className="text-xl font-bold text-neutral-900">{t("dashboard.profileTitle")}</h1>
+      <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.profileTitle")}</h1>
       <div className="grid grid-cols-1 gap-4 rounded-panel border border-neutral-200 bg-white p-5 sm:grid-cols-2">
         <Field label={t("dashboard.displayName")} defaultValue={DEMO_PUBLISHER.name} />
         <Field label={t("dashboard.phone")} defaultValue={DEMO_PUBLISHER.phone} />

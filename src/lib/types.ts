@@ -61,6 +61,11 @@ export interface Publisher {
   phone: string;
   whatsapp: string;
   bio?: string;
+  /** HQ city — companies only; a private owner has no company address. */
+  city?: string;
+  /** Company track record — developers/agencies only, not private owners. */
+  foundedYear?: number;
+  awardsCount?: number;
 }
 
 export interface Neighborhood {

@@ -7,6 +7,7 @@ import {
   Ruler,
   Layers,
   Calendar,
+  ChevronRight,
   Heart,
   SquareStack,
   ShieldCheck,
@@ -23,6 +24,7 @@ import { AdBanner } from "@/components/listing/AdBanner";
 import { MortgageCalculator } from "@/components/listing/MortgageCalculator";
 import { InsuranceCalculator } from "@/components/listing/InsuranceCalculator";
 import { StaticContextMap } from "@/components/map/StaticContextMap";
+import { MobileBottomTabBar } from "@/components/layout/MobileBottomTabBar";
 import { ListingCard } from "@/components/results/ListingCard";
 import { AMENITY_LABELS, CONDITION_LABELS, PROPERTY_TYPE_LABELS, SITE_URL } from "@/lib/constants";
 import {
@@ -58,10 +60,27 @@ export function ListingDetailClient({
     // Same p-4 outer spacing as the Front Page's row container, so the right
     // panel sits the exact same distance from the header and viewport edge
     // as the Front Page's right results panel.
-    <div className="px-4 py-4 lg:p-4">
+    <div className="px-4 py-4 pb-20 lg:p-4">
+      <MobileBottomTabBar />
       {/* Column gap matches the panel's distance from the header/edge (both
           16px) — the same spacing rule used everywhere a left/right panel
           sits next to the main column (Front Page, New Projects). */}
+      <nav aria-label={t("common.breadcrumb")} className="mb-3 flex items-center gap-1.5 text-xs text-neutral-500">
+        <Link href="/" className="hover:text-neutral-900">
+          {t("nav.home")}
+        </Link>
+        <ChevronRight className="h-3 w-3 shrink-0" />
+        <Link href="/search" className="hover:text-neutral-900">
+          {listing.city}
+        </Link>
+        {neighborhood && (
+          <>
+            <ChevronRight className="h-3 w-3 shrink-0" />
+            <span className="truncate text-neutral-700">{neighborhood.name}</span>
+          </>
+        )}
+      </nav>
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
         <div className="min-w-0 space-y-6">
           <Gallery
@@ -71,18 +90,19 @@ export function ListingDetailClient({
           />
 
           <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={cn(
-                  "rounded-full px-2.5 py-1 text-xs font-semibold text-white",
-                  listing.transaction === "sale" && "bg-sale",
-                  listing.transaction === "rent" && "bg-rent"
-                )}
-              >
-                {transactionLabel(listing.transaction, listing.rentSubtype, locale)}
-              </span>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-brand-600">
+              {PROPERTY_TYPE_LABELS[locale][listing.propertyType]} ·{" "}
+              {transactionLabel(listing.transaction, listing.rentSubtype, locale)}
+            </p>
+            <h1 className="mt-1 font-serif text-2xl text-neutral-900 sm:text-3xl">
+              {listing.title}
+            </h1>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <p className="text-sm text-neutral-500">
+                {neighborhood?.name}, {listing.city}
+              </p>
               {listing.premium && (
-                <span className="rounded-full bg-listing-premium px-2.5 py-1 text-xs font-semibold text-white">
+                <span className="rounded-full bg-listing-premium px-2 py-0.5 text-[10px] font-semibold text-white">
                   {t("results.premium")}
                 </span>
               )}
@@ -90,12 +110,6 @@ export function ListingDetailClient({
                 {t("listing.listed", { date: formatRelativeDate(listing.createdAt, locale) })}
               </span>
             </div>
-            <h1 className="mt-2 text-2xl font-bold text-neutral-900 sm:text-3xl">
-              {listing.title}
-            </h1>
-            <p className="mt-1 text-sm text-neutral-500">
-              {neighborhood?.name}, {listing.city}
-            </p>
           </div>
 
           <div className="flex flex-col gap-3 rounded-panel border border-neutral-200 bg-white p-5 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-4">

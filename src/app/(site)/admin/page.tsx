@@ -77,7 +77,7 @@ export default function AdminPage() {
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-24 text-center">
         <ShieldCheck className="h-10 w-10 text-brand-500" />
-        <h1 className="text-xl font-bold text-neutral-900">{t("admin.signInRequired")}</h1>
+        <h1 className="font-serif text-xl text-neutral-900">{t("admin.signInRequired")}</h1>
         <button
           onClick={() => signIn("Admin", "admin")}
           className="rounded-control bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white"
@@ -132,7 +132,7 @@ export default function AdminPage() {
         {tab === "queue" && (
           <div className="space-y-4">
             <div>
-              <h1 className="text-xl font-bold text-neutral-900">{t("admin.queueTitle")}</h1>
+              <h1 className="font-serif text-xl text-neutral-900">{t("admin.queueTitle")}</h1>
               <p className="text-sm text-neutral-500">{t("admin.queueSubtitle")}</p>
             </div>
             {queue.length === 0 ? (
@@ -191,7 +191,7 @@ export default function AdminPage() {
 
         {tab === "reports" && (
           <div className="space-y-4">
-            <h1 className="text-xl font-bold text-neutral-900">{t("admin.reportsTitle")}</h1>
+            <h1 className="font-serif text-xl text-neutral-900">{t("admin.reportsTitle")}</h1>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <ReportStat label={t("admin.reportApprovalSla")} value="6.2h" />
               <ReportStat label={t("admin.reportContentQuality")} value="100%" />
@@ -226,7 +226,7 @@ function TimelineTab() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-neutral-900">{t("admin.timelineQueueTitle")}</h1>
+        <h1 className="font-serif text-xl text-neutral-900">{t("admin.timelineQueueTitle")}</h1>
         <p className="text-sm text-neutral-500">{t("admin.timelineQueueSubtitle")}</p>
       </div>
 
@@ -310,7 +310,7 @@ function Viewer3DTab() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-neutral-900">{t("admin.viewer3DTabTitle")}</h1>
+          <h1 className="font-serif text-xl text-neutral-900">{t("admin.viewer3DTabTitle")}</h1>
           <p className="text-sm text-neutral-500">{t("admin.viewer3DTabSubtitle")}</p>
         </div>
         <button
@@ -419,7 +419,7 @@ function MapControlTab() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-neutral-900">{t("admin.mapModelTabTitle")}</h1>
+          <h1 className="font-serif text-xl text-neutral-900">{t("admin.mapModelTabTitle")}</h1>
           <p className="text-sm text-neutral-500">{t("admin.mapModelTabSubtitle")}</p>
         </div>
         <button
@@ -485,7 +485,7 @@ function PublishersTab() {
   const { t } = useT();
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold text-neutral-900">{t("admin.publishersTitle")}</h1>
+      <h1 className="font-serif text-xl text-neutral-900">{t("admin.publishersTitle")}</h1>
       <div className="overflow-hidden rounded-panel border border-neutral-200 bg-white">
         <table className="w-full text-sm">
           <thead className="border-b border-neutral-100 bg-neutral-50 text-left text-xs text-neutral-500">
@@ -535,7 +535,7 @@ function ContentTab() {
   const priceFmt = usePriceFormat();
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold text-neutral-900">{t("admin.contentTitle")}</h1>
+      <h1 className="font-serif text-xl text-neutral-900">{t("admin.contentTitle")}</h1>
       <p className="text-sm text-neutral-500">
         {t("admin.contentSubtitle", { listings: listings.length, projects: projects.length })}
       </p>
@@ -573,7 +573,7 @@ function CurrencyTab() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-neutral-900">{t("admin.currencyTitle")}</h1>
+        <h1 className="font-serif text-xl text-neutral-900">{t("admin.currencyTitle")}</h1>
         <p className="mt-1 max-w-xl text-sm text-neutral-500">{t("admin.currencySubtitle")}</p>
       </div>
 

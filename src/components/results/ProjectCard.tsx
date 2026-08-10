@@ -63,7 +63,7 @@ export function ProjectCard({ project }: { project: Project }) {
         </div>
       </div>
       <div className="flex flex-1 flex-col gap-1.5 p-3.5">
-        <p className="truncate text-sm font-semibold text-neutral-900">{project.name}</p>
+        <p className="truncate font-serif text-base text-neutral-900">{project.name}</p>
         <p className="truncate text-xs text-neutral-500">
           {project.developer.name} · {neighborhood?.name ?? project.city}
         </p>

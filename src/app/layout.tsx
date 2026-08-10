@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { StoreHydration } from "@/components/providers/StoreHydration";
 import { CompareOverlay } from "@/components/compare/CompareOverlay";
@@ -9,6 +9,15 @@ import { SkipLink } from "@/components/common/SkipLink";
 
 const inter = Inter({
   variable: "--font-inter",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+// Editorial display serif — wordmark, page headings, and property/card
+// titles only. Body/UI text stays on Inter (--font-inter); see the
+// `--font-serif` token in globals.css for where the line is drawn.
+const playfair = Playfair_Display({
+  variable: "--font-playfair",
   subsets: ["latin"],
   display: "swap",
 });
@@ -28,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="sq" className={`${inter.variable} h-full antialiased`}>
+    <html lang="sq" className={`${inter.variable} ${playfair.variable} h-full antialiased`}>
       <body className="flex h-full min-h-full flex-col bg-background text-foreground">
         <SkipLink />
         <StoreHydration />

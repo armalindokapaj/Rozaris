@@ -84,7 +84,7 @@ export function ResultsList({
 
   const countBlock = (
     <div>
-      <p className="text-sm font-semibold text-neutral-900">
+      <p className="font-serif text-xl text-neutral-900 lg:text-2xl">
         {total === 1
           ? t("results.resultSingular", { count: total })
           : t("results.resultPlural", { count: total })}

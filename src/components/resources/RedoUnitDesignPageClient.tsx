@@ -144,7 +144,7 @@ export function RedoUnitDesignPageClient() {
             </p>
             <div className="mt-2 flex items-center gap-2.5">
               <Hammer className="h-5 w-5 text-brand-300" />
-              <h1 className="text-xl font-bold sm:text-2xl">{t("redoDesign.pageTitle")}</h1>
+              <h1 className="font-serif text-xl sm:text-2xl">{t("redoDesign.pageTitle")}</h1>
             </div>
             <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/70">{t("redoDesign.heroBody")}</p>
           </div>

@@ -16,7 +16,7 @@ export function SimplifiedProjectView({ project }: { project: Project }) {
     <div className="h-full w-full overflow-y-auto scroll-thin bg-white pt-24">
       <PlaceholderImage seed={project.slug} kind="hero" className="aspect-[21/9] w-full" watermark />
       <div className="mx-auto max-w-2xl px-5 py-6">
-        <h1 className="text-2xl font-bold text-neutral-900">{project.name}</h1>
+        <h1 className="font-serif text-2xl text-neutral-900">{project.name}</h1>
         <p className="mt-1 text-sm text-neutral-500">
           {t("project.byDeveloper", { developer: project.developer.name })} · {project.completionLabel}
         </p>

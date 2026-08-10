@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ArrowUpDown, Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { useT } from "@/lib/i18n/useT";
@@ -24,7 +24,7 @@ export function SortDropdown() {
   const ref = useRef<HTMLDivElement>(null);
   const sort = useAppStore((s) => s.filters.sort);
   const setFilters = useAppStore((s) => s.setFilters);
-  const { locale } = useT();
+  const { t, locale } = useT();
   const sortLabels = SORT_LABELS[locale];
   useClickOutside(ref, () => setOpen(false), open);
 
@@ -33,10 +33,10 @@ export function SortDropdown() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full min-w-0 max-w-full items-center justify-center gap-1 rounded-control border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-medium text-neutral-600 hover:bg-neutral-50"
+        className="flex w-full min-w-0 max-w-full items-center gap-1 whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 hover:text-neutral-900"
       >
-        <ArrowUpDown className="h-3 w-3 shrink-0" />
-        <span className="truncate">{sortLabels[sort]}</span>
+        <span className="shrink-0">{t("results.sortByPrefix")}</span>
+        <span className="truncate text-neutral-900">{sortLabels[sort]}</span>
         <ChevronDown className="h-3 w-3 shrink-0" />
       </button>
       {open && (

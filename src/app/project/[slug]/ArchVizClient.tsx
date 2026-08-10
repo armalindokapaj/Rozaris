@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { LayoutGrid, SquareStack } from "lucide-react";
+import { Camera, Check, HelpCircle, LayoutGrid, Share2, SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useProjectConstruction } from "@/hooks/useProjectConstruction";
 import { useProject3DConfig } from "@/hooks/useProject3DConfig";
@@ -21,38 +21,86 @@ export function ArchVizClient({ project }: { project: Project }) {
   // showing instead of guessing a bottom offset that would overlap it.
   const [unitBarOpen, setUnitBarOpen] = useState(true);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const compareCount = useAppStore((s) => s.compare.length);
   const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
   const construction = useProjectConstruction(project);
   const viewerConfig = useProject3DConfig(project.id);
   const { t } = useT();
 
+  async function handleShare() {
+    const url = window.location.href;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: project.name, url });
+        return;
+      } catch {
+        // User cancelled the native sheet, or it's unsupported for this
+        // context — fall through to the clipboard copy below either way.
+      }
+    }
+    await navigator.clipboard.writeText(url);
+    setLinkCopied(true);
+    window.setTimeout(() => setLinkCopied(false), 2000);
+  }
+
+  function handleScreenshot() {
+    const dataUrl = viewerRef.current?.captureScreenshot();
+    if (!dataUrl) return;
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = `${project.slug}-rozaris.png`;
+    a.click();
+  }
+
   return (
     <div id="main-content" className="relative h-dvh w-full overflow-hidden bg-neutral-900">
       <header className="absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-3 p-3 sm:p-4">
         <div className="glass-panel-dark flex items-center gap-3 rounded-panel px-3.5 py-2.5 sm:px-4">
-          <Link href="/search" className="flex items-center gap-2 text-sm font-bold text-white">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500">
-              R
-            </span>
-            <span className="hidden sm:inline">ROZARIS</span>
+          <Link href="/search" className="hidden shrink-0 font-serif text-sm tracking-[0.14em] text-white sm:block">
+            ROZARIS
           </Link>
-          <span className="h-5 w-px bg-white/20" />
+          <span className="hidden h-5 w-px bg-white/20 sm:block" />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-white">{project.name}</p>
-            <p className="truncate text-xs text-white/60">{project.developer.name}</p>
+            <p className="truncate text-xs text-white/60">
+              {project.developer.name} · {project.city}
+            </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {compareCount > 0 && (
             <button
               onClick={() => setCompareOverlayOpen(true)}
-              className="glass-panel-dark flex items-center gap-1.5 rounded-control px-3 py-2.5 text-xs font-semibold text-white"
+              className="glass-panel-dark flex items-center gap-1.5 rounded-pill px-3 py-2.5 text-xs font-semibold text-white"
             >
               <SquareStack className="h-3.5 w-3.5" />
               {compareCount}
             </button>
           )}
+          <Link
+            href="/help"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="glass-panel-dark hidden items-center gap-1.5 rounded-pill px-3.5 py-2.5 text-xs font-semibold text-white sm:flex"
+          >
+            <HelpCircle className="h-3.5 w-3.5" />
+            {t("project.help")}
+          </Link>
+          <button
+            onClick={handleShare}
+            className="glass-panel-dark flex items-center gap-1.5 rounded-pill px-3.5 py-2.5 text-xs font-semibold text-white"
+          >
+            {linkCopied ? <Check className="h-3.5 w-3.5" /> : <Share2 className="h-3.5 w-3.5" />}
+            <span className="hidden sm:inline">{t("project.share")}</span>
+          </button>
+          <button
+            onClick={handleScreenshot}
+            className="glass-panel-dark flex items-center gap-1.5 rounded-pill px-3.5 py-2.5 text-xs font-semibold text-white"
+          >
+            <Camera className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{t("project.screenshot")}</span>
+          </button>
         </div>
       </header>
 

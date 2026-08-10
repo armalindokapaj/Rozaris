@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BedDouble, Bath, Ruler, Heart, SquareStack, Check, ArrowRight } from "lucide-react";
+import { Heart, SquareStack, Check, ArrowRight } from "lucide-react";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { useAppStore } from "@/lib/store";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
@@ -9,6 +9,7 @@ import { useT } from "@/lib/i18n/useT";
 import { formatArea, transactionLabel, cn } from "@/lib/utils";
 import { getNeighborhood } from "@/lib/mockData";
 import { SELECTED_UNIT_ZOOM } from "@/lib/constants";
+import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
 import type { Listing } from "@/lib/types";
 
 export function ListingCard({
@@ -151,6 +152,10 @@ export function ListingCard({
           variant === "panel" ? "lg:gap-1.5 lg:p-3.5" : "gap-1.5 p-3.5"
         )}
       >
+        <p className="truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500">
+          {PROPERTY_TYPE_LABELS[locale][listing.propertyType]}
+        </p>
+        <p className="truncate font-serif text-base text-neutral-900">{listing.title}</p>
         <p className="text-[15px] font-semibold text-neutral-900">
           {priceFmt(listing.price)}
           {listing.transaction === "rent" && (
@@ -159,31 +164,36 @@ export function ListingCard({
             </span>
           )}
         </p>
-        <p className="truncate text-sm font-medium text-neutral-800">{listing.title}</p>
+        <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-neutral-500">
+          {[
+            listing.bedrooms > 0 ? `${listing.bedrooms} ${t("results.bedAbbrev")}` : null,
+            `${listing.bathrooms} ${t("results.bathAbbrev")}`,
+            formatArea(listing.area),
+            listing.floor != null ? t("results.floorNum", { floor: listing.floor }) : null,
+          ]
+            .filter(Boolean)
+            .join("  ·  ")}
+        </p>
         <p className="truncate text-xs text-neutral-500">
           {neighborhood?.name}, {listing.city}
         </p>
-        <div className="mt-1 flex items-center gap-3 text-xs text-neutral-500">
-          {listing.bedrooms > 0 && (
-            <span className="flex items-center gap-1">
-              <BedDouble className="h-3.5 w-3.5" /> {listing.bedrooms}
-            </span>
-          )}
-          <span className="flex items-center gap-1">
-            <Bath className="h-3.5 w-3.5" /> {listing.bathrooms}
-          </span>
-          <span className="flex items-center gap-1">
-            <Ruler className="h-3.5 w-3.5" /> {formatArea(listing.area)}
-          </span>
-        </div>
 
-        {isSelected && (
+        {isSelected ? (
           <Link
             href={`/listing/${listing.slug}`}
             onClick={(e) => e.stopPropagation()}
             className="mt-2 flex items-center justify-center gap-1.5 rounded-control bg-neutral-900 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
           >
             {t("results.viewUnit")}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        ) : (
+          <Link
+            href={`/listing/${listing.slug}`}
+            onClick={(e) => e.stopPropagation()}
+            className="mt-2 flex items-center gap-1 border-t border-neutral-100 pt-2 text-xs font-semibold text-neutral-700 hover:text-brand-600"
+          >
+            {t("results.viewDetails")}
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         )}

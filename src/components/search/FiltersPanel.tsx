@@ -25,7 +25,7 @@ export function FiltersPanel() {
         onWheel={forwardWheelToFilters}
         className="shrink-0 border-b border-neutral-100 px-5 pt-5 pb-4"
       >
-        <h1 className="text-[17px] font-bold text-neutral-900">{t("home.findPerfectProperty")}</h1>
+        <h1 className="font-serif text-lg text-neutral-900">{t("home.findPerfectProperty")}</h1>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin">
         <FiltersForm />

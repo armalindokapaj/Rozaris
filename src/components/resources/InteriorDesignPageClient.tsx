@@ -98,7 +98,7 @@ export function InteriorDesignPageClient() {
         </p>
         <div className="mt-2 flex items-center gap-2.5">
           <Sparkles className="h-5 w-5 text-brand-300" />
-          <h1 className="text-xl font-bold sm:text-2xl">{t("interiorDesign.pageTitle")}</h1>
+          <h1 className="font-serif text-xl sm:text-2xl">{t("interiorDesign.pageTitle")}</h1>
         </div>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/70">{t("interiorDesign.heroBody")}</p>
       </div>

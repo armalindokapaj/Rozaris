@@ -68,7 +68,7 @@ export default function BuyerSignupPage() {
           <UserRound className="h-5 w-5 text-brand-600" />
         </span>
         <div>
-          <h1 className="text-xl font-bold text-neutral-900">{t("buyer.signupTitle")}</h1>
+          <h1 className="font-serif text-xl text-neutral-900">{t("buyer.signupTitle")}</h1>
           <p className="text-sm text-neutral-500">{t("buyer.signupSubtitle")}</p>
         </div>
       </div>

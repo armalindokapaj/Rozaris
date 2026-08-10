@@ -128,7 +128,7 @@ export function TopFilterBar({ className }: { className?: string }) {
   const isDefault = JSON.stringify(filters) === JSON.stringify(defaultFilters);
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-2", className)}>
+    <div className={cn("flex flex-wrap items-center gap-5", className)}>
       {/* Buy / Rent */}
       <FilterDropdown
         label={filters.transaction === "rent" ? t("nav.rent") : t("nav.buy")}

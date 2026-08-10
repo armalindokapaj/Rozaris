@@ -58,12 +58,7 @@ export function MobileNav({
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white lg:hidden" role="dialog" aria-modal>
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-neutral-200 px-4">
-        <span className="flex items-center gap-2 font-bold text-neutral-900">
-          <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-brand-500 text-white">
-            R
-          </span>
-          ROZARIS
-        </span>
+        <span className="font-serif text-lg tracking-[0.14em] text-neutral-900">ROZARIS</span>
         <button
           onClick={onClose}
           aria-label={t("nav.closeMenu")}

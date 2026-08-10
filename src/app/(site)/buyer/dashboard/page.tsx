@@ -63,7 +63,7 @@ export default function BuyerDashboardPage() {
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-24 text-center">
         <Heart className="h-10 w-10 text-brand-500" />
-        <h1 className="text-xl font-bold text-neutral-900">{t("buyer.signInRequiredTitle")}</h1>
+        <h1 className="font-serif text-xl text-neutral-900">{t("buyer.signInRequiredTitle")}</h1>
         <p className="text-sm text-neutral-500">{t("buyer.signInRequiredBody")}</p>
         <Link
           href="/buyer/signup"
@@ -106,7 +106,7 @@ export default function BuyerDashboardPage() {
         {tab === "feed" && <FeedTab preferences={buyerProfile.preferences} />}
         {tab === "messages" && (
           <div className="space-y-4">
-            <h1 className="text-xl font-bold text-neutral-900">{t("buyer.tabMessages")}</h1>
+            <h1 className="font-serif text-xl text-neutral-900">{t("buyer.tabMessages")}</h1>
             <MessagesPanel conversations={myConversations} viewerId={buyerProfile.id} />
           </div>
         )}
@@ -130,7 +130,7 @@ function FeedTab({ preferences }: { preferences: BuyerPreferences }) {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-neutral-900">{t("buyer.feedTitle")}</h1>
+        <h1 className="font-serif text-xl text-neutral-900">{t("buyer.feedTitle")}</h1>
         <p className="text-sm text-neutral-500">{t("buyer.feedSubtitle")}</p>
       </div>
       {matches.length === 0 ? (
@@ -172,7 +172,7 @@ function PreferencesTab({ preferences }: { preferences: BuyerPreferences }) {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold text-neutral-900">{t("buyer.preferencesTitle")}</h1>
+      <h1 className="font-serif text-xl text-neutral-900">{t("buyer.preferencesTitle")}</h1>
       <div className="max-w-lg space-y-4 rounded-panel border border-neutral-200 bg-white p-5">
         <label className="block">
           <span className="mb-1.5 block text-xs font-medium text-neutral-500">
@@ -275,7 +275,7 @@ function ProfileTab() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold text-neutral-900">{t("buyer.profileTitle")}</h1>
+      <h1 className="font-serif text-xl text-neutral-900">{t("buyer.profileTitle")}</h1>
       <div className="grid max-w-lg grid-cols-1 gap-4 rounded-panel border border-neutral-200 bg-white p-5 sm:grid-cols-2">
         <label className="block sm:col-span-2">
           <span className="mb-1.5 block text-xs font-medium text-neutral-500">{t("buyer.nameLabel")}</span>

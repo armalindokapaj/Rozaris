@@ -37,15 +37,13 @@ export function FilterDropdown({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         className={cn(
-          "flex h-10 items-center gap-1.5 whitespace-nowrap rounded-pill border px-3.5 text-sm font-medium transition-colors",
-          active
-            ? "border-brand-300 bg-brand-50 text-brand-700 hover:border-brand-400"
-            : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300",
-          open && "border-neutral-900"
+          "flex h-8 items-center gap-1 whitespace-nowrap px-0 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors",
+          active || open ? "text-neutral-900" : "text-neutral-500 hover:text-neutral-900"
         )}
       >
         {label}
-        <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")} />
+        {active && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" aria-hidden="true" />}
+        <ChevronDown className={cn("h-3 w-3 shrink-0 transition-transform", open && "rotate-180")} />
       </button>
       {open && (
         <div

@@ -7,24 +7,17 @@ import { useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { useT } from "@/lib/i18n/useT";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
+import { JoinMenu } from "./JoinMenu";
 
 export function AccountMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const { auth, openSignIn, signOut } = useAppStore();
+  const { auth, signOut } = useAppStore();
   const { t } = useT();
   useClickOutside(ref, () => setOpen(false), open);
 
   if (!auth.signedIn) {
-    return (
-      <button
-        type="button"
-        onClick={openSignIn}
-        className="rounded-control bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 transition-colors"
-      >
-        {t("common.signIn")}
-      </button>
-    );
+    return <JoinMenu />;
   }
 
   return (
