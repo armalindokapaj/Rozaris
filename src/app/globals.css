@@ -1,50 +1,89 @@
 @import "tailwindcss";
 @import "mapbox-gl/dist/mapbox-gl.css";
 
+/* ROZARIS UI Design System v1.0 (Aug 2026) — Editorial Minimalism +
+   Compact Utility UI. Flat solid surfaces, restrained radius, one brand
+   accent, elevation only where hierarchy needs it. See PRD_UI_Design_System
+   for the full spec — token names below map directly to it. */
 :root {
-  --background: #f7f7fb;
-  --foreground: #14131f;
+  --background: #f7f7f8; /* Canvas */
+  --foreground: #17171c; /* Text primary */
 
-  /* Brand */
-  --color-brand-50: #f2f0ff;
-  --color-brand-100: #e6e2ff;
-  --color-brand-200: #cfc8ff;
-  --color-brand-300: #ac9fff;
-  --color-brand-400: #8874ff;
-  --color-brand-500: #6d5bf6;
-  --color-brand-600: #5b45e8;
-  --color-brand-700: #4c37c4;
-  --color-brand-800: #3d2c9c;
-  --color-brand-900: #302577;
+  /* Brand — spec anchors are brand-500/600/soft(50); the rest of the ramp
+     is interpolated around them for hover/badge variety elsewhere. */
+  --color-brand-50: #f0eeff; /* Brand soft */
+  --color-brand-100: #e4dffe;
+  --color-brand-200: #cbc0fd;
+  --color-brand-300: #a794fa;
+  --color-brand-400: #8973f8;
+  --color-brand-500: #6b55f5; /* Brand */
+  --color-brand-600: #5c46e8; /* Brand hover */
+  --color-brand-700: #4b39c4;
+  --color-brand-800: #3b2d9c;
+  --color-brand-900: #2e2377;
 
-  /* Neutrals */
-  --color-neutral-0: #ffffff;
-  --color-neutral-50: #f8f8fb;
-  --color-neutral-100: #f0f0f6;
-  --color-neutral-200: #e4e3ee;
-  --color-neutral-300: #d0cee1;
-  --color-neutral-400: #a7a4bf;
-  --color-neutral-500: #7f7c9c;
-  --color-neutral-600: #5e5b78;
-  --color-neutral-700: #45435b;
-  --color-neutral-800: #2c2a3d;
-  --color-neutral-900: #14131f;
+  /* Neutrals — spec's named tokens (Canvas/Surface/Surface subtle/Text
+     primary/secondary/muted/Border/Border strong) are exact-matched below;
+     the remaining steps are interpolated so existing neutral-* usages
+     across the app keep working without a per-file rewrite. */
+  --color-neutral-0: #ffffff; /* Surface */
+  --color-neutral-50: #f7f7f8; /* Canvas */
+  --color-neutral-100: #f2f2f4; /* Surface subtle */
+  --color-neutral-200: #e1e1e6; /* Border */
+  --color-neutral-300: #c9c9d0; /* Border strong */
+  --color-neutral-400: #adadb5;
+  --color-neutral-500: #8b8b95; /* Text muted */
+  --color-neutral-600: #666670; /* Text secondary */
+  --color-neutral-700: #4d4d57;
+  --color-neutral-800: #303038;
+  --color-neutral-900: #17171c; /* Text primary */
 
-  /* Status / semantic */
+  /* Status / semantic — availability state (Success/Warning/Sold) is
+     distinct from the generic map-marker palette below: a marker's color
+     communicates "what kind of pin is this" across the whole city map,
+     while Success/Warning/Danger/Sold specifically mean "is this unit
+     available" wherever that status is shown (badges, unit cards, the 3D
+     viewer). Keeping them separate avoids recoloring every ordinary
+     listing pin on the main map green just because "available" is green
+     in an availability badge. */
+  --color-success: #23845e; /* Available / approved */
+  --color-warning: #a66a12; /* Reserved / pending */
+  --color-danger: #c84545; /* Error / destructive */
+  --color-sold: #9a9aa3; /* Unavailable state */
+
   --color-listing-standard: #6f9bff;
-  --color-listing-selected: #6d5bf6;
+  --color-listing-selected: #6b55f5;
   --color-listing-new-dev: #8b5cf6;
   --color-listing-premium: #c9973f;
-  --color-listing-unavailable: #b9b6c9;
+  --color-listing-unavailable: #9a9aa3;
 
   --color-sale: #2f8f6f;
   --color-rent: #2f74c9;
   --color-coming-soon: #b5822f;
 
-  --radius-panel: 28px;
-  --radius-card: 22px;
-  --radius-control: 16px;
-  --radius-pill: 999px;
+  /* Radius — R1..R4 + Pill (chips/status/segmented only). The app's three
+     named tokens collapse the spec's finer R2/R3 split (inputs vs.
+     buttons) into one 8px value, since existing components share a single
+     "control" class between the two — still a large reduction from the
+     previous 16-28px oversized-card language the PRD explicitly retires. */
+  --radius-panel: 12px; /* R4 — large panels/drawers */
+  --radius-card: 8px; /* R3 — cards/dropdowns */
+  --radius-control: 8px; /* R3 — buttons; close enough to R2 for inputs */
+  --radius-pill: 999px; /* Pill — chips/status/segmented only */
+
+  /* Elevation — shadow is the exception, not the default; most surfaces
+     use a border instead (see Design Direction §1/§8). */
+  --shadow-1: 0 2px 8px rgba(17, 17, 24, 0.06); /* dropdown / sticky surface */
+  --shadow-2: 0 8px 24px rgba(17, 17, 24, 0.1); /* drawer / popover */
+  --shadow-3: 0 18px 48px rgba(17, 17, 24, 0.14); /* modal only */
+
+  /* Motion */
+  --ease-rz: cubic-bezier(0.2, 0, 0, 1);
+  --duration-instant: 90ms;
+  --duration-fast: 140ms;
+  --duration-standard: 200ms;
+  --duration-panel: 280ms;
+  --duration-camera: 500ms;
 }
 
 @theme inline {
@@ -75,6 +114,11 @@
   --color-neutral-800: var(--color-neutral-800);
   --color-neutral-900: var(--color-neutral-900);
 
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+  --color-sold: var(--color-sold);
+
   --color-listing-standard: var(--color-listing-standard);
   --color-listing-selected: var(--color-listing-selected);
   --color-listing-new-dev: var(--color-listing-new-dev);
@@ -89,6 +133,13 @@
   --radius-card: var(--radius-card);
   --radius-control: var(--radius-control);
   --radius-pill: var(--radius-pill);
+
+  --ease-rz: var(--ease-rz);
+  --duration-instant: var(--duration-instant);
+  --duration-fast: var(--duration-fast);
+  --duration-standard: var(--duration-standard);
+  --duration-panel: var(--duration-panel);
+  --duration-camera: var(--duration-camera);
 }
 
 * {
@@ -108,9 +159,10 @@ body {
   font-feature-settings: "tnum" 1, "cv11" 1;
 }
 
-/* Utility: glass panel per PRD 24.1 (~10% translucent + blur), with a soft
-   "cloud" texture — a gentle light-glow gradient plus a faint grain — so
-   panels read as soft/natural rather than a flat tinted rectangle.
+/* Utility: solid floating panel (top filter bar, map/3D overlays, compare
+   tray, etc.) — PRD §1/§22/§28: no glassmorphism/blur/translucency
+   anywhere in the platform. A 94-98% opaque surface plus a border and a
+   restrained Level-2 shadow reads as "grouped controls", not glass.
    Wrapped in @layer components so Tailwind utility classes on the same
    element (e.g. `absolute` on ModeSwitch/OnboardingHint) still win — custom
    CSS declared after `@import "tailwindcss"` without a layer is unlayered
@@ -118,53 +170,18 @@ body {
 @layer components {
   .glass-panel {
     position: relative;
-    /* Isolates z-index of the grain pseudo-element (and any popovers a
-       consumer opens inside) to this panel, so a negative z-index below
-       can put the grain behind real content without having to bump every
-       child to its own stacking context (which used to cap child popovers
-       like NewProjectsClient's PopoverFilter from ever stacking above a
-       sibling section). */
-    isolation: isolate;
-    background-color: color-mix(in srgb, white 88%, transparent);
-    background-image:
-      radial-gradient(120% 90% at 8% 0%, rgba(255, 255, 255, 0.65), transparent 55%),
-      radial-gradient(100% 85% at 100% 100%, rgba(139, 124, 255, 0.08), transparent 60%);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid color-mix(in srgb, white 60%, #d0cee1 40%);
-  }
-
-  .glass-panel::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    border-radius: inherit;
-    opacity: 0.05;
-    mix-blend-mode: overlay;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    background-size: 180px 180px;
+    background-color: var(--color-neutral-0);
+    border: 1px solid var(--color-neutral-200);
+    box-shadow: var(--shadow-2);
   }
 
   .cloud-texture {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    border-radius: inherit;
-    opacity: 0.05;
-    mix-blend-mode: overlay;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    background-size: 180px 180px;
+    display: none;
   }
 }
 
 .glass-panel-dark {
-  background: color-mix(in srgb, #14131f 82%, transparent);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  background: color-mix(in srgb, var(--color-neutral-900) 96%, transparent);
   border: 1px solid color-mix(in srgb, white 12%, transparent);
 }
 
@@ -185,7 +202,7 @@ body {
 .mapboxgl-popup-content {
   padding: 0 !important;
   border-radius: var(--radius-card) !important;
-  box-shadow: 0 12px 40px -8px rgba(23, 22, 38, 0.28) !important;
+  box-shadow: var(--shadow-2) !important;
   overflow: hidden;
 }
 .mapboxgl-popup-tip {
@@ -198,33 +215,33 @@ body {
 }
 
 /* Map markers — plain DOM (Mapbox GL markers), styled outside Tailwind's
-   scan so colors can be assigned dynamically via inline style. */
+   scan so colors can be assigned dynamically via inline style. Compact,
+   solid, minimal separation from the map per PRD §23 — no glow, hover
+   scale capped at ~8%. */
 .rz-marker {
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   border: 2px solid white;
-  box-shadow: 0 4px 14px -2px rgba(23, 22, 38, 0.35);
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  box-shadow: var(--shadow-1);
+  transition: transform var(--duration-fast) var(--ease-rz), box-shadow var(--duration-fast) var(--ease-rz);
   color: white;
   font-weight: 600;
   white-space: nowrap;
 }
 .rz-marker:hover {
   transform: scale(1.08);
-  box-shadow: 0 8px 20px -2px rgba(23, 22, 38, 0.4);
+  box-shadow: var(--shadow-2);
 }
 .rz-marker-icon {
   width: 34px;
   height: 34px;
-  border-radius: 11px;
+  border-radius: var(--radius-card);
 }
 /* Price-tier marker: a tight, pill-shaped badge with just the price —
    standalone listings only (a unit that's part of a New Project shows the
-   project's own marker instead, so the map stays uncluttered). Fully
-   rounded and snug around the text (rather than a wide rounded-rect card)
-   so it reads as a premium little price tag, not a stretched-out chip. */
+   project's own marker instead, so the map stays uncluttered). */
 .rz-marker-price-card {
   display: flex;
   align-items: center;
@@ -232,32 +249,31 @@ body {
   height: 25px;
   padding: 0 9px;
   border-radius: 999px;
-  background: linear-gradient(180deg, #ffffff, #fbfafe);
-  border: 1px solid rgba(23, 22, 38, 0.08);
-  box-shadow: 0 3px 10px -2px rgba(23, 22, 38, 0.22);
-  color: #17161f;
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  box-shadow: var(--shadow-1);
+  color: var(--color-neutral-900);
   font-weight: 700;
   font-size: 12px;
   letter-spacing: -0.01em;
   cursor: pointer;
   white-space: nowrap;
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  transition: transform var(--duration-fast) var(--ease-rz), box-shadow var(--duration-fast) var(--ease-rz);
 }
 .rz-marker-price-card:hover {
   transform: scale(1.08);
-  box-shadow: 0 8px 18px -2px rgba(23, 22, 38, 0.3);
+  box-shadow: var(--shadow-2);
 }
 .rz-marker-price-card-selected {
   color: white;
-  background: linear-gradient(135deg, #6d5bf6, #8874ff);
-  border-color: transparent;
-  box-shadow: 0 4px 14px -2px rgba(109, 91, 246, 0.55);
+  background: var(--color-brand-500);
+  border-color: var(--color-brand-500);
+  box-shadow: var(--shadow-2);
 }
 .rz-marker-price-card-premium:not(.rz-marker-price-card-selected) {
-  background: linear-gradient(135deg, #fff8ec, #fdeecb);
-  border-color: rgba(201, 151, 63, 0.55);
+  background: #fdf6ea;
+  border-color: var(--color-listing-premium);
   color: #7a5a1e;
-  box-shadow: 0 3px 10px -2px rgba(201, 151, 63, 0.35);
 }
 .rz-marker-cluster {
   min-width: 46px;
@@ -268,9 +284,9 @@ body {
   gap: 0;
   font-size: 11px;
   line-height: 1.15;
-  color: #2c2a3d;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(23, 22, 38, 0.08);
+  color: var(--color-neutral-900);
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
 }
 .rz-marker-cluster strong {
   font-size: 13px;
@@ -283,7 +299,7 @@ body {
   height: 17px;
   padding: 0 4px;
   border-radius: 999px;
-  background: #14131f;
+  background: var(--color-neutral-900);
   color: white;
   font-size: 10px;
   font-weight: 700;
@@ -295,7 +311,7 @@ body {
 .rz-marker-project {
   width: 40px;
   height: 40px;
-  border-radius: 13px;
+  border-radius: var(--radius-card);
 }
 
 /* Sponsor ad "GIF-style" visual: a slowly drifting gradient standing in for
@@ -349,23 +365,23 @@ body {
 .rz-range-thumb::-webkit-slider-thumb {
   -webkit-appearance: none;
   pointer-events: auto;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 999px;
   background: white;
   border: 2px solid var(--color-brand-500);
-  box-shadow: 0 1px 3px rgba(23, 22, 38, 0.3);
+  box-shadow: var(--shadow-1);
   cursor: grab;
   margin-top: 1px;
 }
 .rz-range-thumb::-moz-range-thumb {
   pointer-events: auto;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 999px;
   background: white;
   border: 2px solid var(--color-brand-500);
-  box-shadow: 0 1px 3px rgba(23, 22, 38, 0.3);
+  box-shadow: var(--shadow-1);
   cursor: grab;
 }
 .rz-range-thumb:active::-webkit-slider-thumb {
@@ -394,7 +410,7 @@ body {
   }
 }
 
-/* Focus visibility (A11Y-004) */
+/* Focus visibility (A11Y-004 / PRD §25): 2px brand outline, ~2px offset */
 :focus-visible {
   outline: 2px solid var(--color-brand-500);
   outline-offset: 2px;

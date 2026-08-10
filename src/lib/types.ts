@@ -182,6 +182,59 @@ export interface Project {
   constructionStages: ConstructionStage[];
 }
 
+/** PRD_3D_Project_Viewer §17: controlled lighting presets — Admin picks
+ * one rather than authoring an unrestricted Three.js scene, for
+ * consistency across projects and predictable performance. */
+export type LightingPreset = "daylight" | "overcast" | "evening";
+
+/** PRD_3D_Project_Viewer §15: approved background presets for the viewer's
+ * scene — a plain color/gradient stand-in for an environment/IBL preset. */
+export type BackgroundPreset = "sky" | "studio_light" | "studio_dark";
+
+/** PRD_3D_Project_Viewer §11/§15/§16/§21: the persisted "3D Experience"
+ * configuration for one project — Admin's Scene/Camera/Lighting/
+ * Construction settings, versioned as draft vs. published (§28) rather
+ * than edited live in production. Camera distances are stored as
+ * multipliers of the procedural building's auto-computed bounding radius
+ * (see lib/threeBuilding.ts) since that radius varies per project. */
+export interface Project3DConfig {
+  lightingPreset: LightingPreset;
+  backgroundPreset: BackgroundPreset;
+  groundEnabled: boolean;
+  cameraStartDistanceMultiplier: number;
+  cameraMinDistanceMultiplier: number;
+  cameraMaxDistanceMultiplier: number;
+  /** Degrees, 0-180 — caps how far under the building the camera can orbit. */
+  cameraMaxPolarDeg: number;
+  autoRotate: boolean;
+  constructionStagesEnabled: boolean;
+  status: "draft" | "published";
+  updatedAt: string;
+}
+
+/** Admin's "3D Map Control" — an outdoor GLB placed at a project's real
+ * lng/lat on the search map (mapbox-gl custom layer), separate from
+ * Project3DConfig above (which governs the *indoor* Pure Three.js viewer
+ * at /project/[slug]). The uploaded binary itself lives in IndexedDB
+ * (lib/glbStorage.ts) keyed by project id — far too large for localStorage
+ * — this record is only the small, JSON-persistable metadata + placement. */
+export interface ProjectMapModel {
+  fileName: string;
+  fileSize: number;
+  /** Multiplies the model's authored size so it reads at real-world scale
+   * once placed in mercator meters — most GLBs aren't authored in exact
+   * meters, so Admin dials this in against the preview's 5m grid. */
+  scale: number;
+  /** Heading offset in degrees, on top of the model's own orientation —
+   * lets Admin align it to the street grid. */
+  rotationDeg: number;
+  /** Meters above ground level. */
+  altitudeOffset: number;
+  /** Hidden on the public map without discarding the upload/config. */
+  enabled: boolean;
+  updatedAt: string;
+}
+
 export type SavedEntityType = "listing" | "project" | "neighborhood";
 
 export interface SavedSearch {
@@ -291,4 +344,57 @@ export interface ConstructionTimelineRequest {
   status: TimelineRequestStatus;
   submittedAt: string;
   reviewedAt?: string;
+}
+
+// --- User dashboard: Following, Recently Viewed, Notifications ---
+// (PRD_User §7 Continue Exploring, §8 Recently Viewed, §11 Following, §13 Notifications)
+
+export type RecentlyViewedKind = "listing" | "project";
+
+export interface RecentlyViewedEntry {
+  kind: RecentlyViewedKind;
+  id: string;
+  viewedAt: string;
+}
+
+export interface FollowState {
+  projects: string[];
+  developers: string[];
+}
+
+export type NotificationType =
+  | "price_change"
+  | "search_match"
+  | "listing_availability"
+  | "project_update"
+  | "developer_update"
+  | "account_message"
+  | "lead"
+  | "moderation"
+  | "billing";
+
+export interface NotificationItem {
+  id: string;
+  type: NotificationType;
+  titleKey: string;
+  bodyKey: string;
+  /** Interpolation values for titleKey/bodyKey, e.g. { name: "..." }. */
+  vars?: Record<string, string>;
+  href?: string;
+  createdAt: string;
+}
+
+// --- Publisher dashboards: Leads (PRD_Business_Publisher §16, PRD_Private_Publisher §8) ---
+
+export type LeadStatus = "new" | "contacted" | "viewing" | "negotiating" | "closed" | "archived";
+export type LeadSource = "phone_click" | "whatsapp_click" | "listing_inquiry" | "digital_twin_inquiry";
+
+export interface LeadItem {
+  id: string;
+  publisherId: string;
+  listingId?: string;
+  projectId?: string;
+  source: LeadSource;
+  status: LeadStatus;
+  createdAt: string;
 }

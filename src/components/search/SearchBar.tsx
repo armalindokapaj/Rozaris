@@ -123,7 +123,7 @@ export function SearchBar({
       {open && suggestions.length > 0 && (
         <div
           role="listbox"
-          className="absolute left-0 right-0 z-40 mt-2 max-h-80 overflow-y-auto scroll-thin rounded-card border border-neutral-200 bg-white p-1.5 shadow-xl"
+          className="absolute left-0 right-0 z-40 mt-2 max-h-80 overflow-y-auto scroll-thin rounded-card border border-neutral-200 bg-white p-1.5 shadow-[0_8px_24px_rgba(17,17,24,0.10)]"
         >
           {suggestions.map((s) => {
             const Icon = TYPE_ICON[s.type];

@@ -31,7 +31,7 @@ function ResourcesDropdown() {
         {t("nav.resources")} <ChevronDown className="h-3.5 w-3.5" />
       </button>
       {open && (
-        <div className="absolute left-0 z-40 mt-2 w-56 rounded-card border border-neutral-200 bg-white p-1.5 shadow-xl">
+        <div className="absolute left-0 z-40 mt-2 w-56 rounded-card border border-neutral-200 bg-white p-1.5 shadow-[0_8px_24px_rgba(17,17,24,0.10)]">
           <Link
             href="/buyer/signup"
             onClick={() => setOpen(false)}
@@ -85,14 +85,14 @@ export function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-neutral-200 bg-white/95 px-4 backdrop-blur lg:px-6">
+      <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-3 border-b border-neutral-200 bg-white px-4 lg:px-6">
         <Logo />
 
         <nav className="ml-2 hidden items-center gap-0.5 lg:flex" aria-label={t("common.primaryNav")}>
           <Link
             href="/search"
             className={cn(
-              "rounded-control px-2 py-2 text-sm font-medium text-neutral-600 transition-all duration-200 hover:scale-105 hover:bg-brand-50 hover:text-brand-600",
+              "rounded-control px-2 py-2 text-sm font-medium text-neutral-600 transition-colors hover:text-neutral-900",
               pathname === "/search" && "text-neutral-900"
             )}
           >
@@ -101,7 +101,7 @@ export function Header() {
           <Link
             href="/new-projects"
             className={cn(
-              "rounded-control px-2 py-2 text-sm font-medium text-neutral-600 transition-all duration-200 hover:scale-105 hover:bg-brand-50 hover:text-brand-600",
+              "rounded-control px-2 py-2 text-sm font-medium text-neutral-600 transition-colors hover:text-neutral-900",
               pathname === "/new-projects" && "text-neutral-900"
             )}
           >

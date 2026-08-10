@@ -9,13 +9,25 @@ import type {
   Conversation,
   Currency,
   FilterState,
+  FollowState,
   GeoPoint,
+  LeadStatus,
   Locale,
   MobileSheet,
+  Project,
+  Project3DConfig,
+  ProjectMapModel,
+  PublisherType,
+  RecentlyViewedEntry,
+  RecentlyViewedKind,
   SavedSearch,
+  Unit,
   ViewMode,
 } from "./types";
 import { DEMO_PUBLISHER, seedConversations } from "./mockData";
+
+/** Recently Viewed is bounded, not infinite storage (PRD_User §8.3/§20.7). */
+const RECENTLY_VIEWED_MAX = 50;
 
 export const defaultBuyerPreferences: BuyerPreferences = {
   transaction: "buy",
@@ -26,6 +38,39 @@ export const defaultBuyerPreferences: BuyerPreferences = {
 
 // Default until an admin sets a real rate in the Admin Console.
 export const DEFAULT_EUR_TO_ALL_RATE = 97;
+
+/** PRD_3D_Project_Viewer §11/§15/§16 — applied until an Admin configures a
+ * project's own "3D Experience". Distances are relative multipliers of the
+ * project's auto-computed bounding radius (lib/threeBuilding.ts), so they
+ * stay sensible whether a project is one small building or a large complex. */
+export const defaultProject3DConfig: Project3DConfig = {
+  lightingPreset: "daylight",
+  backgroundPreset: "sky",
+  groundEnabled: true,
+  cameraStartDistanceMultiplier: 1,
+  cameraMinDistanceMultiplier: 0.4,
+  cameraMaxDistanceMultiplier: 2.5,
+  cameraMaxPolarDeg: 85,
+  autoRotate: true,
+  constructionStagesEnabled: true,
+  status: "published",
+  updatedAt: "2025-01-01T00:00:00.000Z",
+};
+
+/** Applied to a project the moment Admin uploads a GLB, before they've
+ * touched any placement slider. 1:1 scale, no rotation/altitude correction —
+ * intentionally naive so the preview grid immediately shows whether the
+ * source file needs correcting. Starts disabled: an upload alone shouldn't
+ * go live on the public map until Admin explicitly enables it. */
+export const defaultProjectMapModel: ProjectMapModel = {
+  fileName: "",
+  fileSize: 0,
+  scale: 1,
+  rotationDeg: 0,
+  altitudeOffset: 0,
+  enabled: false,
+  updatedAt: "",
+};
 
 export const defaultFilters: FilterState = {
   transaction: "buy",
@@ -57,10 +102,17 @@ export interface MapBounds {
   west: number;
 }
 
-interface AuthState {
+export interface AuthState {
   signedIn: boolean;
   name: string | null;
   role: "visitor" | "publisher" | "admin" | "buyer";
+  /** Only meaningful when role === "publisher" — which of the three
+   * PRD account types (Private Publisher / Real Estate Business / Developer)
+   * this identity is, per PRD_Authentication_Account_Selection §7. */
+  orgType?: PublisherType;
+  /** The mock Publisher record (src/lib/mockData.ts) this identity's
+   * listings/projects are drawn from. */
+  publisherId?: string;
 }
 
 interface SavedState {
@@ -116,8 +168,42 @@ interface AppState {
 
   // Auth (mock — phone OTP is out of scope for the frontend prototype)
   auth: AuthState;
-  signIn: (name: string, role?: AuthState["role"]) => void;
+  signIn: (
+    name: string,
+    role?: AuthState["role"],
+    orgType?: AuthState["orgType"],
+    publisherId?: string
+  ) => void;
   signOut: () => void;
+  signInModalOpen: boolean;
+  openSignIn: () => void;
+  closeSignIn: () => void;
+
+  // Following: projects & developers (PRD_User §11). Followed neighborhoods
+  // reuse saved.neighborhoods above — Save and Follow are the same action
+  // for a neighborhood, since a neighborhood has no individual "save" target.
+  following: FollowState;
+  toggleFollowProject: (id: string) => void;
+  toggleFollowDeveloper: (id: string) => void;
+
+  // Recently Viewed (PRD_User §8) — bounded history, newest first.
+  recentlyViewed: RecentlyViewedEntry[];
+  trackView: (kind: RecentlyViewedKind, id: string) => void;
+  removeRecentlyViewed: (kind: RecentlyViewedKind, id: string) => void;
+  clearRecentlyViewed: () => void;
+
+  // Notifications (PRD_User §13, PRD_Business_Publisher §22, PRD_Private_Publisher §10.4)
+  // — the notification *content* is generated per-session from mockActivity.ts;
+  // only read-state persists, keyed by notification id.
+  readNotificationIds: string[];
+  markNotificationRead: (id: string) => void;
+  markAllNotificationsRead: (ids: string[]) => void;
+
+  // Publisher leads (PRD_Business_Publisher §16, PRD_Private_Publisher §8)
+  // — lead content is generated per-session from mockActivity.ts; only
+  // status overrides persist, keyed by lead id.
+  leadStatusOverrides: Record<string, LeadStatus>;
+  setLeadStatus: (id: string, status: LeadStatus) => void;
 
   // Locale / currency
   currency: Currency;
@@ -154,6 +240,31 @@ interface AppState {
   submitTimelineRequest: (projectId: string, projectName: string, draft: ConstructionTimelineDraft) => void;
   approveTimelineRequest: (requestId: string) => void;
   rejectTimelineRequest: (requestId: string) => void;
+
+  // PRD_3D_Project_Viewer — Admin's "3D Experience" config per project
+  // (Scene/Camera/Lighting/Construction). Admin-authored only; unlike
+  // construction timelines above, there's no publisher submission/approval
+  // step, since the PRD reserves 3D authoring for Admin exclusively.
+  project3DConfigs: Record<string, Project3DConfig>;
+  setProject3DConfig: (projectId: string, partial: Partial<Project3DConfig>) => void;
+  resetProject3DConfig: (projectId: string) => void;
+
+  // Admin's "3D Map Control" — GLB placement metadata per project (the
+  // binary itself lives in IndexedDB, see lib/glbStorage.ts). Distinct from
+  // project3DConfigs above, which is the *indoor* viewer's scene/camera.
+  projectMapModels: Record<string, ProjectMapModel>;
+  setProjectMapModel: (projectId: string, partial: Partial<ProjectMapModel>) => void;
+  removeProjectMapModel: (projectId: string) => void;
+
+  // Admin-created projects (3D Experience tab §11 "Overview" -> a project
+  // must exist before Admin can author its scene/units/model). Kept
+  // separate from lib/mockData's seeded `projects` array — merged with it
+  // wherever the Admin console lists projects — since the seed data is a
+  // static module-level constant, not store state.
+  customProjects: Project[];
+  addProject: (project: Project) => void;
+  addProjectUnit: (projectId: string, unit: Unit) => void;
+  removeProjectUnit: (projectId: string, unitId: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -267,9 +378,62 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ savedSearches: [search, ...s.savedSearches] })),
 
       auth: { signedIn: false, name: null, role: "visitor" },
-      signIn: (name, role = "visitor") =>
-        set({ auth: { signedIn: true, name, role } }),
+      signIn: (name, role = "visitor", orgType, publisherId) =>
+        set({
+          auth: { signedIn: true, name, role, orgType, publisherId },
+          signInModalOpen: false,
+        }),
       signOut: () => set({ auth: { signedIn: false, name: null, role: "visitor" } }),
+      signInModalOpen: false,
+      openSignIn: () => set({ signInModalOpen: true }),
+      closeSignIn: () => set({ signInModalOpen: false }),
+
+      following: { projects: [], developers: [] },
+      toggleFollowProject: (id) =>
+        set((s) => ({
+          following: {
+            ...s.following,
+            projects: s.following.projects.includes(id)
+              ? s.following.projects.filter((x) => x !== id)
+              : [...s.following.projects, id],
+          },
+        })),
+      toggleFollowDeveloper: (id) =>
+        set((s) => ({
+          following: {
+            ...s.following,
+            developers: s.following.developers.includes(id)
+              ? s.following.developers.filter((x) => x !== id)
+              : [...s.following.developers, id],
+          },
+        })),
+
+      recentlyViewed: [],
+      trackView: (kind, id) =>
+        set((s) => {
+          const withoutThis = s.recentlyViewed.filter((e) => !(e.kind === kind && e.id === id));
+          const next = [{ kind, id, viewedAt: new Date().toISOString() }, ...withoutThis];
+          return { recentlyViewed: next.slice(0, RECENTLY_VIEWED_MAX) };
+        }),
+      removeRecentlyViewed: (kind, id) =>
+        set((s) => ({
+          recentlyViewed: s.recentlyViewed.filter((e) => !(e.kind === kind && e.id === id)),
+        })),
+      clearRecentlyViewed: () => set({ recentlyViewed: [] }),
+
+      readNotificationIds: [],
+      markNotificationRead: (id) =>
+        set((s) =>
+          s.readNotificationIds.includes(id)
+            ? s
+            : { readNotificationIds: [...s.readNotificationIds, id] }
+        ),
+      markAllNotificationsRead: (ids) =>
+        set((s) => ({ readNotificationIds: Array.from(new Set([...s.readNotificationIds, ...ids])) })),
+
+      leadStatusOverrides: {},
+      setLeadStatus: (id, status) =>
+        set((s) => ({ leadStatusOverrides: { ...s.leadStatusOverrides, [id]: status } })),
 
       currency: "EUR",
       setCurrency: (currency) => set({ currency }),
@@ -358,6 +522,80 @@ export const useAppStore = create<AppState>()(
           ),
         }));
       },
+
+      project3DConfigs: {},
+      setProject3DConfig: (projectId, partial) =>
+        set((s) => ({
+          project3DConfigs: {
+            ...s.project3DConfigs,
+            [projectId]: {
+              ...defaultProject3DConfig,
+              ...s.project3DConfigs[projectId],
+              ...partial,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        })),
+      resetProject3DConfig: (projectId) =>
+        set((s) => {
+          const next = { ...s.project3DConfigs };
+          delete next[projectId];
+          return { project3DConfigs: next };
+        }),
+
+      projectMapModels: {},
+      setProjectMapModel: (projectId, partial) =>
+        set((s) => ({
+          projectMapModels: {
+            ...s.projectMapModels,
+            [projectId]: {
+              ...defaultProjectMapModel,
+              ...s.projectMapModels[projectId],
+              ...partial,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        })),
+      removeProjectMapModel: (projectId) =>
+        set((s) => {
+          const next = { ...s.projectMapModels };
+          delete next[projectId];
+          return { projectMapModels: next };
+        }),
+
+      customProjects: [],
+      addProject: (project) =>
+        set((s) => ({ customProjects: [...s.customProjects, project] })),
+      addProjectUnit: (projectId, unit) =>
+        set((s) => ({
+          customProjects: s.customProjects.map((p) =>
+            p.id === projectId
+              ? {
+                  ...p,
+                  units: [...p.units, unit],
+                  totalUnits: p.totalUnits + 1,
+                  availableUnits:
+                    unit.status === "available" ? p.availableUnits + 1 : p.availableUnits,
+                }
+              : p
+          ),
+        })),
+      removeProjectUnit: (projectId, unitId) =>
+        set((s) => ({
+          customProjects: s.customProjects.map((p) => {
+            if (p.id !== projectId) return p;
+            const removed = p.units.find((u) => u.id === unitId);
+            return {
+              ...p,
+              units: p.units.filter((u) => u.id !== unitId),
+              totalUnits: Math.max(0, p.totalUnits - 1),
+              availableUnits:
+                removed?.status === "available"
+                  ? Math.max(0, p.availableUnits - 1)
+                  : p.availableUnits,
+            };
+          }),
+        })),
     }),
     {
       name: "rozaris-store",
@@ -377,6 +615,13 @@ export const useAppStore = create<AppState>()(
         conversations: s.conversations,
         timelineRequests: s.timelineRequests,
         projectConstructionOverrides: s.projectConstructionOverrides,
+        project3DConfigs: s.project3DConfigs,
+        projectMapModels: s.projectMapModels,
+        customProjects: s.customProjects,
+        following: s.following,
+        recentlyViewed: s.recentlyViewed,
+        readNotificationIds: s.readNotificationIds,
+        leadStatusOverrides: s.leadStatusOverrides,
       }),
     }
   )

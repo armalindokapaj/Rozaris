@@ -40,7 +40,7 @@ export function StaticContextMap({
     mapboxgl.accessToken = token;
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/mapbox/standard",
+      style: "mapbox://styles/armalindokapaj/cms9jpj8b008x01s9g1fib0f7",
       center: [center.lng, center.lat],
       zoom,
       pitch: 45,

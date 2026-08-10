@@ -126,7 +126,7 @@ export function BottomSheet({
         <button
           aria-label={t("common.close")}
           onClick={onClose}
-          className="pointer-events-auto absolute inset-0 bg-neutral-900/20 backdrop-blur-[1px]"
+          className="pointer-events-auto absolute inset-0 bg-[rgba(15,15,20,0.28)]"
         />
       )}
       <div

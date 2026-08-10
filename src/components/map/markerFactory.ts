@@ -8,11 +8,11 @@ const ICON_TOWER = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" 
 
 export const COLORS = {
   standard: "#6f9bff",
-  selected: "#6d5bf6",
+  selected: "#6b55f5",
   newDev: "#8b5cf6",
   premium: "#c9973f",
-  unavailable: "#b9b6c9",
-  neutral: "#2c2a3d",
+  unavailable: "#9a9aa3",
+  neutral: "#17171c",
 };
 
 export function buildClusterMarker(name: string, count: number): HTMLDivElement {

@@ -39,17 +39,17 @@ export function ProjectCard({ project }: { project: Project }) {
       role="button"
       tabIndex={0}
       className={cn(
-        "flex h-full cursor-pointer flex-col overflow-hidden rounded-card border shadow-sm transition-all",
+        "flex h-full cursor-pointer flex-col overflow-hidden rounded-card border transition-colors",
         project.premium ? "bg-amber-50/70" : "bg-white",
         isActive
-          ? "border-listing-new-dev shadow-lg ring-1 ring-brand-200"
+          ? "border-listing-new-dev shadow-[0_2px_8px_rgba(17,17,24,0.06)]"
           : project.premium
           ? "border-listing-premium/50"
-          : "border-neutral-200 hover:border-neutral-300 hover:shadow-md",
+          : "border-neutral-200 hover:border-neutral-300",
         // Applied whenever premium, not only in the non-active branch above —
         // otherwise hovering the card sets hoveredId (for map-marker sync),
-        // which flips isActive and would silently swallow the zoom effect.
-        project.premium && "hover:z-10 hover:scale-[1.02] hover:border-listing-premium hover:shadow-lg"
+        // which flips isActive and would silently swallow the effect.
+        project.premium && "hover:z-10 hover:border-listing-premium hover:shadow-[0_2px_8px_rgba(17,17,24,0.06)]"
       )}
     >
       <div className="relative aspect-[4/3] w-full shrink-0">

@@ -28,7 +28,7 @@ export function UnitPopupCard({
   const { t } = useT();
   return (
     <div
-      className="absolute z-40 w-64 -translate-x-1/2 -translate-y-[calc(100%+16px)] overflow-hidden rounded-card border border-neutral-200 bg-white p-4 shadow-2xl"
+      className="absolute z-40 w-64 -translate-x-1/2 -translate-y-[calc(100%+16px)] overflow-hidden rounded-card border border-neutral-200 bg-white p-4 shadow-[0_8px_24px_rgba(17,17,24,0.10)]"
       style={style}
       role="dialog"
       aria-label={listing.title}

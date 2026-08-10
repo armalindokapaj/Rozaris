@@ -6,12 +6,15 @@ import {
   ListChecks,
   Users,
   Box,
+  Boxes,
   BarChart3,
   Check,
   X,
   MessageSquare,
   Coins,
   HardHat,
+  Plus,
+  Map as MapIcon,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { listings, projects, publishers } from "@/lib/mockData";
@@ -19,10 +22,17 @@ import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
+import { Project3DConfigEditor } from "@/components/dashboard/Project3DConfigEditor";
+import { MapModelEditor } from "@/components/dashboard/MapModelEditor";
+import { NewProjectModal } from "@/components/dashboard/NewProjectModal";
+import { ProjectUnitsEditor } from "@/components/dashboard/ProjectUnitsEditor";
+import type { Project } from "@/lib/types";
 
 const TABS = [
   { id: "queue", labelKey: "admin.tabQueue", icon: ListChecks },
   { id: "timeline", labelKey: "admin.tabTimeline", icon: HardHat },
+  { id: "viewer3d", labelKey: "admin.tab3DExperience", icon: Boxes },
+  { id: "mapmodel3d", labelKey: "admin.tab3DMapControl", icon: MapIcon },
   { id: "publishers", labelKey: "admin.tabPublishers", icon: Users },
   { id: "content", labelKey: "admin.tabContent", icon: Box },
   { id: "reports", labelKey: "admin.tabReports", icon: BarChart3 },
@@ -171,6 +181,10 @@ export default function AdminPage() {
 
         {tab === "timeline" && <TimelineTab />}
 
+        {tab === "viewer3d" && <Viewer3DTab />}
+
+        {tab === "mapmodel3d" && <MapControlTab />}
+
         {tab === "publishers" && <PublishersTab />}
 
         {tab === "content" && <ContentTab />}
@@ -278,6 +292,153 @@ function TimelineTab() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function Viewer3DTab() {
+  const { t } = useT();
+  const configs = useAppStore((s) => s.project3DConfigs);
+  const customProjects = useAppStore((s) => s.customProjects);
+  const [editingScene, setEditingScene] = useState<Project | null>(null);
+  const [editingUnits, setEditingUnits] = useState<Project | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const allProjects = [...projects, ...customProjects];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-neutral-900">{t("admin.viewer3DTabTitle")}</h1>
+          <p className="text-sm text-neutral-500">{t("admin.viewer3DTabSubtitle")}</p>
+        </div>
+        <button
+          onClick={() => setCreating(true)}
+          className="flex items-center gap-1.5 rounded-control bg-brand-500 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-brand-600"
+        >
+          <Plus className="h-4 w-4" />
+          {t("admin.newProjectButton")}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {allProjects.map((p) => {
+          const isCustomized = !!configs[p.id];
+          // Units can only be added to Admin-created projects here — seeded
+          // mock projects (lib/mockData) aren't store state, so there's
+          // nowhere for an added unit to persist to for them.
+          const isCustom = customProjects.some((cp) => cp.id === p.id);
+          return (
+            <div
+              key={p.id}
+              className="flex items-center justify-between gap-2 rounded-panel border border-neutral-200 bg-white p-4"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-neutral-900">{p.name}</p>
+                <p className="text-xs text-neutral-500">
+                  {isCustomized
+                    ? t("admin.viewer3DCustomized")
+                    : t("admin.viewer3DUsingDefaults")}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-1.5">
+                {isCustom && (
+                  <button
+                    onClick={() => setEditingUnits(p)}
+                    className="rounded-control border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                  >
+                    {t("admin.manageUnits")}
+                  </button>
+                )}
+                <button
+                  onClick={() => setEditingScene(p)}
+                  className="rounded-control bg-neutral-900 px-3 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
+                >
+                  {t("admin.viewer3DConfigure")}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {creating && (
+        <NewProjectModal
+          onClose={() => setCreating(false)}
+          onCreated={(p) => {
+            setCreating(false);
+            setEditingUnits(p);
+          }}
+        />
+      )}
+
+      {editingUnits && (
+        <ProjectUnitsEditor project={editingUnits} onClose={() => setEditingUnits(null)} />
+      )}
+
+      {editingScene && (
+        <Project3DConfigEditor project={editingScene} onClose={() => setEditingScene(null)} />
+      )}
+    </div>
+  );
+}
+
+function MapControlTab() {
+  const { t } = useT();
+  const mapModels = useAppStore((s) => s.projectMapModels);
+  const customProjects = useAppStore((s) => s.customProjects);
+  const [editing, setEditing] = useState<Project | null>(null);
+
+  // Note: today only lib/mockData's seeded `projects` are actually plotted
+  // on the search map (lib/filtering.ts getVisibleProjects) — a model
+  // configured on a custom (Admin-created) project is saved and ready, but
+  // won't appear live until that pre-existing gap is closed separately.
+  const allProjects = [...projects, ...customProjects];
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-xl font-bold text-neutral-900">{t("admin.mapModelTabTitle")}</h1>
+        <p className="text-sm text-neutral-500">{t("admin.mapModelTabSubtitle")}</p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {allProjects.map((p) => {
+          const model = mapModels[p.id];
+          const status = !model?.fileName
+            ? t("admin.mapModelStatusNone")
+            : model.enabled
+            ? t("admin.mapModelStatusLive")
+            : t("admin.mapModelStatusDraft");
+          return (
+            <div
+              key={p.id}
+              className="flex items-center justify-between gap-2 rounded-panel border border-neutral-200 bg-white p-4"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-neutral-900">{p.name}</p>
+                <p
+                  className={cn(
+                    "text-xs",
+                    model?.enabled ? "text-green-600" : "text-neutral-500"
+                  )}
+                >
+                  {status}
+                </p>
+              </div>
+              <button
+                onClick={() => setEditing(p)}
+                className="shrink-0 rounded-control bg-neutral-900 px-3 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
+              >
+                {t("admin.mapModelConfigure")}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {editing && <MapModelEditor project={editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }

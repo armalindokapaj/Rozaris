@@ -18,7 +18,7 @@ export function CompareTray() {
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-[calc(16vh+10px)] z-20 flex justify-center lg:bottom-0 lg:pb-4">
-      <div className="glass-panel pointer-events-auto flex items-center gap-3 rounded-panel px-3 py-2.5 shadow-xl">
+      <div className="glass-panel pointer-events-auto flex items-center gap-3 rounded-panel px-3 py-2.5 shadow-[0_8px_24px_rgba(17,17,24,0.10)]">
         <div className="flex items-center gap-2">
           {compare.map((item, i) => (
             <div key={i} className="relative">

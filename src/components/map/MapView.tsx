@@ -6,11 +6,13 @@ import { useAppStore } from "@/lib/store";
 import { SELECTED_UNIT_ZOOM } from "@/lib/constants";
 import { getVisibleListings, getVisibleProjects } from "@/lib/filtering";
 import { getNeighborhood, searchableListings, projects, CITY_CENTER } from "@/lib/mockData";
+import { getModelBlob } from "@/lib/glbStorage";
 import {
   buildClusterMarker,
   buildListingMarker,
   buildProjectMarker,
 } from "./markerFactory";
+import { ProjectModelLayer, type MapModelEntry } from "./ProjectModelLayer";
 import { MapControls } from "./MapControls";
 import { MapFallback } from "./MapFallback";
 import { ProjectPopupCard } from "./ProjectPopupCard";
@@ -38,6 +40,11 @@ export function MapView({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const modelLayerRef = useRef<ProjectModelLayer | null>(null);
+  // GLBs live in IndexedDB (async) but the layer's loader wants a same-tick
+  // object URL — cache per project so a re-render doesn't re-hit IndexedDB
+  // or leak a fresh blob: URL every time.
+  const modelBlobUrlsRef = useRef<Map<string, string>>(new Map());
 
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const [ready, setReady] = useState(false);
@@ -54,6 +61,7 @@ export function MapView({
   const selectedProjectId = useAppStore((s) => s.selectedProjectId);
   const selectListing = useAppStore((s) => s.selectListing);
   const selectProject = useAppStore((s) => s.selectProject);
+  const projectMapModels = useAppStore((s) => s.projectMapModels);
   const flyToToken = useAppStore((s) => s.flyToToken);
   const flyToTarget = useAppStore((s) => s.flyToTarget);
   const setMode = useAppStore((s) => s.setMode);
@@ -113,6 +121,26 @@ export function MapView({
         });
       }
       setTier(tierForZoom(map.getZoom()));
+
+      // "3D Map Control" — Admin-uploaded GLBs plotted as real georeferenced
+      // models rather than flat pins (see ProjectModelLayer.ts doc comment).
+      const modelLayer = new ProjectModelLayer({
+        getBlobUrl: async (projectId) => {
+          const cached = modelBlobUrlsRef.current.get(projectId);
+          if (cached) return cached;
+          const blob = await getModelBlob(projectId);
+          if (!blob) return null;
+          const url = URL.createObjectURL(blob);
+          modelBlobUrlsRef.current.set(projectId, url);
+          return url;
+        },
+        onPick: (projectId) => {
+          const project = projects.find((p) => p.id === projectId);
+          if (project) window.open(`/project/${project.slug}`, "_blank", "noopener");
+        },
+      });
+      map.addLayer(modelLayer);
+      modelLayerRef.current = modelLayer;
     });
 
     let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -144,12 +172,39 @@ export function MapView({
       selectProject(null);
     });
 
+    const blobUrls = modelBlobUrlsRef.current;
     return () => {
       map.remove();
       mapRef.current = null;
+      modelLayerRef.current = null;
+      blobUrls.forEach((url) => URL.revokeObjectURL(url));
+      blobUrls.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // --- 3D Map Control: reconcile which projects' GLBs are placed on the map ---
+  const mapModelEntries = useMemo<MapModelEntry[]>(() => {
+    return visibleProjects.flatMap((p) => {
+      const model = projectMapModels[p.id];
+      if (!model?.enabled || !model.fileName) return [];
+      return [
+        {
+          projectId: p.id,
+          lng: p.coords.lng,
+          lat: p.coords.lat,
+          scale: model.scale,
+          rotationDeg: model.rotationDeg,
+          altitudeOffset: model.altitudeOffset,
+        },
+      ];
+    });
+  }, [visibleProjects, projectMapModels]);
+
+  useEffect(() => {
+    if (!ready) return;
+    modelLayerRef.current?.setEntries(mapModelEntries);
+  }, [ready, mapModelEntries]);
 
   // --- Keep map sized to its container across layout mode changes (PER-007) ---
   useEffect(() => {
@@ -231,7 +286,12 @@ export function MapView({
     // listings, they never fold into a neighborhood cluster count. Keeping
     // them out of that tier switch means the pin doesn't pop away and
     // reappear (feeling laggy) as you cross the cluster/icon zoom threshold.
-    visibleProjects.forEach((project) => {
+    // A project with a live 3D Map Control model (mapModelEntries) renders
+    // as that real GLB instead — the flat pin would just duplicate it.
+    const modeledProjectIds = new Set(mapModelEntries.map((e) => e.projectId));
+    visibleProjects
+      .filter((project) => !modeledProjectIds.has(project.id))
+      .forEach((project) => {
       const el = buildProjectMarker({
         selected: project.id === selectedProjectId,
         premium: project.premium,
@@ -327,6 +387,7 @@ export function MapView({
     tier,
     visibleListings,
     visibleProjects,
+    mapModelEntries,
     selectedListingId,
     selectedProjectId,
     selectListing,

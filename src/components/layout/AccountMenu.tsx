@@ -11,7 +11,7 @@ import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 export function AccountMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const { auth, signIn, signOut } = useAppStore();
+  const { auth, openSignIn, signOut } = useAppStore();
   const { t } = useT();
   useClickOutside(ref, () => setOpen(false), open);
 
@@ -19,7 +19,7 @@ export function AccountMenu() {
     return (
       <button
         type="button"
-        onClick={() => signIn("John Doe", "publisher")}
+        onClick={openSignIn}
         className="rounded-control bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 transition-colors"
       >
         {t("common.signIn")}
@@ -47,7 +47,7 @@ export function AccountMenu() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-40 mt-2 w-60 rounded-card border border-neutral-200 bg-white p-2 shadow-xl"
+          className="absolute right-0 z-40 mt-2 w-60 rounded-card border border-neutral-200 bg-white p-2 shadow-[0_8px_24px_rgba(17,17,24,0.10)]"
         >
           <div className="flex items-center gap-3 px-2 py-2">
             <PlaceholderImage

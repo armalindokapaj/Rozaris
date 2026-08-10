@@ -4,6 +4,7 @@ import "./globals.css";
 import { StoreHydration } from "@/components/providers/StoreHydration";
 import { CompareOverlay } from "@/components/compare/CompareOverlay";
 import { CompareReplaceModal } from "@/components/compare/CompareReplaceModal";
+import { SignInModal } from "@/components/layout/SignInModal";
 import { SkipLink } from "@/components/common/SkipLink";
 
 const inter = Inter({
@@ -34,6 +35,7 @@ export default function RootLayout({
         {children}
         <CompareOverlay />
         <CompareReplaceModal />
+        <SignInModal />
       </body>
     </html>
   );

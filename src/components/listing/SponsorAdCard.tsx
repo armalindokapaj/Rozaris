@@ -19,7 +19,7 @@ export function SponsorAdCard({
         className="rz-ad-shimmer flex h-40 items-center justify-center bg-gradient-to-br from-brand-500 via-neutral-800 to-neutral-900"
         aria-hidden
       >
-        <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm">
+        <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15">
           <Icon className="h-8 w-8 text-brand-200" />
         </span>
       </div>

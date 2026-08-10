@@ -53,7 +53,7 @@ export function LanguageCurrencySelector({
         <div
           role="menu"
           className={cn(
-            "absolute right-0 z-40 w-56 rounded-card border border-neutral-200 bg-white p-2 shadow-xl",
+            "absolute right-0 z-40 w-56 rounded-card border border-neutral-200 bg-white p-2 shadow-[0_8px_24px_rgba(17,17,24,0.10)]",
             openUpward ? "bottom-full mb-2" : "mt-2"
           )}
         >

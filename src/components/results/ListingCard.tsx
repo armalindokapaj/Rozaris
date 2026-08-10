@@ -64,17 +64,17 @@ export function ListingCard({
         }
       }}
       className={cn(
-        "group block rounded-card border shadow-sm transition-all",
+        "group block rounded-card border transition-colors",
         listing.premium ? "bg-amber-50/70" : "bg-white",
         isActive
-          ? "border-brand-400 shadow-lg ring-1 ring-brand-200"
+          ? "border-brand-400 shadow-[0_2px_8px_rgba(17,17,24,0.06)]"
           : listing.premium
           ? "border-listing-premium/50"
-          : "border-neutral-200 hover:border-neutral-300 hover:shadow-md",
+          : "border-neutral-200 hover:border-neutral-300",
         // Applied whenever premium, not only in the non-active branch above —
         // otherwise hovering the card sets hoveredId (for map-marker sync),
-        // which flips isActive and would silently swallow the zoom effect.
-        listing.premium && "hover:z-10 hover:scale-[1.02] hover:border-listing-premium hover:shadow-lg",
+        // which flips isActive and would silently swallow the effect.
+        listing.premium && "hover:z-10 hover:border-listing-premium hover:shadow-[0_2px_8px_rgba(17,17,24,0.06)]",
         // Horizontal on small screens so more results fit per scroll — same
         // row spec (inset image, p-4/gap-4) as New Projects' ProjectListRow
         // on desktop — then back to a stacked, flush-image card at lg+
