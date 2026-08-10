@@ -712,6 +712,7 @@ const en = {
     mapModelEnabled: "Show on the public map",
     mapModelSave: "Save placement",
     mapModelSaved: "Saved — now live on the map (if enabled).",
+    mapModelSaveFailed: "Couldn't save — please try again.",
     mapModelNoUpload: "No model uploaded yet",
     mapModelLoadError: "Couldn't load this file as a GLB/glTF model.",
     newProjectButton: "New project",

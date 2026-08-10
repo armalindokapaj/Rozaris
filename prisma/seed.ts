@@ -1,0 +1,157 @@
+/**
+ * Seeds the demo publishers + projects (lib/mockData.ts) into Postgres as
+ * real rows, keyed by the SAME ids the mock data already uses (e.g.
+ * "pr-marina"). This does NOT change how the site browses/searches
+ * projects — that still reads mockData.ts directly (deliberately deferred,
+ * see the "rozaris-backend-plan" memory). The only reason these rows need
+ * to exist for real is that `ProjectMapModel`/`Project3DConfig` have a
+ * foreign key to `Project.id` — Admin can't attach a real, shared GLB to a
+ * project that only exists as a JS object in the client bundle.
+ *
+ * Idempotent (upsert) — safe to re-run after mockData.ts changes.
+ */
+import { PrismaClient } from "../src/generated/prisma";
+import { publishers, projects } from "../src/lib/mockData";
+
+const prisma = new PrismaClient();
+
+async function main() {
+  for (const p of publishers) {
+    const ownerEmail = `${p.slug}@seed.rozaris.demo`;
+    const owner = await prisma.user.upsert({
+      where: { email: ownerEmail },
+      update: { name: p.name },
+      create: {
+        email: ownerEmail,
+        name: p.name,
+        role: "publisher",
+      },
+    });
+
+    await prisma.publisher.upsert({
+      where: { id: p.id },
+      update: {
+        slug: p.slug,
+        name: p.name,
+        type: p.type as "private_owner" | "agency" | "developer",
+        verified: p.verified,
+        logoUrl: p.logoUrl,
+        phone: p.phone,
+        whatsapp: p.whatsapp,
+        bio: p.bio,
+      },
+      create: {
+        id: p.id,
+        slug: p.slug,
+        name: p.name,
+        type: p.type as "private_owner" | "agency" | "developer",
+        verified: p.verified,
+        logoUrl: p.logoUrl,
+        phone: p.phone,
+        whatsapp: p.whatsapp,
+        bio: p.bio,
+        ownerUserId: owner.id,
+      },
+    });
+  }
+  console.log(`Seeded ${publishers.length} publishers.`);
+
+  for (const proj of projects) {
+    await prisma.project.upsert({
+      where: { id: proj.id },
+      update: {
+        slug: proj.slug,
+        name: proj.name,
+        status: proj.status,
+        approvalStatus: "active",
+        progressPercent: proj.progressPercent,
+        lat: proj.coords.lat,
+        lng: proj.coords.lng,
+        neighborhoodId: proj.neighborhoodId,
+        city: proj.city,
+        setting: proj.setting,
+        propertyType: proj.propertyType,
+        heroImage: proj.heroImage,
+        gallery: proj.gallery,
+        descriptionEn: proj.description.en,
+        descriptionSq: proj.description.sq,
+        buildings: proj.buildings,
+        amenities: proj.amenities,
+        premium: proj.premium,
+        completionLabel: proj.completionLabel,
+      },
+      create: {
+        id: proj.id,
+        slug: proj.slug,
+        name: proj.name,
+        status: proj.status,
+        approvalStatus: "active",
+        progressPercent: proj.progressPercent,
+        lat: proj.coords.lat,
+        lng: proj.coords.lng,
+        neighborhoodId: proj.neighborhoodId,
+        city: proj.city,
+        setting: proj.setting,
+        propertyType: proj.propertyType,
+        heroImage: proj.heroImage,
+        gallery: proj.gallery,
+        descriptionEn: proj.description.en,
+        descriptionSq: proj.description.sq,
+        buildings: proj.buildings,
+        amenities: proj.amenities,
+        premium: proj.premium,
+        completionLabel: proj.completionLabel,
+        publisherId: proj.developer.id,
+      },
+    });
+
+    // Units/stages are re-derived from mockData every run — simplest to
+    // just replace them rather than diff, since mockData is the source of
+    // truth for these two (never edited via the DB directly today).
+    await prisma.unit.deleteMany({ where: { projectId: proj.id } });
+    await prisma.unit.createMany({
+      data: proj.units.map((u) => ({
+        id: u.id,
+        code: u.code,
+        type: u.type,
+        buildingName: u.buildingName,
+        floor: u.floor,
+        area: u.area,
+        bedrooms: u.bedrooms,
+        bathrooms: u.bathrooms,
+        price: u.price,
+        currency: u.currency,
+        transaction: u.transaction,
+        status: u.status,
+        images: u.images,
+        floorPlanImage: u.floorPlanImage,
+        facadeImage: u.facadeImage,
+        videoUrl: u.videoUrl,
+        projectId: proj.id,
+      })),
+    });
+
+    await prisma.constructionStage.deleteMany({ where: { projectId: proj.id } });
+    await prisma.constructionStage.createMany({
+      data: proj.constructionStages.map((s) => ({
+        // mockData's stage ids ("stage-0".."stage-7") repeat across every
+        // project — namespace by project id so they're actually unique here.
+        id: `${proj.id}-${s.id}`,
+        name: s.name,
+        order: s.order,
+        status: s.status,
+        progressPercent: s.progressPercent,
+        dateLabel: s.dateLabel,
+        projectId: proj.id,
+      })),
+    });
+  }
+  console.log(`Seeded ${projects.length} projects (with units + construction stages).`);
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());

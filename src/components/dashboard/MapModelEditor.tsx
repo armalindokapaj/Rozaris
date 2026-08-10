@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import { Trash2, Upload, X } from "lucide-react";
-import { useAppStore, defaultProjectMapModel } from "@/lib/store";
+import { defaultProjectMapModel } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { GlbPreviewCanvas } from "./GlbPreviewCanvas";
 import type { Project, ProjectMapModel } from "@/lib/types";
@@ -22,17 +22,16 @@ function formatBytes(bytes: number) {
  * — see src/app/api/blob/upload), place it (scale/rotation/altitude)
  * against a live preview with a 5m reference grid, then publish it to the
  * real Mapbox map at this project's real lng/lat (ProjectModelLayer,
- * MapView.tsx). Save here only publishes the small placement record
- * (still Zustand-only for now, see the "rozaris-backend-plan" memory),
- * mirroring Project3DConfigEditor's draft/publish split next to it.
+ * MapView.tsx). Save here writes the placement record to Postgres
+ * (/api/map-models/[projectId]) — a real, shared row, not Zustand — so a
+ * model an admin publishes shows up for every visitor, not just this
+ * browser. Mirrors Project3DConfigEditor's draft/publish split next to it.
  */
 export function MapModelEditor({ project, onClose }: { project: Project; onClose: () => void }) {
-  const saved = useAppStore((s) => s.projectMapModels[project.id]);
-  const setProjectMapModel = useAppStore((s) => s.setProjectMapModel);
-  const removeProjectMapModel = useAppStore((s) => s.removeProjectMapModel);
   const { t } = useT();
 
-  const [draft, setDraft] = useState<ProjectMapModel>(saved ?? defaultProjectMapModel);
+  const [draft, setDraft] = useState<ProjectMapModel>(defaultProjectMapModel);
+  const [loaded, setLoaded] = useState(false);
   // Instant local preview (picked file, pre-upload) takes priority over the
   // already-published glbUrl so Admin sees the *new* file immediately
   // instead of waiting on the upload to finish.
@@ -42,6 +41,21 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
   const [error, setError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/map-models/${project.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((saved: ProjectMapModel | null) => {
+        if (!cancelled && saved) setDraft(saved);
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id]);
 
   function update(partial: Partial<ProjectMapModel>) {
     setDraft((d) => ({ ...d, ...partial }));
@@ -92,7 +106,7 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
           body: JSON.stringify({ url: draft.glbUrl }),
         });
       }
-      removeProjectMapModel(project.id);
+      await fetch(`/api/map-models/${project.id}`, { method: "DELETE" });
       setLocalPreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return null;
@@ -103,10 +117,31 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
     }
   }
 
-  function handleSave() {
-    setProjectMapModel(project.id, draft);
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 2500);
+  async function handleSave() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/map-models/${project.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          glbUrl: draft.glbUrl,
+          fileName: draft.fileName,
+          fileSize: draft.fileSize,
+          scale: draft.scale,
+          rotationDeg: draft.rotationDeg,
+          altitudeOffset: draft.altitudeOffset,
+          enabled: draft.enabled,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 2500);
+    } catch {
+      setError(t("admin.mapModelSaveFailed"));
+    } finally {
+      setBusy(false);
+    }
   }
 
   const hasModel = !!draft.fileName;
@@ -247,7 +282,7 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
             )}
             <button
               onClick={handleSave}
-              disabled={!hasModel}
+              disabled={!hasModel || busy || !loaded}
               className="w-full rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
             >
               {t("admin.mapModelSave")}

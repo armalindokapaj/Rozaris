@@ -714,6 +714,7 @@ const sq: Dictionary = {
     mapModelEnabled: "Shfaqe në hartën publike",
     mapModelSave: "Ruaj vendosjen",
     mapModelSaved: "U ruajt — tani është live në hartë (nëse është aktivizuar).",
+    mapModelSaveFailed: "Ruajtja dështoi — provo përsëri.",
     mapModelNoUpload: "Ende nuk ka model të ngarkuar",
     mapModelLoadError: "Nuk u ngarkua dot ky skedar si model GLB/glTF.",
     newProjectButton: "Projekt i ri",

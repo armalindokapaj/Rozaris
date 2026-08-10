@@ -250,14 +250,6 @@ interface AppState {
   setProject3DConfig: (projectId: string, partial: Partial<Project3DConfig>) => void;
   resetProject3DConfig: (projectId: string) => void;
 
-  // Admin's "3D Map Control" — GLB placement metadata per project (the
-  // binary itself lives in Vercel Blob, see src/app/api/blob/upload).
-  // Distinct from project3DConfigs above, which is the *indoor* viewer's
-  // scene/camera.
-  projectMapModels: Record<string, ProjectMapModel>;
-  setProjectMapModel: (projectId: string, partial: Partial<ProjectMapModel>) => void;
-  removeProjectMapModel: (projectId: string) => void;
-
   // Admin-created projects (3D Experience tab §11 "Overview" -> a project
   // must exist before Admin can author its scene/units/model). Kept
   // separate from lib/mockData's seeded `projects` array — merged with it
@@ -545,26 +537,6 @@ export const useAppStore = create<AppState>()(
           return { project3DConfigs: next };
         }),
 
-      projectMapModels: {},
-      setProjectMapModel: (projectId, partial) =>
-        set((s) => ({
-          projectMapModels: {
-            ...s.projectMapModels,
-            [projectId]: {
-              ...defaultProjectMapModel,
-              ...s.projectMapModels[projectId],
-              ...partial,
-              updatedAt: new Date().toISOString(),
-            },
-          },
-        })),
-      removeProjectMapModel: (projectId) =>
-        set((s) => {
-          const next = { ...s.projectMapModels };
-          delete next[projectId];
-          return { projectMapModels: next };
-        }),
-
       customProjects: [],
       addProject: (project) =>
         set((s) => ({ customProjects: [...s.customProjects, project] })),
@@ -618,7 +590,6 @@ export const useAppStore = create<AppState>()(
         timelineRequests: s.timelineRequests,
         projectConstructionOverrides: s.projectConstructionOverrides,
         project3DConfigs: s.project3DConfigs,
-        projectMapModels: s.projectMapModels,
         customProjects: s.customProjects,
         following: s.following,
         recentlyViewed: s.recentlyViewed,

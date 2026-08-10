@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ShieldCheck,
   ListChecks,
@@ -386,9 +386,29 @@ function Viewer3DTab() {
 
 function MapControlTab() {
   const { t } = useT();
-  const mapModels = useAppStore((s) => s.projectMapModels);
   const customProjects = useAppStore((s) => s.customProjects);
   const [editing, setEditing] = useState<Project | null>(null);
+  // A real Postgres row per project (src/app/api/map-models), not Zustand —
+  // see MapModelEditor.tsx/MapView.tsx's matching hooks. Custom
+  // (Admin-created) projects only exist in this browser's Zustand state
+  // though, with no matching Postgres `Project` row (that needs the
+  // submit/publish pipeline, deliberately deferred — see the
+  // "rozaris-backend-plan" memory) — saving a model for one of those will
+  // 404 until that lands.
+  const [mapModels, setMapModels] = useState<Record<string, { fileName: string; enabled: boolean }>>({});
+
+  useEffect(() => {
+    fetch("/api/map-models")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: { projectId: string; fileName: string; enabled: boolean }[]) => {
+        const byProjectId: Record<string, { fileName: string; enabled: boolean }> = {};
+        rows.forEach((r) => {
+          byProjectId[r.projectId] = r;
+        });
+        setMapModels(byProjectId);
+      })
+      .catch(() => {});
+  }, []);
 
   // Note: today only lib/mockData's seeded `projects` are actually plotted
   // on the search map (lib/filtering.ts getVisibleProjects) — a model

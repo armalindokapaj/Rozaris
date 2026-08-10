@@ -29,6 +29,51 @@ function tierForZoom(z: number): ZoomTier {
   return "price";
 }
 
+interface MapModelRow {
+  projectId: string;
+  glbUrl: string;
+  scale: number;
+  rotationDeg: number;
+  altitudeOffset: number;
+  enabled: boolean;
+}
+
+/** "3D Map Control" placement, keyed by project id — a real, shared Postgres
+ * row (src/app/api/map-models) rather than one browser's localStorage, so a
+ * model an admin publishes shows up for every visitor. Refetches on window
+ * focus (no realtime/websocket layer yet) so an admin's edit in another tab
+ * shows up here without a full page reload. */
+function useProjectMapModels(): Record<string, MapModelRow> {
+  const [models, setModels] = useState<Record<string, MapModelRow>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/map-models");
+        if (!res.ok || cancelled) return;
+        const rows: MapModelRow[] = await res.json();
+        const byProjectId: Record<string, MapModelRow> = {};
+        rows.forEach((r) => {
+          byProjectId[r.projectId] = r;
+        });
+        if (!cancelled) setModels(byProjectId);
+      } catch {
+        // Offline/unreachable — the map just falls back to flat pins for
+        // every project until the next successful fetch.
+      }
+    }
+    load();
+    window.addEventListener("focus", load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", load);
+    };
+  }, []);
+
+  return models;
+}
+
 export function MapView({
   className,
   controlsClassName,
@@ -56,7 +101,7 @@ export function MapView({
   const selectedProjectId = useAppStore((s) => s.selectedProjectId);
   const selectListing = useAppStore((s) => s.selectListing);
   const selectProject = useAppStore((s) => s.selectProject);
-  const projectMapModels = useAppStore((s) => s.projectMapModels);
+  const projectMapModels = useProjectMapModels();
   const flyToToken = useAppStore((s) => s.flyToToken);
   const flyToTarget = useAppStore((s) => s.flyToTarget);
   const setMode = useAppStore((s) => s.setMode);
