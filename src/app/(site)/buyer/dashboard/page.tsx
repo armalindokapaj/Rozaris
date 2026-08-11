@@ -2,18 +2,47 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Heart, LayoutList, MessageCircle, Settings, User } from "lucide-react";
+import {
+  Heart,
+  LayoutDashboard,
+  Bookmark,
+  SquareStack,
+  Clock,
+  Bell,
+  MessageCircle,
+  Settings,
+  User,
+  X,
+} from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
-import { listings, getNeighborhood } from "@/lib/mockData";
+import { listings, projects, searchableListings, getNeighborhood } from "@/lib/mockData";
+import { buyerNotifications } from "@/lib/mockActivity";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
 import { ListingCard } from "@/components/results/ListingCard";
+import { ProjectCard } from "@/components/results/ProjectCard";
+import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { MessagesPanel } from "@/components/messages/MessagesPanel";
-import type { BuyerPreferences, Listing, PropertyType } from "@/lib/types";
+import { NotificationsList } from "@/components/dashboard/NotificationsList";
+import { usePriceFormat } from "@/hooks/usePriceFormat";
+import { useHasMounted } from "@/hooks/useHasMounted";
+import type {
+  BuyerPreferences,
+  CompareEntity,
+  Listing,
+  Project,
+  PropertyType,
+  RecentlyViewedEntry,
+  SavedSearch,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const TABS = [
-  { id: "feed", labelKey: "buyer.tabFeed", icon: LayoutList },
+  { id: "overview", labelKey: "user.tabOverview", icon: LayoutDashboard },
+  { id: "saved", labelKey: "user.tabSaved", icon: Bookmark },
+  { id: "compare", labelKey: "user.tabCompare", icon: SquareStack },
+  { id: "recent", labelKey: "user.tabRecent", icon: Clock },
+  { id: "alerts", labelKey: "user.tabAlerts", icon: Bell },
   { id: "messages", labelKey: "buyer.tabMessages", icon: MessageCircle },
   { id: "preferences", labelKey: "buyer.tabPreferences", icon: Settings },
   { id: "profile", labelKey: "buyer.tabProfile", icon: User },
@@ -50,14 +79,30 @@ function matchesPreferences(listing: Listing, prefs: BuyerPreferences): boolean 
   return true;
 }
 
+/** User Dashboard (PRD_ROZARIS_User_Types §2) — a personal discovery
+ * workspace, not a publishing surface. Reuses the same store slices the
+ * standalone /saved page and the header's Compare overlay already read
+ * (saved.*, savedSearches, compare, recentlyViewed, readNotificationIds) so
+ * every one of these views always agrees with each other. */
 export default function BuyerDashboardPage() {
   const auth = useAppStore((s) => s.auth);
+  const openSignIn = useAppStore((s) => s.openSignIn);
   const buyerProfile = useAppStore((s) => s.buyerProfile);
   const conversations = useAppStore((s) => s.conversations);
+  const saved = useAppStore((s) => s.saved);
+  const savedSearches = useAppStore((s) => s.savedSearches);
+  const compare = useAppStore((s) => s.compare);
+  const recentlyViewed = useAppStore((s) => s.recentlyViewed);
+  const readNotificationIds = useAppStore((s) => s.readNotificationIds);
+  const mounted = useHasMounted();
   const { t } = useT();
-  const [tab, setTab] = useState<TabId>("feed");
+  const [tab, setTab] = useState<TabId>("overview");
 
   const isBuyer = auth.signedIn && auth.role === "buyer" && buyerProfile;
+  const notifications = useMemo(() => buyerNotifications(), []);
+  const unreadCount = notifications.filter((n) => !readNotificationIds.includes(n.id)).length;
+
+  if (!mounted) return null;
 
   if (!isBuyer) {
     return (
@@ -65,16 +110,26 @@ export default function BuyerDashboardPage() {
         <Heart className="h-10 w-10 text-brand-500" />
         <h1 className="font-serif text-xl text-neutral-900">{t("buyer.signInRequiredTitle")}</h1>
         <p className="text-sm text-neutral-500">{t("buyer.signInRequiredBody")}</p>
-        <Link
-          href="/buyer/signup"
-          className="rounded-control bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white"
-        >
-          {t("buyer.becomeABuyer")}
-        </Link>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Link
+            href="/buyer/signup"
+            className="rounded-control bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white"
+          >
+            {t("buyer.becomeABuyer")}
+          </Link>
+          <button
+            onClick={openSignIn}
+            className="rounded-control border border-neutral-200 px-5 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
+          >
+            {t("saved.signInDemo")}
+          </button>
+        </div>
       </div>
     );
   }
 
+  const savedListings = listings.filter((l) => saved.listings.includes(l.id));
+  const savedProjects = projects.filter((p) => saved.projects.includes(p.id));
   const myConversations = conversations.filter((c) => c.buyerId === buyerProfile.id);
 
   return (
@@ -97,13 +152,37 @@ export default function BuyerDashboardPage() {
             >
               <Icon className="h-4 w-4" />
               {t(labelKey)}
+              {id === "alerts" && unreadCount > 0 && (
+                <span className="ml-auto flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-brand-500 px-1 text-[10px] font-bold text-white">
+                  {unreadCount}
+                </span>
+              )}
             </button>
           ))}
         </nav>
       </aside>
 
       <div className="min-w-0 flex-1">
-        {tab === "feed" && <FeedTab preferences={buyerProfile.preferences} />}
+        {tab === "overview" && (
+          <OverviewTab
+            name={buyerProfile.name}
+            savedListingsCount={savedListings.length}
+            savedProjectsCount={savedProjects.length}
+            savedSearches={savedSearches}
+            recentlyViewed={recentlyViewed}
+            unreadAlerts={unreadCount}
+            preferences={buyerProfile.preferences}
+          />
+        )}
+        {tab === "saved" && <SavedTab listings={savedListings} projects={savedProjects} />}
+        {tab === "compare" && <CompareTab items={compare} />}
+        {tab === "recent" && <RecentTab entries={recentlyViewed} />}
+        {tab === "alerts" && (
+          <div className="space-y-4">
+            <h1 className="font-serif text-xl text-neutral-900">{t("user.tabAlerts")}</h1>
+            <NotificationsList items={notifications} />
+          </div>
+        )}
         {tab === "messages" && (
           <div className="space-y-4">
             <h1 className="font-serif text-xl text-neutral-900">{t("buyer.tabMessages")}</h1>
@@ -117,30 +196,265 @@ export default function BuyerDashboardPage() {
   );
 }
 
-function FeedTab({ preferences }: { preferences: BuyerPreferences }) {
+function StatCard({ label, value, icon: Icon }: { label: string; value: number; icon: typeof Bookmark }) {
+  return (
+    <div className="rounded-card border border-neutral-200 bg-white p-4">
+      <Icon className="h-4.5 w-4.5 text-brand-500" />
+      <p className="mt-2 text-xl font-bold tabular-nums text-neutral-900">{value}</p>
+      <p className="text-xs text-neutral-500">{label}</p>
+    </div>
+  );
+}
+
+function OverviewTab({
+  name,
+  savedListingsCount,
+  savedProjectsCount,
+  savedSearches,
+  recentlyViewed,
+  unreadAlerts,
+  preferences,
+}: {
+  name: string;
+  savedListingsCount: number;
+  savedProjectsCount: number;
+  savedSearches: SavedSearch[];
+  recentlyViewed: RecentlyViewedEntry[];
+  unreadAlerts: number;
+  preferences: BuyerPreferences;
+}) {
   const { t } = useT();
-  const matches = useMemo(
+  const priceFmt = usePriceFormat();
+
+  const recentListings = useMemo(
+    () =>
+      recentlyViewed
+        .filter((e) => e.kind === "listing")
+        .map((e) => searchableListings.find((l) => l.id === e.id))
+        .filter((l): l is Listing => !!l)
+        .slice(0, 8),
+    [recentlyViewed]
+  );
+
+  const recommended = useMemo(
     () =>
       listings
         .filter((l) => matchesPreferences(l, preferences))
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 3),
     [preferences]
   );
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="font-serif text-xl text-neutral-900">{t("buyer.feedTitle")}</h1>
-        <p className="text-sm text-neutral-500">{t("buyer.feedSubtitle")}</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="font-serif text-xl text-neutral-900">{t("user.greeting", { name })}</h1>
+          <p className="text-sm text-neutral-500">{t("user.overviewSubtitle")}</p>
+        </div>
+        <Link
+          href="/search"
+          className="shrink-0 rounded-control bg-brand-500 px-3.5 py-2 text-xs font-semibold text-white hover:bg-brand-600"
+        >
+          {t("user.newSavedSearch")}
+        </Link>
       </div>
-      {matches.length === 0 ? (
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label={t("user.statSavedProperties")} value={savedListingsCount} icon={Bookmark} />
+        <StatCard label={t("user.statSavedProjects")} value={savedProjectsCount} icon={Bookmark} />
+        <StatCard label={t("user.statSavedSearches")} value={savedSearches.length} icon={SquareStack} />
+        <StatCard label={t("user.statActiveAlerts")} value={unreadAlerts} icon={Bell} />
+      </div>
+
+      {recentListings.length > 0 && (
+        <section>
+          <h2 className="text-sm font-bold text-neutral-900">{t("user.recentlyViewed")}</h2>
+          <div className="mt-3 flex gap-3 overflow-x-auto scroll-thin pb-1">
+            {recentListings.map((l) => (
+              <Link
+                key={l.id}
+                href={`/listing/${l.slug}`}
+                className="w-44 shrink-0 overflow-hidden rounded-card border border-neutral-200 bg-white hover:border-neutral-300"
+              >
+                <div className="relative aspect-[4/3] w-full">
+                  <PlaceholderImage seed={l.id} kind="hero" className="h-full w-full" />
+                </div>
+                <div className="p-2.5">
+                  <p className="truncate text-xs font-semibold text-neutral-800">{l.title}</p>
+                  <p className="text-xs text-neutral-500">{priceFmt(l.price)}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {savedSearches.length > 0 && (
+        <section>
+          <h2 className="text-sm font-bold text-neutral-900">{t("saved.savedSearches")}</h2>
+          <div className="mt-3 space-y-2">
+            {savedSearches.slice(0, 4).map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center justify-between rounded-card border border-neutral-200 bg-white p-3.5"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-neutral-900">{s.name}</p>
+                  <p className="text-xs text-neutral-500">{s.filtersSummary || t("saved.allProperties")}</p>
+                </div>
+                <span className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium capitalize text-neutral-600">
+                  <Bell className="h-3.5 w-3.5" />
+                  {s.cadence}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {recommended.length > 0 && (
+        <section>
+          <h2 className="text-sm font-bold text-neutral-900">{t("user.recommendedForYou")}</h2>
+          <p className="text-xs text-neutral-400">{t("user.recommendedNote")}</p>
+          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {recommended.map((l) => (
+              <ListingCard key={l.id} listing={l} variant="grid" />
+            ))}
+          </div>
+        </section>
+      )}
+
+    </div>
+  );
+}
+
+function SavedTab({ listings, projects }: { listings: Listing[]; projects: Project[] }) {
+  const { t } = useT();
+  const isEmpty = listings.length === 0 && projects.length === 0;
+  return (
+    <div className="space-y-6">
+      <h1 className="font-serif text-xl text-neutral-900">{t("user.tabSaved")}</h1>
+      {isEmpty && (
         <p className="rounded-panel border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-400">
-          {t("buyer.feedEmpty")}
+          {t("saved.nothingSavedYet")}
+        </p>
+      )}
+      {projects.length > 0 && (
+        <section>
+          <h2 className="text-sm font-bold text-neutral-900">{t("saved.projects")}</h2>
+          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {projects.map((p) => (
+              <ProjectCard key={p.id} project={p} />
+            ))}
+          </div>
+        </section>
+      )}
+      {listings.length > 0 && (
+        <section>
+          <h2 className="text-sm font-bold text-neutral-900">{t("saved.listings")}</h2>
+          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {listings.map((l) => (
+              <ListingCard key={l.id} listing={l} variant="grid" />
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function CompareTab({ items }: { items: CompareEntity[] }) {
+  const { t } = useT();
+  const priceFmt = usePriceFormat();
+  const removeCompareAt = useAppStore((s) => s.removeCompareAt);
+
+  return (
+    <div className="space-y-4">
+      <h1 className="font-serif text-xl text-neutral-900">{t("user.tabCompare")}</h1>
+      {items.length === 0 ? (
+        <p className="rounded-panel border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-400">
+          {t("compare.hintNone")}
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {matches.map((l) => (
-            <ListingCard key={l.id} listing={l} variant="grid" />
+          {items.map((item, i) => {
+            const title = item.kind === "listing" ? item.entity.title : `${item.projectName} — ${item.entity.code}`;
+            const price = item.entity.price;
+            const href = item.kind === "listing" ? `/listing/${item.entity.slug}` : `/project/${item.projectSlug}?unit=${item.entity.id}`;
+            return (
+              <div key={i} className="flex items-center gap-3 rounded-panel border border-neutral-200 bg-white p-3.5">
+                <PlaceholderImage seed={`${item.kind}-${i}`} kind="hero" className="h-14 w-20 shrink-0 rounded-card" />
+                <div className="min-w-0 flex-1">
+                  <Link href={href} className="truncate text-sm font-semibold text-neutral-900 hover:text-brand-600">
+                    {title}
+                  </Link>
+                  <p className="text-xs text-neutral-500">{priceFmt(price)}</p>
+                </div>
+                <button
+                  onClick={() => removeCompareAt(i)}
+                  aria-label={t("compare.removeFromCompareShort")}
+                  className="shrink-0 rounded-control p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecentTab({ entries }: { entries: RecentlyViewedEntry[] }) {
+  const { t } = useT();
+  const priceFmt = usePriceFormat();
+  const clearRecentlyViewed = useAppStore((s) => s.clearRecentlyViewed);
+
+  const resolved = useMemo(
+    () =>
+      entries
+        .map((e) => {
+          if (e.kind === "listing") {
+            const listing = searchableListings.find((l) => l.id === e.id);
+            return listing ? { entry: e, title: listing.title, price: listing.price, href: `/listing/${listing.slug}` } : null;
+          }
+          const project = projects.find((p) => p.id === e.id);
+          return project ? { entry: e, title: project.name, price: undefined, href: `/project/${project.slug}` } : null;
+        })
+        .filter((v): v is NonNullable<typeof v> => !!v),
+    [entries]
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="font-serif text-xl text-neutral-900">{t("user.tabRecent")}</h1>
+        {resolved.length > 0 && (
+          <button onClick={clearRecentlyViewed} className="text-xs font-semibold text-brand-600 hover:underline">
+            {t("user.clearRecent")}
+          </button>
+        )}
+      </div>
+      {resolved.length === 0 ? (
+        <p className="rounded-panel border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-400">
+          {t("user.noRecentlyViewed")}
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {resolved.map(({ entry, title, price, href }) => (
+            <Link
+              key={`${entry.kind}-${entry.id}`}
+              href={href}
+              className="flex items-center gap-3 rounded-panel border border-neutral-200 bg-white p-3.5 hover:border-neutral-300"
+            >
+              <PlaceholderImage seed={entry.id} kind="hero" className="h-14 w-20 shrink-0 rounded-card" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-neutral-900">{title}</p>
+                {price != null && <p className="text-xs text-neutral-500">{priceFmt(price)}</p>}
+              </div>
+            </Link>
           ))}
         </div>
       )}

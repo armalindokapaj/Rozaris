@@ -221,10 +221,9 @@ export interface Project3DConfig {
  * lng/lat on the search map (mapbox-gl custom layer), separate from
  * Project3DConfig above (which governs the *indoor* Pure Three.js viewer
  * at /project/[slug]). The uploaded binary lives in Vercel Blob (a real,
- * shared, permanent URL — see src/app/api/blob/upload) — this record is
- * just the small, JSON-persistable metadata + placement, still Zustand-only
- * for now (see the "rozaris-backend-plan" memory for the Prisma table this
- * moves to next). */
+ * shared, permanent URL — see src/app/api/blob/upload); this record is a
+ * real Postgres row (`project_map_models`, see src/app/api/map-models) —
+ * a real, shared placement any visitor's browser reads, not Zustand. */
 export interface ProjectMapModel {
   glbUrl: string;
   fileName: string;
@@ -244,7 +243,44 @@ export interface ProjectMapModel {
    * coordinates (BuildingHider) — so the GLB replaces it cleanly instead of
    * sitting alongside/inside a generic extruded box. */
   hideBaseBuilding: boolean;
+  /** Manually picked anchor point ("Pick Building to Remove" in
+   * MapModelEditor) used instead of the project's own coordinates to
+   * resolve which real building footprint BuildingHider hides — the
+   * project pin doesn't always sit exactly on the footprint that needs to
+   * go. Unset (both null/undefined) falls back to the project's own
+   * coordinates, same as before this existed. */
+  hiddenBuildingLng?: number | null;
+  hiddenBuildingLat?: number | null;
   updatedAt: string;
+}
+
+/** One admin-confirmed link between a `Unit_<number>` node found inside a
+ * ProjectDetailModel's GLB and a real Unit — see ProjectDetailModel below. */
+export interface UnitMeshLink {
+  meshName: string;
+  unitId: string;
+}
+
+/** Admin's "Project 3D Experience" detailed GLB — a second, separate upload
+ * from ProjectMapModel above. That one is deliberately minimalistic (search
+ * page performance, many projects rendered at once); this one is the real,
+ * highly-detailed architectural model for a single project's own viewer
+ * page (/project/[slug]), rendered inside a live Mapbox map exactly like the
+ * search page's model — just zoomed into one building — instead of the
+ * standalone procedural viewer. Authored with individual `Unit_<number>` box
+ * nodes baked in; `unitLinks` is Admin's confirmed mapping of those nodes to
+ * real Units. When absent or `enabled: false`, the project falls back to the
+ * existing procedural Three.js viewer unchanged. */
+export interface ProjectDetailModel {
+  glbUrl: string;
+  fileName: string;
+  fileSize: number;
+  scale: number;
+  rotationDeg: number;
+  altitudeOffset: number;
+  enabled: boolean;
+  updatedAt: string;
+  unitLinks: UnitMeshLink[];
 }
 
 export type SavedEntityType = "listing" | "project" | "neighborhood";

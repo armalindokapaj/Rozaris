@@ -476,7 +476,9 @@ function MapControlTab() {
         />
       )}
 
-      {editing && <MapModelEditor project={editing} onClose={() => setEditing(null)} />}
+      {editing && (
+        <MapModelEditor key={editing.id} project={editing} onClose={() => setEditing(null)} />
+      )}
     </div>
   );
 }

@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
-import { Trash2, Upload, X } from "lucide-react";
+import { Crosshair, Trash2, Upload, X } from "lucide-react";
 import { defaultProjectMapModel } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
+import { cn } from "@/lib/utils";
 import { MapModelMapPreview } from "./MapModelMapPreview";
 import type { Project, ProjectMapModel } from "@/lib/types";
 
@@ -42,6 +43,7 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [picking, setPicking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -114,6 +116,7 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
         return null;
       });
       setDraft(defaultProjectMapModel);
+      setPicking(false);
     } finally {
       setBusy(false);
     }
@@ -135,6 +138,8 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
           altitudeOffset: draft.altitudeOffset,
           enabled: draft.enabled,
           hideBaseBuilding: draft.hideBaseBuilding,
+          hiddenBuildingLng: draft.hiddenBuildingLng ?? null,
+          hiddenBuildingLat: draft.hiddenBuildingLat ?? null,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -165,6 +170,20 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
             rotationDeg={draft.rotationDeg}
             altitudeOffset={draft.altitudeOffset}
             hideBaseBuilding={draft.hideBaseBuilding}
+            hiddenBuildingPoint={
+              draft.hiddenBuildingLng != null && draft.hiddenBuildingLat != null
+                ? { lng: draft.hiddenBuildingLng, lat: draft.hiddenBuildingLat }
+                : null
+            }
+            picking={picking}
+            onPickBuilding={(point) => {
+              update({
+                hiddenBuildingLng: point.lng,
+                hiddenBuildingLat: point.lat,
+                hideBaseBuilding: true,
+              });
+              setPicking(false);
+            }}
           />
         </div>
 
@@ -285,6 +304,40 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
             <p className="-mt-3 text-[11px] text-neutral-400">
               {t("admin.mapModelHideBuildingNote")}
             </p>
+
+            {draft.hideBaseBuilding && (
+              <div className="space-y-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
+                <button
+                  onClick={() => setPicking((v) => !v)}
+                  aria-pressed={picking}
+                  className={cn(
+                    "flex w-full items-center justify-center gap-1.5 rounded-control py-2 text-xs font-semibold",
+                    picking
+                      ? "bg-brand-500 text-white hover:bg-brand-600"
+                      : "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100"
+                  )}
+                >
+                  <Crosshair className="h-3.5 w-3.5" />
+                  {picking ? t("admin.mapModelPickCancel") : t("admin.mapModelPickBuilding")}
+                </button>
+                <p className="text-[11px] text-neutral-400">
+                  {draft.hiddenBuildingLng != null && draft.hiddenBuildingLat != null
+                    ? t("admin.mapModelPickedCustom")
+                    : t("admin.mapModelPickedAuto")}
+                </p>
+                {draft.hiddenBuildingLng != null && draft.hiddenBuildingLat != null && (
+                  <button
+                    onClick={() => {
+                      update({ hiddenBuildingLng: null, hiddenBuildingLat: null });
+                      setPicking(false);
+                    }}
+                    className="text-[11px] font-semibold text-red-500 hover:underline"
+                  >
+                    {t("admin.mapModelPickClear")}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="shrink-0 space-y-2 border-t border-neutral-100 p-4">

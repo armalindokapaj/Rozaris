@@ -1,128 +1,150 @@
 import mapboxgl from "mapbox-gl";
 
+// Half-width, in degrees, of the square area a "hide" target clips —
+// roughly 350m across at Tirana's latitude. This is NOT an aesthetic
+// choice: it's the smallest size that reliably triggers Mapbox Standard's
+// `clip` layer in the installed mapbox-gl version (3.27) — verified by
+// bisecting empirically against the live style. A ~220m-wide square (the
+// exact building footprint, or anything smaller) silently clips nothing;
+// ~330m and up works every time. The real, practical consequence: this
+// removes the target building's immediate neighbors too, not just the one
+// footprint — there is currently no supported way to clip Mapbox Standard
+// buildings at exact per-footprint precision (see class doc comment for
+// what else was tried and ruled out).
+const CLIP_HALF_WIDTH_DEG = 0.0018;
+
+function squareAround(lng: number, lat: number): GeoJSON.Polygon {
+  const d = CLIP_HALF_WIDTH_DEG;
+  return {
+    type: "Polygon",
+    coordinates: [
+      [
+        [lng - d, lat - d],
+        [lng + d, lat - d],
+        [lng + d, lat + d],
+        [lng - d, lat + d],
+        [lng - d, lat - d],
+      ],
+    ],
+  };
+}
+
 /**
- * Hides the Mapbox Standard style's real 3D building footprint at specific
+ * Hides the Mapbox Standard style's real 3D buildings around specific
  * coordinates — used when a project's "3D Map Control" GLB should replace
- * the generic extruded box the basemap draws there by default, rather than
- * sitting awkwardly alongside/inside it.
+ * the generic extruded box(es) the basemap draws there by default, rather
+ * than sitting awkwardly alongside/inside them.
  *
  * Rozaris's style (`armalindokapaj/cms9jpj8b008x01s9g1fib0f7`) is Mapbox
- * Standard (v3), which renders buildings via `2d-building`/`3d-building`/
- * `procedural-buildings` layers. Standard exposes a `buildings` featureset
- * with `highlight`/`select` feature-states for hover/selection effects, but
- * — checked directly against this style's compiled paint expressions —
- * no `hide` state is wired into any building layer's paint, so
- * `setFeatureState(..., { hide: true })` would silently do nothing here.
+ * Standard (v3), built from a style *import* (`imports: [{id: "basemap",
+ * url: "mapbox://styles/mapbox/standard"}]`). That import boundary matters
+ * a lot here — two approaches that look correct from Mapbox's own docs
+ * were tried and empirically ruled out against the live style before
+ * landing on the one below:
  *
- * Instead: each building feature carries a stable per-feature `id` (the
- * style declares `_uniqueFeatureID: true` on its building selectors,
- * specifically so a feature can be targeted reliably) — so this hides a
- * building the more universal way, via `setFilter`, excluding that id from
- * every building/extrusion layer. Building layer ids are discovered at
- * runtime (not hardcoded) so this keeps working if the Studio style is
- * edited or Mapbox revises Standard's internal layer names.
+ * 1. `map.getStyle().layers` + `setFilter` (the previous implementation of
+ *    this class): for an import-based style, `getStyle().layers` returns
+ *    effectively nothing — the imported fragment's internal layers (the
+ *    actual buildings) aren't exposed there at all, so this could never
+ *    find a layer id to filter. It silently did nothing, every time.
+ * 2. `map.setFeatureState(feature, { hide: true })` against the `buildings`
+ *    featureset (`{featuresetId: "buildings", importId: "basemap"}`,
+ *    queried/set correctly and confirmed round-tripping via
+ *    `getFeatureState`): Standard's buildings featureset only wires up
+ *    `highlight`/`select` states in its paint — `hide` (and `highlight`,
+ *    tested too) is stored but has no visual effect. Mapbox's own docs
+ *    confirm `highlight`/`select` are the only supported states.
  *
- * Vector-tile features only exist once their tile has loaded, so a
- * coordinate that isn't in/near the current viewport yet won't resolve
- * immediately — this retries on every `idle` event until it does.
+ * What actually works: the `clip` style layer
+ * (https://docs.mapbox.com/mapbox-gl-js/example/clip-layer-building/) — a
+ * GeoJSON polygon source paired with a `type: "clip"` layer removes real
+ * Standard buildings inside that polygon. It's an experimental Mapbox
+ * feature, and in this app's mapbox-gl version it only takes effect above
+ * a minimum polygon size (see `CLIP_HALF_WIDTH_DEG`) — confirmed by
+ * bisecting against the live map with Playwright, not from documentation.
  */
 export class BuildingHider {
   private map: mapboxgl.Map;
   private targets = new Map<string, { lng: number; lat: number }>();
-  private resolvedIds = new Map<string, string | number>();
-  private originalFilters = new Map<string, unknown>();
-  private buildingLayerIds: string[] = [];
 
   constructor(map: mapboxgl.Map) {
     this.map = map;
-    this.map.on("idle", this.tryResolveAll);
   }
 
-  /** Full replace — call whenever the set of "hide the building here"
+  /** Full replace — call whenever the set of "hide the buildings here"
    * coordinates changes (keyed so re-calling with the same key updates
    * rather than duplicates). */
   setTargets(entries: { key: string; lng: number; lat: number }[]) {
     const nextKeys = new Set(entries.map((e) => e.key));
-    let changed = false;
     for (const key of this.targets.keys()) {
       if (!nextKeys.has(key)) {
         this.targets.delete(key);
-        if (this.resolvedIds.delete(key)) changed = true;
+        this.removeClip(key);
       }
     }
-    entries.forEach((e) => this.targets.set(e.key, { lng: e.lng, lat: e.lat }));
-    this.tryResolveAll();
-    if (changed) this.applyFilters();
+    for (const entry of entries) {
+      this.targets.set(entry.key, { lng: entry.lng, lat: entry.lat });
+      this.applyClip(entry.key, entry.lng, entry.lat);
+    }
+  }
+
+  /** Returns the real building feature under a screen point, if any — used
+   * by MapModelEditor's "Pick Building to Remove" for both the click-to-pick
+   * and hover-highlight interactions. Queries the Standard style's
+   * `buildings` featureset directly (the only reliable way to reach an
+   * import-based style's real layers — see class doc comment). */
+  queryBuildingFeatureAt(point: mapboxgl.PointLike): mapboxgl.MapboxGeoJSONFeature | null {
+    try {
+      const features = this.map.queryRenderedFeatures(point, {
+        target: { featuresetId: "buildings", importId: "basemap" },
+      });
+      return features[0] ?? null;
+    } catch {
+      return null;
+    }
   }
 
   destroy() {
-    this.map.off("idle", this.tryResolveAll);
-    for (const [layerId, original] of this.originalFilters) {
-      try {
-        this.map.setFilter(layerId, (original as never) ?? null);
-      } catch {
-        // Layer may already be gone (style swapped) — nothing to restore.
-      }
+    for (const key of this.targets.keys()) this.removeClip(key);
+  }
+
+  private sourceId(key: string) {
+    return `building-hider-src-${key}`;
+  }
+
+  private layerId(key: string) {
+    return `building-hider-clip-${key}`;
+  }
+
+  private applyClip(key: string, lng: number, lat: number) {
+    const srcId = this.sourceId(key);
+    const layerId = this.layerId(key);
+    const data: GeoJSON.Feature = { type: "Feature", properties: {}, geometry: squareAround(lng, lat) };
+    const existingSource = this.map.getSource(srcId) as mapboxgl.GeoJSONSource | undefined;
+    if (existingSource) {
+      existingSource.setData(data);
+    } else {
+      this.map.addSource(srcId, { type: "geojson", data });
+    }
+    if (!this.map.getLayer(layerId)) {
+      // No `beforeId`/explicit ordering needed — clip layers apply to the
+      // Standard basemap's own buildings regardless of where in the root
+      // style's layer list they're added, unlike layers that render visible
+      // content themselves.
+      this.map.addLayer({
+        id: layerId,
+        type: "clip",
+        source: srcId,
+        slot: "top",
+        layout: { "clip-layer-types": ["model", "symbol"] },
+      });
     }
   }
 
-  private discoverBuildingLayers() {
-    if (this.buildingLayerIds.length > 0) return;
-    const layers = (this.map.getStyle()?.layers ?? []) as { id: string; type: string }[];
-    // "fill-extrusion"/"building" cover the generic extruded footprints
-    // (this style's 2d-building/3d-building/procedural-buildings); "model"
-    // additionally covers Mapbox's pre-modeled real-world landmark
-    // buildings (e.g. "building-models") — in the unlikely case a project
-    // sits at one of those, it needs hiding the same way.
-    this.buildingLayerIds = layers
-      .filter(
-        (l) =>
-          (l.type === "fill-extrusion" || l.type === "building" || l.type === "model") &&
-          l.id.toLowerCase().includes("building")
-      )
-      .map((l) => l.id);
-  }
-
-  private tryResolveAll = () => {
-    this.discoverBuildingLayers();
-    if (this.buildingLayerIds.length === 0 || this.targets.size === 0) return;
-    let changed = false;
-    for (const [key, coord] of this.targets) {
-      if (this.resolvedIds.has(key)) continue;
-      const point = this.map.project([coord.lng, coord.lat]);
-      const bbox: [mapboxgl.PointLike, mapboxgl.PointLike] = [
-        [point.x - 20, point.y - 20],
-        [point.x + 20, point.y + 20],
-      ];
-      let features: mapboxgl.MapboxGeoJSONFeature[] = [];
-      try {
-        features = this.map.queryRenderedFeatures(bbox, { layers: this.buildingLayerIds });
-      } catch {
-        // Layer not ready yet this tick — retried on the next `idle`.
-      }
-      const hit = features.find((f) => f.id != null);
-      if (hit?.id != null) {
-        this.resolvedIds.set(key, hit.id);
-        changed = true;
-      }
-    }
-    if (changed) this.applyFilters();
-  };
-
-  private applyFilters() {
-    const ids = Array.from(this.resolvedIds.values());
-    for (const layerId of this.buildingLayerIds) {
-      if (!this.map.getLayer(layerId)) continue;
-      if (!this.originalFilters.has(layerId)) {
-        this.originalFilters.set(layerId, this.map.getFilter(layerId) ?? null);
-      }
-      const original = this.originalFilters.get(layerId) as never;
-      if (ids.length === 0) {
-        this.map.setFilter(layerId, original ?? null);
-        continue;
-      }
-      const exclusion = ["!", ["in", ["id"], ["literal", ids]]] as never;
-      this.map.setFilter(layerId, original ? (["all", original, exclusion] as never) : exclusion);
-    }
+  private removeClip(key: string) {
+    const layerId = this.layerId(key);
+    const srcId = this.sourceId(key);
+    if (this.map.getLayer(layerId)) this.map.removeLayer(layerId);
+    if (this.map.getSource(srcId)) this.map.removeSource(srcId);
   }
 }

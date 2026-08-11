@@ -19,6 +19,8 @@ import type { GeoPoint } from "@/lib/types";
  * terrain, is a WYSIWYG match for exactly what a visitor sees on the live
  * search map, not an abstract stand-in for it.
  */
+const PICK_HIGHLIGHT_SOURCE = "pick-building-highlight";
+
 export function MapModelMapPreview({
   coords,
   glbUrl,
@@ -26,6 +28,9 @@ export function MapModelMapPreview({
   rotationDeg,
   altitudeOffset,
   hideBaseBuilding,
+  hiddenBuildingPoint,
+  picking = false,
+  onPickBuilding,
   className,
 }: {
   coords: GeoPoint;
@@ -34,6 +39,14 @@ export function MapModelMapPreview({
   rotationDeg: number;
   altitudeOffset: number;
   hideBaseBuilding: boolean;
+  /** Manually picked anchor point (from "Pick Building to Remove"), or null
+   * to fall back to `coords`. */
+  hiddenBuildingPoint?: GeoPoint | null;
+  /** True while Admin is actively picking — swaps the cursor to a
+   * crosshair and turns map clicks into a building selection instead of
+   * panning through to the underlying map controls. */
+  picking?: boolean;
+  onPickBuilding?: (point: GeoPoint) => void;
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -86,6 +99,28 @@ export function MapModelMapPreview({
       map.addLayer(modelLayer);
       modelLayerRef.current = modelLayer;
       buildingHiderRef.current = new BuildingHider(map);
+
+      // "Pick Building to Remove" highlight — a real footprint outline (not
+      // a generic marker) so Admin sees exactly which building is hovered/
+      // selected, drawn from the same feature geometry BuildingHider queries
+      // to resolve a hide target.
+      map.addSource(PICK_HIGHLIGHT_SOURCE, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: `${PICK_HIGHLIGHT_SOURCE}-fill`,
+        type: "fill",
+        source: PICK_HIGHLIGHT_SOURCE,
+        paint: { "fill-color": "#6b55f5", "fill-opacity": 0.35 },
+      });
+      map.addLayer({
+        id: `${PICK_HIGHLIGHT_SOURCE}-line`,
+        type: "line",
+        source: PICK_HIGHLIGHT_SOURCE,
+        paint: { "line-color": "#6b55f5", "line-width": 3 },
+      });
+
       setReady(true);
     });
 
@@ -126,13 +161,67 @@ export function MapModelMapPreview({
   }, [ready, glbUrl, coords.lat, coords.lng, scale, rotationDeg, altitudeOffset]);
 
   const loadError = glbUrl != null && failedGlbUrl === glbUrl;
+  const anchor = hiddenBuildingPoint ?? coords;
 
   useEffect(() => {
     if (!ready) return;
     buildingHiderRef.current?.setTargets(
-      glbUrl && hideBaseBuilding ? [{ key: "preview", lng: coords.lng, lat: coords.lat }] : []
+      glbUrl && hideBaseBuilding ? [{ key: "preview", lng: anchor.lng, lat: anchor.lat }] : []
     );
-  }, [ready, glbUrl, hideBaseBuilding, coords.lat, coords.lng]);
+  }, [ready, glbUrl, hideBaseBuilding, anchor.lat, anchor.lng]);
+
+  function setHighlight(map: mapboxgl.Map, feature: mapboxgl.MapboxGeoJSONFeature | null) {
+    const source = map.getSource(PICK_HIGHLIGHT_SOURCE) as mapboxgl.GeoJSONSource | undefined;
+    source?.setData({
+      type: "FeatureCollection",
+      features: feature ? [{ type: "Feature", geometry: feature.geometry, properties: {} }] : [],
+    });
+  }
+
+  // --- "Pick Building to Remove": crosshair cursor + hover highlight + click-to-select ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    const canvas = map.getCanvas();
+
+    if (!picking) {
+      canvas.style.cursor = "";
+      return;
+    }
+    canvas.style.cursor = "crosshair";
+
+    function onMouseMove(e: mapboxgl.MapMouseEvent) {
+      if (!map) return;
+      const feature = buildingHiderRef.current?.queryBuildingFeatureAt(e.point) ?? null;
+      setHighlight(map, feature);
+    }
+    function onClick(e: mapboxgl.MapMouseEvent) {
+      if (!map) return;
+      const feature = buildingHiderRef.current?.queryBuildingFeatureAt(e.point);
+      if (feature) onPickBuilding?.({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+    }
+    map.on("mousemove", onMouseMove);
+    map.on("click", onClick);
+    return () => {
+      map.off("mousemove", onMouseMove);
+      map.off("click", onClick);
+      canvas.style.cursor = "";
+    };
+  }, [ready, picking, onPickBuilding]);
+
+  // --- Persistent highlight on the currently-picked building, whenever not actively picking ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || picking) return;
+    if (!hideBaseBuilding || !hiddenBuildingPoint) {
+      setHighlight(map, null);
+      return;
+    }
+    const point = map.project([hiddenBuildingPoint.lng, hiddenBuildingPoint.lat]);
+    const feature = buildingHiderRef.current?.queryBuildingFeatureAt(point) ?? null;
+    setHighlight(map, feature);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- depend on primitives, not the possibly-new-identity point object
+  }, [ready, picking, hideBaseBuilding, hiddenBuildingPoint?.lat, hiddenBuildingPoint?.lng]);
 
   if (failReason) {
     return (
@@ -145,6 +234,13 @@ export function MapModelMapPreview({
   return (
     <div className={cn("relative h-full w-full overflow-hidden", className)}>
       <div ref={containerRef} className="h-full w-full" />
+      {picking && (
+        <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+          <span className="glass-panel-dark rounded-pill px-3.5 py-2 text-xs font-medium text-white">
+            {t("admin.mapModelPickHint")}
+          </span>
+        </div>
+      )}
       {!glbUrl && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
           <span className="glass-panel-dark rounded-pill px-3.5 py-2 text-xs font-medium text-white">

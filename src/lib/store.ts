@@ -16,6 +16,7 @@ import type {
   MobileSheet,
   Project,
   Project3DConfig,
+  ProjectDetailModel,
   ProjectMapModel,
   PublisherType,
   RecentlyViewedEntry,
@@ -71,7 +72,25 @@ export const defaultProjectMapModel: ProjectMapModel = {
   altitudeOffset: 0,
   enabled: false,
   hideBaseBuilding: false,
+  hiddenBuildingLng: null,
+  hiddenBuildingLat: null,
   updatedAt: "",
+};
+
+/** Applied the moment Admin uploads the Project 3D Experience's detailed
+ * GLB (Project3DConfigEditor's "Detailed Model" section), before touching
+ * any placement slider or linking a single unit box — same "starts
+ * disabled" reasoning as defaultProjectMapModel above. */
+export const defaultProjectDetailModel: ProjectDetailModel = {
+  glbUrl: "",
+  fileName: "",
+  fileSize: 0,
+  scale: 1,
+  rotationDeg: 0,
+  altitudeOffset: 0,
+  enabled: false,
+  updatedAt: "",
+  unitLinks: [],
 };
 
 export const defaultFilters: FilterState = {

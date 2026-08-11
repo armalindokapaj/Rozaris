@@ -69,8 +69,8 @@ export function ArchVizClient({ project }: { project: Project }) {
   return (
     <div id="main-content" ref={mainRef} className="relative h-dvh w-full overflow-hidden bg-neutral-900">
       <header className="absolute inset-x-0 top-0 z-30 flex items-stretch justify-between gap-2 p-3 sm:p-4">
-        <div className="flex shrink-0 items-stretch gap-2">
-          <div className="glass-panel-dark flex items-center gap-3 rounded-panel px-3.5 py-2.5 sm:px-4">
+        <div className="flex min-w-0 items-stretch gap-2">
+          <div className="glass-panel-dark flex min-w-0 items-center gap-3 rounded-panel px-3.5 py-2.5 sm:px-4">
             <Link href="/search" className="hidden shrink-0 font-serif text-sm tracking-[0.14em] text-white sm:block">
               ROZARIS
             </Link>
@@ -109,7 +109,7 @@ export function ArchVizClient({ project }: { project: Project }) {
             </button>
           )}
           {!unitPanelOpen && !viewerPanelOpen && project.status === "under_construction" && (
-            <div className="hidden items-stretch md:flex">
+            <div className="flex items-stretch">
               <ConstructionTimelineStrip
                 stages={construction.stages}
                 overallPercent={construction.progressPercent}
@@ -119,18 +119,6 @@ export function ArchVizClient({ project }: { project: Project }) {
           )}
         </div>
       </header>
-
-      {/* Mobile: the compact strip doesn't fit the header row, so it floats
-          just below it instead of being hidden outright. */}
-      {!unitPanelOpen && !viewerPanelOpen && project.status === "under_construction" && (
-        <div className="absolute inset-x-3 top-16 z-20 flex justify-center md:hidden">
-          <ConstructionTimelineStrip
-            stages={construction.stages}
-            overallPercent={construction.progressPercent}
-            compact
-          />
-        </div>
-      )}
 
       <ThreeProjectViewer
         ref={viewerRef}

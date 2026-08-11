@@ -38,6 +38,8 @@ interface MapModelRow {
   altitudeOffset: number;
   enabled: boolean;
   hideBaseBuilding: boolean;
+  hiddenBuildingLng: number | null;
+  hiddenBuildingLat: number | null;
 }
 
 /** "3D Map Control" placement, keyed by project id — a real, shared Postgres
@@ -244,7 +246,12 @@ export function MapView({
     return visibleProjects.flatMap((p) => {
       const model = projectMapModels[p.id];
       if (!model?.enabled || !model.glbUrl || !model.hideBaseBuilding) return [];
-      return [{ key: p.id, lng: p.coords.lng, lat: p.coords.lat }];
+      // A manually picked building (Admin's "Pick Building to Remove")
+      // takes priority over the project's own coordinates — the project
+      // pin doesn't always sit exactly on the footprint that needs hiding.
+      const lng = model.hiddenBuildingLng ?? p.coords.lng;
+      const lat = model.hiddenBuildingLat ?? p.coords.lat;
+      return [{ key: p.id, lng, lat }];
     });
   }, [visibleProjects, projectMapModels]);
 

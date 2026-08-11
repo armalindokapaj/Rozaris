@@ -640,6 +640,13 @@ export function getPublisherBySlug(slug: string): Publisher | undefined {
   return publishers.find((p) => p.slug === slug);
 }
 
+/** Looks up a publisher by id — used to resolve the signed-in identity's
+ * own record (`auth.publisherId`) on the Private/Business Publisher
+ * dashboards, as opposed to `getPublisherBySlug` for public profile pages. */
+export function getPublisherById(id: string): Publisher | undefined {
+  return publishers.find((p) => p.id === id);
+}
+
 export function relatedListings(listing: Listing, count = 4): Listing[] {
   return searchableListings
     .filter(
@@ -676,6 +683,10 @@ export function listingsByPublisher(publisherId: string): Listing[] {
 // from or delivered to a real backend)
 
 export const DEMO_PUBLISHER: Publisher = publishers[0];
+/** Fallback identity for the Private Publisher Dashboard when
+ * `auth.publisherId` isn't set (e.g. the dashboard's own inline demo
+ * sign-in, as opposed to picking a persona in the real SignInModal). */
+export const DEMO_PRIVATE_PUBLISHER: Publisher = getPublisherById("p-andi") ?? publishers[0];
 export const DEMO_BUYER_ID = "buyer-demo-1";
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();

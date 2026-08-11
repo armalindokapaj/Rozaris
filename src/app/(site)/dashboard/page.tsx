@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Bell,
@@ -24,7 +24,8 @@ import {
   Crown,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { listingsByPublisher, projectsByDeveloper, DEMO_PUBLISHER } from "@/lib/mockData";
+import { listingsByPublisher, projectsByDeveloper, getPublisherById, DEMO_PUBLISHER } from "@/lib/mockData";
+import { publisherNotifications } from "@/lib/mockActivity";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useProjectConstruction } from "@/hooks/useProjectConstruction";
@@ -32,7 +33,10 @@ import { useT } from "@/lib/i18n/useT";
 import { MessagesPanel } from "@/components/messages/MessagesPanel";
 import { ConstructionTimelineEditor } from "@/components/dashboard/ConstructionTimelineEditor";
 import { NewListingForm } from "@/components/dashboard/NewListingForm";
+import { PrivatePublisherDashboard } from "@/components/dashboard/PrivatePublisherDashboard";
+import { NotificationsList } from "@/components/dashboard/NotificationsList";
 import { cn } from "@/lib/utils";
+import type { Publisher } from "@/lib/types";
 
 const TABS = [
   { id: "overview", labelKey: "dashboard.tabOverview", icon: LayoutDashboard },
@@ -48,22 +52,25 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
+/** Routes a signed-in publisher to the right dashboard shape for their
+ * account type (PRD_ROZARIS_User_Types §3/§4) — Private Publisher gets an
+ * intentionally simpler, single-listing workspace; Agency/Developer get the
+ * fuller multi-project/multi-listing operational dashboard below. Never one
+ * generic dashboard with sidebar items shown/hidden by role — the PRD's
+ * "Final Platform Rule" — so this is a real branch to a different component
+ * tree, not a conditional inside a shared one. */
 export default function DashboardPage() {
   const auth = useAppStore((s) => s.auth);
-  const signIn = useAppStore((s) => s.signIn);
-  const [tab, setTab] = useState<TabId>("overview");
+  const openSignIn = useAppStore((s) => s.openSignIn);
   const { t } = useT();
 
-  const myListings = listingsByPublisher(DEMO_PUBLISHER.id);
-  const myProjects = projectsByDeveloper(DEMO_PUBLISHER.id);
-
-  if (!auth.signedIn) {
+  if (!auth.signedIn || auth.role !== "publisher") {
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-24 text-center">
         <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.signInTitle")}</h1>
         <p className="text-sm text-neutral-500">{t("dashboard.signInBody")}</p>
         <button
-          onClick={() => signIn("John Doe", "publisher")}
+          onClick={openSignIn}
           className="rounded-control bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white"
         >
           {t("dashboard.signInDemo")}
@@ -72,20 +79,34 @@ export default function DashboardPage() {
     );
   }
 
+  const publisher: Publisher =
+    (auth.publisherId ? getPublisherById(auth.publisherId) : undefined) ?? DEMO_PUBLISHER;
+
+  if (auth.orgType === "private_owner") {
+    return <PrivatePublisherDashboard publisher={publisher} />;
+  }
+  return <BusinessPublisherDashboard publisher={publisher} />;
+}
+
+function BusinessPublisherDashboard({ publisher }: { publisher: Publisher }) {
+  const [tab, setTab] = useState<TabId>("overview");
+  const { t } = useT();
+
+  const myListings = listingsByPublisher(publisher.id);
+  const myProjects = projectsByDeveloper(publisher.id);
+
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row lg:px-8">
       <aside className="shrink-0 lg:w-56">
         <div className="mb-4 flex items-center gap-3 rounded-panel border border-neutral-200 bg-white p-3.5">
           <PlaceholderImage
-            seed={DEMO_PUBLISHER.id}
+            seed={publisher.id}
             kind="avatar"
             className="h-10 w-10 rounded-xl"
             iconClassName="h-4 w-4"
           />
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-neutral-900">
-              {DEMO_PUBLISHER.name}
-            </p>
+            <p className="truncate text-sm font-semibold text-neutral-900">{publisher.name}</p>
             <p className="text-xs text-neutral-500">{t("dashboard.developerVerified")}</p>
           </div>
         </div>
@@ -113,11 +134,11 @@ export default function DashboardPage() {
         {tab === "listings" && <ListingsTab listings={myListings} />}
         {tab === "projects" && <ProjectsTab projects={myProjects} />}
         {tab === "analytics" && <AnalyticsTab listings={myListings} projects={myProjects} />}
-        {tab === "messages" && <MessagesTab />}
+        {tab === "messages" && <MessagesTab publisher={publisher} />}
         {tab === "media" && <MediaTab />}
         {tab === "billing" && <BillingTab />}
         {tab === "notifications" && <NotificationsTab />}
-        {tab === "profile" && <ProfileTab />}
+        {tab === "profile" && <ProfileTab publisher={publisher} />}
       </div>
     </div>
   );
@@ -516,15 +537,15 @@ function AnalyticsTab({
   );
 }
 
-function MessagesTab() {
+function MessagesTab({ publisher }: { publisher: Publisher }) {
   const { t } = useT();
   const conversations = useAppStore((s) => s.conversations);
-  const myConversations = conversations.filter((c) => c.publisherId === DEMO_PUBLISHER.id);
+  const myConversations = conversations.filter((c) => c.publisherId === publisher.id);
 
   return (
     <div className="space-y-4">
       <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.tabMessages")}</h1>
-      <MessagesPanel conversations={myConversations} viewerId={DEMO_PUBLISHER.id} />
+      <MessagesPanel conversations={myConversations} viewerId={publisher.id} />
     </div>
   );
 }
@@ -570,31 +591,36 @@ function BillingTab() {
 
 function NotificationsTab() {
   const { t } = useT();
-  const notifications = [t("dashboard.notif1"), t("dashboard.notif2"), t("dashboard.notif3")];
+  const orgType = useAppStore((s) => s.auth.orgType);
+  const items = useMemo(() => publisherNotifications(orgType), [orgType]);
   return (
     <div className="space-y-4">
       <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.notificationsTitle")}</h1>
-      <div className="divide-y divide-neutral-100 rounded-panel border border-neutral-200 bg-white">
-        {notifications.map((msg) => (
-          <p key={msg} className="px-4 py-3 text-sm text-neutral-700">
-            {msg}
-          </p>
-        ))}
-      </div>
+      <NotificationsList items={items} />
     </div>
   );
 }
 
-function ProfileTab() {
+const PUBLISHER_TYPE_LABEL_KEY: Record<Publisher["type"], string> = {
+  private_owner: "publisher.typePrivateOwner",
+  agency: "publisher.typeAgency",
+  developer: "publisher.typeDeveloper",
+};
+
+function ProfileTab({ publisher }: { publisher: Publisher }) {
   const { t } = useT();
   return (
     <div id="profile" className="space-y-4">
       <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.profileTitle")}</h1>
       <div className="grid grid-cols-1 gap-4 rounded-panel border border-neutral-200 bg-white p-5 sm:grid-cols-2">
-        <Field label={t("dashboard.displayName")} defaultValue={DEMO_PUBLISHER.name} />
-        <Field label={t("dashboard.phone")} defaultValue={DEMO_PUBLISHER.phone} />
-        <Field label={t("dashboard.whatsapp")} defaultValue={DEMO_PUBLISHER.whatsapp} />
-        <Field label={t("dashboard.publisherType")} defaultValue={t("publisher.typeDeveloper")} disabled />
+        <Field label={t("dashboard.displayName")} defaultValue={publisher.name} />
+        <Field label={t("dashboard.phone")} defaultValue={publisher.phone} />
+        <Field label={t("dashboard.whatsapp")} defaultValue={publisher.whatsapp} />
+        <Field
+          label={t("dashboard.publisherType")}
+          defaultValue={t(PUBLISHER_TYPE_LABEL_KEY[publisher.type])}
+          disabled
+        />
       </div>
       <button className="rounded-control bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white">
         {t("dashboard.saveChanges")}

@@ -238,6 +238,7 @@ model Project {
   timelineRequests    ConstructionTimelineRequest[]
   threeDConfig        Project3DConfig?
   mapModel            ProjectMapModel?
+  detailModel         ProjectDetailModel?
   leads               LeadItem[]
 
   @@map("projects")
@@ -464,11 +465,62 @@ model ProjectMapModel {
   /// coordinates (see src/components/map/BuildingHider.ts) so the GLB
   /// replaces it cleanly instead of sitting alongside/inside it.
   hideBaseBuilding Boolean @default(false)
+  /// Manually picked anchor point ("Pick Building to Remove" in
+  /// MapModelEditor) used to resolve which real building footprint to hide,
+  /// instead of always assuming it's the one nearest the project's own
+  /// coordinates — the project pin doesn't always sit exactly on the
+  /// footprint. Null falls back to the project's coordinates (legacy /
+  /// not yet manually picked).
+  hiddenBuildingLng Float?
+  hiddenBuildingLat Float?
   updatedAt       DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("project_map_models")
+}
+
+/// Admin's "Project 3D Experience" detailed GLB — a second, separate upload
+/// from ProjectMapModel above. That one is deliberately minimalistic (search
+/// page performance, many projects rendered at once); this one is the real,
+/// highly-detailed architectural model for a single project's own viewer
+/// page (/project/[slug]), authored with individual `Unit_<number>` box
+/// nodes baked in so Admin can link each one to a real Unit and have it
+/// render as a colored, clickable availability box. Same real-Postgres-row
+/// reasoning as ProjectMapModel: the URL and links must be shared/durable,
+/// not one browser's local state.
+model ProjectDetailModel {
+  projectId      String   @id
+  glbUrl         String
+  fileName       String
+  fileSize       Int
+  scale          Float    @default(1)
+  rotationDeg    Float    @default(0)
+  altitudeOffset Float    @default(0)
+  enabled        Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  unitLinks UnitMeshLink[]
+
+  @@map("project_detail_models")
+}
+
+/// One row per admin-confirmed link between a named `Unit_<number>` node
+/// found inside a ProjectDetailModel's GLB and a real Unit. Node names are
+/// whatever the 3D artist authored them as in the source file — not
+/// guaranteed to match Unit.code — so this mapping is explicit, not inferred.
+model UnitMeshLink {
+  id        String   @id @default(cuid())
+  projectId String
+  meshName  String
+  unitId    String
+  updatedAt DateTime @updatedAt
+
+  detailModel ProjectDetailModel @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+
+  @@unique([projectId, meshName])
+  @@map("unit_mesh_links")
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import mapboxgl from "mapbox-gl";
+import { DRACO_DECODER_PATH } from "@/lib/gltfDecoder";
 
 export interface MapModelEntry {
   projectId: string;
@@ -43,6 +45,7 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
   private scene = new THREE.Scene();
   private renderer: THREE.WebGLRenderer | null = null;
   private loader = new GLTFLoader();
+  private dracoLoader = new DRACOLoader();
   private loaded = new Map<string, LoadedModel>();
   private pendingUrls = new Map<string, string>();
   private map: mapboxgl.Map | null = null;
@@ -55,6 +58,15 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
   }) {
     this.onPick = opts.onPick;
     this.onLoadError = opts.onLoadError;
+    // Admin-uploaded GLBs commonly come out of Blender/other export
+    // pipelines with Draco mesh compression on by default — without a
+    // decoder wired in, GLTFLoader throws on those (hard load failure, not
+    // a cosmetic issue), so this is set up unconditionally rather than only
+    // once a specific file is known to need it. Google's hosted decoder is
+    // the path used by Three.js's own examples/docs — no local decoder
+    // files to vendor into `public/`.
+    this.dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
+    this.loader.setDRACOLoader(this.dracoLoader);
     this.scene.add(new THREE.AmbientLight(0xffffff, 1.5));
     const sun = new THREE.DirectionalLight(0xffffff, 1.2);
     sun.position.set(0, -70, 100).normalize();
@@ -77,6 +89,7 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
     this.loaded.forEach((m) => disposeObject3D(m.root));
     this.loaded.clear();
     this.pendingUrls.clear();
+    this.dracoLoader.dispose();
     this.renderer = null;
     this.map = null;
   }
@@ -229,7 +242,15 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
     this.camera.projectionMatrix = new THREE.Matrix4().fromArray(matrix as number[]);
     this.renderer.resetState();
     this.renderer.render(this.scene, this.camera);
-    this.map?.triggerRepaint();
+    // NOT map.triggerRepaint() here — that was the "laggish" bug: calling it
+    // from inside render() re-schedules another render on every single
+    // frame forever (render → triggerRepaint → next render → ...), pinning
+    // the map to a continuous max-rate repaint loop even while the camera
+    // is completely idle and nothing changed. Mapbox already calls render()
+    // whenever a repaint is actually needed (camera move, style change); a
+    // forced repaint is only needed once, right after a model finishes
+    // loading asynchronously while the camera hasn't moved — that one-off
+    // call already happens in upsertEntry() below.
   }
 }
 
