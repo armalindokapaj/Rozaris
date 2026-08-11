@@ -32,7 +32,6 @@ const TABS = [
   { id: "queue", labelKey: "admin.tabQueue", icon: ListChecks },
   { id: "timeline", labelKey: "admin.tabTimeline", icon: HardHat },
   { id: "viewer3d", labelKey: "admin.tab3DExperience", icon: Boxes },
-  { id: "mapmodel3d", labelKey: "admin.tab3DMapControl", icon: MapIcon },
   { id: "publishers", labelKey: "admin.tabPublishers", icon: Users },
   { id: "content", labelKey: "admin.tabContent", icon: Box },
   { id: "reports", labelKey: "admin.tabReports", icon: BarChart3 },
@@ -183,8 +182,6 @@ export default function AdminPage() {
 
         {tab === "viewer3d" && <Viewer3DTab />}
 
-        {tab === "mapmodel3d" && <MapControlTab />}
-
         {tab === "publishers" && <PublishersTab />}
 
         {tab === "content" && <ContentTab />}
@@ -296,13 +293,41 @@ function TimelineTab() {
   );
 }
 
+/**
+ * Admin's "3D Experience" page — merges what used to be two separate tabs
+ * (3D Experience / 3D Map Control) into one project-card grid, since both
+ * are just the two 3D authoring surfaces for the same project and Admin
+ * was having to hunt through two identical project lists to reach them.
+ * Each card shows both statuses and offers both as equally-weighted major
+ * actions — neither is a secondary/buried option.
+ */
 function Viewer3DTab() {
   const { t } = useT();
   const configs = useAppStore((s) => s.project3DConfigs);
   const customProjects = useAppStore((s) => s.customProjects);
   const [editingScene, setEditingScene] = useState<Project | null>(null);
+  const [editingMapModel, setEditingMapModel] = useState<Project | null>(null);
   const [editingUnits, setEditingUnits] = useState<Project | null>(null);
   const [creating, setCreating] = useState(false);
+  // A real Postgres row per project (src/app/api/map-models), not Zustand —
+  // see MapModelEditor.tsx/MapView.tsx's matching hooks. A project created
+  // right here (via "New project" below) gets a matching Postgres row too
+  // (NewProjectModal.tsx posts to /api/projects immediately after), so its
+  // model can attach right away, same as a seeded mockData.ts project.
+  const [mapModels, setMapModels] = useState<Record<string, { fileName: string; enabled: boolean }>>({});
+
+  useEffect(() => {
+    fetch("/api/map-models")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: { projectId: string; fileName: string; enabled: boolean }[]) => {
+        const byProjectId: Record<string, { fileName: string; enabled: boolean }> = {};
+        rows.forEach((r) => {
+          byProjectId[r.projectId] = r;
+        });
+        setMapModels(byProjectId);
+      })
+      .catch(() => {});
+  }, []);
 
   const allProjects = [...projects, ...customProjects];
 
@@ -322,41 +347,84 @@ function Viewer3DTab() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {allProjects.map((p) => {
-          const isCustomized = !!configs[p.id];
+          const isExperienceCustomized = !!configs[p.id];
+          const model = mapModels[p.id];
+          const mapStatus = !model?.fileName
+            ? t("admin.mapModelStatusNone")
+            : model.enabled
+            ? t("admin.mapModelStatusLive")
+            : t("admin.mapModelStatusDraft");
           // Units can only be added to Admin-created projects here — seeded
           // mock projects (lib/mockData) aren't store state, so there's
           // nowhere for an added unit to persist to for them.
           const isCustom = customProjects.some((cp) => cp.id === p.id);
+
           return (
             <div
               key={p.id}
-              className="flex items-center justify-between gap-2 rounded-panel border border-neutral-200 bg-white p-4"
+              className="flex flex-col overflow-hidden rounded-card border border-neutral-200 bg-white"
             >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-neutral-900">{p.name}</p>
-                <p className="text-xs text-neutral-500">
-                  {isCustomized
-                    ? t("admin.viewer3DCustomized")
-                    : t("admin.viewer3DUsingDefaults")}
-                </p>
+              <div className="relative aspect-[16/9] w-full shrink-0">
+                <PlaceholderImage seed={p.slug} kind="hero" className="h-full w-full" />
               </div>
-              <div className="flex shrink-0 gap-1.5">
-                {isCustom && (
-                  <button
-                    onClick={() => setEditingUnits(p)}
-                    className="rounded-control border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+
+              <div className="flex flex-1 flex-col gap-3 p-4">
+                <div className="min-w-0">
+                  <p className="truncate font-serif text-base text-neutral-900">{p.name}</p>
+                  <p className="truncate text-xs text-neutral-500">
+                    {p.developer.name} · {p.city}
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-1 text-xs">
+                  <span
+                    className={cn(
+                      "flex items-center gap-1.5",
+                      isExperienceCustomized ? "text-green-600" : "text-neutral-500"
+                    )}
                   >
-                    {t("admin.manageUnits")}
+                    <Boxes className="h-3.5 w-3.5 shrink-0" />
+                    {isExperienceCustomized
+                      ? t("admin.viewer3DCustomized")
+                      : t("admin.viewer3DUsingDefaults")}
+                  </span>
+                  <span
+                    className={cn(
+                      "flex items-center gap-1.5",
+                      model?.enabled ? "text-green-600" : "text-neutral-500"
+                    )}
+                  >
+                    <MapIcon className="h-3.5 w-3.5 shrink-0" />
+                    {mapStatus}
+                  </span>
+                </div>
+
+                <div className="mt-auto flex flex-col gap-1.5 pt-1">
+                  <button
+                    onClick={() => setEditingScene(p)}
+                    className="flex items-center justify-center gap-1.5 rounded-control bg-neutral-900 py-2.5 text-xs font-semibold text-white hover:bg-neutral-800"
+                  >
+                    <Boxes className="h-3.5 w-3.5" />
+                    {t("admin.configure3DExperience")}
                   </button>
-                )}
-                <button
-                  onClick={() => setEditingScene(p)}
-                  className="rounded-control bg-neutral-900 px-3 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
-                >
-                  {t("admin.viewer3DConfigure")}
-                </button>
+                  <button
+                    onClick={() => setEditingMapModel(p)}
+                    className="flex items-center justify-center gap-1.5 rounded-control bg-brand-500 py-2.5 text-xs font-semibold text-white hover:bg-brand-600"
+                  >
+                    <MapIcon className="h-3.5 w-3.5" />
+                    {t("admin.configure3DMapControl")}
+                  </button>
+                  {isCustom && (
+                    <button
+                      onClick={() => setEditingUnits(p)}
+                      className="text-center text-[11px] font-medium text-neutral-500 hover:text-neutral-800 hover:underline"
+                    >
+                      {t("admin.manageUnits")}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -380,104 +448,9 @@ function Viewer3DTab() {
       {editingScene && (
         <Project3DConfigEditor project={editingScene} onClose={() => setEditingScene(null)} />
       )}
-    </div>
-  );
-}
 
-function MapControlTab() {
-  const { t } = useT();
-  const customProjects = useAppStore((s) => s.customProjects);
-  const [editing, setEditing] = useState<Project | null>(null);
-  const [creating, setCreating] = useState(false);
-  // A real Postgres row per project (src/app/api/map-models), not Zustand —
-  // see MapModelEditor.tsx/MapView.tsx's matching hooks. A project created
-  // right here (via "New project" below) gets a matching Postgres row too
-  // (NewProjectModal.tsx posts to /api/projects immediately after), so its
-  // model can attach right away, same as a seeded mockData.ts project.
-  const [mapModels, setMapModels] = useState<Record<string, { fileName: string; enabled: boolean }>>({});
-
-  useEffect(() => {
-    fetch("/api/map-models")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((rows: { projectId: string; fileName: string; enabled: boolean }[]) => {
-        const byProjectId: Record<string, { fileName: string; enabled: boolean }> = {};
-        rows.forEach((r) => {
-          byProjectId[r.projectId] = r;
-        });
-        setMapModels(byProjectId);
-      })
-      .catch(() => {});
-  }, []);
-
-  // Note: today only lib/mockData's seeded `projects` are actually plotted
-  // on the search map (lib/filtering.ts getVisibleProjects) — a model
-  // configured on a custom (Admin-created) project is saved and ready, but
-  // won't appear live until that pre-existing gap is closed separately.
-  const allProjects = [...projects, ...customProjects];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-serif text-xl text-neutral-900">{t("admin.mapModelTabTitle")}</h1>
-          <p className="text-sm text-neutral-500">{t("admin.mapModelTabSubtitle")}</p>
-        </div>
-        <button
-          onClick={() => setCreating(true)}
-          className="flex items-center gap-1.5 rounded-control bg-brand-500 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-brand-600"
-        >
-          <Plus className="h-4 w-4" />
-          {t("admin.mapModelNewProject")}
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {allProjects.map((p) => {
-          const model = mapModels[p.id];
-          const status = !model?.fileName
-            ? t("admin.mapModelStatusNone")
-            : model.enabled
-            ? t("admin.mapModelStatusLive")
-            : t("admin.mapModelStatusDraft");
-          return (
-            <div
-              key={p.id}
-              className="flex items-center justify-between gap-2 rounded-panel border border-neutral-200 bg-white p-4"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-neutral-900">{p.name}</p>
-                <p
-                  className={cn(
-                    "text-xs",
-                    model?.enabled ? "text-green-600" : "text-neutral-500"
-                  )}
-                >
-                  {status}
-                </p>
-              </div>
-              <button
-                onClick={() => setEditing(p)}
-                className="shrink-0 rounded-control bg-neutral-900 px-3 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
-              >
-                {t("admin.mapModelConfigure")}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      {creating && (
-        <NewProjectModal
-          onClose={() => setCreating(false)}
-          onCreated={(p) => {
-            setCreating(false);
-            setEditing(p);
-          }}
-        />
-      )}
-
-      {editing && (
-        <MapModelEditor key={editing.id} project={editing} onClose={() => setEditing(null)} />
+      {editingMapModel && (
+        <MapModelEditor key={editingMapModel.id} project={editingMapModel} onClose={() => setEditingMapModel(null)} />
       )}
     </div>
   );
