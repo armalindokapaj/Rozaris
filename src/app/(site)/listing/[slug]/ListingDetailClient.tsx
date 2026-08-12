@@ -116,7 +116,7 @@ export function ListingDetailClient({
           <div className="flex flex-col gap-3 rounded-panel border border-neutral-200 bg-white p-5 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-4">
             <div className="flex items-stretch gap-2.5">
               <div className="flex flex-col justify-center">
-                <p className="text-2xl font-bold text-neutral-900">
+                <p className="font-numeric text-2xl font-bold text-neutral-900">
                   {priceFmt(listing.price)}
                   {listing.transaction === "rent" && (
                     <span className="text-sm font-medium text-neutral-500">

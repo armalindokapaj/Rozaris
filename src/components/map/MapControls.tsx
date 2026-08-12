@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Minus, LocateFixed, Box } from "lucide-react";
+import { Plus, Minus, LocateFixed, Maximize2, Minimize2 } from "lucide-react";
 import type mapboxgl from "mapbox-gl";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
@@ -9,9 +9,13 @@ import { cn } from "@/lib/utils";
 export function MapControls({
   map,
   className,
+  fullScreen = false,
+  onToggleFullScreen,
 }: {
   map: mapboxgl.Map | null;
   className?: string;
+  fullScreen?: boolean;
+  onToggleFullScreen?: () => void;
 }) {
   const { t } = useT();
   function withMap(fn: (m: mapboxgl.Map) => void) {
@@ -42,9 +46,9 @@ export function MapControls({
             m.easeTo({ pitch: pitch > 10 ? 0 : 55, duration: 500 });
           })
         }
-        className="glass-panel flex h-11 w-11 items-center justify-center rounded-card text-neutral-700 hover:text-brand-600"
+        className="glass-panel flex h-11 min-w-11 items-center justify-center rounded-card px-2 text-xs font-bold text-neutral-700 hover:text-brand-600"
       >
-        <Box className="h-4.5 w-4.5" />
+        3D
       </button>
       <div className="glass-panel flex flex-col overflow-hidden rounded-card">
         <button
@@ -81,6 +85,15 @@ export function MapControls({
       >
         <LocateFixed className="h-4.5 w-4.5" />
       </button>
+      {onToggleFullScreen && (
+        <button
+          aria-label={fullScreen ? t("map.exitFullScreen") : t("map.fullScreen")}
+          onClick={onToggleFullScreen}
+          className="glass-panel flex h-11 w-11 items-center justify-center rounded-card text-neutral-700 hover:text-brand-600"
+        >
+          {fullScreen ? <Minimize2 className="h-4.5 w-4.5" /> : <Maximize2 className="h-4.5 w-4.5" />}
+        </button>
+      )}
     </div>
   );
 }

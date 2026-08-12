@@ -1,586 +1,100 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  ArrowRight,
-  Info,
-  PiggyBank,
-  RotateCcw,
-  Scale,
-  TrendingDown,
-  TrendingUp,
-} from "lucide-react";
-import { HeroSketch } from "@/components/common/HeroSketch";
+import { Home, KeyRound, Maximize2, RotateCcw, TrendingDown, TrendingUp, X } from "lucide-react";
 import { Footer } from "@/components/layout/Footer";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
-import {
-  calculateRentVsBuy,
-  RENT_VS_BUY_DEFAULTS,
-  type RentBuyScenario,
-} from "@/lib/rentVsBuy";
 
-// PRD_Rent_vs_Buy.pdf v1.0 — see the calculation engine's own header comment
-// (src/lib/rentVsBuy.ts) for the formula-level citations. This client owns
-// the UI only: inputs, chart, breakdown, sensitivity, FAQ, disclaimer.
-// Deferred (see chat): saved/shared scenarios (needs auth+DB), Admin
-// calculator-config panel, formal analytics events (no pipeline exists in
-// this app yet), automated test suite (no test framework configured in
-// this repo — verified instead via a one-off scratch script against every
-// §21 test scenario before this UI was built).
+type SimplePlan = { years: number; monthlyRent: number; rentIncreasePercent: number; homePrice: number; downPaymentPercent: number; mortgageRate: number; mortgageYears: number };
 
-const FAQ_KEYS = [
-  "compare",
-  "breakEven",
-  "monthlyVsFinish",
-  "opportunityCost",
-  "buyingCosts",
-  "rentingCosts",
-  "holdingPeriod",
-  "alwaysBetter",
-  "estimates",
-] as const;
+const DEFAULTS: SimplePlan = { years: 10, monthlyRent: 650, rentIncreasePercent: 3, homePrice: 180000, downPaymentPercent: 20, mortgageRate: 5.5, mortgageYears: 25 };
 
-function buildSensitivityOverrides(
-  scenario: RentBuyScenario
-): { labelKey: string; overrides: Partial<RentBuyScenario> }[] {
-  return [
-    { labelKey: "sensMortgageUp", overrides: { mortgageRateAnnual: scenario.mortgageRateAnnual + 0.01 } },
-    { labelKey: "sensMortgageDown", overrides: { mortgageRateAnnual: Math.max(0, scenario.mortgageRateAnnual - 0.01) } },
-    { labelKey: "sensHoldingLonger", overrides: { holdingPeriodYears: Math.min(30, scenario.holdingPeriodYears + 3) } },
-    { labelKey: "sensHoldingShorter", overrides: { holdingPeriodYears: Math.max(1, scenario.holdingPeriodYears - 3) } },
-    { labelKey: "sensAppreciationUp", overrides: { homeAppreciationAnnual: scenario.homeAppreciationAnnual + 0.01 } },
-    { labelKey: "sensAppreciationDown", overrides: { homeAppreciationAnnual: scenario.homeAppreciationAnnual - 0.01 } },
-  ];
+function monthlyPayment(price: number, downPercent: number, annualRate: number, years: number) {
+  const borrowed = price * (1 - downPercent / 100);
+  const months = years * 12;
+  const rate = annualRate / 100 / 12;
+  return rate === 0 ? borrowed / months : borrowed * (rate * Math.pow(1 + rate, months)) / (Math.pow(1 + rate, months) - 1);
 }
 
 export function RentVsBuyClient() {
   const searchParams = useSearchParams();
-  const { t } = useT();
   const priceFmt = usePriceFormat();
-  const resultsRef = useRef<HTMLDivElement>(null);
-
-  const [scenario, setScenario] = useState<RentBuyScenario>(() => {
-    const prefillPrice = Number(searchParams.get("price"));
-    const prefillLocation = searchParams.get("location");
-    return {
-      ...RENT_VS_BUY_DEFAULTS,
-      ...(prefillPrice > 0 ? { propertyPrice: prefillPrice } : {}),
-      ...(prefillLocation ? { locationText: prefillLocation } : {}),
-    };
-  });
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [hoverYear, setHoverYear] = useState<number | null>(null);
-
-  const result = useMemo(() => calculateRentVsBuy(scenario), [scenario]);
-
-  function set<K extends keyof RentBuyScenario>(key: K, value: RentBuyScenario[K]) {
-    setScenario((s) => ({ ...s, [key]: value }));
-  }
-
-  function reset() {
-    setScenario(RENT_VS_BUY_DEFAULTS);
-  }
-
-  const downPaymentAmount = scenario.propertyPrice * scenario.downPaymentPercent;
-
-  const sensitivityRows = useMemo(() => {
-    return buildSensitivityOverrides(scenario).map(({ labelKey, overrides }) => {
-      const altResult = calculateRentVsBuy({ ...scenario, ...overrides });
-      return { labelKey, winner: altResult.winner, advantage: altResult.advantageAmount };
-    });
-  }, [scenario]);
+  const { t } = useT();
+  const [plan, setPlan] = useState<SimplePlan>(() => ({ ...DEFAULTS, ...(Number(searchParams.get("price")) > 0 ? { homePrice: Number(searchParams.get("price")) } : {}) }));
+  const [chartOpen, setChartOpen] = useState(false);
+  const mortgageMonthly = useMemo(() => monthlyPayment(plan.homePrice, plan.downPaymentPercent, plan.mortgageRate, plan.mortgageYears), [plan]);
+  const months = plan.years * 12;
+  const totalRent = Array.from({ length: plan.years }, (_, year) => plan.monthlyRent * 12 * Math.pow(1 + plan.rentIncreasePercent / 100, year)).reduce((sum, amount) => sum + amount, 0);
+  const totalMortgagePaid = mortgageMonthly * months;
+  const downPayment = plan.homePrice * (plan.downPaymentPercent / 100);
+  const mortgageDifference = totalMortgagePaid + downPayment - totalRent;
+  const better = mortgageDifference <= 0 ? "buy" : "rent";
+  const series = Array.from({ length: plan.years + 1 }, (_, year) => ({ year, rent: Array.from({ length: year }, (_, rentYear) => plan.monthlyRent * 12 * Math.pow(1 + plan.rentIncreasePercent / 100, rentYear)).reduce((sum, amount) => sum + amount, 0), mortgage: mortgageMonthly * 12 * year + downPayment }));
+  const set = <K extends keyof SimplePlan>(key: K, value: SimplePlan[K]) => setPlan((previous) => ({ ...previous, [key]: value }));
 
   return (
-    <div className="min-h-full">
-      <div className="mx-auto max-w-6xl px-4 py-8 lg:px-8">
-        <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-          <div className="max-w-xl">
-            <h1 className="font-serif text-4xl text-neutral-900 sm:text-5xl">{t("rentBuy.title")}</h1>
-            <p className="mt-2 text-sm text-neutral-500 sm:text-base">{t("rentBuy.subtitle")}</p>
-          </div>
-          <HeroSketch className="hidden h-28 w-48 shrink-0 text-neutral-300 sm:block" />
+    <div className="min-h-full bg-neutral-50">
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:py-12">
+        <div className="max-w-2xl">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-600">{t("rentBuy.simpleEyebrow")}</p>
+          <h1 className="mt-2 text-4xl font-bold tracking-tight text-neutral-900 sm:text-5xl">{t("rentBuy.simpleTitle")}</h1>
+          <p className="mt-3 text-base leading-relaxed text-neutral-600">{t("rentBuy.simpleSubtitle")}</p>
         </div>
 
-        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr] lg:items-start">
-          {/* --- Assumption editor --- */}
-          <aside className="space-y-5 rounded-panel border border-neutral-200 bg-white p-5 lg:sticky lg:top-20">
-            <div>
-              <SectionLabel>{t("rentBuy.yourInformation")}</SectionLabel>
-              <label className="mt-2 block">
-                <span className="text-xs text-neutral-500">{t("rentBuy.location")}</span>
-                <input
-                  value={scenario.locationText}
-                  onChange={(e) => set("locationText", e.target.value)}
-                  className="mt-1 w-full rounded-control border border-neutral-200 px-3 py-2.5 text-sm focus:border-brand-400 focus:outline-none"
-                />
-              </label>
-              <SliderField
-                label={t("rentBuy.holdingPeriod")}
-                value={scenario.holdingPeriodYears}
-                min={1}
-                max={30}
-                step={1}
-                suffix={t("rentBuy.years")}
-                onChange={(v) => set("holdingPeriodYears", v)}
-              />
+        <div className="mt-8 grid gap-6 lg:grid-cols-[22rem_1fr]">
+          <section className="border border-neutral-200 bg-white p-5">
+            <p className="text-sm font-bold text-neutral-900">{t("rentBuy.simpleQuestions")}</p>
+            <p className="mt-1 text-xs leading-relaxed text-neutral-500">{t("rentBuy.simpleQuestionsHint")}</p>
+            <div className="mt-5 space-y-5">
+              <Field label={t("rentBuy.stayQuestion")} hint={t("rentBuy.stayHint")} value={plan.years} min={1} max={30} suffix={t("rentBuy.years")} onChange={(value) => set("years", value)} />
+              <Field label={t("rentBuy.rentQuestion")} hint={t("rentBuy.rentHint")} value={plan.monthlyRent} min={100} max={5000} step={25} prefix="€" onChange={(value) => set("monthlyRent", value)} />
+              <Field label={t("rentBuy.rentIncreaseSimple")} hint={t("rentBuy.rentIncreaseHint")} value={plan.rentIncreasePercent} min={3} max={20} suffix="%" onChange={(value) => set("rentIncreasePercent", value)} />
+              <Field label={t("rentBuy.priceQuestion")} hint={t("rentBuy.priceHint")} value={plan.homePrice} min={30000} max={1000000} step={1000} prefix="€" onChange={(value) => set("homePrice", value)} />
+              <Field label={t("rentBuy.downQuestion")} hint={t("rentBuy.downHint")} value={plan.downPaymentPercent} min={0} max={80} suffix="%" onChange={(value) => set("downPaymentPercent", value)} />
+              <Field label={t("rentBuy.mortgageQuestion")} hint={t("rentBuy.mortgageHint")} value={plan.mortgageRate} min={0} max={15} step={0.1} suffix={t("rentBuy.rateSuffix")} onChange={(value) => set("mortgageRate", value)} />
+              <div className="flex gap-2"><label className="sr-only">Mortgage years</label>{[10, 15, 20, 25, 30].map((years) => <button key={years} onClick={() => set("mortgageYears", years)} className={cn("h-10 flex-1 border text-xs font-bold", plan.mortgageYears === years ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-300 text-neutral-600")}>{years}y</button>)}</div>
             </div>
+            <button onClick={() => setPlan(DEFAULTS)} className="mt-6 flex items-center gap-1.5 text-xs font-bold text-neutral-500 hover:text-neutral-900"><RotateCcw className="h-3.5 w-3.5" /> {t("rentBuy.resetExample")}</button>
+          </section>
 
-            <div className="border-t border-neutral-100 pt-4">
-              <SectionLabel>{t("rentBuy.rentDetails")}</SectionLabel>
-              <SliderField
-                label={t("rentBuy.monthlyRent")}
-                value={scenario.rentMonthly}
-                min={200}
-                max={3000}
-                step={10}
-                prefix="€"
-                onChange={(v) => set("rentMonthly", v)}
-              />
-              <SliderField
-                label={t("rentBuy.annualRentIncrease")}
-                value={Math.round(scenario.rentGrowthAnnual * 1000) / 10}
-                min={0}
-                max={10}
-                step={0.1}
-                suffix="%"
-                onChange={(v) => set("rentGrowthAnnual", v / 100)}
-              />
+          <section className="space-y-5">
+            <div className={cn("border p-5 transition-all duration-500", better === "buy" ? "animate-[pulse_1.2s_ease-out_1] border-brand-400 bg-brand-50 shadow-[0_0_0_5px_rgba(107,85,245,0.10)]" : "border-neutral-300 bg-white")}>
+              <div className="flex items-start gap-3"><span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full", better === "buy" ? "bg-brand-500 text-white" : "bg-neutral-900 text-white")}>{better === "buy" ? <Home className="h-5 w-5" /> : <KeyRound className="h-5 w-5" />}</span><div><p className="text-sm font-bold text-neutral-900">{t(better === "buy" ? "rentBuy.buyCheaper" : "rentBuy.rentCheaper", { years: plan.years })}</p><p className="mt-1 text-sm leading-relaxed text-neutral-600">{t("rentBuy.directPaymentSummary", { rent: priceFmt(totalRent), mortgage: priceFmt(totalMortgagePaid + downPayment) })}</p></div></div>
             </div>
-
-            <div className="border-t border-neutral-100 pt-4">
-              <SectionLabel>{t("rentBuy.buyDetails")}</SectionLabel>
-              <SliderField
-                label={t("rentBuy.propertyPrice")}
-                value={scenario.propertyPrice}
-                min={30000}
-                max={800000}
-                step={1000}
-                prefix="€"
-                onChange={(v) => set("propertyPrice", v)}
-              />
-              <div>
-                <SliderField
-                  label={t("rentBuy.downPayment")}
-                  value={Math.round(scenario.downPaymentPercent * 1000) / 10}
-                  min={0}
-                  max={100}
-                  step={1}
-                  suffix="%"
-                  onChange={(v) => set("downPaymentPercent", v / 100)}
-                />
-                <p className="-mt-2 text-xs text-neutral-400">{priceFmt(downPaymentAmount, { compact: true })}</p>
-              </div>
-              <SliderField
-                label={t("rentBuy.mortgageRate")}
-                value={Math.round(scenario.mortgageRateAnnual * 1000) / 10}
-                min={0}
-                max={15}
-                step={0.1}
-                suffix="%"
-                onChange={(v) => set("mortgageRateAnnual", v / 100)}
-              />
-              <SliderField
-                label={t("rentBuy.loanTerm")}
-                value={scenario.loanTermYears}
-                min={5}
-                max={40}
-                step={1}
-                suffix={t("rentBuy.years")}
-                onChange={(v) => set("loanTermYears", v)}
-              />
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <MoneyCard label={t("rentBuy.totalRentSimple")} value={priceFmt(totalRent)} note={t("rentBuy.yearsOfRent", { years: plan.years })} icon={<KeyRound className="h-4 w-4" />} />
+              <MoneyCard label={t("rentBuy.mortgagePaymentsSimple")} value={priceFmt(totalMortgagePaid)} note={t("rentBuy.perMonth", { amount: priceFmt(mortgageMonthly) })} icon={<Home className="h-4 w-4" />} />
+              <MoneyCard label={t("rentBuy.downPayment")} value={priceFmt(downPayment)} note={t("rentBuy.onceAtStart")} icon={<TrendingDown className="h-4 w-4" />} />
+              <MoneyCard label={t("rentBuy.mortgagePaidSimple")} value={priceFmt(totalMortgagePaid + downPayment)} note={t("rentBuy.totalPayment")} icon={<TrendingUp className="h-4 w-4" />} />
             </div>
-
-            <details className="border-t border-neutral-100 pt-4" open={advancedOpen}>
-              <summary
-                onClick={(e) => {
-                  e.preventDefault();
-                  setAdvancedOpen((v) => !v);
-                }}
-                className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wide text-brand-600"
-              >
-                {advancedOpen ? t("rentBuy.hideAdvanced") : t("rentBuy.showAdvanced")}
-              </summary>
-              {advancedOpen && (
-                <div className="mt-3 space-y-1">
-                  <SliderField label={t("rentBuy.homeAppreciation")} value={Math.round(scenario.homeAppreciationAnnual * 1000) / 10} min={-5} max={10} step={0.1} suffix="%" onChange={(v) => set("homeAppreciationAnnual", v / 100)} />
-                  <SliderField label={t("rentBuy.propertyTax")} value={Math.round(scenario.propertyTaxRateAnnual * 1000) / 10} min={0} max={3} step={0.05} suffix="%" onChange={(v) => set("propertyTaxRateAnnual", v / 100)} />
-                  <SliderField label={t("rentBuy.homeInsurance")} value={scenario.homeInsuranceMonthly} min={0} max={200} step={5} prefix="€" onChange={(v) => set("homeInsuranceMonthly", v)} />
-                  <SliderField label={t("rentBuy.maintenance")} value={Math.round(scenario.maintenanceRateAnnual * 1000) / 10} min={0} max={3} step={0.05} suffix="%" onChange={(v) => set("maintenanceRateAnnual", v / 100)} />
-                  <SliderField label={t("rentBuy.hoa")} value={scenario.hoaMonthly} min={0} max={300} step={5} prefix="€" onChange={(v) => set("hoaMonthly", v)} />
-                  <SliderField label={t("rentBuy.closingCosts")} value={Math.round(scenario.purchaseClosingCostRate * 1000) / 10} min={0} max={10} step={0.1} suffix="%" onChange={(v) => set("purchaseClosingCostRate", v / 100)} />
-                  <SliderField label={t("rentBuy.sellingCosts")} value={Math.round(scenario.sellingCostRate * 1000) / 10} min={0} max={12} step={0.1} suffix="%" onChange={(v) => set("sellingCostRate", v / 100)} />
-                  <SliderField label={t("rentBuy.renterInsurance")} value={scenario.renterInsuranceMonthly} min={0} max={50} step={1} prefix="€" onChange={(v) => set("renterInsuranceMonthly", v)} />
-                  <SliderField label={t("rentBuy.securityDeposit")} value={scenario.securityDepositMonths} min={0} max={6} step={1} suffix={t("rentBuy.months")} onChange={(v) => set("securityDepositMonths", v)} />
-                  <SliderField label={t("rentBuy.movingCosts")} value={scenario.renterMovingCosts} min={0} max={3000} step={50} prefix="€" onChange={(v) => set("renterMovingCosts", v)} />
-                  <SliderField label={t("rentBuy.investmentReturn")} value={Math.round(scenario.investmentReturnAnnual * 1000) / 10} min={0} max={15} step={0.1} suffix="%" onChange={(v) => set("investmentReturnAnnual", v / 100)} />
-                  <SliderField label={t("rentBuy.investmentFeeDrag")} value={Math.round(scenario.investmentFeeDragAnnual * 1000) / 10} min={0} max={3} step={0.05} suffix="%" onChange={(v) => set("investmentFeeDragAnnual", v / 100)} />
-                </div>
-              )}
-            </details>
-
-            <div className="flex gap-2 border-t border-neutral-100 pt-4">
-              <button
-                onClick={() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                className="flex-1 rounded-control bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-600 lg:hidden"
-              >
-                {t("rentBuy.calculate")}
-              </button>
-              <button
-                onClick={reset}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-control border border-neutral-200 py-3 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                {t("common.reset")}
-              </button>
-            </div>
-          </aside>
-
-          {/* --- Results --- */}
-          <div ref={resultsRef} className="min-w-0 space-y-6">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <SummaryCard
-                label={t("rentBuy.summaryRent")}
-                value={priceFmt(result.rentNetPosition, { compact: true })}
-                sub={t("rentBuy.netPositionAt", { years: scenario.holdingPeriodYears })}
-              />
-              <SummaryCard
-                label={t("rentBuy.summaryBuy")}
-                value={priceFmt(result.buyNetPosition, { compact: true })}
-                sub={t("rentBuy.netPositionAt", { years: scenario.holdingPeriodYears })}
-                highlighted={result.winner === "buy"}
-              />
-              <SummaryCard
-                label={t("rentBuy.summaryBreakEven")}
-                value={
-                  result.breakEvenMonth
-                    ? t("rentBuy.yearsMonths", {
-                        years: Math.floor(result.breakEvenMonth / 12),
-                        months: result.breakEvenMonth % 12,
-                      })
-                    : t("rentBuy.noBreakEven", { years: scenario.holdingPeriodYears })
-                }
-                sub={t("rentBuy.breakEvenSub")}
-              />
-            </div>
-
-            <div className="flex items-center gap-2 rounded-control bg-brand-50 px-4 py-3 text-sm text-brand-800">
-              {result.winner === "buy" ? (
-                <TrendingUp className="h-4 w-4 shrink-0" />
-              ) : result.winner === "rent" ? (
-                <TrendingDown className="h-4 w-4 shrink-0" />
-              ) : (
-                <Scale className="h-4 w-4 shrink-0" />
-              )}
-              <span>
-                {result.winner === "tie"
-                  ? t("rentBuy.resultTie")
-                  : t("rentBuy.resultWinner", {
-                      winner: result.winner === "buy" ? t("rentBuy.buying") : t("rentBuy.renting"),
-                      amount: priceFmt(result.advantageAmount, { compact: true }),
-                    })}
-              </span>
-            </div>
-
-            <div className="rounded-panel border border-neutral-200 bg-white p-5">
-              <h2 className="font-serif text-lg text-neutral-900">{t("rentBuy.chartTitle")}</h2>
-              <NetPositionChart
-                series={result.annualSeries}
-                breakEvenMonth={result.breakEvenMonth}
-                hoverYear={hoverYear}
-                onHoverYear={setHoverYear}
-                formatValue={(v) => priceFmt(v, { compact: true })}
-                yearLabel={(year) => t("rentBuy.yearLabel", { year })}
-              />
-              <div className="mt-2 flex items-center gap-4 text-xs text-neutral-500">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-neutral-400" /> {t("rentBuy.summaryRent")}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-brand-500" /> {t("rentBuy.summaryBuy")}
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <BreakdownCard
-                title={t("rentBuy.rentBreakdown")}
-                total={result.rentNetPosition}
-                rows={[
-                  [t("rentBuy.bdRentPaid"), result.breakdown.rent.rentPaid],
-                  [t("rentBuy.bdRenterInsurance"), result.breakdown.rent.renterInsurance],
-                  [t("rentBuy.bdMovingCosts"), result.breakdown.rent.movingCosts],
-                  [t("rentBuy.bdInvestmentGrowth"), result.breakdown.rent.investmentGrowth],
-                  [t("rentBuy.bdFinalInvestment"), result.breakdown.rent.finalInvestmentAccount],
-                ]}
-                formatValue={(v) => priceFmt(v, { compact: true })}
-              />
-              <BreakdownCard
-                title={t("rentBuy.buyBreakdown")}
-                total={result.buyNetPosition}
-                rows={[
-                  [t("rentBuy.bdDownPayment"), result.breakdown.buy.downPayment],
-                  [t("rentBuy.bdMortgageInterest"), result.breakdown.buy.mortgageInterest],
-                  [t("rentBuy.bdPropertyTax"), result.breakdown.buy.propertyTax],
-                  [t("rentBuy.bdMaintenance"), result.breakdown.buy.maintenance],
-                  [t("rentBuy.bdSellingCosts"), result.breakdown.buy.sellingCosts],
-                  [t("rentBuy.bdCashRecovered"), result.breakdown.buy.cashRecoveredAtSale],
-                ]}
-                formatValue={(v) => priceFmt(v, { compact: true })}
-              />
-            </div>
-
-            <div className="rounded-panel border border-neutral-200 bg-white p-5">
-              <div className="flex items-center gap-2">
-                <PiggyBank className="h-4 w-4 text-brand-500" />
-                <h2 className="font-serif text-lg text-neutral-900">{t("rentBuy.sensitivityTitle")}</h2>
-              </div>
-              <p className="mt-1 text-sm text-neutral-500">{t("rentBuy.sensitivitySubtitle")}</p>
-              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {sensitivityRows.map((row) => (
-                  <div
-                    key={row.labelKey}
-                    className="flex items-center justify-between gap-2 rounded-control border border-neutral-200 px-3.5 py-2.5 text-sm"
-                  >
-                    <span className="text-neutral-600">{t(`rentBuy.${row.labelKey}`)}</span>
-                    <span
-                      className={cn(
-                        "shrink-0 font-semibold",
-                        row.winner === "buy" ? "text-brand-600" : row.winner === "rent" ? "text-neutral-500" : "text-neutral-400"
-                      )}
-                    >
-                      {row.winner === "tie" ? t("rentBuy.resultTieShort") : `${row.winner === "buy" ? t("rentBuy.buying") : t("rentBuy.renting")} +${priceFmt(row.advantage, { compact: true })}`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-panel border border-neutral-200 bg-white p-5">
-              <h2 className="font-serif text-lg text-neutral-900">{t("rentBuy.faqTitle")}</h2>
-              <div className="mt-3 space-y-2.5">
-                {FAQ_KEYS.map((key) => (
-                  <details key={key} className="group rounded-card border border-neutral-200 bg-white">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 text-sm font-semibold text-neutral-900">
-                      {t(`rentBuy.faq_${key}_q`)}
-                      <ArrowRight className="h-3.5 w-3.5 shrink-0 text-neutral-400 transition-transform group-open:rotate-90" />
-                    </summary>
-                    <p className="px-4 pb-4 text-sm leading-relaxed text-neutral-600">{t(`rentBuy.faq_${key}_a`)}</p>
-                  </details>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-start gap-2 rounded-control bg-neutral-50 p-4 text-xs text-neutral-500">
-              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <p>{t("rentBuy.disclaimer")}</p>
-            </div>
-          </div>
+            <div className="border border-neutral-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-bold text-neutral-900">{t("rentBuy.moneyOverTime")}</h2><p className="mt-1 text-sm text-neutral-500">{t("rentBuy.chartHint")}</p></div><button aria-label={t("rentBuy.expandChart")} onClick={() => setChartOpen(true)} className="flex h-10 w-10 items-center justify-center border border-neutral-300 text-neutral-700 hover:border-neutral-900"><Maximize2 className="h-4 w-4" /></button></div><SimpleChart series={series} format={priceFmt} /><div className="mt-3 flex gap-4 text-xs text-neutral-500"><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-neutral-500" /> {t("rentBuy.rentPaidSimple")}</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-brand-500" /> {t("rentBuy.downAndMortgage")}</span></div></div>
+            <div className="border border-neutral-200 bg-white p-5"><p className="text-xs font-bold uppercase tracking-[0.1em] text-neutral-400">{t("rentBuy.whatItMeans")}</p><p className="mt-2 text-sm leading-relaxed text-neutral-600">{t("rentBuy.whatItMeansBody")}</p></div>
+          </section>
         </div>
-      </div>
-
+      </main>
+      {chartOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/70 p-4"><div className="relative flex h-[min(44rem,92vh)] w-full max-w-5xl flex-col bg-white p-5 sm:p-8"><button aria-label={t("common.close")} onClick={() => setChartOpen(false)} className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center border border-neutral-300"><X className="h-4 w-4" /></button><h2 className="text-2xl font-bold text-neutral-900">{t("rentBuy.chartModalTitle")}</h2><p className="mt-2 text-sm text-neutral-500">{t("rentBuy.chartHint")}</p><div className="min-h-0 flex-1"><SimpleChart expanded series={series} format={priceFmt} /></div></div></div>}
       <Footer />
     </div>
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">{children}</p>;
+function Field({ label, hint, value, min, max, step = 1, prefix = "", suffix = "", onChange }: { label: string; hint: string; value: number; min: number; max: number; step?: number; prefix?: string; suffix?: string; onChange: (value: number) => void }) {
+  return <div><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold text-neutral-800">{label}</p><p className="mt-0.5 text-xs text-neutral-500">{hint}</p></div><span className="font-numeric whitespace-nowrap text-sm font-bold text-neutral-900">{prefix}{value.toLocaleString()}{suffix && ` ${suffix}`}</span></div><input className="mt-2 h-8 w-full accent-brand-500" type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} /></div>;
 }
 
-function SliderField({
-  label,
-  value,
-  min,
-  max,
-  step,
-  prefix,
-  suffix,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  prefix?: string;
-  suffix?: string;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className="mt-3">
-      <div className="flex items-center justify-between text-xs text-neutral-500">
-        <span>{label}</span>
-        <span className="flex items-center gap-1 font-semibold text-neutral-800">
-          {prefix}
-          <input
-            type="number"
-            value={value}
-            min={min}
-            max={max}
-            step={step}
-            onChange={(e) => onChange(Number(e.target.value))}
-            className="w-16 rounded-[4px] border border-transparent bg-transparent text-right text-neutral-800 hover:border-neutral-200 focus:border-brand-400 focus:outline-none"
-          />
-          {suffix}
-        </span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-1 h-11 w-full accent-brand-500 sm:h-6"
-        aria-label={label}
-      />
-    </div>
-  );
-}
+function MoneyCard({ label, value, note, icon }: { label: string; value: string; note: string; icon: React.ReactNode }) { return <div className="flex min-h-34 flex-col border border-neutral-200 bg-white p-3.5"><span className="text-brand-600">{icon}</span><p className="mt-2 min-h-8 text-xs font-bold uppercase leading-4 tracking-[0.08em] text-neutral-400">{label}</p><p className="font-numeric mt-1 text-lg font-bold leading-6 text-neutral-900">{value}</p><p className="mt-auto pt-1.5 text-xs font-semibold text-brand-600">{note}</p></div>; }
 
-function SummaryCard({
-  label,
-  value,
-  sub,
-  highlighted = false,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  highlighted?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-panel border p-4",
-        highlighted ? "border-brand-300 bg-brand-50" : "border-neutral-200 bg-white"
-      )}
-    >
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">{label}</p>
-      <p className={cn("mt-1 font-serif text-2xl", highlighted ? "text-brand-700" : "text-neutral-900")}>{value}</p>
-      <p className="mt-0.5 text-xs text-neutral-500">{sub}</p>
-    </div>
-  );
-}
-
-function BreakdownCard({
-  title,
-  total,
-  rows,
-  formatValue,
-}: {
-  title: string;
-  total: number;
-  rows: [string, number][];
-  formatValue: (v: number) => string;
-}) {
-  return (
-    <div className="rounded-panel border border-neutral-200 bg-white p-5">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-neutral-900">{title}</h3>
-        <span className="font-serif text-lg text-neutral-900">{formatValue(total)}</span>
-      </div>
-      <div className="mt-3 space-y-1.5">
-        {rows.map(([label, value]) => (
-          <div key={label} className="flex items-center justify-between text-xs text-neutral-500">
-            <span>{label}</span>
-            <span className="font-medium text-neutral-700">{formatValue(value)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function NetPositionChart({
-  series,
-  breakEvenMonth,
-  hoverYear,
-  onHoverYear,
-  formatValue,
-  yearLabel,
-}: {
-  series: { year: number; rentNet: number; buyNet: number }[];
-  breakEvenMonth: number | null;
-  hoverYear: number | null;
-  onHoverYear: (y: number | null) => void;
-  formatValue: (v: number) => string;
-  yearLabel: (year: number) => string;
-}) {
-  const width = 640;
-  const height = 220;
-  const padding = { top: 10, right: 10, bottom: 24, left: 10 };
-  const values = series.flatMap((p) => [p.rentNet, p.buyNet]);
-  const minV = Math.min(0, ...values);
-  const maxV = Math.max(0, ...values);
-  const span = maxV - minV || 1;
-  const maxYear = series[series.length - 1]?.year ?? 1;
-
-  const x = (year: number) => padding.left + (year / maxYear) * (width - padding.left - padding.right);
-  const y = (v: number) => padding.top + (1 - (v - minV) / span) * (height - padding.top - padding.bottom);
-
-  const rentPath = series.map((p, i) => `${i === 0 ? "M" : "L"} ${x(p.year)} ${y(p.rentNet)}`).join(" ");
-  const buyPath = series.map((p, i) => `${i === 0 ? "M" : "L"} ${x(p.year)} ${y(p.buyNet)}`).join(" ");
-  const zeroY = y(0);
-
-  const hovered = hoverYear != null ? series.find((p) => p.year === hoverYear) : null;
-
-  return (
-    <div className="relative mt-3">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        className="w-full"
-        onMouseLeave={() => onHoverYear(null)}
-        onMouseMove={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const relX = ((e.clientX - rect.left) / rect.width) * width;
-          const year = Math.round(((relX - padding.left) / (width - padding.left - padding.right)) * maxYear);
-          if (year >= 0 && year <= maxYear) onHoverYear(year);
-        }}
-      >
-        <line x1={padding.left} y1={zeroY} x2={width - padding.right} y2={zeroY} stroke="#e1e1e6" strokeWidth={1} />
-        {breakEvenMonth != null && (
-          <line
-            x1={x(breakEvenMonth / 12)}
-            y1={padding.top}
-            x2={x(breakEvenMonth / 12)}
-            y2={height - padding.bottom}
-            stroke="#a794fa"
-            strokeWidth={1}
-            strokeDasharray="3 3"
-          />
-        )}
-        <path d={rentPath} fill="none" stroke="#666670" strokeWidth={2.5} />
-        <path d={buyPath} fill="none" stroke="#6b55f5" strokeWidth={2.5} />
-        {hovered && (
-          <line
-            x1={x(hovered.year)}
-            y1={padding.top}
-            x2={x(hovered.year)}
-            y2={height - padding.bottom}
-            stroke="#c9c9d0"
-            strokeWidth={1}
-          />
-        )}
-        {series.map((p) => (
-          <text key={p.year} x={x(p.year)} y={height - 6} fontSize={9} fill="#8b8b95" textAnchor="middle">
-            {p.year}
-          </text>
-        ))}
-      </svg>
-      {hovered && (
-        <div
-          className="pointer-events-none absolute top-0 rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs shadow-[var(--shadow-2)]"
-          style={{ left: `${(x(hovered.year) / width) * 100}%`, transform: "translateX(-50%)" }}
-        >
-          <p className="font-semibold text-neutral-900">{yearLabel(hovered.year)}</p>
-          <p className="text-neutral-500">{formatValue(hovered.rentNet)}</p>
-          <p className="text-brand-600">{formatValue(hovered.buyNet)}</p>
-        </div>
-      )}
-    </div>
-  );
+function SimpleChart({ series, format, expanded = false }: { series: { year: number; rent: number; mortgage: number }[]; format: (value: number, options?: { compact?: boolean }) => string; expanded?: boolean }) {
+  const { t } = useT();
+  const [selectedYear, setSelectedYear] = useState(series.length - 1);
+  const width = 640, height = expanded ? 420 : 220, pad = 34;
+  const max = Math.max(...series.flatMap((point) => [point.rent, point.mortgage]), 1);
+  const x = (year: number) => pad + (year / Math.max(1, series.length - 1)) * (width - pad * 2);
+  const y = (value: number) => height - pad - (value / max) * (height - pad * 2);
+  const path = (key: "rent" | "mortgage") => series.map((point, index) => `${index ? "L" : "M"}${x(point.year)} ${y(point[key])}`).join(" ");
+  const selected = series[selectedYear] ?? series[series.length - 1];
+  return <div className="relative mt-4"><svg viewBox={`0 0 ${width} ${height}`} className="w-full cursor-crosshair" role="img" aria-label={t("rentBuy.chartAria")} onPointerMove={(event) => { const box = event.currentTarget.getBoundingClientRect(); const year = Math.round(((event.clientX - box.left) / box.width) * (series.length - 1)); setSelectedYear(Math.max(0, Math.min(series.length - 1, year))); }} onClick={(event) => { const box = event.currentTarget.getBoundingClientRect(); const year = Math.round(((event.clientX - box.left) / box.width) * (series.length - 1)); setSelectedYear(Math.max(0, Math.min(series.length - 1, year))); }}><line x1={pad} y1={height-pad} x2={width-pad} y2={height-pad} stroke="#e1e1e6" /><path d={path("rent")} fill="none" stroke="#666670" strokeWidth="3" /><path d={path("mortgage")} fill="none" stroke="#6b55f5" strokeWidth="3" /><line x1={x(selected.year)} y1={pad} x2={x(selected.year)} y2={height-pad} stroke="#c9c9d0" strokeDasharray="3 3" />{series.map((point) => <g key={point.year}><circle cx={x(point.year)} cy={y(point.rent)} r={point.year === selected.year ? 5 : 2} fill="#666670" /><circle cx={x(point.year)} cy={y(point.mortgage)} r={point.year === selected.year ? 5 : 2} fill="#6b55f5" /><text x={x(point.year)} y={height-8} fontSize="10" textAnchor="middle" fill="#8b8b95">{point.year}y</text></g>)}</svg><div className="grid grid-cols-3 gap-2 border border-neutral-200 bg-neutral-50 p-3 text-xs"><span><b>{t("rentBuy.yearLabel", { year: selected.year })}</b></span><span>{t("rentBuy.rentPaidSimple")}: <b className="font-numeric">{format(selected.rent)}</b></span><span>{t("rentBuy.mortgagePaidSimple")}: <b className="font-numeric">{format(selected.mortgage)}</b></span></div></div>;
 }

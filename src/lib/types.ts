@@ -202,6 +202,12 @@ export type BackgroundPreset = "sky" | "studio_light" | "studio_dark";
  * than edited live in production. Camera distances are stored as
  * multipliers of the procedural building's auto-computed bounding radius
  * (see lib/threeBuilding.ts) since that radius varies per project. */
+/** "3D Experience Phase 1" — see src/lib/sunPosition.ts, viewerPresets.ts. */
+export type RenderingMode = "auto" | "webgpu" | "webgl2";
+export type QualityPreset = "ultra_desktop" | "high_desktop" | "balanced" | "mobile_high" | "mobile_low";
+export type GlassPreset = "performance" | "standard" | "premium";
+export type SkyPreset = "clear_day" | "soft_day" | "overcast" | "golden_hour" | "evening";
+
 export interface Project3DConfig {
   lightingPreset: LightingPreset;
   backgroundPreset: BackgroundPreset;
@@ -214,6 +220,25 @@ export interface Project3DConfig {
   autoRotate: boolean;
   constructionStagesEnabled: boolean;
   status: "draft" | "published";
+
+  /** Three.js WebGPURenderer target — "auto"/"webgpu" both let the renderer
+   * probe for WebGPU and fall back to WebGL2 automatically; "webgl2" forces
+   * the WebGL2 backend outright (see forceWebGL in ProceduralProjectViewer). */
+  renderingMode: RenderingMode;
+  qualityPreset: QualityPreset;
+  glassPreset: GlassPreset;
+  skyPreset: SkyPreset;
+  environmentIntensity: number;
+  /** Degrees — rotates the real sun's computed azimuth to match a GLB that
+   * wasn't authored north-aligned. */
+  northRotationDeg: number;
+  /** UTC decimal hour (0-24) the public viewer's Time-of-Day slider starts
+   * at — see src/lib/sunPosition.ts for why UTC, not local civil time. */
+  defaultTimeOfDay: number;
+  allowUserTimeChange: boolean;
+  cameraFovDesktop: number;
+  cameraFovMobile: number;
+
   updatedAt: string;
 }
 
@@ -432,9 +457,10 @@ export interface NotificationItem {
   createdAt: string;
 }
 
-// --- Publisher dashboards: Leads (PRD_Business_Publisher §16, PRD_Private_Publisher §8) ---
+// --- Publisher dashboards: Leads (PRD_Business_Publisher §16, PRD_Private_Publisher §8,
+// pipeline stages per PRD_ROZARIS_User_Types §4 "Leads") ---
 
-export type LeadStatus = "new" | "contacted" | "viewing" | "negotiating" | "closed" | "archived";
+export type LeadStatus = "new" | "contacted" | "qualified" | "viewing" | "negotiating" | "won" | "lost";
 export type LeadSource = "phone_click" | "whatsapp_click" | "listing_inquiry" | "digital_twin_inquiry";
 
 export interface LeadItem {
@@ -445,4 +471,69 @@ export interface LeadItem {
   source: LeadSource;
   status: LeadStatus;
   createdAt: string;
+  /** Free-text follow-up notes an assignee has left — PRD_ROZARIS_User_Types
+   * §4 "Lead detail supports notes, assignment and follow-up." Local/mock
+   * only, held in Zustand alongside the status override. */
+  notes?: string;
+}
+
+// --- Admin dashboard: Verification, Moderation, Audit, Team
+// (PRD_ROZARIS_User_Types §5) ---
+
+export type VerificationKind =
+  | "business_identity"
+  | "developer_identity"
+  | "phone"
+  | "company_documents"
+  | "project_authorization";
+export type VerificationDecision = "pending" | "approved" | "rejected";
+
+export interface VerificationRequest {
+  id: string;
+  publisherId: string;
+  publisherName: string;
+  kind: VerificationKind;
+  submittedAt: string;
+  status: VerificationDecision;
+}
+
+export type ModerationCaseType =
+  | "duplicate"
+  | "suspicious_price"
+  | "misleading_media"
+  | "wrong_location"
+  | "spam_fraud"
+  | "copyright"
+  | "user_report";
+export type ModerationDecision = "pending" | "dismissed" | "actioned";
+
+export interface ModerationCase {
+  id: string;
+  entityLabel: string;
+  entityHref?: string;
+  caseType: ModerationCaseType;
+  reportedAt: string;
+  status: ModerationDecision;
+  evidence: string;
+}
+
+/** A session-local stand-in for the real Prisma `AuditLog` table this
+ * becomes once the backend-wiring phase lands (see the Rozaris backend
+ * plan memory) — every sensitive admin action in this prototype appends
+ * one of these via `useAppStore(s => s.logAudit)`. */
+export interface AuditLogEntry {
+  id: string;
+  actor: string;
+  action: string;
+  entity: string;
+  createdAt: string;
+}
+
+export type TeamRole = "owner" | "manager" | "sales" | "marketing" | "viewer";
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
+  role: TeamRole;
 }

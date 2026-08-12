@@ -1,11 +1,9 @@
 import type { Project, Project3DConfig, Unit } from "@/lib/types";
 
-/** Shared imperative handle + props contract between the dispatcher
- * (ThreeProjectViewer.tsx) and its two implementations
- * (ProceduralProjectViewer.tsx, MapboxProjectViewer.tsx) — kept in its own
- * module so none of the three files need to import from one another just
- * for a type, which would otherwise create a circular import between the
- * dispatcher and whichever implementation it renders. */
+/** Shared imperative handle + props contract between ThreeProjectViewer.tsx
+ * (a thin re-export) and ProceduralProjectViewer.tsx (the real engine) —
+ * kept in its own module so neither needs to import the other just for a
+ * type. */
 export interface ThreeProjectViewerHandle {
   /** PRD §7.1/§16 — "Reset returns to Admin-saved starting camera." */
   resetView: () => void;

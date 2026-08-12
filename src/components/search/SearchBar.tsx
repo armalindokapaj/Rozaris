@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Search, MapPin, Building2, LandPlot, X } from "lucide-react";
 import { neighborhoods, projects, publishers, CITY } from "@/lib/mockData";
-import { useAppStore } from "@/lib/store";
+import { defaultFilters, useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
@@ -74,6 +74,7 @@ export function SearchBar({
   const setFilters = useAppStore((s) => s.setFilters);
   const requestFlyTo = useAppStore((s) => s.requestFlyTo);
   const setMode = useAppStore((s) => s.setMode);
+  const location = useAppStore((s) => s.filters.location);
   const { t } = useT();
   useClickOutside(ref, () => setOpen(false), open);
 
@@ -89,12 +90,18 @@ export function SearchBar({
     }
   }
 
+  function clearSearch() {
+    setQuery("");
+    setFilters({ location: defaultFilters.location });
+    setOpen(false);
+  }
+
   return (
     <div className={cn("relative", className)} ref={ref}>
       <div
         className={cn(
-          "flex items-center gap-2 rounded-control border border-neutral-200 bg-white shadow-[var(--shadow-1)] focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100",
-          compact ? "px-2.5 py-2" : "px-3.5 py-2.5"
+          "flex items-center gap-2 rounded-none border border-neutral-300 bg-white shadow-none focus-within:border-neutral-800 focus-within:ring-1 focus-within:ring-neutral-800",
+          compact ? "px-2.5 py-2" : "h-12 px-4"
         )}
       >
         <Search className={cn("shrink-0 text-neutral-400", compact ? "h-3.5 w-3.5" : "h-4 w-4")} />
@@ -110,10 +117,10 @@ export function SearchBar({
           aria-label={t("search.ariaLabel")}
           className="w-full bg-transparent text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none"
         />
-        {query && (
+        {(query || location !== defaultFilters.location) && (
           <button
             aria-label={t("search.clear")}
-            onClick={() => setQuery("")}
+            onClick={clearSearch}
             className="shrink-0 rounded-full p-0.5 text-neutral-400 hover:bg-neutral-100"
           >
             <X className="h-3.5 w-3.5" />

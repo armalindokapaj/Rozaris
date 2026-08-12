@@ -48,8 +48,10 @@ export interface RentBuyScenario {
 
 export interface RentBuySeriesPoint {
   year: number;
-  rentNet: number;
+  /** Null after planned stay: rent has ended and must not be extrapolated. */
+  rentNet: number | null;
   buyNet: number;
+  outstandingMortgageBalance: number;
 }
 
 export interface RentBuyBreakdown {
@@ -91,6 +93,8 @@ export interface RentBuyResult {
   /** null when no durable break-even occurs within the horizon. */
   breakEvenMonth: number | null;
   annualSeries: RentBuySeriesPoint[];
+  mortgagePayoffYear: number;
+  estimatedEquityAtStay: number;
   breakdown: RentBuyBreakdown;
 }
 
@@ -104,6 +108,7 @@ function leaderAt(rentNet: number, buyNet: number): "rent" | "buy" | "tie" {
 export function calculateRentVsBuy(scenario: RentBuyScenario): RentBuyResult {
   const months = Math.round(scenario.holdingPeriodYears * 12);
   const loanTermMonths = Math.round(scenario.loanTermYears * 12);
+  const chartMonths = Math.max(months, loanTermMonths);
 
   const downPaymentAmount = scenario.propertyPrice * scenario.downPaymentPercent;
   const closingCosts = scenario.propertyPrice * scenario.purchaseClosingCostRate;
@@ -155,11 +160,11 @@ export function calculateRentVsBuy(scenario: RentBuyScenario): RentBuyResult {
     const sellingCosts0 = propertyValue * scenario.sellingCostRate;
     const buyNet0 = propertyValue - sellingCosts0 - loanBalance - cumulativeBuyerCash;
     const rentNet0 = investmentAccount - cumulativeRentPaid;
-    annualSeries.push({ year: 0, rentNet: rentNet0, buyNet: buyNet0 });
+    annualSeries.push({ year: 0, rentNet: rentNet0, buyNet: buyNet0, outstandingMortgageBalance: loanBalance });
   }
 
-  for (let m = 1; m <= months; m++) {
-    if (m > 1 && (m - 1) % 12 === 0) {
+  for (let m = 1; m <= chartMonths; m++) {
+    if (m <= months && m > 1 && (m - 1) % 12 === 0) {
       currentRent *= 1 + scenario.rentGrowthAnnual;
     }
 
@@ -191,9 +196,11 @@ export function calculateRentVsBuy(scenario: RentBuyScenario): RentBuyResult {
       monthlyMaintenance;
     cumulativeBuyerCash += buyMonthlyCost;
 
-    const rentMonthlyCost = currentRent + scenario.renterInsuranceMonthly;
-    cumulativeRentPaid += currentRent;
-    cumulativeRenterInsurance += scenario.renterInsuranceMonthly;
+    const rentMonthlyCost = m <= months ? currentRent + scenario.renterInsuranceMonthly : 0;
+    if (m <= months) {
+      cumulativeRentPaid += currentRent;
+      cumulativeRenterInsurance += scenario.renterInsuranceMonthly;
+    }
 
     investmentAccount *= 1 + monthlyInvestmentReturn;
     const diff = buyMonthlyCost - rentMonthlyCost;
@@ -212,10 +219,10 @@ export function calculateRentVsBuy(scenario: RentBuyScenario): RentBuyResult {
     const refundableDeposit = scenario.depositRefundable ? depositAmount : 0;
     const rentNetAtM = investmentAccount + refundableDeposit - cumulativeRentPaid - cumulativeRenterInsurance;
 
-    monthlyLeader.push(leaderAt(rentNetAtM, buyNetAtM));
+    if (m <= months) monthlyLeader.push(leaderAt(rentNetAtM, buyNetAtM));
 
     if (m % 12 === 0) {
-      annualSeries.push({ year: m / 12, rentNet: rentNetAtM, buyNet: buyNetAtM });
+      annualSeries.push({ year: m / 12, rentNet: m <= months ? rentNetAtM : null, buyNet: buyNetAtM, outstandingMortgageBalance: loanBalance });
     }
   }
 
@@ -237,8 +244,9 @@ export function calculateRentVsBuy(scenario: RentBuyScenario): RentBuyResult {
     }
   }
 
-  const finalRentNet = annualSeries[annualSeries.length - 1]?.rentNet ?? 0;
-  const finalBuyNet = annualSeries[annualSeries.length - 1]?.buyNet ?? 0;
+  const stayPoint = annualSeries.find((point) => point.year === scenario.holdingPeriodYears);
+  const finalRentNet = stayPoint?.rentNet ?? 0;
+  const finalBuyNet = stayPoint?.buyNet ?? 0;
   const winner = leaderAt(finalRentNet, finalBuyNet);
   const finalSellingCosts = propertyValue * scenario.sellingCostRate;
   const cashRecoveredAtSale = propertyValue - finalSellingCosts - loanBalance;
@@ -254,6 +262,8 @@ export function calculateRentVsBuy(scenario: RentBuyScenario): RentBuyResult {
     advantageAmount: Math.abs(finalBuyNet - finalRentNet),
     breakEvenMonth,
     annualSeries,
+    mortgagePayoffYear: scenario.loanTermYears,
+    estimatedEquityAtStay: Math.max(0, (scenario.propertyPrice * Math.pow(1 + scenario.homeAppreciationAnnual, scenario.holdingPeriodYears)) - (stayPoint?.outstandingMortgageBalance ?? 0)),
     breakdown: {
       rent: {
         rentPaid: cumulativeRentPaid - (scenario.depositRefundable ? 0 : depositAmount) - scenario.renterMovingCosts,

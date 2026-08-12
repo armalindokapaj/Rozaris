@@ -13,23 +13,39 @@ const detailModelSchema = z.object({
 });
 
 /**
- * The Project 3D Experience's detailed GLB — a separate row/upload from
- * ProjectMapModel (src/app/api/map-models), see ProjectDetailModel's doc
- * comment in src/lib/types.ts. Returns the placement row plus its
- * admin-confirmed Unit_<number> -> Unit links (see ./links/route.ts for
- * editing those) so the public viewer can fetch everything it needs in one
- * request.
+ * ⚠️ LEGACY as of the versioning pass — GET below now resolves the
+ * project's currently-*published* `DetailModelVersion` (see
+ * ./versions/route.ts for the full history/draft/publish/rollback/
+ * carry-forward pipeline) instead of the old single-row
+ * `ProjectDetailModel`, keeping the exact same response shape
+ * (`glbUrl/fileName/.../enabled/unitLinks: {meshName,unitId}[]`) so
+ * useProjectDetailModel.ts and every other existing caller needs zero
+ * changes. PUT/DELETE further down and ./links/route.ts still write the
+ * legacy `ProjectDetailModel`/`UnitMeshLink` tables — left in place,
+ * unused by the admin UI once it switches to POST/PATCH .../versions, as a
+ * one-release safety net. Do not build new features against them.
  */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  const model = await prisma.projectDetailModel.findUnique({
-    where: { projectId },
+  const version = await prisma.detailModelVersion.findFirst({
+    where: { projectId, publicationStatus: "published" },
     include: { unitLinks: true },
   });
-  return NextResponse.json(model);
+  if (!version) return NextResponse.json(null);
+  return NextResponse.json({
+    glbUrl: version.publicAssetUrl,
+    fileName: version.fileName,
+    fileSize: version.fileSize,
+    scale: version.scale,
+    rotationDeg: version.rotationDeg,
+    altitudeOffset: version.altitudeOffset,
+    enabled: version.publicationStatus === "published",
+    updatedAt: version.updatedAt,
+    unitLinks: version.unitLinks.map((l) => ({ meshName: l.meshName, unitId: l.unitId })),
+  });
 }
 
 /**

@@ -1,10 +1,36 @@
-import { useAppStore, defaultProject3DConfig } from "@/lib/store";
+"use client";
+
+import { useEffect, useState } from "react";
+import { defaultProject3DConfig } from "@/lib/store";
 import type { Project3DConfig } from "@/lib/types";
 
-/** A project's live "3D Experience" config — the Admin-authored override if
- * one has been saved, otherwise the platform default (PRD_3D_Project_Viewer
- * §11/§15/§16). Mirrors useProjectConstruction's override pattern. */
+/**
+ * A project's live "3D Experience" config — real, shared Postgres row
+ * (`/api/project-3d-config/[projectId]`, "3D Experience Phase 1") every
+ * visitor's browser reads, not Zustand/localStorage. Falls back to the
+ * platform default while loading or if Admin never saved one for this
+ * project — same `null`-row-means-"use the default" pattern as
+ * useProjectDetailModel.ts's sibling hooks, except this one always returns
+ * a full `Project3DConfig` (never `null`) since every caller needs a
+ * complete config to hand the viewer immediately, not a loading state.
+ */
 export function useProject3DConfig(projectId: string): Project3DConfig {
-  const override = useAppStore((s) => s.project3DConfigs[projectId]);
-  return override ?? defaultProject3DConfig;
+  const [config, setConfig] = useState<Project3DConfig>(defaultProject3DConfig);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/project-3d-config/${projectId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((row: Project3DConfig | null) => {
+        if (!cancelled) setConfig(row ?? defaultProject3DConfig);
+      })
+      .catch(() => {
+        if (!cancelled) setConfig(defaultProject3DConfig);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  return config;
 }

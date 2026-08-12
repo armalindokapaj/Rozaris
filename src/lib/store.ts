@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type {
+  AuditLogEntry,
   BuyerPreferences,
   BuyerProfile,
   CompareEntity,
@@ -22,6 +23,7 @@ import type {
   RecentlyViewedEntry,
   RecentlyViewedKind,
   SavedSearch,
+  TeamMember,
   Unit,
   ViewMode,
 } from "./types";
@@ -55,6 +57,16 @@ export const defaultProject3DConfig: Project3DConfig = {
   autoRotate: true,
   constructionStagesEnabled: true,
   status: "published",
+  renderingMode: "auto",
+  qualityPreset: "high_desktop",
+  glassPreset: "standard",
+  skyPreset: "clear_day",
+  environmentIntensity: 1,
+  northRotationDeg: 0,
+  defaultTimeOfDay: 14,
+  allowUserTimeChange: true,
+  cameraFovDesktop: 38,
+  cameraFovMobile: 48,
   updatedAt: "2025-01-01T00:00:00.000Z",
 };
 
@@ -158,6 +170,10 @@ interface AppState {
   // Map / selection
   mapBounds: MapBounds | null;
   setMapBounds: (bounds: MapBounds) => void;
+  /** Bounds committed only when the visitor explicitly chooses Search here. */
+  mapAreaSearchBounds: MapBounds | null;
+  searchThisMapArea: () => void;
+  clearMapAreaSearch: () => void;
   selectedListingId: string | null;
   selectedProjectId: string | null;
   hoveredId: string | null;
@@ -225,6 +241,23 @@ interface AppState {
   // status overrides persist, keyed by lead id.
   leadStatusOverrides: Record<string, LeadStatus>;
   setLeadStatus: (id: string, status: LeadStatus) => void;
+  leadNotes: Record<string, string>;
+  setLeadNotes: (id: string, notes: string) => void;
+
+  // Admin audit trail (PRD_ROZARIS_User_Types §5 "Admin roles & audit") — a
+  // session-local stand-in for a real AuditLog table; sensitive admin
+  // actions in this prototype (approvals, publish toggles, rate changes)
+  // call logAudit so the Audit Log tab has real, growing content instead of
+  // seeded copy. Becomes the real Prisma AuditLog model in the backend-
+  // wiring phase (see the Rozaris backend plan memory).
+  auditLog: AuditLogEntry[];
+  logAudit: (action: string, entity: string) => void;
+
+  // Business Publisher company team roster (PRD_ROZARIS_User_Types §4
+  // "Company & team") — informational only in this prototype (no real
+  // per-seat permissions yet), keyed by publisherId.
+  teamMembers: Record<string, TeamMember[]>;
+  setTeamMembers: (publisherId: string, members: TeamMember[]) => void;
 
   // Locale / currency
   currency: Currency;
@@ -261,14 +294,6 @@ interface AppState {
   submitTimelineRequest: (projectId: string, projectName: string, draft: ConstructionTimelineDraft) => void;
   approveTimelineRequest: (requestId: string) => void;
   rejectTimelineRequest: (requestId: string) => void;
-
-  // PRD_3D_Project_Viewer — Admin's "3D Experience" config per project
-  // (Scene/Camera/Lighting/Construction). Admin-authored only; unlike
-  // construction timelines above, there's no publisher submission/approval
-  // step, since the PRD reserves 3D authoring for Admin exclusively.
-  project3DConfigs: Record<string, Project3DConfig>;
-  setProject3DConfig: (projectId: string, partial: Partial<Project3DConfig>) => void;
-  resetProject3DConfig: (projectId: string) => void;
 
   // Admin-created projects (3D Experience tab §11 "Overview" -> a project
   // must exist before Admin can author its scene/units/model). Kept
@@ -311,6 +336,10 @@ export const useAppStore = create<AppState>()(
 
       mapBounds: null,
       setMapBounds: (mapBounds) => set({ mapBounds }),
+      mapAreaSearchBounds: null,
+      searchThisMapArea: () =>
+        set((s) => ({ mapAreaSearchBounds: s.mapBounds ? { ...s.mapBounds } : null })),
+      clearMapAreaSearch: () => set({ mapAreaSearchBounds: null }),
       selectedListingId: null,
       selectedProjectId: null,
       hoveredId: null,
@@ -446,8 +475,32 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ readNotificationIds: Array.from(new Set([...s.readNotificationIds, ...ids])) })),
 
       leadStatusOverrides: {},
-      setLeadStatus: (id, status) =>
-        set((s) => ({ leadStatusOverrides: { ...s.leadStatusOverrides, [id]: status } })),
+      setLeadStatus: (id, status) => {
+        set((s) => ({ leadStatusOverrides: { ...s.leadStatusOverrides, [id]: status } }));
+        get().logAudit(`Lead status → ${status}`, id);
+      },
+      leadNotes: {},
+      setLeadNotes: (id, notes) =>
+        set((s) => ({ leadNotes: { ...s.leadNotes, [id]: notes } })),
+
+      auditLog: [],
+      logAudit: (action, entity) =>
+        set((s) => ({
+          auditLog: [
+            {
+              id: `audit-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+              actor: s.auth.name ?? "Admin",
+              action,
+              entity,
+              createdAt: new Date().toISOString(),
+            },
+            ...s.auditLog,
+          ].slice(0, 200),
+        })),
+
+      teamMembers: {},
+      setTeamMembers: (publisherId, members) =>
+        set((s) => ({ teamMembers: { ...s.teamMembers, [publisherId]: members } })),
 
       currency: "EUR",
       setCurrency: (currency) => set({ currency }),
@@ -456,8 +509,10 @@ export const useAppStore = create<AppState>()(
 
       eurToAllRate: DEFAULT_EUR_TO_ALL_RATE,
       eurToAllRateUpdatedAt: null,
-      setEurToAllRate: (eurToAllRate, eurToAllRateUpdatedAt) =>
-        set({ eurToAllRate, eurToAllRateUpdatedAt }),
+      setEurToAllRate: (eurToAllRate, eurToAllRateUpdatedAt) => {
+        set({ eurToAllRate, eurToAllRateUpdatedAt });
+        get().logAudit("Platform setting changed", `EUR → ALL rate = ${eurToAllRate}`);
+      },
 
       onboardingDismissed: false,
       dismissOnboarding: () => set({ onboardingDismissed: true }),
@@ -528,34 +583,17 @@ export const useAppStore = create<AppState>()(
             [request.projectId]: request.draft,
           },
         }));
+        get().logAudit("Construction update approved", request.projectName);
       },
       rejectTimelineRequest: (requestId) => {
+        const request = get().timelineRequests.find((r) => r.id === requestId);
         set((s) => ({
           timelineRequests: s.timelineRequests.map((r) =>
             r.id === requestId ? { ...r, status: "rejected", reviewedAt: new Date().toISOString() } : r
           ),
         }));
+        if (request) get().logAudit("Construction update rejected", request.projectName);
       },
-
-      project3DConfigs: {},
-      setProject3DConfig: (projectId, partial) =>
-        set((s) => ({
-          project3DConfigs: {
-            ...s.project3DConfigs,
-            [projectId]: {
-              ...defaultProject3DConfig,
-              ...s.project3DConfigs[projectId],
-              ...partial,
-              updatedAt: new Date().toISOString(),
-            },
-          },
-        })),
-      resetProject3DConfig: (projectId) =>
-        set((s) => {
-          const next = { ...s.project3DConfigs };
-          delete next[projectId];
-          return { project3DConfigs: next };
-        }),
 
       customProjects: [],
       addProject: (project) =>
@@ -609,12 +647,14 @@ export const useAppStore = create<AppState>()(
         conversations: s.conversations,
         timelineRequests: s.timelineRequests,
         projectConstructionOverrides: s.projectConstructionOverrides,
-        project3DConfigs: s.project3DConfigs,
         customProjects: s.customProjects,
         following: s.following,
         recentlyViewed: s.recentlyViewed,
         readNotificationIds: s.readNotificationIds,
         leadStatusOverrides: s.leadStatusOverrides,
+        leadNotes: s.leadNotes,
+        auditLog: s.auditLog,
+        teamMembers: s.teamMembers,
       }),
     }
   )

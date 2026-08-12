@@ -63,14 +63,14 @@ model User {
   // A publisher-role user owns exactly one Publisher org record.
   publisher Publisher?
 
-  savedItems         SavedItem[]
-  savedSearches       SavedSearch[]
-  follows             Follow[]
-  recentlyViewed      RecentlyViewedEntry[]
-  notifications       Notification[]
-  sentConversationsAsBuyer Conversation[] @relation("BuyerConversations")
-  messages            Message[]
-  leadStatusOverrides LeadStatusOverride[]
+  savedItems               SavedItem[]
+  savedSearches            SavedSearch[]
+  follows                  Follow[]
+  recentlyViewed           RecentlyViewedEntry[]
+  notifications            Notification[]
+  sentConversationsAsBuyer Conversation[]        @relation("BuyerConversations")
+  messages                 Message[]
+  leadStatusOverrides      LeadStatusOverride[]
 
   @@map("users")
 }
@@ -207,12 +207,12 @@ enum ProjectApprovalStatus {
 }
 
 model Project {
-  id              String                 @id @default(cuid())
-  slug            String                 @unique
+  id              String                @id @default(cuid())
+  slug            String                @unique
   name            String
-  status          ProjectStatus          @default(coming_soon)
-  approvalStatus  ProjectApprovalStatus  @default(pending)
-  progressPercent Int                    @default(0)
+  status          ProjectStatus         @default(coming_soon)
+  approvalStatus  ProjectApprovalStatus @default(pending)
+  progressPercent Int                   @default(0)
   lat             Float
   lng             Float
   neighborhoodId  String
@@ -225,9 +225,9 @@ model Project {
   descriptionSq   String
   buildings       String[]
   amenities       String[]
-  premium         Boolean                @default(false)
+  premium         Boolean               @default(false)
   completionLabel String?
-  createdAt       DateTime               @default(now())
+  createdAt       DateTime              @default(now())
   reviewedAt      DateTime?
 
   publisherId String
@@ -239,28 +239,30 @@ model Project {
   threeDConfig        Project3DConfig?
   mapModel            ProjectMapModel?
   detailModel         ProjectDetailModel?
+  mapModelVersions    MapModelVersion[]
+  detailModelVersions DetailModelVersion[]
   leads               LeadItem[]
 
   @@map("projects")
 }
 
 model Unit {
-  id           String   @id @default(cuid())
-  code         String
-  type         String
-  buildingName String
-  floor        Int
-  area         Float
-  bedrooms     Int
-  bathrooms    Int
-  price        Float
-  currency     String   @default("EUR")
-  transaction  String
-  status       String   @default("available")
-  images       String[]
+  id             String   @id @default(cuid())
+  code           String
+  type           String
+  buildingName   String
+  floor          Int
+  area           Float
+  bedrooms       Int
+  bathrooms      Int
+  price          Float
+  currency       String   @default("EUR")
+  transaction    String
+  status         String   @default("available")
+  images         String[]
   floorPlanImage String?
-  facadeImage  String?
-  videoUrl     String?
+  facadeImage    String?
+  videoUrl       String?
 
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -269,7 +271,7 @@ model Unit {
 }
 
 model ConstructionStage {
-  id              String   @id @default(cuid())
+  id              String @id @default(cuid())
   name            String
   order           Int
   status          String
@@ -307,13 +309,13 @@ model SavedItem {
 }
 
 model SavedSearch {
-  id              String   @id @default(cuid())
-  userId          String
-  name            String
-  filtersSummary  String
-  filters         Json
-  cadence         String   @default("off")
-  createdAt       DateTime @default(now())
+  id             String   @id @default(cuid())
+  userId         String
+  name           String
+  filtersSummary String
+  filters        Json
+  cadence        String   @default("off")
+  createdAt      DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -372,12 +374,12 @@ model Notification {
 // ---------------------------------------------------------------------------
 
 model Conversation {
-  id            String   @id @default(cuid())
-  buyerId       String
-  publisherId   String
-  listingTitle  String?
-  listingSlug   String?
-  createdAt     DateTime @default(now())
+  id           String   @id @default(cuid())
+  buyerId      String
+  publisherId  String
+  listingTitle String?
+  listingSlug  String?
+  createdAt    DateTime @default(now())
 
   buyer    User      @relation("BuyerConversations", fields: [buyerId], references: [id], onDelete: Cascade)
   messages Message[]
@@ -394,7 +396,7 @@ model Message {
   createdAt      DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender       User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
   @@map("messages")
 }
@@ -410,13 +412,13 @@ enum TimelineRequestStatus {
 }
 
 model ConstructionTimelineRequest {
-  id              String                 @id @default(cuid())
+  id              String                @id @default(cuid())
   projectId       String
   publisherId     String
   progressPercent Int
   stages          Json
-  status          TimelineRequestStatus  @default(pending)
-  submittedAt     DateTime               @default(now())
+  status          TimelineRequestStatus @default(pending)
+  submittedAt     DateTime              @default(now())
   reviewedAt      DateTime?
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -427,21 +429,52 @@ model ConstructionTimelineRequest {
 // ---------------------------------------------------------------------------
 // Admin's two 3D authoring surfaces — one row per project each, replacing
 // the store's project3DConfigs / projectMapModels Records.
+//
+// ProjectMapModel/ProjectDetailModel/UnitMeshLink below are LEGACY as of
+// the versioning pass (PRD_Admin_Mapbox_GLB / PRD_Admin_3D_Project_Experience)
+// — superseded by MapModelVersion/DetailModelVersion/UnitMeshLinkV2 further
+// down, which add version history, draft/publish/rollback and validation
+// status instead of one mutable row per project. Kept in place, unused by
+// any route once the admin editors switch over, as a one-release safety
+// net (their data was copied forward by scripts/migrate-3d-versions.ts) —
+// drop them in a follow-up migration once the new tables are confirmed
+// stable in production. Project3DConfig is now real as of the "3D
+// Experience Phase 1" pass (GET/PATCH /api/project-3d-config/[projectId],
+// see src/lib/adminAuth.ts's requireAdmin() for the write gate) — the
+// rendering-mode/quality-preset/glass/sky/sun fields below drive the
+// standalone WebGPU/WebGL2 viewer (ProceduralProjectViewer.tsx), which
+// replaced the old Mapbox-embedded detail-model path in the same pass.
 // ---------------------------------------------------------------------------
 
 model Project3DConfig {
   projectId                     String   @id
   lightingPreset                String   @default("daylight")
-  backgroundPreset               String   @default("sky")
-  groundEnabled                  Boolean  @default(true)
-  cameraStartDistanceMultiplier  Float    @default(1)
-  cameraMinDistanceMultiplier    Float    @default(0.4)
-  cameraMaxDistanceMultiplier    Float    @default(2.5)
-  cameraMaxPolarDeg              Int      @default(85)
-  autoRotate                     Boolean  @default(true)
-  constructionStagesEnabled      Boolean  @default(true)
-  status                         String   @default("draft")
-  updatedAt                      DateTime @updatedAt
+  backgroundPreset              String   @default("sky")
+  groundEnabled                 Boolean  @default(true)
+  cameraStartDistanceMultiplier Float    @default(1)
+  cameraMinDistanceMultiplier   Float    @default(0.4)
+  cameraMaxDistanceMultiplier   Float    @default(2.5)
+  cameraMaxPolarDeg             Int      @default(85)
+  autoRotate                    Boolean  @default(true)
+  constructionStagesEnabled     Boolean  @default(true)
+  status                        String   @default("draft")
+
+  // "3D Experience Phase 1" — rendering foundation, quality presets, glass,
+  // real geographic sun. See src/lib/sunPosition.ts, src/lib/viewerPresets.ts.
+  renderingMode        String  @default("auto") // auto | webgpu | webgl2
+  qualityPreset        String  @default("high_desktop")
+  // ultra_desktop | high_desktop | balanced | mobile_high | mobile_low
+  glassPreset          String  @default("standard") // performance | standard | premium
+  skyPreset            String  @default("clear_day")
+  // clear_day | soft_day | overcast | golden_hour | evening
+  environmentIntensity Float   @default(1)
+  northRotationDeg     Float   @default(0)
+  defaultTimeOfDay     Float   @default(14)
+  allowUserTimeChange  Boolean @default(true)
+  cameraFovDesktop     Int     @default(38)
+  cameraFovMobile      Int     @default(48)
+
+  updatedAt DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -453,18 +486,18 @@ model Project3DConfig {
 /// IndexedDB, which is exactly the gap flagged when this feature shipped:
 /// "nobody else sees Admin's own-browser upload".
 model ProjectMapModel {
-  projectId       String   @id
-  glbUrl          String
-  fileName        String
-  fileSize        Int
-  scale           Float    @default(1)
-  rotationDeg     Float    @default(0)
-  altitudeOffset  Float    @default(0)
-  enabled         Boolean  @default(false)
+  projectId         String   @id
+  glbUrl            String
+  fileName          String
+  fileSize          Int
+  scale             Float    @default(1)
+  rotationDeg       Float    @default(0)
+  altitudeOffset    Float    @default(0)
+  enabled           Boolean  @default(false)
   /// Hides the basemap's real 3D building footprint at this project's
   /// coordinates (see src/components/map/BuildingHider.ts) so the GLB
   /// replaces it cleanly instead of sitting alongside/inside it.
-  hideBaseBuilding Boolean @default(false)
+  hideBaseBuilding  Boolean  @default(false)
   /// Manually picked anchor point ("Pick Building to Remove" in
   /// MapModelEditor) used to resolve which real building footprint to hide,
   /// instead of always assuming it's the one nearest the project's own
@@ -473,7 +506,7 @@ model ProjectMapModel {
   /// not yet manually picked).
   hiddenBuildingLng Float?
   hiddenBuildingLat Float?
-  updatedAt       DateTime @updatedAt
+  updatedAt         DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -524,6 +557,146 @@ model UnitMeshLink {
 }
 
 // ---------------------------------------------------------------------------
+// Versioned 3D asset pipeline (PRD_Admin_Mapbox_GLB, PRD_Admin_3D_Project_Experience)
+// — Upload -> Validate -> Configure -> Preview -> Publish, with version
+// history, draft/publish/rollback and an audit trail. Supersedes
+// ProjectMapModel/ProjectDetailModel/UnitMeshLink above (see their comment).
+// ---------------------------------------------------------------------------
+
+enum ModelValidationStatus {
+  ready
+  warning
+  blocked
+}
+
+enum ModelPublicationStatus {
+  draft
+  published
+  archived
+}
+
+/// One immutable version of a project's lightweight search-map GLB
+/// placement. Only one row per project may have publicationStatus
+/// "published" at a time (enforced in the publish/rollback route handlers,
+/// not a DB constraint — Postgres partial-unique indexes aren't modeled by
+/// Prisma's schema syntax without raw SQL).
+model MapModelVersion {
+  id                String                 @id @default(cuid())
+  projectId         String
+  version           Int
+  sourceAssetUrl    String
+  publicAssetUrl    String
+  fileName          String
+  fileSize          Int
+  triangleCount     Int?
+  meshCount         Int?
+  materialCount     Int?
+  textureCount      Int?
+  latitude          Float
+  longitude         Float
+  altitude          Float                  @default(0)
+  heading           Float                  @default(0)
+  scale             Float                  @default(1)
+  minZoom           Int                    @default(13)
+  fullDetailZoom    Int                    @default(16)
+  maxZoom           Int?
+  hideBaseBuilding  Boolean                @default(false)
+  hiddenBuildingLng Float?
+  hiddenBuildingLat Float?
+  validationStatus  ModelValidationStatus  @default(ready)
+  validationIssues  Json?
+  publicationStatus ModelPublicationStatus @default(draft)
+  uploadedBy        String?
+  publishedBy       String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  publishedAt       DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, version])
+  @@index([projectId, publicationStatus])
+  @@map("map_model_versions")
+}
+
+/// One immutable version of a project's detailed Three.js-experience GLB —
+/// same versioning shape as MapModelVersion above, plus its own unit mesh
+/// mapping (UnitMeshLinkV2) since mappings are meaningful per-version, not
+/// per-project (a replacement GLB can rename/remove mesh nodes).
+model DetailModelVersion {
+  id                String                 @id @default(cuid())
+  projectId         String
+  version           Int
+  sourceAssetUrl    String
+  publicAssetUrl    String
+  fileName          String
+  fileSize          Int
+  triangleCount     Int?
+  meshCount         Int?
+  materialCount     Int?
+  textureCount      Int?
+  scale             Float                  @default(1)
+  rotationDeg       Float                  @default(0)
+  altitudeOffset    Float                  @default(0)
+  validationStatus  ModelValidationStatus  @default(ready)
+  validationIssues  Json?
+  publicationStatus ModelPublicationStatus @default(draft)
+  uploadedBy        String?
+  publishedBy       String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  publishedAt       DateTime?
+
+  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  unitLinks UnitMeshLinkV2[]
+
+  @@unique([projectId, version])
+  @@index([projectId, publicationStatus])
+  @@map("detail_model_versions")
+}
+
+/// Admin-confirmed link between a GLB mesh/node name and a real Unit,
+/// scoped to one DetailModelVersion — PRD_Admin_3D_Project_Experience §19
+/// "Mapping Version Behavior": a replacement version's route handler
+/// copies forward links whose mesh name still exists in the new GLB
+/// (mappingStatus "carried"), everything else starts "needs_review".
+model UnitMeshLinkV2 {
+  id                   String   @id @default(cuid())
+  detailModelVersionId String
+  meshName             String
+  unitId               String
+  /// mapped (admin-confirmed on this version) | carried (auto-copied from
+  /// the prior published version, same mesh name) | needs_review (new/
+  /// renamed mesh, or the carry-forward source was itself unconfirmed).
+  mappingStatus        String   @default("mapped")
+  mappedAt             DateTime @default(now())
+
+  detailModelVersion DetailModelVersion @relation(fields: [detailModelVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([detailModelVersionId, meshName])
+  @@map("unit_mesh_links_v2")
+}
+
+/// Real audit trail for the versioned 3D pipeline's admin actions (upload,
+/// publish, rollback, discard). Separate from the Dashboard-Architecture
+/// pass's session-local Zustand `auditLog` slice, which has no real backend
+/// actions to log against yet — an acknowledged, flagged inconsistency
+/// rather than a forced unification of two different kinds of "admin
+/// action" (one real/DB-backed, one still client-side mock).
+model AuditLog {
+  id          String   @id @default(cuid())
+  actor       String
+  action      String
+  entityType  String
+  entityId    String
+  entityLabel String?
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@map("admin_audit_log")
+}
+
+// ---------------------------------------------------------------------------
 // Publisher leads
 // ---------------------------------------------------------------------------
 
@@ -568,9 +741,9 @@ model LeadStatusOverride {
 // ---------------------------------------------------------------------------
 
 model PlatformSettings {
-  id              String   @id @default("singleton")
-  eurToAllRate    Float    @default(97)
-  updatedAt       DateTime @updatedAt
+  id           String   @id @default("singleton")
+  eurToAllRate Float    @default(97)
+  updatedAt    DateTime @updatedAt
 
   @@map("platform_settings")
 }

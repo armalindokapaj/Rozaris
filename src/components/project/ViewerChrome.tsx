@@ -1,10 +1,8 @@
 import { ChevronUp, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** Shared bottom-bar UI pieces between ProceduralProjectViewer and
- * MapboxProjectViewer — both render the identical Home/Search/Sun/Palette
- * icon row and expanding dark glass panels, just wired to different
- * underlying engines (Three.js OrbitControls vs a live Mapbox camera). */
+/** Shared bottom-bar UI pieces for ProceduralProjectViewer — the
+ * Home/Search/Sun/Palette icon row and expanding dark glass panels. */
 
 /** A single "LABEL / ALL ⌃" control in the bottom filter bar. */
 export function DarkSelect({

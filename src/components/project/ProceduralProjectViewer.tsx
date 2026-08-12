@@ -1,41 +1,62 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { Box, Home, Palette, Search, Sun, X } from "lucide-react";
 import { computeProjectLayout, type UnitBox } from "@/lib/threeBuilding";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
+import { DRACO_DECODER_PATH } from "@/lib/gltfDecoder";
+import { applyUnitBoxMaterial, disposeGlbObject3D } from "@/lib/glbUnitNodes";
+import { useProjectDetailModel } from "@/hooks/useProjectDetailModel";
+import { calcSunPosition, sunColorForElevation, sunDirectionVector } from "@/lib/sunPosition";
 import {
-  BACKGROUND_COLOR,
+  GLASS_NODE_PATTERN,
+  GLASS_TIERS,
   GROUND_COLOR,
+  QUALITY_TIERS,
   SELECTED_COLOR,
+  SKY_GRADIENTS,
   STATUS_COLOR,
   TIME_PRESETS,
+  UNIT_BOX_COLOR,
+  UNIT_BOX_OPACITY,
+  UNIT_BOX_SELECTED_OPACITY,
   VIEW_PRESETS,
   VIEW_PRESET_MATERIAL,
-  defaultHourForPreset,
   type ViewPreset,
 } from "@/lib/viewerPresets";
 import { DarkSelect, MenuIconButton, formatHour } from "./ViewerChrome";
-import type { Unit } from "@/lib/types";
+import type { Unit, UnitMeshLink } from "@/lib/types";
 import type { ThreeProjectViewerHandle, ThreeProjectViewerProps } from "./viewerTypes";
 
 type AvailabilityFilter = "all" | Unit["status"];
 
+interface GlbUnitBoxEntry {
+  node: THREE.Object3D;
+  unitId: string;
+}
+
+const UNIT_NODE_PATTERN = /^Unit_/i;
+const MOBILE_VIEWPORT_BREAKPOINT = 768; // matches Tailwind's `md` — used for FOV/quality only, not a full UA probe
+
 /**
- * Pure Three.js project viewer (PRD_3D_Project_Viewer). Renders only the
- * selected project's building(s) on a minimal platform — no surrounding
- * city — using OrbitControls for navigation and a Raycaster for unit
- * picking, per the PRD's Three.js technology baseline (§3). Building
- * geometry is procedural (lib/threeBuilding.ts), not a loaded GLB/glTF.
- *
- * This is the fallback path for any project that hasn't had a detailed GLB
- * uploaded (or enabled) via Admin's "Project 3D Experience" editor — see
- * ThreeProjectViewer.tsx, the dispatcher that picks between this component
- * and MapboxProjectViewer.tsx (the live-Mapbox path for projects that have
- * one). This file is otherwise unchanged from before that split.
+ * ROZARIS's one real "3D Experience" engine — a standalone WebGPU/WebGL2
+ * canvas the app fully owns ("3D Experience Phase 1"), replacing the old
+ * split between this component (procedural massing only) and
+ * MapboxProjectViewer.tsx/DetailModelLayer.ts (a real GLB rendered *inside*
+ * Mapbox's own shared WebGL2 context — no OrbitControls, no post-
+ * processing, no WebGPU possible there). Renders either:
+ *  - the procedural box-massing fallback (lib/threeBuilding.ts) for any
+ *    project with no enabled detail model, or
+ *  - the admin-uploaded detailed GLB (useProjectDetailModel), with its
+ *    linked `Unit_<number>` boxes, once one is enabled —
+ * in the SAME owned scene, camera and renderer, so real environment
+ * lighting, a real geographic sun (src/lib/sunPosition.ts) and real glass
+ * materials apply uniformly regardless of which content is loaded.
  */
 export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProjectViewerProps>(
   function ProceduralProjectViewer(
@@ -51,28 +72,34 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
     },
     ref
   ) {
+    const detailModel = useProjectDetailModel(project.id);
+    const usingGlb = !!(detailModel?.enabled && detailModel.glbUrl);
+
     const containerRef = useRef<HTMLDivElement>(null);
-    const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+    const rendererRef = useRef<THREE.WebGPURenderer | null>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
+    const envSceneRef = useRef<THREE.Scene | null>(null);
+    const pmremRef = useRef<InstanceType<typeof THREE.PMREMGenerator> | null>(null);
+    const envRenderTargetRef = useRef<{ texture: THREE.Texture; dispose: () => void } | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
     const groundRef = useRef<THREE.Mesh | null>(null);
-    const lightsRef = useRef<{
-      hemi: THREE.HemisphereLight;
-      sun: THREE.DirectionalLight;
-      ambient: THREE.AmbientLight;
-    } | null>(null);
+    const sunRef = useRef<THREE.DirectionalLight | null>(null);
+    const ambientRef = useRef<THREE.AmbientLight | null>(null);
+
+    // Procedural mode
     const unitMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
-    // One LineSegments edge-outline per unit, parented to its mesh so it
-    // inherits position/scale automatically — created once, just toggled
-    // visible/hidden per View Preset rather than rebuilt on every switch.
     const unitEdgesRef = useRef<Map<string, THREE.LineSegments>>(new Map());
     const shellsRef = useRef<THREE.Mesh[]>([]);
     const unitBoxesRef = useRef<UnitBox[]>([]);
+
+    // GLB mode
+    const glbRootRef = useRef<THREE.Group | null>(null);
+    const glbUnitBoxesRef = useRef<Map<string, GlbUnitBoxEntry>>(new Map());
+
+    const pickableRef = useRef<Map<string, THREE.Object3D>>(new Map());
     const hoveredIdRef = useRef<string | null>(null);
-    const defaultCameraRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(
-      null
-    );
+    const defaultCameraRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
 
     const [ready, setReady] = useState(false);
     const [webglFailReason, setWebglFailReason] = useState<string | null>(null);
@@ -80,14 +107,12 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
     const [bedroomFilter, setBedroomFilter] = useState<number | null>(null);
     const [bathroomFilter, setBathroomFilter] = useState<number | null>(null);
     const [minArea, setMinArea] = useState<number | null>(null);
-    // Only one of these is ever open at once — the bottom menu is either the
-    // icon-only row, or one expanded panel; there's no "both" state.
     const [panel, setPanel] = useState<"search" | "time" | "viewPreset" | null>(null);
-    // Live scene controls — user-side, on top of Admin config's initial
-    // defaults (see the dedicated effect below).
-    const [timeOfDay, setTimeOfDay] = useState(() => defaultHourForPreset(config.lightingPreset));
-    const [sunAzimuth, setSunAzimuth] = useState(215);
+    const [timeOfDay, setTimeOfDay] = useState(() => config.defaultTimeOfDay);
     const [viewPreset, setViewPreset] = useState<ViewPreset>("realistic");
+    // "Unit Search" gates GLB unit-box visibility, same as the old
+    // MapboxProjectViewer — procedural units are always visible/filterable.
+    const showUnitBoxes = panel === "search";
     const { t } = useT();
 
     function matchesFilters(u: Unit): boolean {
@@ -98,9 +123,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       return true;
     }
 
-    // Reports "is a panel expanded" (more bottom-of-viewport height in use),
-    // not the old barOpen concept — same callback contract ArchVizClient
-    // already reads for its "explore units" CTA clearance.
     useEffect(() => {
       onBarOpenChange?.(panel !== null && showChrome);
     }, [panel, showChrome, onBarOpenChange]);
@@ -122,10 +144,13 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       controls.update();
     }
 
-    /** North Sign — rotates the camera to a canonical "north" heading
-     * (theta=0) around the current target, keeping distance/elevation. Real
-     * camera math, though — same as resetCamera — this procedural scene has
-     * no actual geographic orientation to align to. */
+    /** North Sign — rotates the camera to a canonical heading (theta=0)
+     * around the current target. For the procedural fallback this scene has
+     * no real geographic orientation; for a loaded GLB it's an
+     * approximation too (true alignment would need to also account for
+     * `config.northRotationDeg` against the *camera*, not just the sun —
+     * left as a known simplification for Phase 1, flagged rather than
+     * silently assumed correct). */
     function resetToNorth() {
       const controls = controlsRef.current;
       const camera = cameraRef.current;
@@ -145,9 +170,14 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
         const scene = sceneRef.current;
         const camera = cameraRef.current;
         if (!renderer || !scene || !camera) return null;
-        // Force one synchronous render right before reading the buffer —
-        // the animate() loop's last frame is usually still there, but
-        // capturing right after a fresh render removes any doubt.
+        // Same "force one fresh render right before reading the buffer" as
+        // before. Known Phase-1 gap: WebGPURenderer has no
+        // `preserveDrawingBuffer` equivalent, so this can occasionally
+        // return a blank frame on the WebGPU backend specifically (browser
+        // is free, not guaranteed, to clear right after compositing) —
+        // acceptable for now; a real off-screen-render-target capture is
+        // the fix, sequenced with the deferred "Ultra Capture" mode (spec
+        // §22), not before.
         renderer.render(scene, camera);
         return renderer.domElement.toDataURL("image/png");
       },
@@ -180,339 +210,569 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       }
     }
 
-    function refreshAllAppearance() {
-      unitBoxesRef.current.forEach((box) => {
-        const mesh = unitMeshesRef.current.get(box.unit.id);
-        if (mesh) applyUnitAppearance(mesh, box);
+    function refreshGlbUnitBoxAppearance() {
+      glbUnitBoxesRef.current.forEach(({ node, unitId }) => {
+        const unit = project.units.find((u) => u.id === unitId);
+        if (!unit) {
+          node.visible = false;
+          return;
+        }
+        const isSelected = unitId === selectedUnitId;
+        const isHovered = unitId === hoveredIdRef.current;
+        node.visible = showUnitBoxes && matchesFilters(unit);
+        const color = isSelected ? SELECTED_COLOR : UNIT_BOX_COLOR[unit.status];
+        const opacity = isSelected || isHovered ? UNIT_BOX_SELECTED_OPACITY : UNIT_BOX_OPACITY;
+        applyUnitBoxMaterial(node, color, opacity);
       });
     }
 
-    // --- One-time scene setup per project (geometry is fully rebuilt if the
-    // project itself changes, same as MapView re-inits when its token does) ---
-    useEffect(() => {
-      const container = containerRef.current;
-      if (!container) return;
-
-      let gl: WebGLRenderingContext | WebGL2RenderingContext | null = null;
-      try {
-        const probe = document.createElement("canvas");
-        gl = (probe.getContext("webgl2") ?? probe.getContext("webgl")) as
-          | WebGLRenderingContext
-          | WebGL2RenderingContext
-          | null;
-      } catch {
-        gl = null;
-      }
-      if (!gl) {
-        setWebglFailReason(t("map.noWebglShort"));
-        return;
-      }
-
-      const layout = computeProjectLayout(project);
-      unitBoxesRef.current = layout.units;
-
-      const scene = new THREE.Scene();
-      sceneRef.current = scene;
-
-      const camera = new THREE.PerspectiveCamera(
-        50,
-        container.clientWidth / Math.max(1, container.clientHeight),
-        0.1,
-        2000
-      );
-      cameraRef.current = camera;
-
-      // preserveDrawingBuffer: without it, the browser is free to clear the
-      // WebGL drawing buffer right after it's presented — toDataURL() then
-      // reads a blank/cleared buffer instead of the last rendered frame,
-      // which is exactly why the Screenshot button was producing empty PNGs.
-      const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // §25 bounded DPR
-      renderer.setSize(container.clientWidth, container.clientHeight);
-      renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      container.appendChild(renderer.domElement);
-      rendererRef.current = renderer;
-
-      const target = new THREE.Vector3(0, layout.centerY, 0);
-      const startDistance = layout.boundingRadius * config.cameraStartDistanceMultiplier;
-      camera.position.set(startDistance * 0.6, startDistance * 0.55, startDistance * 0.9);
-      camera.lookAt(target);
-      defaultCameraRef.current = { position: camera.position.clone(), target: target.clone() };
-
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.target.copy(target);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.08;
-      controls.minDistance = layout.boundingRadius * config.cameraMinDistanceMultiplier;
-      controls.maxDistance = layout.boundingRadius * config.cameraMaxDistanceMultiplier;
-      controls.maxPolarAngle = THREE.MathUtils.degToRad(config.cameraMaxPolarDeg);
-      controls.autoRotate = config.autoRotate;
-      controls.autoRotateSpeed = 0.6;
-      controls.update();
-      controlsRef.current = controls;
-
-      // Lights — presets applied by the config effect below.
-      const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8a9a, 1);
-      const ambient = new THREE.AmbientLight(0xffffff, 0.2);
-      const sun = new THREE.DirectionalLight(0xffffff, 1);
-      sun.castShadow = true;
-      sun.shadow.mapSize.set(1024, 1024);
-      sun.shadow.camera.near = 1;
-      sun.shadow.camera.far = layout.boundingRadius * 6;
-      const shadowSpan = layout.boundingRadius * 1.5;
-      sun.shadow.camera.left = -shadowSpan;
-      sun.shadow.camera.right = shadowSpan;
-      sun.shadow.camera.top = shadowSpan;
-      sun.shadow.camera.bottom = -shadowSpan;
-      scene.add(hemi, ambient, sun, sun.target);
-      lightsRef.current = { hemi, sun, ambient };
-
-      const ground = new THREE.Mesh(
-        new THREE.CircleGeometry(layout.boundingRadius * 1.6, 48),
-        new THREE.MeshStandardMaterial({ color: GROUND_COLOR, roughness: 1 })
-      );
-      ground.rotation.x = -Math.PI / 2;
-      ground.receiveShadow = true;
-      scene.add(ground);
-      groundRef.current = ground;
-
-      // Building envelope shells — a soft outline of the *planned* full
-      // height, visible once construction hides not-yet-built floors, so an
-      // in-progress building still reads as "under construction" rather than
-      // "shorter than it should be" (PRD §10). Visibility toggled by the
-      // config effect below, not baked in here.
-      shellsRef.current = [];
-      for (const b of layout.buildings) {
-        const shell = new THREE.Mesh(
-          new THREE.BoxGeometry(b.width + 0.4, b.height + 0.4, b.depth + 0.4),
-          new THREE.MeshBasicMaterial({
-            color: 0xffffff,
-            transparent: true,
-            opacity: 0.08,
-            depthWrite: false,
-          })
-        );
-        shell.position.set(b.centerX, b.height / 2, b.z);
-        shell.userData.isShell = true;
-        scene.add(shell);
-        shellsRef.current.push(shell);
-      }
-
-      const geometry = new THREE.BoxGeometry(1, 1, 1);
-      // Shared by every unit's edge outline (View Preset: Conceptual/Sketch)
-      // — one LineSegments per unit, parented to its mesh so it inherits that
-      // mesh's own scale/position instead of needing per-unit geometry.
-      const edgeGeometry = new THREE.EdgesGeometry(geometry);
-      unitMeshesRef.current = new Map();
-      unitEdgesRef.current = new Map();
-      for (const box of layout.units) {
-        const material = new THREE.MeshStandardMaterial({
-          color: STATUS_COLOR[box.unit.status],
-          roughness: 0.6,
-          metalness: 0.05,
+    function refreshAllAppearance() {
+      if (usingGlb) {
+        refreshGlbUnitBoxAppearance();
+      } else {
+        unitBoxesRef.current.forEach((box) => {
+          const mesh = unitMeshesRef.current.get(box.unit.id);
+          if (mesh) applyUnitAppearance(mesh, box);
         });
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.scale.set(box.width, box.height, box.depth);
-        mesh.position.set(box.x, box.y, box.z);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.userData.unitId = box.unit.id;
-        scene.add(mesh);
-        unitMeshesRef.current.set(box.unit.id, mesh);
-
-        const edges = new THREE.LineSegments(
-          edgeGeometry,
-          new THREE.LineBasicMaterial({ color: 0x2a2a33, transparent: true, opacity: 0 })
-        );
-        edges.visible = false;
-        mesh.add(edges);
-        unitEdgesRef.current.set(box.unit.id, edges);
       }
+    }
 
-      setReady(true);
-      setWebglFailReason(null);
-
-      // --- Interaction: raycaster hover + click ---
-      const raycaster = new THREE.Raycaster();
-      const pointer = new THREE.Vector2();
-      const meshList = () => Array.from(unitMeshesRef.current.values());
-
-      function pointerFromEvent(e: PointerEvent) {
-        const rect = renderer.domElement.getBoundingClientRect();
-        pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      }
-
-      function handleMove(e: PointerEvent) {
-        pointerFromEvent(e);
-        raycaster.setFromCamera(pointer, camera);
-        const hits = raycaster.intersectObjects(meshList(), false);
-        const hit = hits.find((h) => h.object.visible)?.object as THREE.Mesh | undefined;
-        const nextHoverId = (hit?.userData.unitId as string | undefined) ?? null;
-        if (nextHoverId !== hoveredIdRef.current) {
-          hoveredIdRef.current = nextHoverId;
-          refreshAllAppearance();
-          renderer.domElement.style.cursor = nextHoverId ? "pointer" : "grab";
-        }
-      }
-
-      function handleClick(e: PointerEvent) {
-        pointerFromEvent(e);
-        raycaster.setFromCamera(pointer, camera);
-        const hits = raycaster.intersectObjects(meshList(), false);
-        const hit = hits.find((h) => h.object.visible)?.object as THREE.Mesh | undefined;
-        const unitId = hit?.userData.unitId as string | undefined;
-        if (!unitId) return;
-        const box = unitBoxesRef.current.find((b) => b.unit.id === unitId);
-        if (box && onSelectUnit) onSelectUnit(box.unit);
-      }
-
-      renderer.domElement.style.cursor = "grab";
-      renderer.domElement.addEventListener("pointermove", handleMove);
-      renderer.domElement.addEventListener("click", handleClick);
-
-      const resizeObserver = new ResizeObserver(() => {
-        if (!container.clientWidth || !container.clientHeight) return;
-        camera.aspect = container.clientWidth / container.clientHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(container.clientWidth, container.clientHeight);
+    /** Applies the shared VIEW_PRESET_MATERIAL treatment to every mesh in a
+     * loaded GLB except tagged unit boxes (own status color) and tagged
+     * `Glass_*` nodes (own glass-tier physical material, see
+     * applyGlassPreset below). */
+    function applyGlbMaterialPreset(root: THREE.Object3D) {
+      const preset = VIEW_PRESET_MATERIAL[viewPreset];
+      const unitBoxNodes = new Set(Array.from(glbUnitBoxesRef.current.values()).map((e) => e.node));
+      root.traverse((child) => {
+        if (unitBoxNodes.has(child)) return;
+        if (GLASS_NODE_PATTERN.test(child.name)) return;
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        materials.forEach((mat) => {
+          const std = mat as THREE.MeshStandardMaterial;
+          if (preset.color != null) std.color?.setHex(preset.color);
+          if (typeof std.roughness === "number") std.roughness = preset.roughness;
+          if (typeof std.metalness === "number") std.metalness = preset.metalness;
+        });
       });
-      resizeObserver.observe(container);
+    }
 
-      let raf = 0;
-      function animate() {
+    /** Replaces every `Glass_*`-named node's material with a real
+     * MeshPhysicalMaterial tuned by the project's `glassPreset` (spec §8) —
+     * this is what makes glazing read as transmissive/reflective instead of
+     * flat, and is why real environment lighting (see the sky/PMREM setup
+     * below) matters: transmission/IOR only look convincing against a real
+     * environment map, not a flat background color. */
+    function applyGlassPreset(root: THREE.Object3D) {
+      const tier = GLASS_TIERS[config.glassPreset];
+      root.traverse((child) => {
+        if (!GLASS_NODE_PATTERN.test(child.name)) return;
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const prevColor =
+          !Array.isArray(mesh.material) && (mesh.material as THREE.MeshStandardMaterial)?.color
+            ? (mesh.material as THREE.MeshStandardMaterial).color.clone()
+            : new THREE.Color(0xdfeaf2);
+        const prev = mesh.material as THREE.Material | THREE.Material[] | undefined;
+        if (Array.isArray(prev)) prev.forEach((m) => m.dispose());
+        else prev?.dispose();
+        mesh.material = new THREE.MeshPhysicalMaterial({
+          color: prevColor,
+          transmission: tier.transmission,
+          roughness: tier.roughness,
+          ior: tier.ior,
+          thickness: tier.thickness,
+          transparent: tier.transmission === 0,
+          opacity: tier.transmission === 0 ? 0.35 : 1,
+          envMapIntensity: config.environmentIntensity,
+        });
+      });
+    }
+
+    // --- Procedural (gradient) sky + real environment/reflection lighting,
+    // shared by both content modes. A plain CanvasTexture is
+    // backend-agnostic (WebGPU and WebGL2 render it identically, unlike
+    // Three.js's shader-based Sky/SkyMesh addons which are each locked to
+    // one backend) — see the Phase 1 plan for why this, not full
+    // atmospheric scattering, is the Phase 1 scope. ---
+    function buildSkyTexture(): THREE.Texture {
+      const stops = SKY_GRADIENTS[config.skyPreset];
+      const canvas = document.createElement("canvas");
+      canvas.width = 2;
+      canvas.height = 256;
+      const ctx = canvas.getContext("2d")!;
+      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, stops.top);
+      gradient.addColorStop(0.55, stops.horizon);
+      gradient.addColorStop(1, stops.ground);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      return texture;
+    }
+
+    function rebuildEnvironment() {
+      const renderer = rendererRef.current;
+      const scene = sceneRef.current;
+      const pmrem = pmremRef.current;
+      if (!renderer || !scene || !pmrem) return;
+      const skyTexture = buildSkyTexture();
+      const renderTarget = pmrem.fromEquirectangular(skyTexture);
+      skyTexture.dispose();
+      envRenderTargetRef.current?.dispose();
+      envRenderTargetRef.current = renderTarget;
+      scene.environment = renderTarget.texture;
+      scene.background = renderTarget.texture;
+      scene.environmentIntensity = config.environmentIntensity;
+      scene.backgroundIntensity = config.environmentIntensity;
+    }
+
+    // --- One-time scene setup per project/content-mode/rendering-mode ---
+    useEffect(() => {
+      const containerEl = containerRef.current;
+      if (!containerEl) return;
+      // Narrowed to a non-null local — TS's control-flow narrowing above
+      // doesn't carry into the nested `async function setup()` below.
+      const container: HTMLDivElement = containerEl;
+      let cancelled = false;
+      let resizeObserver: ResizeObserver | null = null;
+      let handleMove: ((e: PointerEvent) => void) | null = null;
+      let handleClick: ((e: PointerEvent) => void) | null = null;
+      let dracoLoader: DRACOLoader | null = null;
+      let disposeGeometry: (() => void) | null = null;
+
+      async function setup() {
+        const renderer = new THREE.WebGPURenderer({
+          antialias: true,
+          // "auto"/"webgpu" both let Three.js probe for WebGPU and fall
+          // back to WebGL2 automatically (WebGPURenderer's own built-in
+          // `getFallback`); only "webgl2" forces the WebGL2 backend
+          // outright. There's no public API to *forbid* the automatic
+          // fallback, so "webgpu" behaves like "auto" today — documented,
+          // not a bug.
+          forceWebGL: config.renderingMode === "webgl2",
+        });
+        try {
+          await renderer.init();
+        } catch {
+          if (!cancelled) setWebglFailReason(t("map.noWebglShort"));
+          return;
+        }
+        if (cancelled) {
+          renderer.dispose();
+          return;
+        }
+
+        const tier = QUALITY_TIERS[config.qualityPreset];
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, tier.dprCap));
+        renderer.setSize(
+          container.clientWidth * tier.renderScale,
+          container.clientHeight * tier.renderScale,
+          false
+        );
+        renderer.domElement.style.width = "100%";
+        renderer.domElement.style.height = "100%";
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+        rendererRef.current = renderer;
+
+        const scene = new THREE.Scene();
+        sceneRef.current = scene;
+        const envScene = new THREE.Scene();
+        envSceneRef.current = envScene;
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        pmremRef.current = pmrem;
+
+        const isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
+        const fov = isMobileViewport ? config.cameraFovMobile : config.cameraFovDesktop;
+        const camera = new THREE.PerspectiveCamera(
+          fov,
+          container.clientWidth / Math.max(1, container.clientHeight),
+          0.1,
+          2000
+        );
+        cameraRef.current = camera;
+
+        // Real sun — see src/lib/sunPosition.ts. Direction only; distance
+        // is arbitrary for a DirectionalLight, scaled by boundingRadius
+        // once that's known below.
+        const sun = new THREE.DirectionalLight(0xffffff, 2);
+        sun.castShadow = true;
+        sun.shadow.mapSize.set(tier.shadowMapSize, tier.shadowMapSize);
+        sun.shadow.bias = -0.0005;
+        sun.shadow.normalBias = 0.02;
+        const ambient = new THREE.AmbientLight(0xffffff, 0.15);
+        scene.add(sun, sun.target, ambient);
+        sunRef.current = sun;
+        ambientRef.current = ambient;
+
+        pickableRef.current = new Map();
+        unitMeshesRef.current = new Map();
+        unitEdgesRef.current = new Map();
+        shellsRef.current = [];
+        glbUnitBoxesRef.current = new Map();
+
+        let boundingRadius = 20;
+        let centerY = 1;
+
+        if (usingGlb && detailModel) {
+          // --- GLB content ---
+          dracoLoader = new DRACOLoader();
+          dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
+          const loader = new GLTFLoader();
+          loader.setDRACOLoader(dracoLoader);
+
+          let gltf;
+          try {
+            gltf = await loader.loadAsync(detailModel.glbUrl);
+          } catch {
+            if (!cancelled) setWebglFailReason(t("map.noWebglShort"));
+            return;
+          }
+          if (cancelled) return;
+
+          const root = gltf.scene;
+          root.scale.setScalar(detailModel.scale);
+          root.rotation.y = THREE.MathUtils.degToRad(detailModel.rotationDeg);
+          root.position.y = detailModel.altitudeOffset;
+          root.traverse((child) => {
+            const mesh = child as THREE.Mesh;
+            if (mesh.isMesh) {
+              mesh.castShadow = true;
+              mesh.receiveShadow = true;
+            }
+          });
+          scene.add(root);
+          glbRootRef.current = root;
+
+          const linkByName = new Map(
+            (detailModel.unitLinks as UnitMeshLink[]).map((l) => [l.meshName, l.unitId])
+          );
+          root.traverse((child) => {
+            const unitId = linkByName.get(child.name);
+            if (!unitId) {
+              if (UNIT_NODE_PATTERN.test(child.name)) child.visible = false;
+              return;
+            }
+            child.visible = false;
+            child.userData.unitId = unitId;
+            glbUnitBoxesRef.current.set(child.name, { node: child, unitId });
+            pickableRef.current.set(unitId, child);
+          });
+
+          applyGlbMaterialPreset(root);
+          applyGlassPreset(root);
+
+          const box = new THREE.Box3().setFromObject(root);
+          const size = box.getSize(new THREE.Vector3());
+          const center = box.getCenter(new THREE.Vector3());
+          boundingRadius = Math.max(size.x, size.y, size.z) * 0.65 || 20;
+          centerY = center.y;
+
+          disposeGeometry = () => {
+            scene.remove(root);
+            disposeGlbObject3D(root);
+          };
+        } else {
+          // --- Procedural massing fallback ---
+          const layout = computeProjectLayout(project);
+          unitBoxesRef.current = layout.units;
+          boundingRadius = layout.boundingRadius;
+          centerY = layout.centerY;
+
+          const ground = new THREE.Mesh(
+            new THREE.CircleGeometry(layout.boundingRadius * 1.6, 48),
+            new THREE.MeshStandardMaterial({ color: GROUND_COLOR, roughness: 1 })
+          );
+          ground.rotation.x = -Math.PI / 2;
+          ground.receiveShadow = true;
+          scene.add(ground);
+          groundRef.current = ground;
+
+          for (const b of layout.buildings) {
+            const shell = new THREE.Mesh(
+              new THREE.BoxGeometry(b.width + 0.4, b.height + 0.4, b.depth + 0.4),
+              new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.08,
+                depthWrite: false,
+              })
+            );
+            shell.position.set(b.centerX, b.height / 2, b.z);
+            shell.userData.isShell = true;
+            scene.add(shell);
+            shellsRef.current.push(shell);
+          }
+
+          const geometry = new THREE.BoxGeometry(1, 1, 1);
+          const edgeGeometry = new THREE.EdgesGeometry(geometry);
+          for (const unitBox of layout.units) {
+            const material = new THREE.MeshStandardMaterial({
+              color: STATUS_COLOR[unitBox.unit.status],
+              roughness: 0.6,
+              metalness: 0.05,
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.scale.set(unitBox.width, unitBox.height, unitBox.depth);
+            mesh.position.set(unitBox.x, unitBox.y, unitBox.z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.userData.unitId = unitBox.unit.id;
+            scene.add(mesh);
+            unitMeshesRef.current.set(unitBox.unit.id, mesh);
+            pickableRef.current.set(unitBox.unit.id, mesh);
+
+            const edges = new THREE.LineSegments(
+              edgeGeometry,
+              new THREE.LineBasicMaterial({ color: 0x2a2a33, transparent: true, opacity: 0 })
+            );
+            edges.visible = false;
+            mesh.add(edges);
+            unitEdgesRef.current.set(unitBox.unit.id, edges);
+          }
+
+          disposeGeometry = () => {
+            geometry.dispose();
+            edgeGeometry.dispose();
+            unitMeshesRef.current.forEach((mesh) => (mesh.material as THREE.Material).dispose());
+            unitEdgesRef.current.forEach((edges) => (edges.material as THREE.Material).dispose());
+            scene.traverse((obj) => {
+              if (obj instanceof THREE.Mesh && obj.geometry !== geometry) obj.geometry.dispose();
+              if (obj instanceof THREE.Mesh && obj.userData.isShell) {
+                (obj.material as THREE.Material).dispose();
+              }
+            });
+            (ground.material as THREE.Material).dispose();
+            ground.geometry.dispose();
+          };
+        }
+        if (cancelled) return;
+
+        const target = new THREE.Vector3(0, centerY, 0);
+        const startDistance = boundingRadius * config.cameraStartDistanceMultiplier;
+        camera.position.set(startDistance * 0.6, startDistance * 0.55, startDistance * 0.9);
+        camera.lookAt(target);
+        defaultCameraRef.current = { position: camera.position.clone(), target: target.clone() };
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.copy(target);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.minDistance = boundingRadius * config.cameraMinDistanceMultiplier;
+        controls.maxDistance = boundingRadius * config.cameraMaxDistanceMultiplier;
+        controls.maxPolarAngle = THREE.MathUtils.degToRad(config.cameraMaxPolarDeg);
+        controls.autoRotate = config.autoRotate;
+        controls.autoRotateSpeed = 0.6;
         controls.update();
-        renderer.render(scene, camera);
-        raf = requestAnimationFrame(animate);
+        controlsRef.current = controls;
+
+        sun.shadow.camera.near = 1;
+        sun.shadow.camera.far = boundingRadius * 6;
+        const shadowSpan = boundingRadius * 1.5;
+        sun.shadow.camera.left = -shadowSpan;
+        sun.shadow.camera.right = shadowSpan;
+        sun.shadow.camera.top = shadowSpan;
+        sun.shadow.camera.bottom = -shadowSpan;
+        sun.shadow.camera.updateProjectionMatrix();
+        sun.target.position.copy(target);
+
+        if (groundRef.current) groundRef.current.visible = config.groundEnabled;
+        const showShells = project.status === "under_construction" && config.constructionStagesEnabled;
+        shellsRef.current.forEach((shell) => (shell.visible = showShells));
+
+        rebuildEnvironment();
+
+        setReady(true);
+        setWebglFailReason(null);
+
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        // Three.js's Raycaster doesn't skip invisible objects on its own
+        // (Mesh.raycast never checks `.visible`) — the same reason the old
+        // DetailModelLayer.ts had to pre-filter its own node list before
+        // raycasting. Filtering the *input* list (rather than the hits) is
+        // what actually keeps a filtered-out/unlinked unit from being
+        // clickable.
+        const pickableList = () => Array.from(pickableRef.current.values()).filter((obj) => obj.visible);
+
+        function pointerFromEvent(e: PointerEvent) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        }
+        function pickUnitId(e: PointerEvent): string | null {
+          pointerFromEvent(e);
+          raycaster.setFromCamera(pointer, camera);
+          const hits = raycaster.intersectObjects(pickableList(), true);
+          if (hits.length === 0) return null;
+          let obj: THREE.Object3D | null = hits[0].object;
+          while (obj) {
+            if (typeof obj.userData.unitId === "string") return obj.userData.unitId;
+            obj = obj.parent;
+          }
+          return null;
+        }
+
+        handleMove = (e: PointerEvent) => {
+          const nextHoverId = pickUnitId(e);
+          if (nextHoverId !== hoveredIdRef.current) {
+            hoveredIdRef.current = nextHoverId;
+            refreshAllAppearance();
+            renderer.domElement.style.cursor = nextHoverId ? "pointer" : "grab";
+          }
+        };
+        handleClick = (e: PointerEvent) => {
+          const unitId = pickUnitId(e);
+          if (!unitId) return;
+          const unit = project.units.find((u) => u.id === unitId);
+          if (unit && onSelectUnit) onSelectUnit(unit);
+        };
+
+        renderer.domElement.style.cursor = "grab";
+        renderer.domElement.addEventListener("pointermove", handleMove);
+        renderer.domElement.addEventListener("click", handleClick);
+
+        resizeObserver = new ResizeObserver(() => {
+          if (!container.clientWidth || !container.clientHeight) return;
+          const nextIsMobile = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
+          camera.fov = nextIsMobile ? config.cameraFovMobile : config.cameraFovDesktop;
+          camera.aspect = container.clientWidth / container.clientHeight;
+          camera.updateProjectionMatrix();
+          const t = QUALITY_TIERS[config.qualityPreset];
+          renderer.setSize(container.clientWidth * t.renderScale, container.clientHeight * t.renderScale, false);
+        });
+        resizeObserver.observe(container);
+
+        refreshAllAppearance();
+        await renderer.setAnimationLoop(() => {
+          controls.update();
+          renderer.render(scene, camera);
+        });
       }
-      animate();
+
+      setup();
 
       return () => {
-        cancelAnimationFrame(raf);
-        resizeObserver.disconnect();
-        renderer.domElement.removeEventListener("pointermove", handleMove);
-        renderer.domElement.removeEventListener("click", handleClick);
-        controls.dispose();
-        geometry.dispose();
-        edgeGeometry.dispose();
-        unitMeshesRef.current.forEach((mesh) => {
-          (mesh.material as THREE.Material).dispose();
-        });
-        unitEdgesRef.current.forEach((edges) => {
-          (edges.material as THREE.Material).dispose();
-        });
-        scene.traverse((obj) => {
-          if (obj instanceof THREE.Mesh && obj.geometry !== geometry) obj.geometry.dispose();
-          if (obj instanceof THREE.Mesh && obj.userData.isShell) {
-            (obj.material as THREE.Material).dispose();
-          }
-        });
-        (ground.material as THREE.Material).dispose();
-        ground.geometry.dispose();
-        renderer.dispose();
-        if (renderer.domElement.parentElement === container) {
-          container.removeChild(renderer.domElement);
+        cancelled = true;
+        const renderer = rendererRef.current;
+        if (renderer) {
+          renderer.setAnimationLoop(null);
+          if (handleMove) renderer.domElement.removeEventListener("pointermove", handleMove);
+          if (handleClick) renderer.domElement.removeEventListener("click", handleClick);
         }
+        resizeObserver?.disconnect();
+        controlsRef.current?.dispose();
+        disposeGeometry?.();
+        dracoLoader?.dispose();
+        envRenderTargetRef.current?.dispose();
+        pmremRef.current?.dispose();
+        if (renderer) {
+          renderer.dispose();
+          if (renderer.domElement.parentElement === container) {
+            container.removeChild(renderer.domElement);
+          }
+        }
+        rendererRef.current = null;
+        sceneRef.current = null;
+        envSceneRef.current = null;
+        pmremRef.current = null;
+        envRenderTargetRef.current = null;
+        controlsRef.current = null;
+        glbRootRef.current = null;
         unitMeshesRef.current.clear();
         unitEdgesRef.current.clear();
+        glbUnitBoxesRef.current.clear();
+        pickableRef.current.clear();
         setReady(false);
       };
-      // Geometry only depends on which project is loaded — config/selection
-      // changes are applied in-place by the effects below instead of
-      // triggering a full teardown/rebuild.
+      // Geometry/renderer only depend on which content is loaded — config
+      // tweaks that don't require a full rebuild are applied in-place by
+      // the effects below instead.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [project.id]);
+    }, [project.id, usingGlb, detailModel?.glbUrl, config.renderingMode, config.qualityPreset]);
 
-    // --- Apply lighting/background/ground/camera-limit config without
-    // rebuilding the scene ---
+    // --- Apply lower-cost config changes without a full rebuild: ground/
+    // shell visibility, camera limits, glass tier, view preset. ---
     useEffect(() => {
-      const lights = lightsRef.current;
-      const scene = sceneRef.current;
+      if (!ready) return;
       const controls = controlsRef.current;
-      if (!lights || !scene) return;
-
-      scene.background = new THREE.Color(BACKGROUND_COLOR[config.backgroundPreset]);
-
-      if (config.lightingPreset === "daylight") {
-        lights.hemi.color.setHex(0xffffff);
-        lights.hemi.groundColor.setHex(0x8a8a9a);
-        lights.hemi.intensity = 1;
-        lights.ambient.intensity = 0.2;
-        lights.sun.color.setHex(0xffffff);
-        lights.sun.intensity = 2.2;
-        lights.sun.position.set(30, 45, 20);
-      } else if (config.lightingPreset === "overcast") {
-        lights.hemi.color.setHex(0xd7d9e0);
-        lights.hemi.groundColor.setHex(0x9a9aa5);
-        lights.hemi.intensity = 1.1;
-        lights.ambient.intensity = 0.35;
-        lights.sun.color.setHex(0xdfe3ea);
-        lights.sun.intensity = 0.8;
-        lights.sun.position.set(10, 40, 10);
-      } else {
-        lights.hemi.color.setHex(0xffcf9e);
-        lights.hemi.groundColor.setHex(0x4a3a52);
-        lights.hemi.intensity = 0.8;
-        lights.ambient.intensity = 0.25;
-        lights.sun.color.setHex(0xffa15c);
-        lights.sun.intensity = 1.6;
-        lights.sun.position.set(-35, 18, 25);
-      }
-
       if (groundRef.current) groundRef.current.visible = config.groundEnabled;
       const showShells = project.status === "under_construction" && config.constructionStagesEnabled;
-      shellsRef.current.forEach((shell) => {
-        shell.visible = showShells;
-      });
-
+      shellsRef.current.forEach((shell) => (shell.visible = showShells));
       if (controls) {
-        const layout = computeProjectLayout(project);
-        controls.minDistance = layout.boundingRadius * config.cameraMinDistanceMultiplier;
-        controls.maxDistance = layout.boundingRadius * config.cameraMaxDistanceMultiplier;
+        const layout = usingGlb ? null : computeProjectLayout(project);
+        const boundingRadius = layout?.boundingRadius ?? controls.getDistance();
+        controls.minDistance = boundingRadius * config.cameraMinDistanceMultiplier;
+        controls.maxDistance = boundingRadius * config.cameraMaxDistanceMultiplier;
         controls.maxPolarAngle = THREE.MathUtils.degToRad(config.cameraMaxPolarDeg);
         controls.autoRotate = config.autoRotate;
       }
-    }, [config, project]);
+      if (glbRootRef.current) {
+        applyGlassPreset(glbRootRef.current);
+        applyGlbMaterialPreset(glbRootRef.current);
+      }
+      refreshAllAppearance();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+      ready,
+      config.groundEnabled,
+      config.constructionStagesEnabled,
+      config.cameraMinDistanceMultiplier,
+      config.cameraMaxDistanceMultiplier,
+      config.cameraMaxPolarDeg,
+      config.autoRotate,
+      config.glassPreset,
+      viewPreset,
+    ]);
 
-    // --- Time of Day + Sun Orientation (public viewer only) — continuous
-    // interpolation of the real scene lights, overriding the config-driven
-    // preset above; the Admin preview (showChrome=false) never runs this, so
-    // it stays exactly as before. ---
+    // --- Real geographic sun + sky/environment (spec §4/§15) — recomputed
+    // whenever the effective time-of-day, sky preset, environment
+    // intensity or north rotation change. Runs for both the public viewer
+    // (live `timeOfDay` state, seeded from config.defaultTimeOfDay) and the
+    // Admin preview (showChrome=false locks it to config.defaultTimeOfDay
+    // since there's no bottom-bar slider to move it there). ---
+    const effectiveTimeOfDay = showChrome ? timeOfDay : config.defaultTimeOfDay;
     useEffect(() => {
-      if (!showChrome) return;
-      const lights = lightsRef.current;
+      if (!ready) return;
+      const sun = sunRef.current;
+      const ambient = ambientRef.current;
       const scene = sceneRef.current;
-      if (!lights || !scene) return;
+      if (!sun || !ambient || !scene) return;
 
-      // 6 = dawn, 14 = solar noon peak, 22 = late dusk — continuous
-      // interpolation rather than the 3 discrete Admin presets, so the slider
-      // actually feels like a clock rather than 3 snap points.
-      const isNight = timeOfDay < 6.5 || timeOfDay > 21.5;
-      const dayPhase = THREE.MathUtils.clamp(Math.sin(Math.PI * ((timeOfDay - 6) / 16)), 0, 1);
+      const sunPos = calcSunPosition({
+        lat: project.coords.lat,
+        lng: project.coords.lng,
+        date: new Date(),
+        timeOfDay: effectiveTimeOfDay,
+        northRotationDeg: config.northRotationDeg,
+      });
+      const dir = sunDirectionVector(sunPos);
+      const distance = 200;
+      sun.position.set(dir.x * distance, Math.max(dir.y, 0.05) * distance, dir.z * distance);
+      sun.color.setHex(sunColorForElevation(sunPos.elevationDeg));
+      sun.intensity = sunPos.isNight ? 0.1 : 1.2 + Math.max(0, sunPos.elevationDeg / 90) * 1.8;
+      ambient.intensity = sunPos.isNight ? 0.08 : 0.15;
 
-      const warm = new THREE.Color(0xffa15c);
-      const white = new THREE.Color(0xffffff);
-      const night = new THREE.Color(0x8fa3ff);
+      rebuildEnvironment();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+      ready,
+      effectiveTimeOfDay,
+      config.skyPreset,
+      config.environmentIntensity,
+      config.northRotationDeg,
+      project.coords.lat,
+      project.coords.lng,
+    ]);
 
-      const elevation = isNight ? 6 : 10 + dayPhase * 55;
-      const azimuthRad = THREE.MathUtils.degToRad(sunAzimuth);
-      lights.sun.color.copy(isNight ? night : warm.clone().lerp(white, dayPhase));
-      lights.sun.intensity = isNight ? 0.15 : 0.6 + dayPhase * 1.8;
-      lights.sun.position.set(Math.cos(azimuthRad) * 40, elevation, Math.sin(azimuthRad) * 40);
-
-      lights.hemi.intensity = isNight ? 0.35 : 0.7 + dayPhase * 0.4;
-      lights.hemi.color.copy(isNight ? new THREE.Color(0x1a1f3a) : white.clone().lerp(warm, 1 - dayPhase));
-      lights.ambient.intensity = isNight ? 0.12 : 0.2 + dayPhase * 0.15;
-
-      const skyDay = new THREE.Color(0xbfe0ff);
-      const skyDusk = new THREE.Color(0xffc98a);
-      const skyNight = new THREE.Color(0x0c1024);
-      scene.background = isNight ? skyNight : skyDusk.clone().lerp(skyDay, dayPhase);
-    }, [timeOfDay, sunAzimuth, showChrome]);
-
-    // --- Re-evaluate per-unit appearance whenever selection, filters or
-    // construction progress change ---
+    // --- Re-evaluate per-unit appearance whenever selection, filters,
+    // construction progress or the Unit-Search panel toggle change ---
     useEffect(() => {
       refreshAllAppearance();
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -525,6 +785,7 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       viewPreset,
       constructionProgressPercent,
       config.constructionStagesEnabled,
+      showUnitBoxes,
     ]);
 
     if (webglFailReason) {
@@ -655,12 +916,17 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
               <div className="glass-panel-dark relative flex w-full flex-wrap items-center gap-6 rounded-panel px-5 py-4 pr-11 sm:w-auto sm:flex-nowrap">
                 <div className="flex items-center gap-3">
                   <p className="font-serif text-2xl text-white">{formatHour(timeOfDay)}</p>
-                  <DarkSelect
-                    label={t("project.preset")}
-                    value=""
-                    onChange={(v) => setTimeOfDay(Number(v))}
-                    options={[["", t("project.preset")], ...TIME_PRESETS.map(([key, hour]): [string, string] => [String(hour), t(key)])]}
-                  />
+                  {config.allowUserTimeChange && (
+                    <DarkSelect
+                      label={t("project.preset")}
+                      value=""
+                      onChange={(v) => setTimeOfDay(Number(v))}
+                      options={[
+                        ["", t("project.preset")],
+                        ...TIME_PRESETS.map(([key, hour]): [string, string] => [String(hour), t(key)]),
+                      ]}
+                    />
+                  )}
                 </div>
 
                 <div className="min-w-[10rem] flex-1">
@@ -673,23 +939,9 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
                     max={22}
                     step={0.5}
                     value={timeOfDay}
+                    disabled={!config.allowUserTimeChange}
                     onChange={(e) => setTimeOfDay(Number(e.target.value))}
-                    className="h-6 w-full accent-white"
-                  />
-                </div>
-
-                <div className="min-w-[10rem] flex-1">
-                  <div className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                    <span>{t("project.sunOrientation")}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={360}
-                    step={5}
-                    value={sunAzimuth}
-                    onChange={(e) => setSunAzimuth(Number(e.target.value))}
-                    className="h-6 w-full accent-white"
+                    className="h-6 w-full accent-white disabled:opacity-40"
                   />
                 </div>
 

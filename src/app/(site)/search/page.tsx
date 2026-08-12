@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, List, Maximize2, Minimize2 } from "lucide-react";
+import { List, Map as MapIcon, SlidersHorizontal } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
-import { MapView } from "@/components/map/MapView";
-import { TopFilterBar } from "@/components/search/TopFilterBar";
+import { MapView, type MapCamera } from "@/components/map/MapView";
+import { SentenceFilterBar } from "@/components/search/SentenceFilterBar";
 import { FiltersForm } from "@/components/search/FiltersForm";
 import { ResultsList } from "@/components/results/ResultsList";
 import { CompareTray } from "@/components/compare/CompareTray";
@@ -16,29 +16,26 @@ import { CategoryQuickFilters } from "@/components/home/CategoryQuickFilters";
 import { PopularAreasRow } from "@/components/home/PopularAreasRow";
 import { BottomSheet, type SheetSnap } from "@/components/common/BottomSheet";
 import { cn } from "@/lib/utils";
+import { ListingPreviewPanel } from "@/components/results/ListingPreviewPanel";
+import { searchableListings } from "@/lib/mockData";
 
 export default function SearchPage() {
   const mode = useAppStore((s) => s.mode);
-  const location = useAppStore((s) => s.filters.location);
   const mobileSheet = useAppStore((s) => s.mobileSheet);
   const setMobileSheet = useAppStore((s) => s.setMobileSheet);
+  const setMode = useAppStore((s) => s.setMode);
+  const selectedListingId = useAppStore((s) => s.selectedListingId);
+  const selectListing = useAppStore((s) => s.selectListing);
+  const mapAreaSearchBounds = useAppStore((s) => s.mapAreaSearchBounds);
 
   const [listingsSnap, setListingsSnap] = useState<SheetSnap>("preview");
   const [filtersSnap, setFiltersSnap] = useState<SheetSnap>("expanded");
-  // Desktop-only: temporarily expands the map to full width, hiding the
-  // listings column. Only meaningful while mode === "map" — list mode
-  // already hides the map entirely, so it's reset whenever mode changes
-  // away from "map" to avoid a stale expanded state resurfacing later.
   const [mapFullWidth, setMapFullWidth] = useState(false);
-  // Reset the moment `mode` changes away from "map" (adjusted during render,
-  // React's recommended pattern, rather than in an effect) so a stale
-  // expanded state can't resurface the next time the user switches back.
-  const [prevMode, setPrevMode] = useState(mode);
-  if (mode !== prevMode) {
-    setPrevMode(mode);
-    if (mode !== "map" && mapFullWidth) setMapFullWidth(false);
-  }
+  const [resultsScrollTop, setResultsScrollTop] = useState(0);
+  const [searchMapCamera, setSearchMapCamera] = useState<MapCamera | null>(null);
+  const [restoreMapToken, setRestoreMapToken] = useState(0);
   const { t } = useT();
+  const selectedListing = selectedListingId ? searchableListings.find((listing) => listing.id === selectedListingId) : null;
 
   // Note: mobile vs. desktop chrome below is switched with Tailwind's `lg:`
   // breakpoint classes (both trees are always in the DOM), not a JS media
@@ -47,27 +44,13 @@ export default function SearchPage() {
   // mismatch. The CSS-only approach costs a second (hidden, cheap) results
   // list in the DOM, which is the standard, hydration-safe tradeoff.
 
-  const resultsHidden = mode === "map" && mapFullWidth;
-
   return (
-    <div className="relative flex h-full min-h-0 flex-col lg:gap-3 lg:p-4">
-      {/* Desktop top filter bar — collapsed pills that only expand into a
-          popover when clicked, replacing the always-open sidebar. */}
-      <div className="relative z-30 hidden shrink-0 border-b border-neutral-200 pb-4 lg:block">
-        <div className="flex items-center gap-2">
-          <h1 className="font-serif text-3xl text-neutral-900">{location}</h1>
-          <ChevronDown className="h-5 w-5 text-neutral-400" aria-hidden="true" />
-        </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <TopFilterBar />
-          <ModeSwitch />
-        </div>
-      </div>
+    <div className="relative flex h-full min-h-0 flex-col lg:flex-row">
 
       {/* Mobile-only search row */}
       <MobileSearchRow onOpenFilters={() => setMobileSheet("filters")} />
 
-      <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row lg:gap-4">
+      <div className="relative flex min-h-0 flex-1 flex-col lg:contents">
         {/* Persistent map column — one Mapbox instance shared across map/list modes and breakpoints */}
         <div
           className={cn(
@@ -76,7 +59,7 @@ export default function SearchPage() {
               ? "lg:w-0 lg:overflow-hidden lg:opacity-0"
               : mapFullWidth
               ? "lg:w-full"
-              : "lg:w-[calc(50%-8px)]"
+              : "lg:w-1/2"
           )}
         >
           <div
@@ -90,27 +73,15 @@ export default function SearchPage() {
             }}
             className="absolute inset-0"
           >
-            <MapView className="lg:rounded-panel" controlsClassName="top-3 right-3" />
+            <MapView
+              controlsClassName="top-3 right-3"
+              fullScreen={mapFullWidth}
+              onToggleFullScreen={() => setMapFullWidth((value) => !value)}
+              onSaveCamera={setSearchMapCamera}
+              restoreCamera={searchMapCamera}
+              restoreCameraToken={restoreMapToken}
+            />
           </div>
-
-          {/* Desktop: expand the map to full width, or shrink it back to
-              the 50/50 split — centered over the map either way. */}
-          {mode === "map" && (
-            <button
-              onClick={() => setMapFullWidth((v) => !v)}
-              className="glass-panel absolute left-1/2 top-4 z-20 hidden -translate-x-1/2 items-center gap-1.5 rounded-pill px-4 py-2 text-sm font-semibold text-neutral-900 lg:flex"
-            >
-              {mapFullWidth ? (
-                <>
-                  <Minimize2 className="h-4 w-4" /> {t("home.smallMap")}
-                </>
-              ) : (
-                <>
-                  <Maximize2 className="h-4 w-4" /> {t("home.fullMap")}
-                </>
-              )}
-            </button>
-          )}
 
           <OnboardingHint />
           <CompareTray />
@@ -128,7 +99,7 @@ export default function SearchPage() {
               <CategoryQuickFilters onMore={() => setMobileSheet("filters")} />
               <PopularAreasRow />
               <div className="mx-4 h-px bg-neutral-100" />
-              <ResultsList layout="panel" />
+              <ResultsList layout="panel" restrictToBounds={!!mapAreaSearchBounds} />
             </div>
           </BottomSheet>
 
@@ -142,41 +113,47 @@ export default function SearchPage() {
             title={t("home.filters")}
           >
             <FiltersForm compact />
-            <div className="sticky bottom-0 border-t border-neutral-100 bg-white p-4">
-              <button
-                onClick={() => setMobileSheet("listings")}
-                className="w-full rounded-control bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-600"
-              >
-                {t("home.showResults")}
-              </button>
-            </div>
           </BottomSheet>
 
-          {!mobileSheet && (
-            <button
-              onClick={() => setMobileSheet("listings")}
-              className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-pill bg-neutral-900 px-5 py-3 text-sm font-semibold text-white shadow-[var(--shadow-2)] lg:hidden"
-            >
-              <List className="h-4 w-4" />
-              {t("home.showList")}
+          <div className="glass-panel absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center rounded-pill p-1 shadow-[var(--shadow-2)] lg:hidden" role="tablist" aria-label={t("home.viewMode")}>
+            <button onClick={() => setMobileSheet("filters")} className="flex h-10 items-center gap-1.5 rounded-pill px-3 text-xs font-semibold text-neutral-700" aria-label={t("home.openFilters")}>
+              <SlidersHorizontal className="h-4 w-4" /> {t("home.filters")}
             </button>
-          )}
+            <button role="tab" aria-selected={mode === "map"} onClick={() => { setMode("map"); setMobileSheet("listings"); }} className={cn("flex h-10 items-center gap-1.5 rounded-pill px-3 text-xs font-semibold", mode === "map" ? "bg-neutral-900 text-white" : "text-neutral-600")}>
+              <MapIcon className="h-4 w-4" /> {t("nav.map")}
+            </button>
+            <button role="tab" aria-selected={mode === "list"} onClick={() => { setMode("list"); setListingsSnap("expanded"); setMobileSheet("listings"); }} className={cn("flex h-10 items-center gap-1.5 rounded-pill px-3 text-xs font-semibold", mode === "list" ? "bg-neutral-900 text-white" : "text-neutral-600")}>
+              <List className="h-4 w-4" /> {t("nav.list")}
+            </button>
+          </div>
         </div>
 
-        {/* Desktop results column — Map/List now lives up in the filter row
-            (see above), not floating over this column. */}
+        {/* Desktop: filters live at the top of the right workspace, directly
+            above its independently scrolling listings rail. */}
         <div
           className={cn(
-            "hidden min-h-0 lg:flex lg:h-full lg:shrink-0 lg:transition-[width] lg:duration-300",
-            resultsHidden
+            "hidden min-h-0 lg:flex lg:h-full lg:flex-col lg:shrink-0",
+            mapFullWidth
               ? "lg:w-0 lg:overflow-hidden lg:opacity-0"
               : mode === "list"
               ? "lg:w-full"
-              : "lg:w-[calc(50%-8px)]"
+              : "lg:w-1/2"
           )}
         >
-          <div className="glass-panel min-h-0 flex-1 overflow-hidden rounded-panel">
-            <ResultsList layout="grid" columns={mode === "list" ? 4 : 2} />
+          <div className="min-h-0 flex-1 overflow-hidden bg-white">
+            {selectedListing ? <ListingPreviewPanel listing={selectedListing} onBack={() => { selectListing(null); setMode("map"); setRestoreMapToken((value) => value + 1); }} /> : <ResultsList
+              layout="grid"
+              columns={mode === "list" ? 4 : 2}
+              restrictToBounds={!!mapAreaSearchBounds}
+              restoreScrollTop={resultsScrollTop}
+              onScrollTopChange={setResultsScrollTop}
+              topContent={
+                <div className="border-b border-neutral-200 bg-neutral-50 px-5 pb-5 pt-5">
+                  <SentenceFilterBar />
+                  <div className="flex justify-end px-5 pt-3"><ModeSwitch /></div>
+                </div>
+              }
+            />}
           </div>
         </div>
       </div>

@@ -1,25 +1,26 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display } from "next/font/google";
+import { Nunito_Sans, Roboto } from "next/font/google";
 import "./globals.css";
 import { StoreHydration } from "@/components/providers/StoreHydration";
+import { AuthSessionProvider } from "@/components/providers/AuthSessionProvider";
 import { CompareOverlay } from "@/components/compare/CompareOverlay";
 import { CompareReplaceModal } from "@/components/compare/CompareReplaceModal";
 import { SignInModal } from "@/components/layout/SignInModal";
 import { SkipLink } from "@/components/common/SkipLink";
 
-const inter = Inter({
-  variable: "--font-inter",
+const nunitoSans = Nunito_Sans({
+  variable: "--font-nunito-sans",
   subsets: ["latin"],
   display: "swap",
 });
 
-// Editorial display serif — wordmark, page headings, and property/card
-// titles only. Body/UI text stays on Inter (--font-inter); see the
-// `--font-serif` token in globals.css for where the line is drawn.
-const playfair = Playfair_Display({
-  variable: "--font-playfair",
+// Roboto is reserved for prices, measurements, and tables. Its tabular
+// figures make financial information substantially easier to scan.
+const roboto = Roboto({
+  variable: "--font-roboto",
   subsets: ["latin"],
   display: "swap",
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -37,14 +38,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="sq" className={`${inter.variable} ${playfair.variable} h-full antialiased`}>
+    <html lang="sq" className={`${nunitoSans.variable} ${roboto.variable} h-full antialiased`}>
       <body className="flex h-full min-h-full flex-col bg-background text-foreground">
         <SkipLink />
         <StoreHydration />
-        {children}
-        <CompareOverlay />
-        <CompareReplaceModal />
-        <SignInModal />
+        <AuthSessionProvider>
+          {children}
+          <CompareOverlay />
+          <CompareReplaceModal />
+          <SignInModal />
+        </AuthSessionProvider>
       </body>
     </html>
   );

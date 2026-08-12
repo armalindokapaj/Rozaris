@@ -10,12 +10,37 @@
  *
  * Idempotent (upsert) — safe to re-run after mockData.ts changes.
  */
+import bcrypt from "bcryptjs";
 import { PrismaClient } from "../src/generated/prisma";
 import { publishers, projects } from "../src/lib/mockData";
 
 const prisma = new PrismaClient();
 
+/** One real admin credential (PRD_Admin_Mapbox_GLB / PRD_Admin_3D_Project_Experience
+ * "server-side permission checks protect all write operations") — password
+ * "1", matching the existing demo-account convention in
+ * src/lib/demoAccounts.ts. Clearly prototype-only; a real launch needs a
+ * real credential-issuing flow, not a seeded password. Everything else in
+ * the admin UI still gates on the Zustand mock (unchanged) — this is only
+ * so the new versioned-3D write routes have a real session to check. */
+async function seedAdmin() {
+  const passwordHash = await bcrypt.hash("1", 10);
+  await prisma.user.upsert({
+    where: { email: "admin@rozaris.demo" },
+    update: { passwordHash, role: "admin", name: "Admin" },
+    create: {
+      email: "admin@rozaris.demo",
+      name: "Admin",
+      role: "admin",
+      passwordHash,
+    },
+  });
+  console.log("Seeded admin@rozaris.demo (password: 1).");
+}
+
 async function main() {
+  await seedAdmin();
+
   for (const p of publishers) {
     const ownerEmail = `${p.slug}@seed.rozaris.demo`;
     const owner = await prisma.user.upsert({

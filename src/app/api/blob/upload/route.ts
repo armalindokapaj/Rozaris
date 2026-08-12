@@ -1,5 +1,6 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 
 /**
  * Issues short-lived, scoped upload tokens for Admin's "3D Map Control" GLB
@@ -8,14 +9,11 @@ import { NextResponse } from "next/server";
  * routing multi-MB GLBs through this (or any) serverless function body,
  * which on Vercel is capped well under typical GLB sizes.
  *
- * ⚠️ Known gap, deliberately left open for this phase (see the
- * "rozaris-backend-plan" memory): this route does not yet check who's
- * calling it. Real auth (src/auth.ts) exists but isn't wired into the UI's
- * sign-in flow yet, so there is no session to check here. Uncomment the
- * admin check below the moment that lands — until then, anyone with the
- * deployed URL can upload a GLB (not delete/overwrite others' — pathnames
- * are randomized — but still an open write). Acceptable for a demo/testing
- * deployment, not for a real launch.
+ * Real admin check as of the versioning pass (previously a known, flagged
+ * gap — see the "rozaris-backend-plan" memory): checks the real Auth.js
+ * session (src/auth.ts), established when the Admin console's "Sign In as
+ * Admin" button also calls next-auth/react's signIn() — see
+ * src/app/(site)/admin/page.tsx and src/lib/adminAuth.ts.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   const body = (await request.json()) as HandleUploadBody;
@@ -25,8 +23,8 @@ export async function POST(request: Request): Promise<NextResponse> {
       body,
       request,
       onBeforeGenerateToken: async (pathname) => {
-        // const session = await auth();
-        // if (session?.user?.role !== "admin") throw new Error("Not authorized");
+        const session = await auth();
+        if (session?.user?.role !== "admin") throw new Error("Not authorized");
         return {
           allowedContentTypes: ["model/gltf-binary", "application/octet-stream"],
           maximumSizeInBytes: 60 * 1024 * 1024, // keep in sync with MapModelEditor's client-side check

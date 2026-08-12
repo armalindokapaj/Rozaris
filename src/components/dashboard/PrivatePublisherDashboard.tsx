@@ -61,6 +61,92 @@ function performanceFor(id: string) {
   };
 }
 
+// PRD_ROZARIS_User_Types §3 "Listing workflow": Draft → Incomplete →
+// Pending Review → Changes Requested → Approved → Published → Paused/
+// Archived, with "current status and required next action always visible."
+const STAGE_ORDER = [
+  "draft",
+  "incomplete",
+  "pendingReview",
+  "changesRequested",
+  "approved",
+  "published",
+  "archived",
+] as const;
+type Stage = (typeof STAGE_ORDER)[number];
+
+const STAGE_LABEL_KEY: Record<Stage, string> = {
+  draft: "privatePublisher.stageDraft",
+  incomplete: "privatePublisher.stageIncomplete",
+  pendingReview: "privatePublisher.stagePendingReview",
+  changesRequested: "privatePublisher.stageChangesRequested",
+  approved: "privatePublisher.stageApproved",
+  published: "privatePublisher.stagePublished",
+  archived: "privatePublisher.stageArchived",
+};
+
+/** Maps this app's actual Listing.status (active/sold/rented/expired/
+ * suspended/archived — there's no draft/pending-review/approved status in
+ * the data model yet) onto the PRD's fuller lifecycle stepper. Necessarily
+ * approximate until ListingStatus itself grows those states — flagged here
+ * rather than silently invented, and deliberately not attempted as a
+ * type-wide rename in this pass (touches every ListingStatus switch in the
+ * app for a cosmetic gain). */
+function stageForStatus(status: Listing["status"]): Stage {
+  switch (status) {
+    case "active":
+    case "sold":
+    case "rented":
+      return "published";
+    case "suspended":
+      return "changesRequested";
+    case "expired":
+    case "archived":
+      return "archived";
+  }
+}
+
+function WorkflowStepper({ status }: { status: Listing["status"] }) {
+  const { t } = useT();
+  const currentIndex = STAGE_ORDER.indexOf(stageForStatus(status));
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {STAGE_ORDER.map((stage, i) => (
+        <span
+          key={stage}
+          className={cn(
+            "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+            i === currentIndex
+              ? "bg-brand-500 text-white"
+              : i < currentIndex
+              ? "bg-neutral-200 text-neutral-500"
+              : "bg-neutral-100 text-neutral-400"
+          )}
+        >
+          {t(STAGE_LABEL_KEY[stage])}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Computed, not hardcoded — PRD_ROZARIS_User_Types §3 shows a "92%,
+ * Listing Completeness" ring; this counts how many of a listing's
+ * meaningfully-optional-for-completeness fields are actually filled. */
+function listingCompleteness(listing: Listing): number {
+  const checks = [
+    !!listing.title,
+    !!listing.description?.en && !!listing.description?.sq,
+    listing.images.length >= 3,
+    !!listing.floorPlanImage,
+    !!listing.facadeImage,
+    listing.amenities.length > 0,
+    !!listing.videoUrl,
+    listing.price > 0,
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
 /** Private Publisher Dashboard (PRD_ROZARIS_User_Types §3) — deliberately
  * simpler than BusinessPublisherDashboard in dashboard/page.tsx: one active
  * listing, no Projects/Inventory/Leads-pipeline/Company-team modules. A
@@ -164,15 +250,18 @@ function OverviewTab({
           <div className="flex-1 p-5">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
-                  {t("privatePublisher.statusPublished")}
-                </span>
+                <WorkflowStepper status={listing.status} />
                 <p className="mt-2 font-serif text-lg text-neutral-900">{listing.title}</p>
                 <p className="text-xs text-neutral-500">
                   {t("privatePublisher.listedOn", { date: formatRelativeDate(listing.createdAt, locale) })}
                 </p>
               </div>
-              <p className="text-lg font-bold text-neutral-900">{priceFmt(listing.price)}</p>
+              <div className="text-right">
+                <p className="text-lg font-bold text-neutral-900">{priceFmt(listing.price)}</p>
+                <p className="mt-1 text-xs font-semibold text-brand-600">
+                  {t("privatePublisher.completeness", { percent: listingCompleteness(listing) })}
+                </p>
+              </div>
             </div>
             {perf && (
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">

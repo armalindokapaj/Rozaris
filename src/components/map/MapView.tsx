@@ -23,6 +23,7 @@ import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 
 type ZoomTier = "cluster" | "icon" | "price";
+export type MapCamera = { lat: number; lng: number; zoom: number; bearing: number; pitch: number };
 
 function tierForZoom(z: number): ZoomTier {
   if (z < 13.3) return "cluster";
@@ -81,9 +82,19 @@ function useProjectMapModels(): Record<string, MapModelRow> {
 export function MapView({
   className,
   controlsClassName,
+  fullScreen = false,
+  onToggleFullScreen,
+  onSaveCamera,
+  restoreCamera,
+  restoreCameraToken = 0,
 }: {
   className?: string;
   controlsClassName?: string;
+  fullScreen?: boolean;
+  onToggleFullScreen?: () => void;
+  onSaveCamera?: (camera: MapCamera) => void;
+  restoreCamera?: MapCamera | null;
+  restoreCameraToken?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -101,6 +112,7 @@ export function MapView({
 
   const filters = useAppStore((s) => s.filters);
   const mapBounds = useAppStore((s) => s.mapBounds);
+  const mapAreaSearchBounds = useAppStore((s) => s.mapAreaSearchBounds);
   const setMapBounds = useAppStore((s) => s.setMapBounds);
   const selectedListingId = useAppStore((s) => s.selectedListingId);
   const selectedProjectId = useAppStore((s) => s.selectedProjectId);
@@ -110,6 +122,8 @@ export function MapView({
   const flyToToken = useAppStore((s) => s.flyToToken);
   const flyToTarget = useAppStore((s) => s.flyToTarget);
   const setMode = useAppStore((s) => s.setMode);
+  const searchThisMapArea = useAppStore((s) => s.searchThisMapArea);
+  const clearMapAreaSearch = useAppStore((s) => s.clearMapAreaSearch);
   const priceFmt = usePriceFormat();
   const { t } = useT();
 
@@ -117,17 +131,15 @@ export function MapView({
   const noTokenReason = !token ? t("map.addTokenHint") : null;
   const failReason = noTokenReason ?? webglFailReason;
 
-  // Markers reflect the search filters, not the current viewport — panning
-  // or zooming the map must not hide matches that are simply off-screen, so
-  // bounds are not used to restrict what's plotted (mapBounds is still
-  // tracked above for anything that keys off the visible area later).
+  // Bounds affect the dataset only after the visitor explicitly commits the
+  // visible area with Search here; ordinary panning remains exploratory.
   const visibleListings = useMemo(
-    () => getVisibleListings(filters, mapBounds, false),
-    [filters, mapBounds]
+    () => getVisibleListings(filters, mapAreaSearchBounds ?? mapBounds, !!mapAreaSearchBounds),
+    [filters, mapBounds, mapAreaSearchBounds]
   );
   const visibleProjects = useMemo(
-    () => getVisibleProjects(filters, mapBounds, false),
-    [filters, mapBounds]
+    () => getVisibleProjects(filters, mapAreaSearchBounds ?? mapBounds, !!mapAreaSearchBounds),
+    [filters, mapBounds, mapAreaSearchBounds]
   );
 
   // --- Initialize map once ---
@@ -276,6 +288,8 @@ export function MapView({
   // --- Search-driven fly-to ---
   useEffect(() => {
     if (!mapRef.current || !flyToTarget || flyToToken === 0) return;
+    const center = mapRef.current.getCenter();
+    onSaveCamera?.({ lat: center.lat, lng: center.lng, zoom: mapRef.current.getZoom(), bearing: mapRef.current.getBearing(), pitch: mapRef.current.getPitch() });
     mapRef.current.flyTo({
       center: [flyToTarget.lng, flyToTarget.lat],
       zoom: flyToTarget.zoom ?? 15,
@@ -283,7 +297,13 @@ export function MapView({
       essential: true,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flyToToken]);
+  }, [flyToToken, onSaveCamera]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !restoreCamera || restoreCameraToken === 0) return;
+    map.flyTo({ center: [restoreCamera.lng, restoreCamera.lat], zoom: restoreCamera.zoom, bearing: restoreCamera.bearing, pitch: restoreCamera.pitch, duration: 700, essential: true });
+  }, [restoreCameraToken, restoreCamera]);
 
   // --- Slow auto-rotate while a unit is selected ---
   // A gentle bearing drift while a listing/project is focused, so the
@@ -528,8 +548,27 @@ export function MapView({
           </div>
           <MapControls
             map={mapInstance}
+            fullScreen={fullScreen}
+            onToggleFullScreen={onToggleFullScreen}
             className={cn("absolute right-3 top-3 z-20", controlsClassName)}
           />
+          <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 overflow-hidden rounded-control border border-neutral-200 bg-white shadow-[var(--shadow-1)] sm:top-4">
+            <button
+              onClick={searchThisMapArea}
+              className="flex h-10 items-center whitespace-nowrap px-3 text-xs font-bold text-neutral-800 hover:bg-neutral-50 hover:text-brand-600 sm:h-11 sm:px-4 sm:text-sm"
+            >
+              {t("map.searchHere")}
+            </button>
+            {mapAreaSearchBounds && (
+              <button
+                onClick={clearMapAreaSearch}
+                aria-label={t("map.clearAreaSearch")}
+                className="flex h-10 w-9 items-center justify-center border-l border-neutral-200 text-lg font-medium text-neutral-500 hover:bg-neutral-50 hover:text-brand-600 sm:h-11"
+              >
+                ×
+              </button>
+            )}
+          </div>
           {activeProject && popupPos && (
             <ProjectPopupCard
               project={activeProject}

@@ -22,6 +22,11 @@ import {
   MousePointerClick,
   Heart,
   Crown,
+  Boxes,
+  HardHat,
+  UserSquare2,
+  Users,
+  Table,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { listingsByPublisher, projectsByDeveloper, getPublisherById, DEMO_PUBLISHER } from "@/lib/mockData";
@@ -35,14 +40,24 @@ import { ConstructionTimelineEditor } from "@/components/dashboard/ConstructionT
 import { NewListingForm } from "@/components/dashboard/NewListingForm";
 import { PrivatePublisherDashboard } from "@/components/dashboard/PrivatePublisherDashboard";
 import { NotificationsList } from "@/components/dashboard/NotificationsList";
+import { LeadsTab } from "@/components/dashboard/business/LeadsTab";
+import { InventoryTab } from "@/components/dashboard/business/InventoryTab";
+import { ConstructionTab } from "@/components/dashboard/business/ConstructionTab";
+import { ThreeDExperiencesTab } from "@/components/dashboard/business/ThreeDExperiencesTab";
+import { CompanyProfileTab } from "@/components/dashboard/business/CompanyProfileTab";
 import { cn } from "@/lib/utils";
 import type { Publisher } from "@/lib/types";
 
 const TABS = [
   { id: "overview", labelKey: "dashboard.tabOverview", icon: LayoutDashboard },
+  { id: "projects", labelKey: "dashboard.tabProjects", icon: Building2 },
+  { id: "inventory", labelKey: "dashboard.tabInventory", icon: Table },
   { id: "listings", labelKey: "dashboard.tabListings", icon: ListChecks },
-  { id: "projects", labelKey: "dashboard.tabProjectsUnits", icon: Building2 },
+  { id: "leads", labelKey: "dashboard.tabLeads", icon: Users },
   { id: "analytics", labelKey: "dashboard.tabAnalytics", icon: BarChart3 },
+  { id: "construction", labelKey: "dashboard.tabConstruction", icon: HardHat },
+  { id: "threeD", labelKey: "dashboard.tab3DExperiences", icon: Boxes },
+  { id: "company", labelKey: "dashboard.tabCompanyProfile", icon: UserSquare2 },
   { id: "messages", labelKey: "dashboard.tabMessages", icon: MessageCircle },
   { id: "media", labelKey: "dashboard.tabMediaModels", icon: Camera },
   { id: "billing", labelKey: "dashboard.tabBillingPremium", icon: CreditCard },
@@ -131,9 +146,14 @@ function BusinessPublisherDashboard({ publisher }: { publisher: Publisher }) {
 
       <div className="min-w-0 flex-1">
         {tab === "overview" && <OverviewTab listingCount={myListings.length} projectCount={myProjects.length} />}
-        {tab === "listings" && <ListingsTab listings={myListings} />}
         {tab === "projects" && <ProjectsTab projects={myProjects} />}
+        {tab === "inventory" && <InventoryTab projects={myProjects} />}
+        {tab === "listings" && <ListingsTab listings={myListings} />}
+        {tab === "leads" && <LeadsTab listings={myListings} projects={myProjects} />}
         {tab === "analytics" && <AnalyticsTab listings={myListings} projects={myProjects} />}
+        {tab === "construction" && <ConstructionTab projects={myProjects} />}
+        {tab === "threeD" && <ThreeDExperiencesTab projects={myProjects} />}
+        {tab === "company" && <CompanyProfileTab publisher={publisher} />}
         {tab === "messages" && <MessagesTab publisher={publisher} />}
         {tab === "media" && <MediaTab />}
         {tab === "billing" && <BillingTab />}
@@ -293,8 +313,8 @@ function ProjectsTab({ projects }: { projects: ReturnType<typeof projectsByDevel
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.projectsUnitsTitle")}</h1>
-          <p className="text-sm text-neutral-500">{t("dashboard.projectsUnitsSubtitle")}</p>
+          <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.projectsTitle")}</h1>
+          <p className="text-sm text-neutral-500">{t("dashboard.projectsSubtitle")}</p>
         </div>
         <button className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3.5 py-2 text-sm font-semibold text-neutral-700">
           <Upload className="h-4 w-4" /> {t("dashboard.bulkCsvImport")}
@@ -492,7 +512,7 @@ function AnalyticsTab({
         <>
           {premiumProjects.length > 0 && (
             <div className="space-y-3">
-              <h2 className="text-sm font-bold text-neutral-900">{t("dashboard.tabProjectsUnits")}</h2>
+              <h2 className="text-sm font-bold text-neutral-900">{t("dashboard.tabProjects")}</h2>
               {premiumProjects.map((p) => (
                 <AnalyticsProjectCard key={p.id} project={p} />
               ))}

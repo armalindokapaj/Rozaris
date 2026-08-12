@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { signIn as nextAuthSignIn, useSession } from "next-auth/react";
 import {
   ShieldCheck,
   ListChecks,
@@ -11,10 +12,14 @@ import {
   Check,
   X,
   MessageSquare,
-  Coins,
   HardHat,
   Plus,
   Map as MapIcon,
+  UserCog,
+  Flag,
+  ScrollText,
+  UsersRound,
+  Settings,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { listings, projects, publishers } from "@/lib/mockData";
@@ -26,16 +31,27 @@ import { Project3DConfigEditor } from "@/components/dashboard/Project3DConfigEdi
 import { MapModelEditor } from "@/components/dashboard/MapModelEditor";
 import { NewProjectModal } from "@/components/dashboard/NewProjectModal";
 import { ProjectUnitsEditor } from "@/components/dashboard/ProjectUnitsEditor";
+import { UsersTab } from "@/components/dashboard/admin/UsersTab";
+import { VerificationTab } from "@/components/dashboard/admin/VerificationTab";
+import { ModerationTab } from "@/components/dashboard/admin/ModerationTab";
+import { AuditLogTab } from "@/components/dashboard/admin/AuditLogTab";
+import { AdminTeamTab } from "@/components/dashboard/admin/AdminTeamTab";
+import { PlatformSettingsTab } from "@/components/dashboard/admin/PlatformSettingsTab";
 import type { Project } from "@/lib/types";
 
 const TABS = [
   { id: "queue", labelKey: "admin.tabQueue", icon: ListChecks },
   { id: "timeline", labelKey: "admin.tabTimeline", icon: HardHat },
   { id: "viewer3d", labelKey: "admin.tab3DExperience", icon: Boxes },
+  { id: "users", labelKey: "admin.tabUsers", icon: UserCog },
   { id: "publishers", labelKey: "admin.tabPublishers", icon: Users },
+  { id: "verification", labelKey: "admin.tabVerification", icon: ShieldCheck },
+  { id: "moderation", labelKey: "admin.tabModeration", icon: Flag },
   { id: "content", labelKey: "admin.tabContent", icon: Box },
   { id: "reports", labelKey: "admin.tabReports", icon: BarChart3 },
-  { id: "currency", labelKey: "admin.tabCurrency", icon: Coins },
+  { id: "auditLog", labelKey: "admin.tabAuditLog", icon: ScrollText },
+  { id: "team", labelKey: "admin.tabTeam", icon: UsersRound },
+  { id: "settings", labelKey: "admin.tabSettings", icon: Settings },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -63,12 +79,55 @@ const QUEUE_TYPE_LABEL_KEY: Record<QueueItem["type"], string> = {
 export default function AdminPage() {
   const auth = useAppStore((s) => s.auth);
   const signIn = useAppStore((s) => s.signIn);
+  const logAudit = useAppStore((s) => s.logAudit);
   const [tab, setTab] = useState<TabId>("queue");
   const [queue, setQueue] = useState(seedQueue);
   const pendingTimelineCount = useAppStore(
     (s) => s.timelineRequests.filter((r) => r.status === "pending").length
   );
   const { t } = useT();
+
+  // The real Auth.js session (checked by every 3D-pipeline write route via
+  // src/lib/adminAuth.ts) is a SEPARATE thing from the Zustand `auth` mock
+  // above, and the two can fall out of sync: the mock persists to
+  // localStorage indefinitely, while the real session cookie can expire, or
+  // its establishing signIn() call can fail/lag, leaving the UI looking
+  // "signed in as Admin" while every upload/delete/publish silently 401s.
+  // This was the root cause behind "can't upload/delete a 3D model" reports
+  // — surface and actively repair that mismatch instead of hiding it.
+  const { status: sessionStatus } = useSession();
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [reauthing, setReauthing] = useState(false);
+
+  async function establishAdminSession() {
+    setReauthing(true);
+    setAuthError(null);
+    try {
+      const result = await nextAuthSignIn("credentials", {
+        email: "admin@rozaris.demo",
+        password: "1",
+        redirect: false,
+      });
+      if (!result || result.error) {
+        setAuthError(t("admin.sessionEstablishFailed"));
+      }
+    } catch {
+      setAuthError(t("admin.sessionEstablishFailed"));
+    } finally {
+      setReauthing(false);
+    }
+  }
+
+  useEffect(() => {
+    // Auto-repair once the real session is confirmed missing (not while
+    // still "loading") for a user the mock already believes is signed in —
+    // e.g. after the JWT cookie expired since the last visit.
+    if (auth.signedIn && sessionStatus === "unauthenticated" && !reauthing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      establishAdminSession();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.signedIn, sessionStatus]);
 
   // In this frontend prototype, any signed-in demo account may preview the
   // Admin console — a real deployment gates this behind the Admin role.
@@ -78,7 +137,15 @@ export default function AdminPage() {
         <ShieldCheck className="h-10 w-10 text-brand-500" />
         <h1 className="font-serif text-xl text-neutral-900">{t("admin.signInRequired")}</h1>
         <button
-          onClick={() => signIn("Admin", "admin")}
+          onClick={async () => {
+            signIn("Admin", "admin");
+            // Also establishes a REAL Auth.js session (src/auth.ts) in
+            // parallel — the versioned 3D pipeline's write routes
+            // (src/lib/adminAuth.ts's requireAdmin()) check this, not the
+            // Zustand mock above. Every other dashboard/gate in the app is
+            // untouched and still reads only the Zustand `auth` slice.
+            await establishAdminSession();
+          }}
           className="rounded-control bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white"
         >
           {t("admin.signInAsAdmin")}
@@ -87,12 +154,26 @@ export default function AdminPage() {
     );
   }
 
-  function decide(id: string) {
+  function decide(id: string, action: "approved" | "rejected" = "approved") {
+    const item = queue.find((i) => i.id === id);
     setQueue((q) => q.filter((i) => i.id !== id));
+    if (item) logAudit(action === "approved" ? "Approved" : "Rejected", item.title);
   }
 
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row lg:px-8">
+      {sessionStatus === "unauthenticated" && (
+        <div className="fixed inset-x-4 top-4 z-[60] mx-auto flex max-w-md items-center justify-between gap-3 rounded-control border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-700 shadow-[var(--shadow-2)] lg:left-1/2 lg:right-auto lg:-translate-x-1/2">
+          <span>{authError ?? t("admin.sessionExpiredNote")}</span>
+          <button
+            onClick={establishAdminSession}
+            disabled={reauthing}
+            className="shrink-0 rounded-control border border-amber-300 bg-white px-2.5 py-1 font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+          >
+            {reauthing ? t("admin.sessionReconnecting") : t("admin.sessionReconnect")}
+          </button>
+        </div>
+      )}
       <aside className="shrink-0 lg:w-56">
         <div className="mb-4 flex items-center gap-2 rounded-panel border border-neutral-200 bg-white p-3.5">
           <ShieldCheck className="h-5 w-5 text-brand-500" />
@@ -165,7 +246,7 @@ export default function AdminPage() {
                         <MessageSquare className="h-3.5 w-3.5" /> {t("admin.requestChanges")}
                       </button>
                       <button
-                        onClick={() => decide(item.id)}
+                        onClick={() => decide(item.id, "rejected")}
                         className="flex items-center gap-1.5 rounded-control border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
                       >
                         <X className="h-3.5 w-3.5" /> {t("admin.reject")}
@@ -182,7 +263,13 @@ export default function AdminPage() {
 
         {tab === "viewer3d" && <Viewer3DTab />}
 
+        {tab === "users" && <UsersTab />}
+
         {tab === "publishers" && <PublishersTab />}
+
+        {tab === "verification" && <VerificationTab />}
+
+        {tab === "moderation" && <ModerationTab />}
 
         {tab === "content" && <ContentTab />}
 
@@ -198,7 +285,11 @@ export default function AdminPage() {
           </div>
         )}
 
-        {tab === "currency" && <CurrencyTab />}
+        {tab === "auditLog" && <AuditLogTab />}
+
+        {tab === "team" && <AdminTeamTab />}
+
+        {tab === "settings" && <PlatformSettingsTab />}
       </div>
     </div>
   );
@@ -301,35 +392,67 @@ function TimelineTab() {
  * Each card shows both statuses and offers both as equally-weighted major
  * actions — neither is a secondary/buried option.
  */
+interface VersionSummary {
+  fileName: string;
+  publicationStatus: "draft" | "published" | "archived";
+  validationStatus: "ready" | "warning" | "blocked";
+}
+
+function summaryStatusLabel(t: ReturnType<typeof useT>["t"], summary?: VersionSummary) {
+  if (!summary) return t("admin.mapModelStatusNone");
+  if (summary.publicationStatus === "published") return t("admin.mapModelStatusLive");
+  return t("admin.mapModelStatusDraft");
+}
+
 function Viewer3DTab() {
   const { t } = useT();
-  const configs = useAppStore((s) => s.project3DConfigs);
   const customProjects = useAppStore((s) => s.customProjects);
   const [editingScene, setEditingScene] = useState<Project | null>(null);
   const [editingMapModel, setEditingMapModel] = useState<Project | null>(null);
   const [editingUnits, setEditingUnits] = useState<Project | null>(null);
   const [creating, setCreating] = useState(false);
-  // A real Postgres row per project (src/app/api/map-models), not Zustand —
-  // see MapModelEditor.tsx/MapView.tsx's matching hooks. A project created
-  // right here (via "New project" below) gets a matching Postgres row too
-  // (NewProjectModal.tsx posts to /api/projects immediately after), so its
-  // model can attach right away, same as a seeded mockData.ts project.
-  const [mapModels, setMapModels] = useState<Record<string, { fileName: string; enabled: boolean }>>({});
-
-  useEffect(() => {
-    fetch("/api/map-models")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((rows: { projectId: string; fileName: string; enabled: boolean }[]) => {
-        const byProjectId: Record<string, { fileName: string; enabled: boolean }> = {};
-        rows.forEach((r) => {
-          byProjectId[r.projectId] = r;
-        });
-        setMapModels(byProjectId);
-      })
-      .catch(() => {});
-  }, []);
+  // Real Postgres rows per project (src/app/api/map-models/[id]/versions,
+  // src/app/api/detail-models/[id]/versions) — the latest version's
+  // publish/validation status for each of Admin's two 3D authoring
+  // surfaces, not Zustand. A project created right here (via "New project"
+  // below) gets a matching Postgres row too (NewProjectModal.tsx posts to
+  // /api/projects immediately after), so its model can attach right away,
+  // same as a seeded mockData.ts project.
+  const [mapModels, setMapModels] = useState<Record<string, VersionSummary>>({});
+  const [detailModels, setDetailModels] = useState<Record<string, VersionSummary>>({});
 
   const allProjects = [...projects, ...customProjects];
+  const projectIds = allProjects.map((p) => p.id).join(",");
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      allProjects.map((p) =>
+        Promise.all([
+          fetch(`/api/map-models/${p.id}/versions`).then((r) => (r.ok ? r.json() : [])),
+          fetch(`/api/detail-models/${p.id}/versions`).then((r) => (r.ok ? r.json() : [])),
+        ]).then(([mapVersions, detailVersions]: [VersionSummary[], VersionSummary[]]) => [
+          p.id,
+          mapVersions[0],
+          detailVersions[0],
+        ] as const)
+      )
+    ).then((rows) => {
+      if (cancelled) return;
+      const map: Record<string, VersionSummary> = {};
+      const detail: Record<string, VersionSummary> = {};
+      rows.forEach(([id, mapLatest, detailLatest]) => {
+        if (mapLatest) map[id] = mapLatest;
+        if (detailLatest) detail[id] = detailLatest;
+      });
+      setMapModels(map);
+      setDetailModels(detail);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectIds]);
 
   return (
     <div className="space-y-4">
@@ -349,13 +472,8 @@ function Viewer3DTab() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {allProjects.map((p) => {
-          const isExperienceCustomized = !!configs[p.id];
-          const model = mapModels[p.id];
-          const mapStatus = !model?.fileName
-            ? t("admin.mapModelStatusNone")
-            : model.enabled
-            ? t("admin.mapModelStatusLive")
-            : t("admin.mapModelStatusDraft");
+          const detailModel = detailModels[p.id];
+          const mapModel = mapModels[p.id];
           // Units can only be added to Admin-created projects here — seeded
           // mock projects (lib/mockData) aren't store state, so there's
           // nowhere for an added unit to persist to for them.
@@ -382,22 +500,44 @@ function Viewer3DTab() {
                   <span
                     className={cn(
                       "flex items-center gap-1.5",
-                      isExperienceCustomized ? "text-green-600" : "text-neutral-500"
+                      detailModel?.publicationStatus === "published" ? "text-green-600" : "text-neutral-500"
                     )}
                   >
                     <Boxes className="h-3.5 w-3.5 shrink-0" />
-                    {isExperienceCustomized
-                      ? t("admin.viewer3DCustomized")
-                      : t("admin.viewer3DUsingDefaults")}
+                    {summaryStatusLabel(t, detailModel)}
+                    {detailModel && detailModel.validationStatus !== "ready" && (
+                      <span
+                        className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                          detailModel.validationStatus === "blocked"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-amber-100 text-amber-700"
+                        )}
+                      >
+                        {t(`admin.validation${detailModel.validationStatus[0].toUpperCase()}${detailModel.validationStatus.slice(1)}`)}
+                      </span>
+                    )}
                   </span>
                   <span
                     className={cn(
                       "flex items-center gap-1.5",
-                      model?.enabled ? "text-green-600" : "text-neutral-500"
+                      mapModel?.publicationStatus === "published" ? "text-green-600" : "text-neutral-500"
                     )}
                   >
                     <MapIcon className="h-3.5 w-3.5 shrink-0" />
-                    {mapStatus}
+                    {summaryStatusLabel(t, mapModel)}
+                    {mapModel && mapModel.validationStatus !== "ready" && (
+                      <span
+                        className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                          mapModel.validationStatus === "blocked"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-amber-100 text-amber-700"
+                        )}
+                      >
+                        {t(`admin.validation${mapModel.validationStatus[0].toUpperCase()}${mapModel.validationStatus.slice(1)}`)}
+                      </span>
+                    )}
                   </span>
                 </div>
 
@@ -524,73 +664,6 @@ function ContentTab() {
             </p>
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
-
-function CurrencyTab() {
-  const { t } = useT();
-  const rate = useAppStore((s) => s.eurToAllRate);
-  const updatedAt = useAppStore((s) => s.eurToAllRateUpdatedAt);
-  const setEurToAllRate = useAppStore((s) => s.setEurToAllRate);
-  const [input, setInput] = useState(String(rate));
-  const [saved, setSaved] = useState(false);
-
-  function handleSave() {
-    const parsed = Math.round(Number(input));
-    if (!Number.isFinite(parsed) || parsed <= 0) return;
-    setEurToAllRate(parsed, new Date().toISOString());
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-  }
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="font-serif text-xl text-neutral-900">{t("admin.currencyTitle")}</h1>
-        <p className="mt-1 max-w-xl text-sm text-neutral-500">{t("admin.currencySubtitle")}</p>
-      </div>
-
-      <div className="max-w-sm space-y-4 rounded-panel border border-neutral-200 bg-white p-5">
-        <div>
-          <p className="text-xs font-medium text-neutral-500">{t("admin.currentRateLabel")}</p>
-          <p className="mt-1 text-2xl font-bold text-neutral-900">
-            {t("admin.currentRateValue", { rate })}
-          </p>
-          <p className="mt-1 text-xs text-neutral-400">
-            {updatedAt
-              ? t("admin.lastUpdated", { date: new Date(updatedAt).toLocaleString() })
-              : t("admin.neverUpdated")}
-          </p>
-        </div>
-
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-medium text-neutral-500">
-            {t("admin.newRateLabel")}
-          </span>
-          <input
-            type="number"
-            min={1}
-            step={1}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
-          />
-        </label>
-
-        <button
-          onClick={handleSave}
-          className="w-full rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white hover:bg-brand-600"
-        >
-          {t("admin.saveRate")}
-        </button>
-
-        {saved && (
-          <p className="rounded-control bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
-            {t("admin.rateSaved")}
-          </p>
-        )}
       </div>
     </div>
   );

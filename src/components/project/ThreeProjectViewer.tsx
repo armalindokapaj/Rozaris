@@ -1,35 +1,28 @@
 "use client";
 
 import { forwardRef } from "react";
-import { useProjectDetailModel } from "@/hooks/useProjectDetailModel";
 import { ProceduralProjectViewer } from "./ProceduralProjectViewer";
-import { MapboxProjectViewer } from "./MapboxProjectViewer";
 import type { ThreeProjectViewerHandle, ThreeProjectViewerProps } from "./viewerTypes";
 
 export type { ThreeProjectViewerHandle } from "./viewerTypes";
 
 /**
- * Project 3D Experience — thin dispatcher between two engines, so callers
- * (ArchVizClient.tsx, Project3DConfigEditor.tsx) keep using one component
- * with one prop/ref contract regardless of which renders:
- *
- *  - MapboxProjectViewer: a live Mapbox map with Admin's detailed GLB
- *    placed at the project's real coordinates — used once a project has an
- *    enabled ProjectDetailModel (a real Postgres row, see
- *    useProjectDetailModel). This is where linked `Unit_<number>` boxes
- *    render, color-coded by status, behind the "Unit Search" bottom-bar
- *    toggle.
- *  - ProceduralProjectViewer: the original standalone Three.js viewer
- *    (procedural box-massing, lib/threeBuilding.ts) — the fallback for
- *    every project that hasn't uploaded/enabled a detailed model yet, so
- *    existing projects keep working unchanged.
+ * Project 3D Experience — as of "3D Experience Phase 1", a thin re-export
+ * rather than a dispatcher between two engines. `ProceduralProjectViewer`
+ * is now the one real viewer: a standalone WebGPU/WebGL2 canvas ROZARIS
+ * fully owns, rendering either the procedural box-massing fallback or an
+ * admin-uploaded detailed GLB (via useProjectDetailModel, called inside
+ * that component) in the same scene/camera/renderer. The old
+ * Mapbox-embedded path (MapboxProjectViewer.tsx -> DetailModelLayer.ts,
+ * which rendered a GLB *inside Mapbox's own shared WebGL2 context* — no
+ * OrbitControls, no post-processing, no WebGPU possible there) has been
+ * retired; see the "3D Experience — Planpoint-style rendering, Phase 1"
+ * plan for why. Kept as its own module (not inlined into every caller)
+ * since callers (ArchVizClient.tsx, Project3DConfigEditor.tsx) still import
+ * `ThreeProjectViewer` by name.
  */
 export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProjectViewerProps>(
   function ThreeProjectViewer(props, ref) {
-    const detailModel = useProjectDetailModel(props.project.id);
-    if (detailModel?.enabled && detailModel.glbUrl) {
-      return <MapboxProjectViewer {...props} detailModel={detailModel} ref={ref} />;
-    }
     return <ProceduralProjectViewer {...props} ref={ref} />;
   }
 );

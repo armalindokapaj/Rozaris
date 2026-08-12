@@ -156,7 +156,7 @@ export function ListingCard({
           {PROPERTY_TYPE_LABELS[locale][listing.propertyType]}
         </p>
         <p className="truncate font-serif text-base text-neutral-900">{listing.title}</p>
-        <p className="text-[15px] font-semibold text-neutral-900">
+        <p className="font-numeric text-[15px] font-semibold text-neutral-900">
           {priceFmt(listing.price)}
           {listing.transaction === "rent" && (
             <span className="text-xs font-normal text-neutral-500">

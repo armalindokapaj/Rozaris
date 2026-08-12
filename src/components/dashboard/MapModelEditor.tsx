@@ -2,14 +2,33 @@
 
 import { useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
-import { Crosshair, Trash2, Upload, X } from "lucide-react";
-import { defaultProjectMapModel } from "@/lib/store";
+import { Crosshair, History, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
-import { cn } from "@/lib/utils";
+import { cn, formatRelativeDate } from "@/lib/utils";
 import { MapModelMapPreview } from "./MapModelMapPreview";
-import type { Project, ProjectMapModel } from "@/lib/types";
+import { ValidationBadge } from "./ValidationBadge";
+import type { Project } from "@/lib/types";
 
 const MAX_FILE_BYTES = 60 * 1024 * 1024; // keep in sync with api/blob/upload's maximumSizeInBytes
+
+interface VersionRow {
+  id: string;
+  version: number;
+  fileName: string;
+  fileSize: number;
+  scale: number;
+  heading: number;
+  altitude: number;
+  hideBaseBuilding: boolean;
+  hiddenBuildingLng: number | null;
+  hiddenBuildingLat: number | null;
+  validationStatus: "ready" | "warning" | "blocked";
+  validationIssues: string[] | null;
+  publicationStatus: "draft" | "published" | "archived";
+  publicAssetUrl: string;
+  createdAt: string;
+  publishedAt: string | null;
+}
 
 function formatBytes(bytes: number) {
   if (bytes <= 0) return "0 KB";
@@ -18,52 +37,69 @@ function formatBytes(bytes: number) {
 }
 
 /**
- * Admin's "3D Map Control" authoring surface — upload a GLB from disk (goes
- * straight to Vercel Blob, a real shared URL any visitor's browser can load
- * — see src/app/api/blob/upload), place it (scale/rotation/altitude)
- * against MapModelMapPreview — the SAME Mapbox map/style/ProjectModelLayer
- * as every other map in Rozaris, centered on this project's real
- * coordinates, so what Admin sees while dialing in the placement is exactly
- * what a visitor sees on the live search map, not a stand-in for it. Save
- * writes the placement record to Postgres (/api/map-models/[projectId]) —
- * a real, shared row, not Zustand — so a model an admin publishes shows up
- * for every visitor, not just this browser. Mirrors Project3DConfigEditor's
- * draft/publish split next to it.
+ * Admin's "3D Map Control" authoring surface (PRD_Admin_Mapbox_GLB) —
+ * Upload -> Validate -> Position -> Preview -> Publish, with real version
+ * history/draft/publish/rollback (src/app/api/map-models/[projectId]/
+ * versions/**) instead of the pre-versioning single mutable row. Preview
+ * uses the SAME Mapbox map/style/ProjectModelLayer as every other map in
+ * Rozaris, centered on this project's real coordinates.
  */
 export function MapModelEditor({ project, onClose }: { project: Project; onClose: () => void }) {
-  const { t } = useT();
+  const { t, locale } = useT();
 
-  const [draft, setDraft] = useState<ProjectMapModel>(defaultProjectMapModel);
+  const [versions, setVersions] = useState<VersionRow[]>([]);
   const [loaded, setLoaded] = useState(false);
-  // Instant local preview (picked file, pre-upload) takes priority over the
-  // already-published glbUrl so Admin sees the *new* file immediately
-  // instead of waiting on the upload to finish.
+  const [showHistory, setShowHistory] = useState(false);
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [savedFlash, setSavedFlash] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Editable placement — synced from the active draft (or the published
+  // version, read-only, if there's no draft to edit) whenever the version
+  // list changes underneath it.
+  const [scale, setScale] = useState(1);
+  const [rotationDeg, setRotationDeg] = useState(0);
+  const [altitudeOffset, setAltitudeOffset] = useState(0);
+  const [hideBaseBuilding, setHideBaseBuilding] = useState(false);
+  const [hiddenBuildingLng, setHiddenBuildingLng] = useState<number | null>(null);
+  const [hiddenBuildingLat, setHiddenBuildingLat] = useState<number | null>(null);
+
+  async function refresh() {
+    const res = await fetch(`/api/map-models/${project.id}/versions`);
+    const rows: VersionRow[] = res.ok ? await res.json() : [];
+    setVersions(rows);
+    const active = rows[0] ?? null;
+    if (active) {
+      setScale(active.scale);
+      setRotationDeg(active.heading);
+      setAltitudeOffset(active.altitude);
+      setHideBaseBuilding(active.hideBaseBuilding);
+      setHiddenBuildingLng(active.hiddenBuildingLng);
+      setHiddenBuildingLat(active.hiddenBuildingLat);
+    }
+    return rows;
+  }
+
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/map-models/${project.id}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((saved: ProjectMapModel | null) => {
-        if (!cancelled && saved) setDraft(saved);
-      })
-      .finally(() => {
-        if (!cancelled) setLoaded(true);
-      });
+    // Initial version-history load, guarded by `cancelled` like every other
+    // fetch effect in this app (see e.g. useProjectDetailModel.ts).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refresh().finally(() => {
+      if (!cancelled) setLoaded(true);
+    });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
-  function update(partial: Partial<ProjectMapModel>) {
-    setDraft((d) => ({ ...d, ...partial }));
-  }
+  const activeVersion = versions[0] ?? null;
+  const isDraftActive = activeVersion?.publicationStatus === "draft";
 
   async function handleFile(file: File) {
     setError(null);
@@ -87,9 +123,35 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
         handleUploadUrl: "/api/blob/upload",
         onUploadProgress: (p) => setUploadProgress(p.percentage),
       });
-      update({ glbUrl: blob.url, fileName: file.name, fileSize: file.size });
-    } catch {
-      setError(t("admin.mapModelUploadFailed"));
+      const res = await fetch(`/api/map-models/${project.id}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          glbUrl: blob.url,
+          fileName: file.name,
+          fileSize: file.size,
+          scale,
+          rotationDeg,
+          altitudeOffset,
+          hideBaseBuilding,
+          hiddenBuildingLng,
+          hiddenBuildingLat,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await refresh();
+    } catch (err) {
+      // "Not authorized" is what /api/blob/upload throws when the real
+      // Auth.js admin session (separate from the Zustand "signed in as
+      // Admin" mock — see admin/page.tsx) is missing or expired; surface
+      // that distinctly since the fix (reconnect) differs from a generic
+      // upload failure.
+      const message = err instanceof Error ? err.message : "";
+      setError(
+        message.includes("Not authorized") || message.includes("authoriz")
+          ? t("admin.sessionExpiredNote")
+          : t("admin.mapModelUploadFailed")
+      );
       setLocalPreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return null;
@@ -100,51 +162,44 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
     }
   }
 
-  async function handleRemove() {
+  async function handleDiscardDraft() {
+    if (!isDraftActive || !activeVersion) return;
     setBusy(true);
+    setError(null);
     try {
-      if (draft.glbUrl) {
-        await fetch("/api/blob/delete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: draft.glbUrl }),
-        });
+      const res = await fetch(`/api/map-models/${project.id}/versions/${activeVersion.id}`, { method: "DELETE" });
+      // Was previously not checked at all — a failed delete (expired admin
+      // session, already-published version, etc.) looked identical to a
+      // successful one: no error shown, nothing removed. Only clear the
+      // local preview/picking state once the delete actually succeeded.
+      if (!res.ok) throw new Error(await res.text());
+      if (localPreviewUrl) {
+        URL.revokeObjectURL(localPreviewUrl);
+        setLocalPreviewUrl(null);
       }
-      await fetch(`/api/map-models/${project.id}`, { method: "DELETE" });
-      setLocalPreviewUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
-      setDraft(defaultProjectMapModel);
+      await refresh();
       setPicking(false);
+    } catch {
+      setError(t("admin.mapModelDeleteFailed"));
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleSave() {
+  async function handleSaveDraft() {
+    if (!isDraftActive || !activeVersion) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/map-models/${project.id}`, {
-        method: "PUT",
+      const res = await fetch(`/api/map-models/${project.id}/versions/${activeVersion.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          glbUrl: draft.glbUrl,
-          fileName: draft.fileName,
-          fileSize: draft.fileSize,
-          scale: draft.scale,
-          rotationDeg: draft.rotationDeg,
-          altitudeOffset: draft.altitudeOffset,
-          enabled: draft.enabled,
-          hideBaseBuilding: draft.hideBaseBuilding,
-          hiddenBuildingLng: draft.hiddenBuildingLng ?? null,
-          hiddenBuildingLat: draft.hiddenBuildingLat ?? null,
-        }),
+        body: JSON.stringify({ scale, rotationDeg, altitudeOffset, hideBaseBuilding, hiddenBuildingLng, hiddenBuildingLat }),
       });
       if (!res.ok) throw new Error(await res.text());
-      setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 2500);
+      await refresh();
+      setFlash(t("admin.mapModelSaved"));
+      setTimeout(() => setFlash(null), 2500);
     } catch {
       setError(t("admin.mapModelSaveFailed"));
     } finally {
@@ -152,8 +207,67 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
     }
   }
 
-  const hasModel = !!draft.fileName;
-  const previewUrl = localPreviewUrl ?? (draft.glbUrl || null);
+  async function handlePublish() {
+    if (!isDraftActive || !activeVersion) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await handleSaveDraft();
+      const res = await fetch(`/api/map-models/${project.id}/versions/${activeVersion.id}/publish`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await refresh();
+      setFlash(t("admin.versionPublished"));
+      setTimeout(() => setFlash(null), 2500);
+    } catch {
+      setError(t("admin.versionPublishFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRemoveModel() {
+    if (!activeVersion || activeVersion.publicationStatus !== "published") return;
+    if (!window.confirm(t("admin.mapModelRemoveConfirm"))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/map-models/${project.id}/versions/${activeVersion.id}/unpublish`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await refresh();
+      setFlash(t("admin.mapModelRemoved"));
+      setTimeout(() => setFlash(null), 2500);
+    } catch {
+      setError(t("admin.mapModelDeleteFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRollback(versionId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/map-models/${project.id}/versions/${versionId}/rollback`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await refresh();
+      setFlash(t("admin.versionRolledBack"));
+      setTimeout(() => setFlash(null), 2500);
+    } catch {
+      setError(t("admin.versionRollbackFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const hasModel = !!activeVersion;
+  const previewUrl = localPreviewUrl ?? (activeVersion?.publicAssetUrl || null);
+  const canEdit = isDraftActive;
 
   return (
     <div
@@ -166,22 +280,20 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
           <MapModelMapPreview
             coords={project.coords}
             glbUrl={previewUrl}
-            scale={draft.scale}
-            rotationDeg={draft.rotationDeg}
-            altitudeOffset={draft.altitudeOffset}
-            hideBaseBuilding={draft.hideBaseBuilding}
+            scale={scale}
+            rotationDeg={rotationDeg}
+            altitudeOffset={altitudeOffset}
+            hideBaseBuilding={hideBaseBuilding}
             hiddenBuildingPoint={
-              draft.hiddenBuildingLng != null && draft.hiddenBuildingLat != null
-                ? { lng: draft.hiddenBuildingLng, lat: draft.hiddenBuildingLat }
+              hiddenBuildingLng != null && hiddenBuildingLat != null
+                ? { lng: hiddenBuildingLng, lat: hiddenBuildingLat }
                 : null
             }
             picking={picking}
             onPickBuilding={(point) => {
-              update({
-                hiddenBuildingLng: point.lng,
-                hiddenBuildingLat: point.lat,
-                hideBaseBuilding: true,
-              });
+              setHiddenBuildingLng(point.lng);
+              setHiddenBuildingLat(point.lat);
+              setHideBaseBuilding(true);
               setPicking(false);
             }}
           />
@@ -216,27 +328,59 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
                 }}
               />
               {hasModel ? (
-                <div className="flex items-center justify-between gap-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-neutral-800">{draft.fileName}</p>
-                    <p className="text-xs text-neutral-500">{formatBytes(draft.fileSize)}</p>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-neutral-800">
+                        {activeVersion!.fileName}{" "}
+                        <span className="font-normal text-neutral-400">v{activeVersion!.version}</span>
+                      </p>
+                      <p className="text-xs text-neutral-500">{formatBytes(activeVersion!.fileSize)}</p>
+                    </div>
+                    <div className="flex shrink-0 gap-1.5">
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={busy}
+                        className="rounded-control border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-white disabled:opacity-40"
+                      >
+                        {t("admin.mapModelReplace")}
+                      </button>
+                      {canEdit ? (
+                        <button
+                          onClick={handleDiscardDraft}
+                          disabled={busy}
+                          aria-label={t("admin.discardDraft")}
+                          className="rounded-control border border-red-200 p-1.5 text-red-500 hover:bg-red-50 disabled:opacity-40"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        activeVersion!.publicationStatus === "published" && (
+                          <button
+                            onClick={handleRemoveModel}
+                            disabled={busy}
+                            aria-label={t("admin.mapModelRemove")}
+                            title={t("admin.mapModelRemove")}
+                            className="rounded-control border border-red-200 p-1.5 text-red-500 hover:bg-red-50 disabled:opacity-40"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )
+                      )}
+                    </div>
                   </div>
-                  <div className="flex shrink-0 gap-1.5">
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={busy}
-                      className="rounded-control border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-white disabled:opacity-40"
+                  <div className="flex items-center justify-between">
+                    <ValidationBadge status={activeVersion!.validationStatus} issues={activeVersion!.validationIssues} />
+                    <span
+                      className={cn(
+                        "text-[11px] font-semibold",
+                        activeVersion!.publicationStatus === "published" ? "text-green-600" : "text-amber-600"
+                      )}
                     >
-                      {t("admin.mapModelReplace")}
-                    </button>
-                    <button
-                      onClick={handleRemove}
-                      disabled={busy}
-                      aria-label={t("admin.mapModelRemove")}
-                      className="rounded-control border border-red-200 p-1.5 text-red-500 hover:bg-red-50 disabled:opacity-40"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                      {activeVersion!.publicationStatus === "published"
+                        ? t("admin.statusPublished")
+                        : t("admin.statusDraft")}
+                    </span>
                   </div>
                 </div>
               ) : (
@@ -264,95 +408,159 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
               <p className="mt-2 text-[11px] text-neutral-400">{t("admin.mapModelStorageNote")}</p>
             </section>
 
-            <SliderField
-              label={t("admin.mapModelScale")}
-              min={0.01}
-              max={20}
-              step={0.01}
-              value={draft.scale}
-              onChange={(v) => update({ scale: v })}
-            />
-            <SliderField
-              label={t("admin.mapModelRotation")}
-              min={0}
-              max={359}
-              step={1}
-              value={draft.rotationDeg}
-              onChange={(v) => update({ rotationDeg: v })}
-              suffix="°"
-            />
-            <SliderField
-              label={t("admin.mapModelAltitude")}
-              min={-20}
-              max={50}
-              step={0.5}
-              value={draft.altitudeOffset}
-              onChange={(v) => update({ altitudeOffset: v })}
-              suffix="m"
-            />
-
-            <ToggleField
-              label={t("admin.mapModelEnabled")}
-              checked={draft.enabled}
-              onChange={(v) => update({ enabled: v })}
-            />
-            <ToggleField
-              label={t("admin.mapModelHideBuilding")}
-              checked={draft.hideBaseBuilding}
-              onChange={(v) => update({ hideBaseBuilding: v })}
-            />
-            <p className="-mt-3 text-[11px] text-neutral-400">
-              {t("admin.mapModelHideBuildingNote")}
-            </p>
-
-            {draft.hideBaseBuilding && (
-              <div className="space-y-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
-                <button
-                  onClick={() => setPicking((v) => !v)}
-                  aria-pressed={picking}
-                  className={cn(
-                    "flex w-full items-center justify-center gap-1.5 rounded-control py-2 text-xs font-semibold",
-                    picking
-                      ? "bg-brand-500 text-white hover:bg-brand-600"
-                      : "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100"
-                  )}
-                >
-                  <Crosshair className="h-3.5 w-3.5" />
-                  {picking ? t("admin.mapModelPickCancel") : t("admin.mapModelPickBuilding")}
-                </button>
-                <p className="text-[11px] text-neutral-400">
-                  {draft.hiddenBuildingLng != null && draft.hiddenBuildingLat != null
-                    ? t("admin.mapModelPickedCustom")
-                    : t("admin.mapModelPickedAuto")}
-                </p>
-                {draft.hiddenBuildingLng != null && draft.hiddenBuildingLat != null && (
-                  <button
-                    onClick={() => {
-                      update({ hiddenBuildingLng: null, hiddenBuildingLat: null });
-                      setPicking(false);
-                    }}
-                    className="text-[11px] font-semibold text-red-500 hover:underline"
-                  >
-                    {t("admin.mapModelPickClear")}
-                  </button>
-                )}
-              </div>
+            {!canEdit && hasModel && (
+              <p className="rounded-control bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                {t("admin.viewingPublishedNote")}
+              </p>
             )}
+
+            <fieldset disabled={!canEdit} className="space-y-5 disabled:opacity-50">
+              <SliderField
+                label={t("admin.mapModelScale")}
+                min={0.01}
+                max={20}
+                step={0.01}
+                value={scale}
+                onChange={setScale}
+                suffix="×"
+              />
+              <p className="-mt-3 text-[11px] text-neutral-400">{t("admin.mapModelScaleNote")}</p>
+              <SliderField
+                label={t("admin.mapModelRotation")}
+                min={0}
+                max={359}
+                step={1}
+                value={rotationDeg}
+                onChange={setRotationDeg}
+                suffix="°"
+              />
+              <SliderField
+                label={t("admin.mapModelAltitude")}
+                min={-20}
+                max={50}
+                step={0.5}
+                value={altitudeOffset}
+                onChange={setAltitudeOffset}
+                suffix="m"
+              />
+
+              <ToggleField
+                label={t("admin.mapModelHideBuilding")}
+                checked={hideBaseBuilding}
+                onChange={setHideBaseBuilding}
+              />
+              <p className="-mt-3 text-[11px] text-neutral-400">{t("admin.mapModelHideBuildingNote")}</p>
+
+              {hideBaseBuilding && (
+                <div className="space-y-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
+                  <button
+                    onClick={() => setPicking((v) => !v)}
+                    aria-pressed={picking}
+                    className={cn(
+                      "flex w-full items-center justify-center gap-1.5 rounded-control py-2 text-xs font-semibold",
+                      picking
+                        ? "bg-brand-500 text-white hover:bg-brand-600"
+                        : "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100"
+                    )}
+                  >
+                    <Crosshair className="h-3.5 w-3.5" />
+                    {picking ? t("admin.mapModelPickCancel") : t("admin.mapModelPickBuilding")}
+                  </button>
+                  <p className="text-[11px] text-neutral-400">
+                    {hiddenBuildingLng != null && hiddenBuildingLat != null
+                      ? t("admin.mapModelPickedCustom")
+                      : t("admin.mapModelPickedAuto")}
+                  </p>
+                  {hiddenBuildingLng != null && hiddenBuildingLat != null && (
+                    <button
+                      onClick={() => {
+                        setHiddenBuildingLng(null);
+                        setHiddenBuildingLat(null);
+                        setPicking(false);
+                      }}
+                      className="text-[11px] font-semibold text-red-500 hover:underline"
+                    >
+                      {t("admin.mapModelPickClear")}
+                    </button>
+                  )}
+                </div>
+              )}
+            </fieldset>
+
+            <div className="border-t border-neutral-100 pt-4">
+              <button
+                onClick={() => setShowHistory((v) => !v)}
+                className="flex w-full items-center justify-between text-xs font-bold uppercase tracking-wide text-neutral-500"
+              >
+                <span className="flex items-center gap-1.5">
+                  <History className="h-3.5 w-3.5" /> {t("admin.versionHistory")}
+                </span>
+                <span>{versions.length}</span>
+              </button>
+              {showHistory && (
+                <div className="mt-2 space-y-1.5">
+                  {versions.length === 0 && (
+                    <p className="text-xs text-neutral-400">{t("admin.noVersionsYet")}</p>
+                  )}
+                  {versions.map((v) => (
+                    <div
+                      key={v.id}
+                      className="flex items-center justify-between gap-2 rounded-control border border-neutral-100 px-3 py-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-semibold text-neutral-700">v{v.version}</span>{" "}
+                        <span
+                          className={cn(
+                            "font-medium",
+                            v.publicationStatus === "published"
+                              ? "text-green-600"
+                              : v.publicationStatus === "draft"
+                              ? "text-amber-600"
+                              : "text-neutral-400"
+                          )}
+                        >
+                          {t(`admin.status${v.publicationStatus[0].toUpperCase()}${v.publicationStatus.slice(1)}`)}
+                        </span>
+                        <p className="text-[10px] text-neutral-400">
+                          {formatRelativeDate(v.createdAt, locale)}
+                        </p>
+                      </div>
+                      {v.publicationStatus === "archived" && (
+                        <button
+                          onClick={() => handleRollback(v.id)}
+                          disabled={busy}
+                          className="flex shrink-0 items-center gap-1 rounded-control border border-neutral-200 px-2 py-1 font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+                        >
+                          <RotateCcw className="h-3 w-3" /> {t("admin.rollback")}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="shrink-0 space-y-2 border-t border-neutral-100 p-4">
-            {savedFlash && (
-              <p className="rounded-control bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
-                {t("admin.mapModelSaved")}
-              </p>
+            {flash && (
+              <p className="rounded-control bg-green-50 px-3 py-2 text-xs font-medium text-green-700">{flash}</p>
             )}
-            <button
-              onClick={handleSave}
-              disabled={!hasModel || busy || !loaded}
-              className="w-full rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
-            >
-              {t("admin.mapModelSave")}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveDraft}
+                disabled={!canEdit || busy || !loaded}
+                className="flex-1 rounded-control border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+              >
+                {t("admin.saveDraft")}
+              </button>
+              <button
+                onClick={handlePublish}
+                disabled={!canEdit || busy || !loaded || activeVersion?.validationStatus === "blocked"}
+                className="flex-1 rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
+              >
+                {t("admin.publish")}
+              </button>
+            </div>
           </div>
         </div>
       </div>

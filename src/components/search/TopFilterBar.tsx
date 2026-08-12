@@ -15,6 +15,7 @@ import { mainFieldsFor } from "@/lib/propertyTypeFields";
 import { PROPERTY_TYPES, priceScaleFor } from "./FiltersForm";
 import { RangeSlider } from "./RangeSlider";
 import { FilterDropdown } from "./FilterDropdown";
+import { SearchBar } from "./SearchBar";
 
 const CONDITIONS: Condition[] = ["new", "renovated", "good", "needs_renovation"];
 const AMENITIES: Amenity[] = [
@@ -128,9 +129,11 @@ export function TopFilterBar({ className }: { className?: string }) {
   const isDefault = JSON.stringify(filters) === JSON.stringify(defaultFilters);
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-5", className)}>
+    <div className={cn("grid grid-cols-12 gap-2", className)}>
+      <SearchBar className="col-span-8" />
       {/* Buy / Rent */}
       <FilterDropdown
+        className="col-span-4"
         label={filters.transaction === "rent" ? t("nav.rent") : t("nav.buy")}
         active={filters.transaction === "rent"}
       >
@@ -186,6 +189,7 @@ export function TopFilterBar({ className }: { className?: string }) {
 
       {/* Location */}
       <FilterDropdown
+        className="col-span-4"
         label={
           <span className="flex items-center gap-1.5">
             <MapPin className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
@@ -210,7 +214,7 @@ export function TopFilterBar({ className }: { className?: string }) {
       </FilterDropdown>
 
       {/* Property type */}
-      <FilterDropdown label={typeLabel} active={typeCount > 0}>
+      <FilterDropdown className="col-span-4" label={typeLabel} active={typeCount > 0}>
         {() => (
           <Section label={t("filters.propertyType")}>
             <div className="flex flex-wrap gap-1.5">
@@ -231,7 +235,7 @@ export function TopFilterBar({ className }: { className?: string }) {
       </FilterDropdown>
 
       {/* Price */}
-      <FilterDropdown label={priceLabel} active={priceIsSet}>
+      <FilterDropdown className="col-span-4" label={priceLabel} active={priceIsSet}>
         {() => (
           <Section label={t("filters.priceRangeEur")}>
             <RangeSlider
@@ -248,7 +252,7 @@ export function TopFilterBar({ className }: { className?: string }) {
 
       {/* Bedrooms / Bathrooms */}
       {showBedBath && (
-        <FilterDropdown label={bedsBathsLabel} active={bedsBathsSet}>
+        <FilterDropdown className="col-span-4" label={bedsBathsLabel} active={bedsBathsSet}>
           {() => (
             <div className="grid grid-cols-2 gap-4">
               <Section label={t("filters.bedrooms")}>
@@ -284,6 +288,7 @@ export function TopFilterBar({ className }: { className?: string }) {
 
       {/* More filters (condition / amenities / nearby / publisher) */}
       <FilterDropdown
+        className="col-span-4"
         label={
           <span className="flex items-center gap-1.5">
             <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />

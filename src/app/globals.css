@@ -89,11 +89,12 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
-  /* Editorial display serif — wordmark, page/section headings, and
-     property/card titles only (`font-serif` utility). Everything else
-     (body copy, controls, nav) stays on --font-sans/Inter. */
-  --font-serif: var(--font-playfair);
+  /* One readable sans family throughout. `font-serif` remains mapped to the
+     same family during the transition, so legacy title utilities never
+     reintroduce an editorial serif. */
+  --font-sans: var(--font-nunito-sans);
+  --font-serif: var(--font-nunito-sans);
+  --font-numeric: var(--font-roboto);
 
   --color-brand-50: var(--color-brand-50);
   --color-brand-100: var(--color-brand-100);
@@ -159,8 +160,14 @@ body {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-nunito-sans), ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: "tnum" 1, "cv11" 1;
+}
+
+/* Use this on monetary values, measurements and dense numeric tables. */
+.font-numeric {
+  font-family: var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Utility: solid floating panel (top filter bar, map/3D overlays, compare

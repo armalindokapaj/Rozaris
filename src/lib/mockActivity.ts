@@ -85,7 +85,7 @@ export function publisherNotifications(orgType: AuthState["orgType"]): Notificat
 }
 
 const LEAD_SOURCES: LeadSource[] = ["phone_click", "whatsapp_click", "listing_inquiry", "digital_twin_inquiry"];
-const LEAD_STATUSES: LeadStatus[] = ["new", "contacted", "viewing", "negotiating", "closed"];
+const LEAD_STATUSES: LeadStatus[] = ["new", "contacted", "qualified", "viewing", "negotiating", "won", "lost"];
 
 function hashSeed(str: string): number {
   let h = 0;

@@ -71,7 +71,7 @@ export function UnitDetailPanel({
           />
 
           <div className="mt-4 flex items-center justify-between">
-            <p className="text-xl font-bold text-neutral-900">{priceFmt(unit.price)}</p>
+            <p className="font-numeric text-xl font-bold text-neutral-900">{priceFmt(unit.price)}</p>
             <span
               className={cn(
                 "rounded-full px-2.5 py-1 text-xs font-semibold capitalize",

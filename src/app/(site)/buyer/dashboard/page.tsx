@@ -30,6 +30,7 @@ import type {
   BuyerPreferences,
   CompareEntity,
   Listing,
+  NotificationItem,
   Project,
   PropertyType,
   RecentlyViewedEntry,
@@ -172,6 +173,7 @@ export default function BuyerDashboardPage() {
             recentlyViewed={recentlyViewed}
             unreadAlerts={unreadCount}
             preferences={buyerProfile.preferences}
+            priceAlerts={notifications.filter((n) => n.type === "price_change")}
           />
         )}
         {tab === "saved" && <SavedTab listings={savedListings} projects={savedProjects} />}
@@ -214,6 +216,7 @@ function OverviewTab({
   recentlyViewed,
   unreadAlerts,
   preferences,
+  priceAlerts,
 }: {
   name: string;
   savedListingsCount: number;
@@ -222,6 +225,7 @@ function OverviewTab({
   recentlyViewed: RecentlyViewedEntry[];
   unreadAlerts: number;
   preferences: BuyerPreferences;
+  priceAlerts: NotificationItem[];
 }) {
   const { t } = useT();
   const priceFmt = usePriceFormat();
@@ -309,6 +313,15 @@ function OverviewTab({
                 </span>
               </div>
             ))}
+          </div>
+        </section>
+      )}
+
+      {priceAlerts.length > 0 && (
+        <section>
+          <h2 className="text-sm font-bold text-neutral-900">{t("user.priceAlerts")}</h2>
+          <div className="mt-3">
+            <NotificationsList items={priceAlerts} />
           </div>
         </section>
       )}

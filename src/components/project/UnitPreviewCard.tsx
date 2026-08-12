@@ -58,7 +58,7 @@ export function UnitPreviewCard({
           <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
             {t("unit.floorLabel", { n: unit.floor })} · {unit.code}
           </p>
-          <p className="mt-0.5 font-serif text-xl text-neutral-900">{priceFmt(unit.price)}</p>
+          <p className="font-numeric mt-0.5 text-xl font-semibold text-neutral-900">{priceFmt(unit.price)}</p>
         </div>
         <button
           onClick={onClose}

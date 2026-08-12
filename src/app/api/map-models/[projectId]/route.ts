@@ -2,6 +2,46 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 
+/**
+ * ⚠️ LEGACY as of the versioning pass — GET below now resolves the
+ * project's currently-*published* `MapModelVersion` instead of the old
+ * single-row `ProjectMapModel`, keeping the exact same response shape for
+ * MapModelEditor.tsx and every other existing caller. PUT/DELETE further
+ * down still write the legacy `ProjectMapModel` table (unauthenticated,
+ * same known gap as before) — left in place, unused by the admin UI once
+ * it switches to POST/PATCH .../versions, as a one-release safety net. Do
+ * not build new features against PUT/DELETE here.
+ */
+function toLegacyShape(v: {
+  projectId: string;
+  publicAssetUrl: string;
+  fileName: string;
+  fileSize: number;
+  scale: number;
+  heading: number;
+  altitude: number;
+  publicationStatus: string;
+  hideBaseBuilding: boolean;
+  hiddenBuildingLng: number | null;
+  hiddenBuildingLat: number | null;
+  updatedAt: Date;
+}) {
+  return {
+    projectId: v.projectId,
+    glbUrl: v.publicAssetUrl,
+    fileName: v.fileName,
+    fileSize: v.fileSize,
+    scale: v.scale,
+    rotationDeg: v.heading,
+    altitudeOffset: v.altitude,
+    enabled: v.publicationStatus === "published",
+    hideBaseBuilding: v.hideBaseBuilding,
+    hiddenBuildingLng: v.hiddenBuildingLng,
+    hiddenBuildingLat: v.hiddenBuildingLat,
+    updatedAt: v.updatedAt,
+  };
+}
+
 const mapModelSchema = z.object({
   glbUrl: z.string().url(),
   fileName: z.string().min(1),
@@ -20,8 +60,10 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  const model = await prisma.projectMapModel.findUnique({ where: { projectId } });
-  return NextResponse.json(model);
+  const version = await prisma.mapModelVersion.findFirst({
+    where: { projectId, publicationStatus: "published" },
+  });
+  return NextResponse.json(version ? toLegacyShape(version) : null);
 }
 
 /**

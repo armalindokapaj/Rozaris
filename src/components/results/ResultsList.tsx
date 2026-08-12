@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
@@ -28,14 +28,22 @@ export function ResultsList({
   // from the list either.
   restrictToBounds = false,
   columns = 3,
+  topContent,
+  restoreScrollTop,
+  onScrollTopChange,
 }: {
   layout: "panel" | "grid";
   restrictToBounds?: boolean;
   /** Grid column count — only meaningful when layout is "grid". */
   columns?: 2 | 3 | 4;
+  /** Scrolls away with the grid; the result count/sort row remains sticky. */
+  topContent?: ReactNode;
+  restoreScrollTop?: number;
+  onScrollTopChange?: (scrollTop: number) => void;
 }) {
   const filters = useAppStore((s) => s.filters);
   const mapBounds = useAppStore((s) => s.mapBounds);
+  const mapAreaSearchBounds = useAppStore((s) => s.mapAreaSearchBounds);
   const [page, setPage] = useState(1);
   const { t } = useT();
 
@@ -44,6 +52,9 @@ export function ResultsList({
   // scroll container below so scrolling works from anywhere in the panel,
   // without moving or extending the visible scrollbar into the header.
   const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scrollRef.current && restoreScrollTop != null) scrollRef.current.scrollTop = restoreScrollTop;
+  }, [restoreScrollTop]);
   function forwardWheelToList(e: React.WheelEvent) {
     if (!scrollRef.current) return;
     e.preventDefault();
@@ -61,12 +72,12 @@ export function ResultsList({
   }
 
   const listingResults = useMemo(
-    () => getVisibleListings(filters, mapBounds, restrictToBounds),
-    [filters, mapBounds, restrictToBounds]
+    () => getVisibleListings(filters, restrictToBounds ? mapAreaSearchBounds : mapBounds, restrictToBounds),
+    [filters, mapBounds, mapAreaSearchBounds, restrictToBounds]
   );
   const projectResults = useMemo(
-    () => getVisibleProjects(filters, mapBounds, restrictToBounds),
-    [filters, mapBounds, restrictToBounds]
+    () => getVisibleProjects(filters, restrictToBounds ? mapAreaSearchBounds : mapBounds, restrictToBounds),
+    [filters, mapBounds, mapAreaSearchBounds, restrictToBounds]
   );
 
   const rows: Row[] = useMemo(() => {
@@ -110,18 +121,10 @@ export function ResultsList({
           </div>
           {countBlock}
         </div>
-      ) : (
-        <div
-          onWheel={forwardWheelToList}
-          className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-100 px-4 py-3"
-        >
-          {countBlock}
-          <SortDropdown />
-        </div>
-      )}
+      ) : null}
 
-      {total === 0 ? (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin">
+      {total === 0 && layout === "panel" ? (
+        <div ref={scrollRef} onScroll={(e) => onScrollTopChange?.(e.currentTarget.scrollTop)} className="flex-1 overflow-y-auto scroll-thin">
           <EmptyState />
         </div>
       ) : layout === "panel" ? (
@@ -135,7 +138,13 @@ export function ResultsList({
           )}
         </div>
       ) : (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin p-4">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin">
+          {topContent}
+          <div onWheel={forwardWheelToList} className="sticky top-0 z-20 flex items-center justify-between gap-2 border-y border-neutral-200 bg-white px-5 py-3 shadow-[0_2px_6px_rgba(17,17,24,0.04)]">
+            {countBlock}
+            <SortDropdown />
+          </div>
+          {total === 0 ? <EmptyState /> : <div className="p-4">
           <div className={`grid ${GRID_COLS_CLASS[columns]} gap-4`}>
             {pageRows.map((row) =>
               row.kind === "listing" ? (
@@ -167,7 +176,7 @@ export function ResultsList({
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
-          )}
+          )}</div>}
         </div>
       )}
     </div>
