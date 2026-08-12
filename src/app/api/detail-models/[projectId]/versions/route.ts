@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma";
 import { requireAdmin } from "@/lib/adminAuth";
 import { fetchAndValidateGlb } from "@/lib/glbValidate";
 import { logAuditEvent } from "@/lib/audit";
+import type { NodeOverride, SceneManifestNode } from "@/lib/types";
 
 const createSchema = z.object({
   glbUrl: z.string().url(),
@@ -69,6 +71,24 @@ export async function POST(
     include: { unitLinks: true },
   });
 
+  // Carry forward scene overrides (classification/material) whose node
+  // NAME still exists in the new GLB's manifest — same "identical stable
+  // name -> carry it forward" rule §19 already applies to unit links, just
+  // hand-rolled here since overrides are a JSON blob, not a table with its
+  // own mappingStatus column. rzNodeId is remapped to the *new* manifest's
+  // id for that name, since the index component of the id can differ
+  // between versions even when the name is unchanged.
+  const nameToNewRzNodeId = new Map(validation.sceneManifest.map((n) => [n.name, n.rzNodeId]));
+  const previousOverrides = (publishedVersion?.nodeOverrides as NodeOverride[] | null) ?? [];
+  const previousManifest = (publishedVersion?.sceneManifest as SceneManifestNode[] | null) ?? [];
+  const rzNodeIdToName = new Map(previousManifest.map((n) => [n.rzNodeId, n.name]));
+  const carriedOverrides: NodeOverride[] = previousOverrides.flatMap((o) => {
+    const name = rzNodeIdToName.get(o.rzNodeId);
+    const newRzNodeId = name ? nameToNewRzNodeId.get(name) : undefined;
+    if (!newRzNodeId) return [];
+    return [{ ...o, rzNodeId: newRzNodeId, carried: true }];
+  });
+
   const created = await prisma.$transaction(async (tx) => {
     const version = await tx.detailModelVersion.create({
       data: {
@@ -87,6 +107,15 @@ export async function POST(
         altitudeOffset: parsed.data.altitudeOffset,
         validationStatus: validation.status,
         validationIssues: validation.issues.length ? validation.issues : undefined,
+        // Cast needed for Prisma's Json input type — plain TS interfaces
+        // (unlike z.any()-typed fields elsewhere in this codebase, e.g.
+        // hiddenBuildings) don't structurally satisfy InputJsonObject's
+        // index signature without it; the values themselves are already
+        // plain serializable objects.
+        sceneManifest: validation.sceneManifest as unknown as Prisma.InputJsonValue,
+        nodeOverrides: carriedOverrides.length
+          ? (carriedOverrides as unknown as Prisma.InputJsonValue)
+          : undefined,
         publicationStatus: "draft",
         uploadedBy: actor,
       },

@@ -67,6 +67,9 @@ export const defaultProject3DConfig: Project3DConfig = {
   allowUserTimeChange: true,
   cameraFovDesktop: 38,
   cameraFovMobile: 48,
+  cameraPresets: [],
+  exposure: 1,
+  viewerUI: { home: true, unitSearch: true, timeOfDay: true, viewPreset: true },
   updatedAt: "2025-01-01T00:00:00.000Z",
 };
 
@@ -103,6 +106,12 @@ export const defaultProjectDetailModel: ProjectDetailModel = {
   enabled: false,
   updatedAt: "",
   unitLinks: [],
+  sceneManifest: [],
+  nodeOverrides: [],
+  triangleCount: null,
+  meshCount: null,
+  materialCount: null,
+  textureCount: null,
 };
 
 export const defaultFilters: FilterState = {
@@ -304,6 +313,11 @@ interface AppState {
   addProject: (project: Project) => void;
   addProjectUnit: (projectId: string, unit: Unit) => void;
   removeProjectUnit: (projectId: string, unitId: string) => void;
+  // Edits a unit's fields in place, `id` untouched — unlike delete-then-
+  // re-add, this can never orphan a UnitMeshLinkV2 row (which points at
+  // Unit.id, not any of its editable fields) just because an admin changed
+  // its status from Available to Reserved/Sold.
+  updateProjectUnit: (projectId: string, unitId: string, patch: Partial<Unit>) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -626,6 +640,22 @@ export const useAppStore = create<AppState>()(
                   ? Math.max(0, p.availableUnits - 1)
                   : p.availableUnits,
             };
+          }),
+        })),
+      updateProjectUnit: (projectId, unitId, patch) =>
+        set((s) => ({
+          customProjects: s.customProjects.map((p) => {
+            if (p.id !== projectId) return p;
+            let availableDelta = 0;
+            const units = p.units.map((u) => {
+              if (u.id !== unitId) return u;
+              if (patch.status && patch.status !== u.status) {
+                if (u.status === "available") availableDelta -= 1;
+                if (patch.status === "available") availableDelta += 1;
+              }
+              return { ...u, ...patch };
+            });
+            return { ...p, units, availableUnits: Math.max(0, p.availableUnits + availableDelta) };
           }),
         })),
     }),

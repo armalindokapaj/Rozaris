@@ -2,6 +2,7 @@ import * as THREE from "three/webgpu";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { DRACO_DECODER_PATH } from "@/lib/gltfDecoder";
+import type { Unit } from "@/lib/types";
 
 const UNIT_NODE_PATTERN = /^Unit_/i;
 
@@ -56,6 +57,37 @@ export function applyUnitBoxMaterial(node: THREE.Object3D, color: number, opacit
       depthWrite: false,
     });
   });
+}
+
+/** Strips a leading `Unit_`/`UNIT_` prefix and every non-alphanumeric
+ * character, then lowercases — e.g. both "Unit_A503" and "UNIT_A-503"
+ * normalize to "a503", matching a `Unit.code` of "A503" or "A-503". Shared
+ * by `autoMatchUnitNodes` below (comparing a mesh name) and its caller
+ * (comparing a `Unit.code`) so both sides of the comparison go through the
+ * exact same rule. */
+export function normalizeUnitMatchKey(value: string): string {
+  return value.replace(/^unit_?/i, "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+/** Auto-links detected GLB node names to real Units by comparing normalized
+ * names (see `normalizeUnitMatchKey`) — PRD §43 "Auto Match". Fills ONLY
+ * currently-unlinked selections; a mesh name already present in
+ * `currentSelections` (whether picked manually, confirmed, or carried
+ * forward from a prior version) is left untouched, never silently
+ * reassigned. Pure — returns a new object, doesn't mutate `currentSelections`. */
+export function autoMatchUnitNodes(
+  detectedNodes: string[],
+  units: Pick<Unit, "id" | "code">[],
+  currentSelections: Record<string, string>
+): Record<string, string> {
+  const next = { ...currentSelections };
+  for (const meshName of detectedNodes) {
+    if (next[meshName]) continue;
+    const key = normalizeUnitMatchKey(meshName);
+    const match = units.find((u) => normalizeUnitMatchKey(u.code) === key);
+    if (match) next[meshName] = match.id;
+  }
+  return next;
 }
 
 /** Disposes every geometry/material under a loaded GLB root before

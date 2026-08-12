@@ -22,7 +22,18 @@ export function useProject3DConfig(projectId: string): Project3DConfig {
     fetch(`/api/project-3d-config/${projectId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((row: Project3DConfig | null) => {
-        if (!cancelled) setConfig(row ?? defaultProject3DConfig);
+        if (cancelled) return;
+        // Any row saved before the Render/visual-quality or Publish/
+        // runtime-hardening passes has `cameraPresets`/`viewerUI` as a
+        // real `null` in Postgres (both nullable Json columns) even
+        // though `Project3DConfig`'s TS type declares them non-null —
+        // every real project's saved config predates today, so this
+        // isn't a hypothetical edge case, it's the common case.
+        setConfig(
+          row
+            ? { ...row, cameraPresets: row.cameraPresets ?? [], viewerUI: row.viewerUI ?? defaultProject3DConfig.viewerUI }
+            : defaultProject3DConfig
+        );
       })
       .catch(() => {
         if (!cancelled) setConfig(defaultProject3DConfig);

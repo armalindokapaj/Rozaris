@@ -17,7 +17,17 @@ export interface MapModelEntry {
 interface LoadedModel {
   root: THREE.Group;
   entry: MapModelEntry;
+  /** Real terrain height (meters, post-exaggeration) last baked into this
+   * model's matrix — see `applyTransform`'s doc comment for why this is
+   * tracked instead of always assuming ground = sea level. */
+  lastGroundElevation: number;
 }
+
+/** Re-querying terrain elevation is cheap (an in-memory DEM lookup, not a
+ * network call), but rebuilding a model's full transform matrix every frame
+ * is needless work when nothing actually changed — skip it unless the
+ * queried ground height moved by more than this. */
+const ELEVATION_EPSILON_M = 0.05;
 
 /**
  * mapbox-gl custom layer that renders each project's uploaded GLB as a real
@@ -116,7 +126,7 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
     if (existing && existing.entry.glbUrl === entry.glbUrl) {
       // Same file — just a placement (scale/rotation/altitude) change.
       existing.entry = entry;
-      this.applyTransform(existing);
+      this.applyTransform(existing, this.queryGroundElevation(entry));
       return;
     }
     // New project, or Admin replaced the file — (re)load the geometry.
@@ -143,9 +153,9 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
           child.userData.projectId = entry.projectId;
         });
         this.scene.add(root);
-        const loaded: LoadedModel = { root, entry };
+        const loaded: LoadedModel = { root, entry, lastGroundElevation: 0 };
         this.loaded.set(entry.projectId, loaded);
-        this.applyTransform(loaded);
+        this.applyTransform(loaded, this.queryGroundElevation(entry));
         this.map?.triggerRepaint();
       },
       undefined,
@@ -154,6 +164,19 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
         this.onLoadError?.(entry.projectId, error, entry.glbUrl);
       }
     );
+  }
+
+  /**
+   * Real ground height (meters, mean-sea-level basis) at the model's
+   * lng/lat, per the map's own 3D terrain — `null`/`undefined` (terrain
+   * disabled, or the relevant DEM tile hasn't loaded yet) collapses to 0.
+   * `exaggerated: true` (the default) matches whatever exaggeration curve
+   * the style applies, so this returns the same height the surrounding
+   * basemap (buildings, roads) is actually rendered at, not the raw
+   * unexaggerated DEM value.
+   */
+  private queryGroundElevation(entry: MapModelEntry): number {
+    return this.map?.queryTerrainElevation({ lng: entry.lng, lat: entry.lat }) ?? 0;
   }
 
   /**
@@ -166,8 +189,8 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
    * component is deliberately negative (see below) — so the two approaches
    * would otherwise produce visibly different, wrong results.
    *
-   * Two corrections a naive port of the position/rotation/scale is easy to
-   * miss, both confirmed as bugs in an earlier version of this file:
+   * Three corrections a naive port of the position/rotation/scale is easy to
+   * miss, all confirmed as bugs in an earlier version of this file:
    *  1. Heading (Admin's rotationDeg) must be the middle (Y) rotation in the
    *     X→Y→Z chain, not the last (Z) one — since these multiply in that
    *     order, only Y lands as "spin around the model's own still-upright
@@ -182,9 +205,22 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
    *     but appears broken/invisible/inside-out from the normal viewing
    *     angle. This is the single most common gotcha in this integration
    *     pattern.
+   *  3. The altitude baked into the translation must include the real
+   *     terrain height at this lng/lat (`groundElevation`), not just
+   *     Admin's manual `altitudeOffset` fine-tune on top of sea level. This
+   *     style has 3D terrain enabled (`terrain` in the published style
+   *     JSON, exaggeration ramping to 1x by zoom 12) — every basemap
+   *     building/road already renders elevated to match it. A model placed
+   *     at raw sea-level altitude instead floats above or sinks into the
+   *     ground by however many meters of real elevation exist there. Nearly
+   *     invisible looking straight down, but glaringly obvious once you
+   *     pitch/rotate the camera — this was the root cause of "the model
+   *     doesn't stick when rotating or moving the map": the model was never
+   *     misaligned relative to lng/lat, only relative to height.
    */
-  private applyTransform(loaded: LoadedModel) {
+  private applyTransform(loaded: LoadedModel, groundElevation: number) {
     const { root, entry } = loaded;
+    loaded.lastGroundElevation = groundElevation;
     const mercator = mapboxgl.MercatorCoordinate.fromLngLat(
       { lng: entry.lng, lat: entry.lat },
       0
@@ -199,8 +235,9 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
     );
     const rotationZ = new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(0, 0, 1), 0);
 
+    const altitude = groundElevation + entry.altitudeOffset;
     const m = new THREE.Matrix4()
-      .makeTranslation(mercator.x, mercator.y, mercator.z + entry.altitudeOffset * metersToMercator)
+      .makeTranslation(mercator.x, mercator.y, mercator.z + altitude * metersToMercator)
       .scale(new THREE.Vector3(s, -s, s))
       .multiply(rotationX)
       .multiply(rotationY)
@@ -239,7 +276,25 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
 
   render(_gl: WebGLRenderingContext, matrix: number[] | Float32Array) {
     if (!this.renderer) return;
-    this.camera.projectionMatrix = new THREE.Matrix4().fromArray(matrix as number[]);
+
+    // Self-heals stale/placeholder ground elevation (DEM tile not loaded
+    // yet when the model was placed, or terrain data changing as the admin
+    // pans to a new area) without paying for a full matrix rebuild on every
+    // frame — `queryTerrainElevation` is a cheap in-memory lookup (no
+    // network, no allocation), so checking it every render() call is fine;
+    // only rebuilding the model's matrix when it actually moved is what
+    // keeps this from adding needless per-frame cost.
+    for (const loaded of this.loaded.values()) {
+      const ground = this.queryGroundElevation(loaded.entry);
+      if (Math.abs(ground - loaded.lastGroundElevation) > ELEVATION_EPSILON_M) {
+        this.applyTransform(loaded, ground);
+      }
+    }
+
+    // Mutates the existing Matrix4 instead of allocating a new one every
+    // frame — this runs continuously while the camera is being dragged/
+    // rotated, so avoiding needless per-frame garbage matters here.
+    this.camera.projectionMatrix.fromArray(matrix as number[]);
     this.renderer.resetState();
     this.renderer.render(this.scene, this.camera);
     // NOT map.triggerRepaint() here — that was the "laggish" bug: calling it

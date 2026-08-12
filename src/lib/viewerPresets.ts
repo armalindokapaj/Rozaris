@@ -1,4 +1,4 @@
-import type { GlassPreset, QualityPreset, SkyPreset, Unit } from "@/lib/types";
+import type { GlassPreset, MaterialPresetId, QualityPreset, SkyPreset, Unit } from "@/lib/types";
 
 /** The procedural viewer's status colors — design-token based (success/
  * warning/sold). Left as-is; the new GLB unit-box feature uses its own
@@ -19,6 +19,12 @@ export const UNIT_BOX_COLOR: Record<Unit["status"], number> = {
 };
 export const UNIT_BOX_OPACITY = 0.2;
 export const UNIT_BOX_SELECTED_OPACITY = 0.65;
+// X-Ray mode (PRD §51): boosts unit-box opacity above its normal
+// idle/selected level so units read clearly once the facade around them
+// has been faded, and dims the facade itself down to a near-see-through
+// default the admin/buyer can still raise via a slider.
+export const UNIT_BOX_XRAY_OPACITY_BOOST = 0.3;
+export const XRAY_DEFAULT_FACADE_OPACITY = 0.15;
 
 export const SELECTED_COLOR = 0x6b55f5; // --color-brand-500
 export const GROUND_COLOR = 0xd8d6e6;
@@ -56,26 +62,93 @@ export const TIME_PRESETS: [string, number][] = [
 
 // ---------------------------------------------------------------------------
 // "3D Experience Phase 1" — quality/glass/sky tiers for the standalone
-// WebGPU/WebGL2 viewer (ProceduralProjectViewer.tsx). Deliberately just
-// render scale / DPR cap / shadow resolution / material params for now, not
-// a TSL post-processing pipeline (SSGI/SSR/GTAO/DOF/etc.) — see the "3D
-// Experience — Planpoint-style rendering, Phase 1" plan for what's deferred
-// and why.
+// WebGPU/WebGL2 viewer (ProceduralProjectViewer.tsx). Render/visual
+// quality pass adds the real TSL post-processing flags below (bloom/gtao/
+// ssr/antialias) — `ssgi` is left in the shape but always `false`,
+// documenting a deferred slot rather than silently omitting it: SSGI needs
+// the same MRT normal buffer as GTAO/SSR but is materially more expensive
+// and, per its own node design, expects a temporal/spatial denoiser
+// downstream — the highest-risk effect to wire blind, so it stays off.
 // ---------------------------------------------------------------------------
 
 export interface QualityTierSettings {
   renderScale: number; // 0-1, multiplies canvas resolution before the DPR cap
   dprCap: number;
   shadowMapSize: number;
+  bloom: boolean;
+  gtao: boolean;
+  ssr: boolean;
+  /** SMAA anti-aliasing (not FXAA — see the Render/visual quality plan's
+   * "explicitly deferred" note on why FXAA's required pre-tone-mapped
+   * input ordering was skipped rather than guessed at). */
+  antialias: boolean;
+  /** Always false this pass — see file header comment. */
+  ssgi: boolean;
 }
 
 export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
-  ultra_desktop: { renderScale: 1, dprCap: 2, shadowMapSize: 4096 },
-  high_desktop: { renderScale: 0.95, dprCap: 2, shadowMapSize: 2048 },
-  balanced: { renderScale: 0.8, dprCap: 1.5, shadowMapSize: 1536 },
-  mobile_high: { renderScale: 0.75, dprCap: 1.25, shadowMapSize: 1024 },
-  mobile_low: { renderScale: 0.6, dprCap: 1, shadowMapSize: 512 },
+  ultra_desktop: {
+    renderScale: 1,
+    dprCap: 2,
+    shadowMapSize: 4096,
+    bloom: true,
+    gtao: true,
+    ssr: true,
+    antialias: true,
+    ssgi: false,
+  },
+  high_desktop: {
+    renderScale: 0.95,
+    dprCap: 2,
+    shadowMapSize: 2048,
+    bloom: true,
+    gtao: true,
+    ssr: true,
+    antialias: true,
+    ssgi: false,
+  },
+  balanced: {
+    renderScale: 0.8,
+    dprCap: 1.5,
+    shadowMapSize: 1536,
+    bloom: true,
+    gtao: true,
+    ssr: false,
+    antialias: true,
+    ssgi: false,
+  },
+  mobile_high: {
+    renderScale: 0.75,
+    dprCap: 1.25,
+    shadowMapSize: 1024,
+    bloom: true,
+    gtao: false,
+    ssr: false,
+    antialias: false,
+    ssgi: false,
+  },
+  mobile_low: {
+    renderScale: 0.6,
+    dprCap: 1,
+    shadowMapSize: 512,
+    bloom: false,
+    gtao: false,
+    ssr: false,
+    antialias: false,
+    ssgi: false,
+  },
 };
+
+/** Order the runtime adaptive-quality sampler steps through when sustained
+ * frame time is too high — most expensive/least noticeable first. Render
+ * scale isn't in this list: it's the last-resort step, applied directly
+ * (not via a boolean flag) once every effect here is already off. */
+export const ADAPTIVE_DOWNGRADE_ORDER: (keyof Pick<QualityTierSettings, "ssr" | "bloom" | "gtao" | "antialias">)[] = [
+  "ssr",
+  "bloom",
+  "gtao",
+  "antialias",
+];
 
 export const QUALITY_PRESET_ORDER: QualityPreset[] = [
   "ultra_desktop",
@@ -124,6 +197,35 @@ export const GLASS_TIERS: Record<GlassPreset, GlassTierSettings> = {
   premium: { transmission: 1, roughness: 0.02, ior: 1.52, thickness: 0.05 },
 };
 export const GLASS_NODE_PATTERN = /^Glass_/i;
+
+export interface MaterialPresetSettings {
+  label: string;
+  color: number;
+  roughness: number;
+  metalness: number;
+}
+
+/** Non-destructive per-node material presets (Editor UX & Scene Structure
+ * pass, PRD §13) — a Scene Explorer override applies one of these (or
+ * manual color/roughness/metalness) on top of whatever the GLB's own
+ * material already has; "Reset to original" just clears the override,
+ * the source material is never touched. Deliberately excludes glass
+ * variants (Architectural/Clear/Tinted/Frosted Glass from the PRD's list)
+ * — those are already served by the dedicated GLASS_TIERS system above,
+ * keyed off `Glass_*` node names; a second, competing glass system here
+ * would just create two ways to configure the same node. `label` is a
+ * plain English fallback for contexts without an i18n lookup handy (the
+ * admin UI itself uses `admin.materialPreset<Id>` keys instead). */
+export const MATERIAL_PRESETS: Record<MaterialPresetId, MaterialPresetSettings> = {
+  concrete: { label: "Concrete", color: 0x9a9891, roughness: 0.9, metalness: 0 },
+  plaster: { label: "Plaster", color: 0xe8e4da, roughness: 0.85, metalness: 0 },
+  stone: { label: "Stone", color: 0x8a8378, roughness: 0.75, metalness: 0 },
+  wood: { label: "Wood", color: 0x8a5a34, roughness: 0.55, metalness: 0 },
+  aluminium: { label: "Aluminium", color: 0xb8bcc2, roughness: 0.35, metalness: 0.85 },
+  steel: { label: "Steel", color: 0x6e737a, roughness: 0.4, metalness: 0.9 },
+  chrome: { label: "Chrome", color: 0xd8dade, roughness: 0.05, metalness: 1 },
+  ceramic: { label: "Ceramic", color: 0xf0efe9, roughness: 0.15, metalness: 0 },
+};
 
 export interface SkyGradientStops {
   top: string;

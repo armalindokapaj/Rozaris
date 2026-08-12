@@ -183,23 +183,19 @@ export function TopFilterBar({ className }: { className?: string }) {
           label={filters.transaction === "rent" ? t("nav.rent") : t("nav.buy")}
           active={filters.transaction === "rent"}
         >
-          {() => (
-            <div className="space-y-2">
-              <p className="border-b border-neutral-300 pb-1.5 text-sm font-bold text-neutral-700">Your project</p>
-              <div className="grid gap-1.5">
-                {(["buy", "rent"] as const).map((txn) => (
-                  <button
-                    key={txn}
-                    onClick={() => setTransaction(txn)}
-                    className={cn("flex w-full items-center justify-between border px-2.5 py-2 text-left text-sm font-semibold", filters.transaction === txn ? "border-brand-500 bg-brand-500 text-white" : "border-neutral-300 text-neutral-700 hover:border-neutral-500")}
-                  >
-                    {txn === "buy" ? t("nav.buy") : t("nav.rent")}
-                    <span aria-hidden="true">›</span>
-                  </button>
-                ))}
-              </div>
+          {(close) => (
+            <div className="grid gap-1">
+              {(["buy", "rent"] as const).map((txn) => (
+                <button
+                  key={txn}
+                  onClick={() => { setTransaction(txn); close(); }}
+                  className={cn("flex w-full items-center justify-between px-2.5 py-2 text-left text-sm font-semibold transition-colors", filters.transaction === txn ? "bg-brand-50 text-brand-700" : "text-neutral-700 hover:bg-neutral-100")}
+                >
+                  {txn === "buy" ? t("nav.buy") : t("nav.rent")}
+                </button>
+              ))}
               {filters.transaction === "rent" && (
-                <div className="flex gap-1.5">
+                <div className="border-t border-neutral-200 pt-2">
                   {(["long_term", "daily"] as const).map((s) => <Pill key={s} active={filters.rentSubtype === s} onClick={() => setFilters({ rentSubtype: filters.rentSubtype === s ? undefined : s, priceMin: null, priceMax: null, areaMin: null, areaMax: null })}>{s === "daily" ? t("filters.dailyRent") : t("filters.longTermRent")}</Pill>)}
                 </div>
               )}
@@ -215,22 +211,18 @@ export function TopFilterBar({ className }: { className?: string }) {
             previously overflowed past the results pane's clipped edge and
             rendered off-screen. */}
         <FilterDropdown className="w-40 shrink-0" label={typeLabel} active={typeCount > 0}>
-          {() => (
-            <Section label={t("filters.propertyType")}>
-              <div className="grid grid-cols-2 gap-1.5 pt-1">
+          {(close) => (
+            <div className="grid gap-1">
                 {PROPERTY_TYPES.map((pt) => (
-                  <Pill
+                  <button
                     key={pt}
-                    active={filters.propertyTypes.includes(pt)}
-                    onClick={() =>
-                      setFilters({ propertyTypes: toggleInArray(filters.propertyTypes, pt) })
-                    }
+                    onClick={() => { setFilters({ propertyTypes: [pt] }); close(); }}
+                    className={cn("w-full px-2.5 py-2 text-left text-sm font-semibold transition-colors", filters.propertyTypes.includes(pt) ? "bg-brand-50 text-brand-700" : "text-neutral-700 hover:bg-neutral-100")}
                   >
                     {propertyTypeLabels[pt]}
-                  </Pill>
+                  </button>
                 ))}
-              </div>
-            </Section>
+            </div>
           )}
         </FilterDropdown>
 

@@ -103,7 +103,7 @@ export function MapModelMapPreview({
     mapboxgl.accessToken = token;
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/armalindokapaj/cms9jpj8b008x01s9g1fib0f7",
+      style: "mapbox://styles/armalindokapaj/cmsqj4p0101ao01sd6911ckb4",
       center: [coords.lng, coords.lat],
       zoom: 17.5,
       pitch: 60,

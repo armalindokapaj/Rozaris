@@ -22,7 +22,15 @@ export function useProjectDetailModel(projectId: string): ProjectDetailModel | n
     fetch(`/api/detail-models/${projectId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((row: ProjectDetailModel | null) => {
-        if (!cancelled) setModel(row);
+        if (cancelled) return;
+        // `sceneManifest`/`nodeOverrides` are nullable Json columns —
+        // this route's own GET handler already coalesces both to `[]`
+        // before responding, so this is currently redundant, but that's
+        // an implicit contract with one specific route rather than
+        // something this hook enforces itself. Audit finding (Publish/
+        // runtime hardening pass): defend here too rather than rely on
+        // the route never changing.
+        setModel(row ? { ...row, sceneManifest: row.sceneManifest ?? [], nodeOverrides: row.nodeOverrides ?? [] } : null);
       })
       .catch(() => {
         if (!cancelled) setModel(null);

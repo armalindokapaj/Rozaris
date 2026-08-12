@@ -1,8 +1,27 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
+
+const vector3Schema = z.object({ x: z.number(), y: z.number(), z: z.number() });
+
+const cameraPresetSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  position: vector3Schema,
+  target: vector3Schema,
+  fov: z.number().min(10).max(120),
+  durationMs: z.number().min(0).max(10_000),
+});
+
+const viewerUISchema = z.object({
+  home: z.boolean(),
+  unitSearch: z.boolean(),
+  timeOfDay: z.boolean(),
+  viewPreset: z.boolean(),
+});
 
 /**
  * "3D Experience Phase 1" — makes `Project3DConfig` real (it was 100% dead
@@ -35,6 +54,9 @@ const patchSchema = z.object({
   allowUserTimeChange: z.boolean().optional(),
   cameraFovDesktop: z.number().min(10).max(120).optional(),
   cameraFovMobile: z.number().min(10).max(120).optional(),
+  cameraPresets: z.array(cameraPresetSchema).optional(),
+  exposure: z.number().min(0).max(4).optional(),
+  viewerUI: viewerUISchema.optional(),
 });
 
 export async function GET(
@@ -67,10 +89,20 @@ export async function PATCH(
     );
   }
 
+  // Cast needed for Prisma's Json input type on cameraPresets/viewerUI —
+  // plain zod-inferred objects don't structurally satisfy
+  // InputJsonObject's index signature without it (see the identical
+  // comment on the sceneManifest/nodeOverrides writes in the
+  // detail-models routes).
+  const data = {
+    ...parsed.data,
+    cameraPresets: parsed.data.cameraPresets as unknown as Prisma.InputJsonValue,
+    viewerUI: parsed.data.viewerUI as unknown as Prisma.InputJsonValue,
+  };
   const updated = await prisma.project3DConfig.upsert({
     where: { projectId },
-    update: parsed.data,
-    create: { projectId, ...parsed.data },
+    update: data,
+    create: { projectId, ...data },
   });
 
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";

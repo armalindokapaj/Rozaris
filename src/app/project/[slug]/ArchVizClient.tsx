@@ -28,6 +28,7 @@ export function ArchVizClient({ project }: { project: Project }) {
   // the full gallery/publisher-contact panel.
   const [fullDetailOpen, setFullDetailOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [screenshotFlash, setScreenshotFlash] = useState(false);
   const compareCount = useAppStore((s) => s.compare.length);
   const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
   const construction = useProjectConstruction(project);
@@ -64,6 +65,12 @@ export function ArchVizClient({ project }: { project: Project }) {
     a.href = dataUrl;
     a.download = `${project.slug}-rozaris.png`;
     a.click();
+    // Publish/runtime hardening pass — project.screenshotSaved was
+    // already translated in both locales but had zero call sites
+    // anywhere in the app; same timeout-flash pattern already used for
+    // Project3DConfigEditor.tsx's own savedFlash.
+    setScreenshotFlash(true);
+    setTimeout(() => setScreenshotFlash(false), 2500);
   }
 
   return (
@@ -119,6 +126,12 @@ export function ArchVizClient({ project }: { project: Project }) {
           )}
         </div>
       </header>
+
+      {screenshotFlash && (
+        <div className="glass-panel-dark pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-pill px-4 py-2 text-xs font-semibold text-white sm:top-20">
+          {t("project.screenshotSaved")}
+        </div>
+      )}
 
       <ThreeProjectViewer
         ref={viewerRef}

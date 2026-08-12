@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAuditEvent } from "@/lib/audit";
 
 const linksSchema = z.array(
   z.object({
@@ -55,6 +56,19 @@ export async function PUT(
       })),
     });
     return tx.unitMeshLinkV2.findMany({ where: { detailModelVersionId: versionId } });
+  });
+
+  // Every other write route in this directory (upload/publish/rollback/
+  // discard) logs — this one was the one gap, presumably an oversight
+  // rather than a deliberate omission, since a full replace of a version's
+  // unit bindings is exactly the kind of admin action the audit trail
+  // exists to capture.
+  await logAuditEvent({
+    actor: gate.user?.email ?? gate.user?.name ?? "admin",
+    action: "Unit links updated",
+    entityType: "DetailModelVersion",
+    entityId: versionId,
+    entityLabel: `v${version.version} (${links.length} linked)`,
   });
 
   return NextResponse.json(links);

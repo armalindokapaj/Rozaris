@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn as nextAuthSignIn, useSession } from "next-auth/react";
 import {
   ShieldCheck,
@@ -27,8 +28,6 @@ import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
-import { Project3DConfigEditor } from "@/components/dashboard/Project3DConfigEditor";
-import { MapModelEditor } from "@/components/dashboard/MapModelEditor";
 import { NewProjectModal } from "@/components/dashboard/NewProjectModal";
 import { ProjectUnitsEditor } from "@/components/dashboard/ProjectUnitsEditor";
 import { UsersTab } from "@/components/dashboard/admin/UsersTab";
@@ -76,11 +75,26 @@ const QUEUE_TYPE_LABEL_KEY: Record<QueueItem["type"], string> = {
   publisher_verification: "admin.typePublisherVerification",
 };
 
-export default function AdminPage() {
+/**
+ * Real page component — wrapped in Suspense below because it reads the
+ * initial tab from `?tab=`, and `useSearchParams()` requires that per
+ * Next.js. That query param exists so the two full-page 3D editors
+ * (`/admin/3d-experience/[id]`, `/admin/3d-map-control/[id]`) can link
+ * `?tab=viewer3d` on their "Back" action and land Admin on the same tab
+ * they came from, instead of always resetting to the first tab — the tab
+ * switcher itself still only writes to local state, not the URL, on every
+ * click (kept small on purpose: this only needed to solve the "Back"
+ * round-trip, not turn every tab into its own bookmarkable route).
+ */
+function AdminPageInner() {
   const auth = useAppStore((s) => s.auth);
   const signIn = useAppStore((s) => s.signIn);
   const logAudit = useAppStore((s) => s.logAudit);
-  const [tab, setTab] = useState<TabId>("queue");
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<TabId>(() => {
+    const fromUrl = searchParams.get("tab");
+    return (TABS.some((tb) => tb.id === fromUrl) ? fromUrl : "queue") as TabId;
+  });
   const [queue, setQueue] = useState(seedQueue);
   const pendingTimelineCount = useAppStore(
     (s) => s.timelineRequests.filter((r) => r.status === "pending").length
@@ -384,6 +398,14 @@ function TimelineTab() {
   );
 }
 
+export default function AdminPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminPageInner />
+    </Suspense>
+  );
+}
+
 /**
  * Admin's "3D Experience" page — merges what used to be two separate tabs
  * (3D Experience / 3D Map Control) into one project-card grid, since both
@@ -406,9 +428,8 @@ function summaryStatusLabel(t: ReturnType<typeof useT>["t"], summary?: VersionSu
 
 function Viewer3DTab() {
   const { t } = useT();
+  const router = useRouter();
   const customProjects = useAppStore((s) => s.customProjects);
-  const [editingScene, setEditingScene] = useState<Project | null>(null);
-  const [editingMapModel, setEditingMapModel] = useState<Project | null>(null);
   const [editingUnits, setEditingUnits] = useState<Project | null>(null);
   const [creating, setCreating] = useState(false);
   // Real Postgres rows per project (src/app/api/map-models/[id]/versions,
@@ -543,14 +564,14 @@ function Viewer3DTab() {
 
                 <div className="mt-auto flex flex-col gap-1.5 pt-1">
                   <button
-                    onClick={() => setEditingScene(p)}
+                    onClick={() => router.push(`/admin/3d-experience/${p.id}`)}
                     className="flex items-center justify-center gap-1.5 rounded-control bg-neutral-900 py-2.5 text-xs font-semibold text-white hover:bg-neutral-800"
                   >
                     <Boxes className="h-3.5 w-3.5" />
                     {t("admin.configure3DExperience")}
                   </button>
                   <button
-                    onClick={() => setEditingMapModel(p)}
+                    onClick={() => router.push(`/admin/3d-map-control/${p.id}`)}
                     className="flex items-center justify-center gap-1.5 rounded-control bg-brand-500 py-2.5 text-xs font-semibold text-white hover:bg-brand-600"
                   >
                     <MapIcon className="h-3.5 w-3.5" />
@@ -583,14 +604,6 @@ function Viewer3DTab() {
 
       {editingUnits && (
         <ProjectUnitsEditor project={editingUnits} onClose={() => setEditingUnits(null)} />
-      )}
-
-      {editingScene && (
-        <Project3DConfigEditor project={editingScene} onClose={() => setEditingScene(null)} />
-      )}
-
-      {editingMapModel && (
-        <MapModelEditor key={editingMapModel.id} project={editingMapModel} onClose={() => setEditingMapModel(null)} />
       )}
     </div>
   );

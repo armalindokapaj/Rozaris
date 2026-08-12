@@ -1,5 +1,6 @@
 import { ChevronUp, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { Unit } from "@/lib/types";
 
 /** Shared bottom-bar UI pieces for ProceduralProjectViewer — the
  * Home/Search/Sun/Palette icon row and expanding dark glass panels. */
@@ -63,6 +64,37 @@ export function formatHour(h: number): string {
   const period = hour24 >= 12 ? "PM" : "AM";
   const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
   return `${hour12}:${String(minutes).padStart(2, "0")} ${period}`;
+}
+
+/** Auto-generated key of colored dot + label pills for whatever unit
+ * statuses are actually present among currently-visible units (PRD §58) —
+ * a status with zero visible units today just doesn't render a pill,
+ * rather than always showing all three. */
+export function StatusLegend({
+  statuses,
+  colors,
+  labels,
+  className,
+}: {
+  statuses: Unit["status"][];
+  colors: Record<Unit["status"], number>;
+  labels: Record<Unit["status"], string>;
+  className?: string;
+}) {
+  if (statuses.length === 0) return null;
+  return (
+    <div className={cn("glass-panel-dark flex items-center gap-3 rounded-pill px-3.5 py-2", className)}>
+      {statuses.map((s) => (
+        <span key={s} className="flex items-center gap-1.5 text-[11px] font-semibold text-white/80">
+          <span
+            className="h-2.5 w-2.5 rounded-full"
+            style={{ background: `#${colors[s].toString(16).padStart(6, "0")}` }}
+          />
+          {labels[s]}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 /** A single bottom-menu icon — no visible label by default; a small

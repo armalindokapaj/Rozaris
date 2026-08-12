@@ -2,16 +2,31 @@
 
 import { useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
-import { ChevronDown, History, RotateCcw, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, ChevronDown, History, RotateCcw, Trash2, Upload } from "lucide-react";
 import { defaultProject3DConfig } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { cn, formatRelativeDate } from "@/lib/utils";
-import { extractUnitNodeNames } from "@/lib/glbUnitNodes";
+import { autoMatchUnitNodes, extractUnitNodeNames } from "@/lib/glbUnitNodes";
 import { calcSunriseSunset } from "@/lib/sunPosition";
-import { GLASS_TIERS, QUALITY_PRESET_ORDER, QUALITY_TIERS, pickDefaultQualityTier } from "@/lib/viewerPresets";
+import {
+  GLASS_TIERS,
+  MATERIAL_PRESETS,
+  QUALITY_PRESET_ORDER,
+  QUALITY_TIERS,
+  pickDefaultQualityTier,
+} from "@/lib/viewerPresets";
 import { ThreeProjectViewer } from "@/components/project/ThreeProjectViewer";
+import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import { ValidationBadge } from "./ValidationBadge";
-import type { Project, Project3DConfig } from "@/lib/types";
+import { SceneExplorerTree } from "./SceneExplorerTree";
+import type {
+  MaterialPresetId,
+  NodeClassification,
+  NodeOverride,
+  Project,
+  Project3DConfig,
+  SceneManifestNode,
+} from "@/lib/types";
 
 const MAX_FILE_BYTES = 60 * 1024 * 1024; // keep in sync with api/blob/upload's maximumSizeInBytes
 
@@ -35,7 +50,12 @@ interface DetailVersionRow {
   publicAssetUrl: string;
   createdAt: string;
   unitLinks: UnitLinkRow[];
+  sceneManifest: SceneManifestNode[] | null;
+  nodeOverrides: NodeOverride[] | null;
 }
+
+const CLASSIFICATION_OPTIONS: NodeClassification[] = ["architecture", "landscape", "interaction", "helper"];
+const MATERIAL_PRESET_OPTIONS: MaterialPresetId[] = Object.keys(MATERIAL_PRESETS) as MaterialPresetId[];
 
 function formatBytes(bytes: number) {
   if (bytes <= 0) return "0 KB";
@@ -50,8 +70,10 @@ function formatUTCHour(h: number): string {
 }
 
 /**
- * Admin's "Project > 3D Experience" authoring surface. Two independent
- * things live in one panel:
+ * Admin's "Project > 3D Experience" authoring surface — rendered as a
+ * dedicated full page (`/admin/3d-experience/[projectId]/page.tsx`), not a
+ * modal; `onClose` is that page's "go back to the admin console" action,
+ * not a dialog dismiss. Two independent things live in one panel:
  * - Rendering/Quality/Lighting&Sun/Glass/Camera ("3D Experience Phase 1")
  *   — real, Postgres-backed (`/api/project-3d-config/[projectId]`),
  *   replacing the old Zustand-only, 100%-dead `Project3DConfig` table.
@@ -77,6 +99,11 @@ export function Project3DConfigEditor({
   const [configBusy, setConfigBusy] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
+  // Camera Presets (Render/visual quality pass) — "Save current view"
+  // reads the live preview's own camera via this ref rather than adding a
+  // second, independent camera tracked only in this form.
+  const viewerRef = useRef<ThreeProjectViewerHandle>(null);
+  const [newPresetLabel, setNewPresetLabel] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const { t, locale } = useT();
 
@@ -86,7 +113,19 @@ export function Project3DConfigEditor({
       .then((r) => (r.ok ? r.json() : null))
       .then((row: Project3DConfig | null) => {
         if (cancelled) return;
-        const next = row ?? defaultProject3DConfig;
+        // Any row saved before the Render/visual-quality or Publish/
+        // runtime-hardening passes has `cameraPresets`/`viewerUI` as a
+        // real `null` in Postgres (both are nullable Json columns) even
+        // though `Project3DConfig`'s TS type declares them non-null — a
+        // gap in Phase 2's own original loader, fixed here rather than
+        // left in place now that it's been noticed.
+        const next: Project3DConfig = row
+          ? {
+              ...row,
+              cameraPresets: row.cameraPresets ?? [],
+              viewerUI: row.viewerUI ?? defaultProject3DConfig.viewerUI,
+            }
+          : defaultProject3DConfig;
         setDraft(next);
       })
       .finally(() => {
@@ -111,6 +150,15 @@ export function Project3DConfigEditor({
   // meshName -> unitId ("" = intentionally left unlinked)
   const [linkSelections, setLinkSelections] = useState<Record<string, string>>({});
   const [carriedMeshNames, setCarriedMeshNames] = useState<Set<string>>(new Set());
+  const [showOnlyNeedsReview, setShowOnlyNeedsReview] = useState(false);
+  // Scene Explorer (Editor UX & Scene Structure pass) — sceneManifest is
+  // read-only, regenerated server-side on every upload; nodeOverrides is
+  // Admin's own editable state, keyed by rzNodeId, seeded from the active
+  // version and saved back alongside scale/rotation/links (see
+  // handleSaveDetailModel below).
+  const [sceneManifest, setSceneManifest] = useState<SceneManifestNode[]>([]);
+  const [nodeOverrides, setNodeOverrides] = useState<Record<string, NodeOverride>>({});
+  const [selectedNodeRzId, setSelectedNodeRzId] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
   const [rotationDeg, setRotationDeg] = useState(0);
   const [altitudeOffset, setAltitudeOffset] = useState(0);
@@ -139,12 +187,28 @@ export function Project3DConfigEditor({
       setAltitudeOffset(active.altitudeOffset);
       const selections: Record<string, string> = {};
       const carried = new Set<string>();
+      // A link whose `unitId` no longer matches any current
+      // `project.units` entry means that unit was deleted (Zustand
+      // deletion has no way to reach back into this version's saved
+      // UnitMeshLinkV2 row — the two are separate systems). Rather than
+      // seed a "matched" selection the <select> below has no matching
+      // <option> for (a confusing blank row that still counts toward
+      // matchedCount), drop it here so it renders as unlinked/"needs
+      // review" like any other unresolved mesh — the next Save Draft then
+      // naturally prunes it from the DB, since the links route always
+      // writes a full replacement set from whatever's in this state.
       active.unitLinks.forEach((link) => {
+        if (!project.units.some((u) => u.id === link.unitId)) return;
         selections[link.meshName] = link.unitId;
         if (link.mappingStatus === "carried") carried.add(link.meshName);
       });
       setLinkSelections(selections);
       setCarriedMeshNames(carried);
+      setSceneManifest(active.sceneManifest ?? []);
+      setNodeOverrides(
+        Object.fromEntries((active.nodeOverrides ?? []).map((o) => [o.rzNodeId, o]))
+      );
+      setSelectedNodeRzId(null);
       if (active.publicAssetUrl) void detectNodes(active.publicAssetUrl);
     }
     return rows;
@@ -188,6 +252,9 @@ export function Project3DConfigEditor({
         access: "public",
         handleUploadUrl: "/api/blob/upload",
         onUploadProgress: (p) => setUploadProgress(p.percentage),
+        // See the identical comment in MapModelEditor.tsx — same fix,
+        // same reason (detail models routinely run even larger).
+        multipart: true,
       });
       const res = await fetch(`/api/detail-models/${project.id}/versions`, {
         method: "POST",
@@ -279,6 +346,12 @@ export function Project3DConfigEditor({
       body: JSON.stringify(links),
     });
     if (!linksRes.ok) throw new Error(await linksRes.text());
+    const sceneRes = await fetch(`/api/detail-models/${project.id}/versions/${activeVersion.id}/scene`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.values(nodeOverrides)),
+    });
+    if (!sceneRes.ok) throw new Error(await sceneRes.text());
   }
 
   async function handleDetailSave() {
@@ -367,35 +440,49 @@ export function Project3DConfigEditor({
   const suggestedTier = pickDefaultQualityTier();
   const sunTimes = calcSunriseSunset(project.coords.lat, project.coords.lng, new Date());
   const hasDetailModel = !!activeVersion;
-  const linkedCount = Object.values(linkSelections).filter(Boolean).length;
+  // Counted against `detectedNodes` (this GLB's actual nodes), not the
+  // wider `linkSelections` map, which can still carry stale entries for
+  // mesh names a replacement GLB no longer has.
+  const matchedCount = detectedNodes?.filter((n) => !!linkSelections[n]).length ?? 0;
+  const needsReviewCount = (detectedNodes?.length ?? 0) - matchedCount;
+  const visibleNodes = showOnlyNeedsReview
+    ? (detectedNodes ?? []).filter((n) => !linkSelections[n])
+    : detectedNodes ?? [];
+  // Scene Explorer's classification stays consistent with Link Units
+  // rather than introducing a second opinion about the same node: any
+  // mesh name with a confirmed unit link here shows as "Unit Block"
+  // there, not independently reclassifiable.
+  const linkedMeshNames = new Set(Object.entries(linkSelections).filter(([, unitId]) => unitId).map(([name]) => name));
+  const selectedNode = sceneManifest.find((n) => n.rzNodeId === selectedNodeRzId) ?? null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/40"
-      role="dialog"
-      aria-label={t("admin.viewer3DTitle")}
-    >
-      <div className="flex h-full w-full flex-col bg-white shadow-[var(--shadow-2)] lg:max-w-4xl lg:flex-row">
-        <div className="h-64 shrink-0 bg-neutral-900 lg:h-full lg:flex-1">
-          <ThreeProjectViewer project={project} config={draft} showChrome={false} />
+    <div className="flex h-full min-h-0 w-full flex-col lg:flex-row">
+      <div className="h-64 shrink-0 bg-neutral-900 lg:h-full lg:flex-1">
+        <ThreeProjectViewer
+          ref={viewerRef}
+          project={project}
+          config={draft}
+          showChrome={false}
+          showPerfStats
+        />
+      </div>
+
+      <div className="flex min-h-0 w-full flex-1 flex-col border-t border-neutral-100 lg:h-full lg:max-w-md lg:border-l lg:border-t-0">
+        <div className="flex shrink-0 items-center gap-3 border-b border-neutral-100 px-5 py-4">
+          <button
+            onClick={onClose}
+            aria-label={t("common.back")}
+            className="shrink-0 rounded-control p-2 text-neutral-500 hover:bg-neutral-100"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-neutral-900">{t("admin.viewer3DTitle")}</h2>
+            <p className="truncate text-xs text-neutral-500">{project.name}</p>
+          </div>
         </div>
 
-        <div className="flex min-h-0 w-full flex-1 flex-col border-t border-neutral-100 lg:h-full lg:w-96 lg:flex-none lg:border-l lg:border-t-0">
-          <div className="flex shrink-0 items-center justify-between border-b border-neutral-100 px-5 py-4">
-            <div className="min-w-0">
-              <h2 className="text-base font-bold text-neutral-900">{t("admin.viewer3DTitle")}</h2>
-              <p className="truncate text-xs text-neutral-500">{project.name}</p>
-            </div>
-            <button
-              onClick={onClose}
-              aria-label={t("common.close")}
-              className="shrink-0 rounded-control p-2 text-neutral-500 hover:bg-neutral-100"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto scroll-thin p-5">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto scroll-thin p-5">
             {/* --- Rendering & Quality --- */}
             <section>
               <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
@@ -444,6 +531,17 @@ export function Project3DConfigEditor({
                     ["evening", t("admin.sceneSkyEvening")],
                   ]}
                 />
+                <SelectField
+                  label={t("admin.sceneBackgroundPreset")}
+                  value={draft.backgroundPreset}
+                  onChange={(v) => update({ backgroundPreset: v as Project3DConfig["backgroundPreset"] })}
+                  options={[
+                    ["sky", t("admin.sceneBackgroundSky")],
+                    ["studio_light", t("admin.sceneBackgroundStudioLight")],
+                    ["studio_dark", t("admin.sceneBackgroundStudioDark")],
+                  ]}
+                />
+                <p className="text-[11px] text-neutral-400">{t("admin.sceneBackgroundNote")}</p>
                 <SliderField
                   label={t("admin.sceneEnvironmentIntensity")}
                   min={0}
@@ -451,6 +549,15 @@ export function Project3DConfigEditor({
                   step={0.05}
                   value={draft.environmentIntensity}
                   onChange={(v) => update({ environmentIntensity: v })}
+                  suffix="×"
+                />
+                <SliderField
+                  label={t("admin.sceneExposure")}
+                  min={0}
+                  max={3}
+                  step={0.05}
+                  value={draft.exposure}
+                  onChange={(v) => update({ exposure: v })}
                   suffix="×"
                 />
                 <SliderField
@@ -577,6 +684,93 @@ export function Project3DConfigEditor({
                   suffix="°"
                 />
               </div>
+            </section>
+
+            {/* --- Camera Presets --- */}
+            <section className="border-t border-neutral-100 pt-5">
+              <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
+                {t("admin.sceneCameraPresetsTitle")}
+              </h3>
+              {draft.cameraPresets.length === 0 ? (
+                <p className="mb-2.5 text-[11px] text-neutral-400">{t("admin.sceneCameraPresetsEmpty")}</p>
+              ) : (
+                <div className="mb-2.5 space-y-1.5">
+                  {draft.cameraPresets.map((preset) => (
+                    <div
+                      key={preset.id}
+                      className="flex items-center justify-between gap-2 rounded-control border border-neutral-100 px-3 py-2 text-xs"
+                    >
+                      <span className="font-semibold text-neutral-800">{preset.label}</span>
+                      <button
+                        onClick={() =>
+                          update({ cameraPresets: draft.cameraPresets.filter((p) => p.id !== preset.id) })
+                        }
+                        aria-label={t("common.close")}
+                        className="rounded-full p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  value={newPresetLabel}
+                  onChange={(e) => setNewPresetLabel(e.target.value)}
+                  placeholder={t("admin.sceneCameraPresetLabelPlaceholder")}
+                  className="min-w-0 flex-1 rounded-control border border-neutral-200 px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                />
+                <button
+                  onClick={() => {
+                    const state = viewerRef.current?.getCameraState();
+                    const label = newPresetLabel.trim();
+                    if (!state || !label) return;
+                    update({
+                      cameraPresets: [
+                        ...draft.cameraPresets,
+                        { id: `preset-${Date.now()}`, label, ...state, durationMs: 900 },
+                      ],
+                    });
+                    setNewPresetLabel("");
+                  }}
+                  disabled={!newPresetLabel.trim()}
+                  className="shrink-0 rounded-control bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
+                >
+                  {t("admin.sceneCameraPresetSaveCurrent")}
+                </button>
+              </div>
+              <p className="mt-1.5 text-[11px] text-neutral-400">{t("admin.sceneCameraPresetNote")}</p>
+            </section>
+
+            {/* --- Viewer UI --- */}
+            <section className="border-t border-neutral-100 pt-5">
+              <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
+                {t("admin.sceneViewerUITitle")}
+              </h3>
+              <div className="space-y-3">
+                <ToggleField
+                  label={t("project.home")}
+                  checked={draft.viewerUI.home}
+                  onChange={(v) => update({ viewerUI: { ...draft.viewerUI, home: v } })}
+                />
+                <ToggleField
+                  label={t("unit.viewerUnitSearch")}
+                  checked={draft.viewerUI.unitSearch}
+                  onChange={(v) => update({ viewerUI: { ...draft.viewerUI, unitSearch: v } })}
+                />
+                <ToggleField
+                  label={t("project.timeOfDay")}
+                  checked={draft.viewerUI.timeOfDay}
+                  onChange={(v) => update({ viewerUI: { ...draft.viewerUI, timeOfDay: v } })}
+                />
+                <ToggleField
+                  label={t("project.viewPreset")}
+                  checked={draft.viewerUI.viewPreset}
+                  onChange={(v) => update({ viewerUI: { ...draft.viewerUI, viewPreset: v } })}
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] text-neutral-400">{t("admin.sceneViewerUINote")}</p>
             </section>
 
             {/* --- Advanced Settings — read-only: every number below comes
@@ -781,10 +975,42 @@ export function Project3DConfigEditor({
                     </h4>
                     {detectedNodes && (
                       <span className="text-xs font-medium text-neutral-500">
-                        {t("admin.detailModelLinkUnitsCount", { linked: linkedCount, total: detectedNodes.length })}
+                        {t("admin.detailModelLinkSummary", {
+                          detected: detectedNodes.length,
+                          matched: matchedCount,
+                          needsReview: needsReviewCount,
+                        })}
                       </span>
                     )}
                   </div>
+
+                  {!nodesLoading && detectedNodes && detectedNodes.length > 0 && (
+                    <div className="mb-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={!canEditDetail}
+                        onClick={() =>
+                          setLinkSelections((s) => autoMatchUnitNodes(detectedNodes, project.units, s))
+                        }
+                        className="rounded-full border border-neutral-200 px-2.5 py-1 text-[11px] font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
+                      >
+                        {t("admin.detailModelAutoMatch")}
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={showOnlyNeedsReview}
+                        onClick={() => setShowOnlyNeedsReview((v) => !v)}
+                        className={cn(
+                          "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                          showOnlyNeedsReview
+                            ? "border-brand-300 bg-brand-50 text-brand-700"
+                            : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                        )}
+                      >
+                        {t("admin.detailModelShowNeedsReview")}
+                      </button>
+                    </div>
+                  )}
 
                   {nodesLoading && (
                     <p className="text-xs text-neutral-400">{t("admin.detailModelDetecting")}</p>
@@ -794,7 +1020,7 @@ export function Project3DConfigEditor({
                   )}
                   {!nodesLoading && detectedNodes && detectedNodes.length > 0 && (
                     <div className="space-y-2">
-                      {detectedNodes.map((meshName) => (
+                      {visibleNodes.map((meshName) => (
                         <div key={meshName} className="flex items-center gap-2">
                           <span className="w-28 shrink-0 truncate font-mono text-xs text-neutral-600">
                             {meshName}
@@ -802,9 +1028,21 @@ export function Project3DConfigEditor({
                           <select
                             disabled={!canEditDetail}
                             value={linkSelections[meshName] ?? ""}
-                            onChange={(e) =>
-                              setLinkSelections((s) => ({ ...s, [meshName]: e.target.value }))
-                            }
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setLinkSelections((s) => ({ ...s, [meshName]: value }));
+                              // A manual choice is a real review, even for a
+                              // node that was only ever auto-"carried" —
+                              // without this the amber badge would stay
+                              // stuck forever once carried, regardless of
+                              // what Admin does with the dropdown next.
+                              setCarriedMeshNames((s) => {
+                                if (!s.has(meshName)) return s;
+                                const next = new Set(s);
+                                next.delete(meshName);
+                                return next;
+                              });
+                            }}
                             className="w-full rounded-control border border-neutral-200 px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none disabled:opacity-50"
                           >
                             <option value="">{t("admin.detailModelUnlinked")}</option>
@@ -815,13 +1053,125 @@ export function Project3DConfigEditor({
                               </option>
                             ))}
                           </select>
-                          {carriedMeshNames.has(meshName) && (
-                            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                              {t("admin.mappingCarried")}
+                          {!linkSelections[meshName] ? (
+                            <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-600">
+                              {t("admin.mappingNeedsReview")}
                             </span>
+                          ) : (
+                            carriedMeshNames.has(meshName) && (
+                              <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                                {t("admin.mappingCarried")}
+                              </span>
+                            )
                           )}
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {hasDetailModel && sceneManifest.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">
+                    {t("admin.sceneExplorerTitle")}
+                  </h4>
+                  <div className="rounded-control border border-neutral-200 p-1.5">
+                    <SceneExplorerTree
+                      manifest={sceneManifest}
+                      selectedRzNodeId={selectedNodeRzId}
+                      onSelect={setSelectedNodeRzId}
+                      overriddenSet={new Set(Object.keys(nodeOverrides))}
+                      classificationOf={(node) => {
+                        const override = nodeOverrides[node.rzNodeId];
+                        if (override?.classification) return override.classification;
+                        if (linkedMeshNames.has(node.name)) return "unit_block";
+                        return node.autoClassification;
+                      }}
+                    />
+                  </div>
+
+                  {selectedNode && (
+                    <div className="mt-2 space-y-2.5 rounded-control border border-brand-200 bg-brand-50/30 p-3">
+                      <p className="truncate font-mono text-xs font-semibold text-neutral-700">
+                        {selectedNode.name}
+                      </p>
+
+                      {linkedMeshNames.has(selectedNode.name) ? (
+                        <p className="text-[11px] text-neutral-500">{t("admin.sceneExplorerUnitBlockNote")}</p>
+                      ) : (
+                        <label className="block">
+                          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                            {t("admin.sceneExplorerClassification")}
+                          </span>
+                          <select
+                            disabled={!canEditDetail}
+                            value={nodeOverrides[selectedNode.rzNodeId]?.classification ?? selectedNode.autoClassification}
+                            onChange={(e) => {
+                              const classification = e.target.value as NodeClassification;
+                              setNodeOverrides((s) => ({
+                                ...s,
+                                [selectedNode.rzNodeId]: {
+                                  ...(s[selectedNode.rzNodeId] ?? { rzNodeId: selectedNode.rzNodeId }),
+                                  classification,
+                                },
+                              }));
+                            }}
+                            className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none disabled:opacity-50"
+                          >
+                            {CLASSIFICATION_OPTIONS.map((c) => (
+                              <option key={c} value={c}>
+                                {t(`admin.sceneExplorerClass_${c}`)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                          {t("admin.sceneExplorerMaterialPreset")}
+                        </span>
+                        <select
+                          disabled={!canEditDetail}
+                          value={nodeOverrides[selectedNode.rzNodeId]?.materialPreset ?? ""}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setNodeOverrides((s) => ({
+                              ...s,
+                              [selectedNode.rzNodeId]: {
+                                ...(s[selectedNode.rzNodeId] ?? { rzNodeId: selectedNode.rzNodeId }),
+                                materialPreset: value ? (value as MaterialPresetId) : undefined,
+                              },
+                            }));
+                          }}
+                          className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none disabled:opacity-50"
+                        >
+                          <option value="">{t("admin.sceneExplorerOriginalMaterial")}</option>
+                          {MATERIAL_PRESET_OPTIONS.map((id) => (
+                            <option key={id} value={id}>
+                              {t(`admin.materialPreset_${id}`)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      {nodeOverrides[selectedNode.rzNodeId] && (
+                        <button
+                          type="button"
+                          disabled={!canEditDetail}
+                          onClick={() =>
+                            setNodeOverrides((s) => {
+                              const next = { ...s };
+                              delete next[selectedNode.rzNodeId];
+                              return next;
+                            })
+                          }
+                          className="text-[11px] font-semibold text-neutral-500 hover:text-neutral-800 disabled:opacity-50"
+                        >
+                          {t("admin.sceneExplorerResetToOriginal")}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -831,6 +1181,26 @@ export function Project3DConfigEditor({
                 <p className="mt-3 rounded-control bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
                   {detailFlash}
                 </p>
+              )}
+
+              {hasDetailModel && (
+                <div className="mt-4 space-y-1 rounded-control border border-neutral-200 bg-neutral-50 p-3">
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-neutral-500">
+                    {t("admin.publishChecklistTitle")}
+                  </p>
+                  <ChecklistRow
+                    status={activeVersion!.validationStatus === "blocked" ? "warn" : "ok"}
+                    label={t(`admin.validation${activeVersion!.validationStatus[0].toUpperCase()}${activeVersion!.validationStatus.slice(1)}`)}
+                  />
+                  <ChecklistRow
+                    status={needsReviewCount === 0 ? "ok" : "warn"}
+                    label={t("admin.publishChecklistUnits", { matched: matchedCount, needsReview: needsReviewCount })}
+                  />
+                  <ChecklistRow
+                    status="info"
+                    label={t("admin.publishChecklistOverrides", { count: Object.keys(nodeOverrides).length })}
+                  />
+                </div>
               )}
 
               {hasDetailModel && (
@@ -908,6 +1278,20 @@ export function Project3DConfigEditor({
           </div>
         </div>
       </div>
+  );
+
+}
+
+/** One row of the pre-publish checklist (Publish/runtime hardening pass)
+ * — informational, doesn't itself gate anything; the real publish gate
+ * stays server-side (422 on `validationStatus === "blocked"`, unchanged). */
+function ChecklistRow({ status, label }: { status: "ok" | "warn" | "info"; label: string }) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs">
+      {status === "ok" && <Check className="h-3.5 w-3.5 shrink-0 text-green-600" />}
+      {status === "warn" && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />}
+      {status === "info" && <span className="h-3.5 w-3.5 shrink-0" />}
+      <span className="text-neutral-600">{label}</span>
     </div>
   );
 }

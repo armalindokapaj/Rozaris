@@ -71,7 +71,7 @@ function bufferFootprint(footprint: BuildingFootprint): BuildingFootprint {
  * the generic extruded box(es) the basemap draws there by default, rather
  * than sitting awkwardly alongside/inside them.
  *
- * Rozaris's style (`armalindokapaj/cms9jpj8b008x01s9g1fib0f7`) is Mapbox
+ * Rozaris's style (`armalindokapaj/cmsqj4p0101ao01sd6911ckb4`) is Mapbox
  * Standard (v3), built from a style *import* (`imports: [{id: "basemap",
  * url: "mapbox://styles/mapbox/standard"}]`). That import boundary matters
  * a lot here — two approaches that look correct from Mapbox's own docs

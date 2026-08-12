@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
-import { Crosshair, History, MapPin, RotateCcw, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, Crosshair, History, MapPin, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { cn, formatRelativeDate } from "@/lib/utils";
 import { MapModelMapPreview, type HiddenBuildingEntry } from "./MapModelMapPreview";
@@ -36,6 +36,21 @@ interface VersionRow {
   publishedAt: string | null;
 }
 
+/** The version the editor treats as "the current model" — the newest
+ * draft or published row, ignoring archived ones. Archived versions (e.g.
+ * right after "Remove model") already have their own explicit UI (the
+ * version-history list, with a Rollback button) — without this filter,
+ * `versions[0]` would still pick up an archived row and the editor would
+ * keep showing it (file info card, preview, etc.) with no delete button
+ * left to press, since neither "discard draft" nor "remove model" applies
+ * to something already archived. That dead end — Admin removes their
+ * model, sees it archived-but-still-displayed with no further action
+ * available — was the actual bug behind "no way to delete without
+ * replacing"; the remove action itself already worked. */
+function pickActiveVersion(rows: VersionRow[]): VersionRow | null {
+  return rows.find((v) => v.publicationStatus !== "archived") ?? null;
+}
+
 function formatBytes(bytes: number) {
   if (bytes <= 0) return "0 KB";
   const mb = bytes / (1024 * 1024);
@@ -44,6 +59,9 @@ function formatBytes(bytes: number) {
 
 /**
  * Admin's "3D Map Control" authoring surface (PRD_Admin_Mapbox_GLB) —
+ * rendered as a dedicated full page (`/admin/3d-map-control/[projectId]/
+ * page.tsx`), not a modal; `onClose` is that page's "go back to the admin
+ * console" action, not a dialog dismiss.
  * Upload -> Validate -> Position -> Preview -> Publish, with real version
  * history/draft/publish/rollback (src/app/api/map-models/[projectId]/
  * versions/**) instead of the pre-versioning single mutable row. Preview
@@ -86,7 +104,7 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
     const res = await fetch(`/api/map-models/${project.id}/versions`);
     const rows: VersionRow[] = res.ok ? await res.json() : [];
     setVersions(rows);
-    const active = rows[0] ?? null;
+    const active = pickActiveVersion(rows);
     if (active) {
       setScale(active.scale);
       setRotationDeg(active.heading);
@@ -113,7 +131,7 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
-  const activeVersion = versions[0] ?? null;
+  const activeVersion = pickActiveVersion(versions);
   const isDraftActive = activeVersion?.publicationStatus === "draft";
 
   async function handleFile(file: File) {
@@ -137,6 +155,13 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
         access: "public",
         handleUploadUrl: "/api/blob/upload",
         onUploadProgress: (p) => setUploadProgress(p.percentage),
+        // Vercel's own guidance: single-request client uploads get
+        // unreliable somewhere in the single-digit-MB range (real GLB
+        // exports routinely land right in that zone) — multipart chunks
+        // the upload, sends parts in parallel, and retries a failed part
+        // instead of the whole file, which is what was almost certainly
+        // failing 7MB uploads outright before this.
+        multipart: true,
       });
       const res = await fetch(`/api/map-models/${project.id}/versions`, {
         method: "POST",
@@ -162,10 +187,17 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
       // Admin" mock — see admin/page.tsx) is missing or expired; surface
       // that distinctly since the fix (reconnect) differs from a generic
       // upload failure.
+      // Surfacing the real underlying message (not just a generic "failed")
+      // is what makes a failure like this diagnosable at all next time —
+      // console.error always, and appended to the on-screen error too, so
+      // it doesn't only live in a browser console nobody's looking at.
       const message = err instanceof Error ? err.message : "";
+      console.error("3D Map Control: upload failed", err);
       setError(
         message.includes("Not authorized") || message.includes("authoriz")
           ? t("admin.sessionExpiredNote")
+          : message
+          ? `${t("admin.mapModelUploadFailed")} (${message})`
           : t("admin.mapModelUploadFailed")
       );
       setLocalPreviewUrl((prev) => {
@@ -317,48 +349,43 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
     Math.abs(longitude - project.coords.lng) > 1e-9 || Math.abs(latitude - project.coords.lat) > 1e-9;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/40"
-      role="dialog"
-      aria-label={t("admin.mapModelTitle")}
-    >
-      <div className="flex h-full w-full flex-col bg-white shadow-[var(--shadow-2)] lg:max-w-4xl lg:flex-row">
-        <div className="h-64 shrink-0 bg-neutral-900 lg:h-full lg:flex-1">
-          <MapModelMapPreview
-            coords={project.coords}
-            modelPosition={{ lng: longitude, lat: latitude }}
-            glbUrl={previewUrl}
-            scale={scale}
-            rotationDeg={rotationDeg}
-            altitudeOffset={altitudeOffset}
-            hideBaseBuilding={hideBaseBuilding}
-            hiddenBuildings={hiddenBuildings}
-            picking={picking}
-            onToggleBuilding={handleToggleBuilding}
-            canMoveModel={canEdit}
-            onMoveModel={(point) => {
-              setLongitude(point.lng);
-              setLatitude(point.lat);
-            }}
-          />
+    <div className="flex h-full min-h-0 w-full flex-col lg:flex-row">
+      <div className="h-64 shrink-0 bg-neutral-900 lg:h-full lg:flex-1">
+        <MapModelMapPreview
+          coords={project.coords}
+          modelPosition={{ lng: longitude, lat: latitude }}
+          glbUrl={previewUrl}
+          scale={scale}
+          rotationDeg={rotationDeg}
+          altitudeOffset={altitudeOffset}
+          hideBaseBuilding={hideBaseBuilding}
+          hiddenBuildings={hiddenBuildings}
+          picking={picking}
+          onToggleBuilding={handleToggleBuilding}
+          canMoveModel={canEdit}
+          onMoveModel={(point) => {
+            setLongitude(point.lng);
+            setLatitude(point.lat);
+          }}
+        />
+      </div>
+
+      <div className="flex min-h-0 w-full flex-1 flex-col border-t border-neutral-100 lg:h-full lg:max-w-md lg:border-l lg:border-t-0">
+        <div className="flex shrink-0 items-center gap-3 border-b border-neutral-100 px-5 py-4">
+          <button
+            onClick={onClose}
+            aria-label={t("common.back")}
+            className="shrink-0 rounded-control p-2 text-neutral-500 hover:bg-neutral-100"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-neutral-900">{t("admin.mapModelTitle")}</h2>
+            <p className="truncate text-xs text-neutral-500">{project.name}</p>
+          </div>
         </div>
 
-        <div className="flex min-h-0 w-full flex-1 flex-col border-t border-neutral-100 lg:h-full lg:w-96 lg:flex-none lg:border-l lg:border-t-0">
-          <div className="flex shrink-0 items-center justify-between border-b border-neutral-100 px-5 py-4">
-            <div className="min-w-0">
-              <h2 className="text-base font-bold text-neutral-900">{t("admin.mapModelTitle")}</h2>
-              <p className="truncate text-xs text-neutral-500">{project.name}</p>
-            </div>
-            <button
-              onClick={onClose}
-              aria-label={t("common.close")}
-              className="shrink-0 rounded-control p-2 text-neutral-500 hover:bg-neutral-100"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scroll-thin p-5">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scroll-thin p-5">
             <section>
               <input
                 ref={fileInputRef}
@@ -646,7 +673,6 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
           </div>
         </div>
       </div>
-    </div>
   );
 }
 

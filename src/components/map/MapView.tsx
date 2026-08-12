@@ -160,7 +160,7 @@ export function MapView({
     mapboxgl.accessToken = token;
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/armalindokapaj/cms9jpj8b008x01s9g1fib0f7",
+      style: "mapbox://styles/armalindokapaj/cmsqj4p0101ao01sd6911ckb4",
       center: [CITY_CENTER.lng, CITY_CENTER.lat],
       zoom: 12.4,
       pitch: 55,

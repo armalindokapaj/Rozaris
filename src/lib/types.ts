@@ -207,6 +207,18 @@ export type RenderingMode = "auto" | "webgpu" | "webgl2";
 export type QualityPreset = "ultra_desktop" | "high_desktop" | "balanced" | "mobile_high" | "mobile_low";
 export type GlassPreset = "performance" | "standard" | "premium";
 export type SkyPreset = "clear_day" | "soft_day" | "overcast" | "golden_hour" | "evening";
+/** Non-glass architectural material presets (Editor UX & Scene Structure
+ * pass) — glass already has its own dedicated GlassPreset/GLASS_TIERS
+ * system above, kept separate rather than folded in here. */
+export type MaterialPresetId =
+  | "concrete"
+  | "plaster"
+  | "stone"
+  | "wood"
+  | "aluminium"
+  | "steel"
+  | "chrome"
+  | "ceramic";
 
 export interface Project3DConfig {
   lightingPreset: LightingPreset;
@@ -239,7 +251,36 @@ export interface Project3DConfig {
   cameraFovDesktop: number;
   cameraFovMobile: number;
 
+  /** Admin-saved camera framings — clicking one in the public viewer
+   * smoothly transitions the live camera to it (not a snap). */
+  cameraPresets: CameraPreset[];
+  /** Tone-mapping exposure multiplier — renderer.toneMapping itself is
+   * fixed to ACESFilmic, not made per-project configurable this pass. */
+  exposure: number;
+
+  /** Which of the always-on bottom-menu controls show publicly — Xray/
+   * Camera Presets aren't included here, they're already conditional on
+   * real state (a loaded GLB / at least one saved preset). */
+  viewerUI: ViewerUIToggles;
+
   updatedAt: string;
+}
+
+export interface ViewerUIToggles {
+  home: boolean;
+  unitSearch: boolean;
+  timeOfDay: boolean;
+  viewPreset: boolean;
+}
+
+export interface CameraPreset {
+  id: string;
+  label: string;
+  position: { x: number; y: number; z: number };
+  target: { x: number; y: number; z: number };
+  fov: number;
+  /** Transition duration when this preset is clicked, ms. */
+  durationMs: number;
 }
 
 /** Admin's "3D Map Control" — an outdoor GLB placed at a project's real
@@ -286,16 +327,62 @@ export interface UnitMeshLink {
   unitId: string;
 }
 
+/** One entry per glTF node in a detail-model GLB, in the source file's own
+ * node-array order — computed server-side (src/lib/glbValidate.ts) at
+ * upload time, not client-side, since it's derived from the same
+ * dependency-free GLB parse that already produces triangle/mesh counts.
+ * `rzNodeId` is a deterministic fingerprint (index + slugified name), not
+ * an author-embedded persistent identity: it disambiguates true duplicate
+ * names and gives Scene Explorer/overrides a clean storage key, but
+ * doesn't survive a node being renamed between GLB versions any better
+ * than the name itself would — same limitation UnitMeshLink already has,
+ * handled the same way (carry forward by name, flag the rest for review). */
+export interface SceneManifestNode {
+  rzNodeId: string;
+  name: string;
+  meshIndex: number | null;
+  parentRzNodeId: string | null;
+  depth: number;
+  isMesh: boolean;
+  autoClassification: "unit_block" | "architecture";
+}
+
+/** Admin-assignable node categories (Editor UX & Scene Structure pass,
+ * PRD §7). "unit_block" is deliberately excluded here — that stays
+ * auto-derived from whether a node is linked via UnitMeshLink, so this
+ * classification system and the unit-linking one can't disagree about the
+ * same node. */
+export type NodeClassification = "architecture" | "landscape" | "interaction" | "helper";
+
+/** Non-destructive override for one GLB node — the original glTF material
+ * is never modified; this just says what to render on top of it. Any
+ * unset field means "use the GLB's own value for that field." Carried
+ * forward by node name when a new GLB version is uploaded, same as
+ * UnitMeshLink, and flagged via `carried` so admin knows to double-check
+ * it still applies to the right node. */
+export interface NodeOverride {
+  rzNodeId: string;
+  classification?: NodeClassification;
+  materialPreset?: MaterialPresetId;
+  colorHex?: string;
+  roughness?: number;
+  metalness?: number;
+  visible?: boolean;
+  carried?: boolean;
+}
+
 /** Admin's "Project 3D Experience" detailed GLB — a second, separate upload
  * from ProjectMapModel above. That one is deliberately minimalistic (search
  * page performance, many projects rendered at once); this one is the real,
- * highly-detailed architectural model for a single project's own viewer
- * page (/project/[slug]), rendered inside a live Mapbox map exactly like the
- * search page's model — just zoomed into one building — instead of the
- * standalone procedural viewer. Authored with individual `Unit_<number>` box
- * nodes baked in; `unitLinks` is Admin's confirmed mapping of those nodes to
- * real Units. When absent or `enabled: false`, the project falls back to the
- * existing procedural Three.js viewer unchanged. */
+ * highly-detailed architectural model rendered in the project's own
+ * standalone WebGPU/WebGL2 viewer (ProceduralProjectViewer.tsx — "3D
+ * Experience Phase 1" replaced the older Mapbox-embedded path this comment
+ * used to describe). Authored with individual `Unit_<number>` box nodes
+ * baked in; `unitLinks` is Admin's confirmed mapping of those nodes to real
+ * Units, `sceneManifest`/`nodeOverrides` are the full node list and any
+ * classification/material overrides on top of it. When absent or
+ * `enabled: false`, the project falls back to the existing procedural
+ * Three.js viewer unchanged. */
 export interface ProjectDetailModel {
   glbUrl: string;
   fileName: string;
@@ -306,6 +393,17 @@ export interface ProjectDetailModel {
   enabled: boolean;
   updatedAt: string;
   unitLinks: UnitMeshLink[];
+  sceneManifest: SceneManifestNode[];
+  nodeOverrides: NodeOverride[];
+  /** Published GLB's own recorded counts (Publish/runtime hardening
+   * pass's performance inspector shows these next to the live scene's
+   * actual numbers, which can differ once material presets/overrides or
+   * procedural elements are layered on top) — null if the version
+   * predates server-side validation recording them. */
+  triangleCount: number | null;
+  meshCount: number | null;
+  materialCount: number | null;
+  textureCount: number | null;
 }
 
 export type SavedEntityType = "listing" | "project" | "neighborhood";

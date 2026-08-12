@@ -10,6 +10,10 @@ export interface ThreeProjectViewerHandle {
   /** Captures the current WebGL frame as a PNG data URL — null if the
    * renderer isn't ready (e.g. WebGL failed to init). */
   captureScreenshot: () => string | null;
+  /** The live preview's current camera position/target/fov — null if the
+   * renderer isn't ready. Used by Project3DConfigEditor's "Save current
+   * view" camera-preset button (Render/visual quality pass). */
+  getCameraState: () => { position: { x: number; y: number; z: number }; target: { x: number; y: number; z: number }; fov: number } | null;
 }
 
 export interface ThreeProjectViewerProps {
@@ -29,4 +33,10 @@ export interface ThreeProjectViewerProps {
    * ArchVizClient's construction-progress pill) can react instead of
    * guessing whether extra bottom-of-viewport height is in use. */
   onBarOpenChange?: (open: boolean) => void;
+  /** Admin-only debug overlay (FPS/draw calls/triangles/DPR) — Publish/
+   * runtime hardening pass. Deliberately separate from `showChrome`
+   * (public visitor chrome vs. an admin debug tool are different
+   * concerns): off by default, Project3DConfigEditor's preview turns it
+   * on. */
+  showPerfStats?: boolean;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Box, Plus, Trash2, X } from "lucide-react";
+import { Box, Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
@@ -28,6 +28,7 @@ export function ProjectUnitsEditor({
   );
   const addProjectUnit = useAppStore((s) => s.addProjectUnit);
   const removeProjectUnit = useAppStore((s) => s.removeProjectUnit);
+  const updateProjectUnit = useAppStore((s) => s.updateProjectUnit);
   const priceFmt = usePriceFormat();
   const { t } = useT();
 
@@ -62,6 +63,44 @@ export function ProjectUnitsEditor({
     };
     addProjectUnit(project.id, unit);
     setCode("");
+  }
+
+  // Inline per-row editing — the only way to change a unit's status (or any
+  // other field) after creation. Editing in place, rather than delete-then-
+  // re-add with a new generated id, is what keeps existing UnitMeshLinkV2
+  // rows (GLB mesh -> unit bindings, keyed on Unit.id) from silently
+  // orphaning the moment an admin marks a linked unit Reserved/Sold.
+  type EditDraft = Pick<
+    Unit,
+    "code" | "buildingName" | "floor" | "bedrooms" | "bathrooms" | "area" | "price" | "status"
+  >;
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
+
+  function startEdit(u: Unit) {
+    setEditingId(u.id);
+    setEditDraft({
+      code: u.code,
+      buildingName: u.buildingName,
+      floor: u.floor,
+      bedrooms: u.bedrooms,
+      bathrooms: u.bathrooms,
+      area: u.area,
+      price: u.price,
+      status: u.status,
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditDraft(null);
+  }
+
+  function saveEdit() {
+    if (!editingId || !editDraft) return;
+    if (!editDraft.code.trim() || editDraft.area <= 0 || editDraft.price <= 0) return;
+    updateProjectUnit(project.id, editingId, { ...editDraft, code: editDraft.code.trim() });
+    cancelEdit();
   }
 
   return (
@@ -118,27 +157,132 @@ export function ProjectUnitsEditor({
               </p>
             ) : (
               <div className="mb-3 space-y-1.5">
-                {units.map((u) => (
-                  <div
-                    key={u.id}
-                    className="flex items-center justify-between gap-2 rounded-control border border-neutral-100 px-3 py-2 text-xs"
-                  >
-                    <span className="font-semibold text-neutral-800">
-                      {u.code} · {t("unit.buildingLabel", { name: u.buildingName })} ·{" "}
-                      {t("unit.floorLabel", { n: u.floor })}
-                    </span>
-                    <span className="flex items-center gap-2 text-neutral-500">
-                      {priceFmt(u.price, { compact: true })}
-                      <button
-                        onClick={() => removeProjectUnit(project.id, u.id)}
-                        aria-label={t("common.close")}
-                        className="rounded-full p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </span>
-                  </div>
-                ))}
+                {units.map((u) =>
+                  editingId === u.id && editDraft ? (
+                    <div
+                      key={u.id}
+                      className="space-y-2.5 rounded-control border border-brand-300 bg-brand-50/40 p-3"
+                    >
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <Field label={t("admin.unitCode")}>
+                          <input
+                            value={editDraft.code}
+                            onChange={(e) => setEditDraft({ ...editDraft, code: e.target.value })}
+                            className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                          />
+                        </Field>
+                        <Field label={t("unit.viewerBuilding")}>
+                          <select
+                            value={editDraft.buildingName}
+                            onChange={(e) => setEditDraft({ ...editDraft, buildingName: e.target.value })}
+                            className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                          >
+                            {project.buildings.map((b) => (
+                              <option key={b} value={b}>
+                                {b}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label={t("listing.floor")}>
+                          <NumberInput
+                            value={editDraft.floor}
+                            min={0}
+                            onChange={(v) => setEditDraft({ ...editDraft, floor: v })}
+                          />
+                        </Field>
+                        <Field label={t("unit.beds")}>
+                          <NumberInput
+                            value={editDraft.bedrooms}
+                            min={0}
+                            onChange={(v) => setEditDraft({ ...editDraft, bedrooms: v })}
+                          />
+                        </Field>
+                        <Field label={t("unit.baths")}>
+                          <NumberInput
+                            value={editDraft.bathrooms}
+                            min={0}
+                            onChange={(v) => setEditDraft({ ...editDraft, bathrooms: v })}
+                          />
+                        </Field>
+                        <Field label={t("filters.areaM2")}>
+                          <NumberInput
+                            value={editDraft.area}
+                            min={1}
+                            onChange={(v) => setEditDraft({ ...editDraft, area: v })}
+                          />
+                        </Field>
+                        <Field label={t("dashboard.priceLabel")}>
+                          <NumberInput
+                            value={editDraft.price}
+                            min={1}
+                            step={1000}
+                            onChange={(v) => setEditDraft({ ...editDraft, price: v })}
+                          />
+                        </Field>
+                        <Field label={t("unit.viewerAvailability")}>
+                          <select
+                            value={editDraft.status}
+                            onChange={(e) =>
+                              setEditDraft({ ...editDraft, status: e.target.value as Unit["status"] })
+                            }
+                            className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                          >
+                            <option value="available">{t("unit.statusAvailable")}</option>
+                            <option value="reserved">{t("unit.statusReserved")}</option>
+                            <option value="sold">{t("unit.statusSold")}</option>
+                          </select>
+                        </Field>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={saveEdit}
+                          disabled={!editDraft.code.trim() || editDraft.area <= 0 || editDraft.price <= 0}
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-control bg-brand-500 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          {t("common.save")}
+                        </button>
+                        <button
+                          onClick={cancelEdit}
+                          className="flex items-center justify-center gap-1.5 rounded-control border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-50"
+                        >
+                          {t("common.cancel")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      key={u.id}
+                      className="flex items-center justify-between gap-2 rounded-control border border-neutral-100 px-3 py-2 text-xs"
+                    >
+                      <span className="min-w-0 truncate font-semibold text-neutral-800">
+                        {u.code} · {t("unit.buildingLabel", { name: u.buildingName })} ·{" "}
+                        {t("unit.floorLabel", { n: u.floor })} ·{" "}
+                        <span className="font-normal text-neutral-500">
+                          {t(`unit.status${u.status[0].toUpperCase()}${u.status.slice(1)}`)}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2 text-neutral-500">
+                        {priceFmt(u.price, { compact: true })}
+                        <button
+                          onClick={() => startEdit(u)}
+                          aria-label={t("common.edit")}
+                          className="rounded-full p-1 text-neutral-400 hover:bg-brand-50 hover:text-brand-600"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => removeProjectUnit(project.id, u.id)}
+                          aria-label={t("common.close")}
+                          className="rounded-full p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    </div>
+                  )
+                )}
               </div>
             )}
 

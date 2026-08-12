@@ -474,6 +474,26 @@ model Project3DConfig {
   cameraFovDesktop     Int     @default(38)
   cameraFovMobile      Int     @default(48)
 
+  // Render/visual quality pass — real TSL post-processing, camera
+  // presets. See src/lib/viewerPresets.ts (quality-tier post-fx flags)
+  // and ProceduralProjectViewer.tsx (RenderPipeline wiring).
+  /// Admin-saved camera framings — [{ id, label, position: {x,y,z},
+  /// target: {x,y,z}, fov, durationMs, easing }]. Clicking one in the
+  /// public viewer smoothly transitions the live camera to it.
+  cameraPresets Json?
+  /// Tone-mapping exposure multiplier — renderer.toneMapping itself is
+  /// fixed to ACESFilmic (not made per-project configurable this pass).
+  exposure      Float @default(1)
+
+  // Publish/runtime hardening pass.
+  /// Which of the always-on bottom-menu controls (Home/Unit Search/Time
+  /// of Day/View Preset) show publicly — { home, unitSearch, timeOfDay,
+  /// viewPreset }, all booleans. Xray/Camera Presets aren't included:
+  /// they're already conditional on real state (a loaded GLB / at least
+  /// one saved preset). Null/absent reads as "all enabled" client-side —
+  /// no backfill migration needed for existing rows.
+  viewerUI Json?
+
   updatedAt DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -651,6 +671,19 @@ model DetailModelVersion {
   altitudeOffset    Float                  @default(0)
   validationStatus  ModelValidationStatus  @default(ready)
   validationIssues  Json?
+  /// Full node list for this version's GLB (not just Unit_* — see
+  /// UnitMeshLinkV2 for that), computed server-side at upload time by
+  /// glbValidate.ts. One entry per glTF node: { rzNodeId, name, meshIndex,
+  /// parentRzNodeId, depth, isMesh, autoClassification }. Regenerated
+  /// fresh on every new version, same lifecycle as validationIssues.
+  sceneManifest     Json?
+  /// Admin-authored classification/material overrides, keyed by rzNodeId:
+  /// { rzNodeId, classification?, materialPreset?, colorHex?, roughness?,
+  /// metalness?, visible?, carried? }[]. Carried forward by node NAME on a
+  /// new version upload (same idea as UnitMeshLinkV2's carried/
+  /// needs_review, hand-rolled here since this is a JSON blob, not a
+  /// relational table with its own mappingStatus column).
+  nodeOverrides     Json?
   publicationStatus ModelPublicationStatus @default(draft)
   uploadedBy        String?
   publishedBy       String?

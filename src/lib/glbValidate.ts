@@ -14,6 +14,8 @@
  * MVP structural checks — not a full glTF schema validator.
  */
 
+import type { SceneManifestNode } from "@/lib/types";
+
 const UNIT_NODE_PATTERN = /^Unit_/i;
 
 export type ValidationStatus = "ready" | "warning" | "blocked";
@@ -30,6 +32,10 @@ export interface GlbValidationResult {
    * on the detailed 3D Experience pipeline; unused (but harmless) for the
    * lightweight map-model pipeline. */
   unitNodeNames: string[];
+  /** Every node in the GLB (not just Unit_*) — Editor UX & Scene Structure
+   * pass. Empty for the map-model pipeline's own validate() calls; only
+   * meaningful/persisted for "detailModel" kind. */
+  sceneManifest: SceneManifestNode[];
 }
 
 interface GltfAccessor {
@@ -44,6 +50,8 @@ interface GltfMesh {
 }
 interface GltfNode {
   name?: string;
+  mesh?: number;
+  children?: number[];
 }
 interface GltfJson {
   meshes?: GltfMesh[];
@@ -51,6 +59,55 @@ interface GltfJson {
   images?: unknown[];
   nodes?: GltfNode[];
   accessors?: GltfAccessor[];
+}
+
+/** Lowercase, alphanumeric-and-underscore-only slug for use inside an
+ * `rzNodeId` — deliberately its own small function rather than reusing
+ * `glbUnitNodes.ts`'s `normalizeUnitMatchKey` (which strips a leading
+ * `Unit_`/`UNIT_` prefix, exactly the info worth keeping visible in a
+ * general node-manifest id) or importing anything from that file at all
+ * (it pulls in three.js's browser-oriented GLTFLoader — the whole reason
+ * this module hand-parses the GLB binary itself, see the file doc comment
+ * above; importing it here would quietly reintroduce that dependency into
+ * a server-only code path). */
+function slugifyNodeName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "node";
+}
+
+/** Walks the glTF node graph (nodes reference children by index, per the
+ * glTF 2.0 spec — no parent pointers in the source data) to assign each
+ * node a stable-within-this-file id, its parent's id, and a depth. Roots
+ * are nodes no other node lists as a child. */
+export function buildSceneManifest(json: GltfJson): SceneManifestNode[] {
+  const nodes = json.nodes ?? [];
+  const parentOf = new Map<number, number>();
+  nodes.forEach((node, i) => {
+    (node.children ?? []).forEach((childIndex) => parentOf.set(childIndex, i));
+  });
+
+  const ids = nodes.map((node, i) => `rz_${i}_${slugifyNodeName(node.name || `node${i}`)}`);
+
+  function depthOf(index: number, guard = 0): number {
+    // `guard` caps recursion on a malformed/cyclic children graph — real
+    // glTF files are trees, but this is untrusted uploaded input.
+    const parent = parentOf.get(index);
+    if (parent == null || guard > nodes.length) return 0;
+    return 1 + depthOf(parent, guard + 1);
+  }
+
+  return nodes.map((node, i) => {
+    const parent = parentOf.get(i);
+    const name = node.name || `Node ${i}`;
+    return {
+      rzNodeId: ids[i],
+      name,
+      meshIndex: node.mesh ?? null,
+      parentRzNodeId: parent != null ? ids[parent] : null,
+      depth: depthOf(i),
+      isMesh: node.mesh != null,
+      autoClassification: UNIT_NODE_PATTERN.test(name) ? "unit_block" : "architecture",
+    };
+  });
 }
 
 const GLB_MAGIC = 0x46546c67; // "glTF" little-endian
@@ -100,6 +157,7 @@ export async function validateGlb(
       materialCount: null,
       textureCount: null,
       unitNodeNames: [],
+      sceneManifest: [],
     };
   }
 
@@ -122,18 +180,32 @@ export async function validateGlb(
 
   if (meshCount === 0) issues.push("No meshes found in the GLB.");
 
+  // Worded to name the actual consequence, not just the raw number — this
+  // is the one signal Admin gets, before publishing, that a heavy file will
+  // feel laggy once it's actually rendered continuously during map/viewer
+  // interaction (drag, rotate, zoom), rather than finding out after the
+  // fact on the live page.
   const { warnTriangles, blockTriangles } = VALIDATION_THRESHOLDS[kind];
+  const consequence =
+    kind === "mapModel"
+      ? "may render slowly and feel laggy while dragging or rotating the map"
+      : "may render slowly and feel laggy while orbiting the 3D viewer";
   if (triangleCount > blockTriangles) {
-    issues.push(`Triangle count ${triangleCount.toLocaleString()} exceeds the ${blockTriangles.toLocaleString()} block threshold for this pipeline.`);
+    issues.push(`Triangle count ${triangleCount.toLocaleString()} exceeds the ${blockTriangles.toLocaleString()} block threshold for this pipeline — too heavy to publish, ${consequence}.`);
   } else if (triangleCount > warnTriangles) {
-    issues.push(`Triangle count ${triangleCount.toLocaleString()} exceeds the ${warnTriangles.toLocaleString()} recommended limit — review before publishing.`);
+    issues.push(`Triangle count ${triangleCount.toLocaleString()} exceeds the ${warnTriangles.toLocaleString()} recommended limit — ${consequence}. Consider simplifying the model before publishing.`);
   }
 
   let status: ValidationStatus = "ready";
   if (meshCount === 0 || triangleCount > blockTriangles) status = "blocked";
   else if (issues.length > 0) status = "warning";
 
-  return { status, issues, triangleCount, meshCount, materialCount, textureCount, unitNodeNames };
+  // Only the detail-model pipeline has any use for a full node manifest
+  // (Scene Explorer, per-node overrides) — skip the walk for map-model
+  // uploads rather than compute and immediately discard it.
+  const sceneManifest = kind === "detailModel" ? buildSceneManifest(json) : [];
+
+  return { status, issues, triangleCount, meshCount, materialCount, textureCount, unitNodeNames, sceneManifest };
 }
 
 /** Fetches an already-uploaded Blob URL and validates it — the entry point
@@ -149,6 +221,7 @@ export async function fetchAndValidateGlb(url: string, kind: ModelKind): Promise
       materialCount: null,
       textureCount: null,
       unitNodeNames: [],
+      sceneManifest: [],
     };
   }
   const buffer = await res.arrayBuffer();

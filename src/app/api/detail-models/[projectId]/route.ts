@@ -45,6 +45,12 @@ export async function GET(
     enabled: version.publicationStatus === "published",
     updatedAt: version.updatedAt,
     unitLinks: version.unitLinks.map((l) => ({ meshName: l.meshName, unitId: l.unitId })),
+    sceneManifest: version.sceneManifest ?? [],
+    nodeOverrides: version.nodeOverrides ?? [],
+    triangleCount: version.triangleCount,
+    meshCount: version.meshCount,
+    materialCount: version.materialCount,
+    textureCount: version.textureCount,
   });
 }
 
