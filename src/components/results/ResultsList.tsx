@@ -107,7 +107,7 @@ export function ResultsList({
   );
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {layout === "panel" ? (
         // Mobile: results count on the left, sort on the right, one row.
         // Desktop map-mode side panel (narrower): sort centered on top,
@@ -124,11 +124,11 @@ export function ResultsList({
       ) : null}
 
       {total === 0 && layout === "panel" ? (
-        <div ref={scrollRef} onScroll={(e) => onScrollTopChange?.(e.currentTarget.scrollTop)} className="flex-1 overflow-y-auto scroll-thin">
+        <div ref={scrollRef} onScroll={(e) => onScrollTopChange?.(e.currentTarget.scrollTop)} className="min-h-0 flex-1 overflow-y-auto scroll-thin">
           <EmptyState />
         </div>
       ) : layout === "panel" ? (
-        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto scroll-thin p-3">
+        <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto scroll-thin p-3">
           {pageRows.map((row) =>
             row.kind === "listing" ? (
               <ListingCard key={row.item.id} listing={row.item} />
@@ -138,7 +138,7 @@ export function ResultsList({
           )}
         </div>
       ) : (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin">
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto scroll-thin">
           {topContent}
           <div onWheel={forwardWheelToList} className="sticky top-0 z-20 flex items-center justify-between gap-2 border-y border-neutral-200 bg-white px-5 py-3 shadow-[0_2px_6px_rgba(17,17,24,0.04)]">
             {countBlock}

@@ -45,7 +45,7 @@ export default function SearchPage() {
   // list in the DOM, which is the standard, hydration-safe tradeoff.
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col lg:flex-row">
+    <div className="relative flex h-full min-h-0 flex-1 overflow-hidden flex-col lg:flex-row">
 
       {/* Mobile-only search row */}
       <MobileSearchRow onOpenFilters={() => setMobileSheet("filters")} />

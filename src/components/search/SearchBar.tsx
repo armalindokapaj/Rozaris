@@ -101,7 +101,7 @@ export function SearchBar({
       <div
         className={cn(
           "flex items-center gap-2 rounded-none border border-neutral-300 bg-white shadow-none focus-within:border-neutral-800 focus-within:ring-1 focus-within:ring-neutral-800",
-          compact ? "px-2.5 py-2" : "h-12 px-4"
+          compact ? "px-2.5 py-2" : "h-10 px-3"
         )}
       >
         <Search className={cn("shrink-0 text-neutral-400", compact ? "h-3.5 w-3.5" : "h-4 w-4")} />
