@@ -12,7 +12,7 @@ import {
   buildProjectMarker,
 } from "./markerFactory";
 import { ProjectModelLayer, type MapModelEntry } from "./ProjectModelLayer";
-import { BuildingHider } from "./BuildingHider";
+import { BuildingHider, type BuildingFootprint } from "./BuildingHider";
 import { MapControls } from "./MapControls";
 import { MapFallback } from "./MapFallback";
 import { ProjectPopupCard } from "./ProjectPopupCard";
@@ -37,10 +37,14 @@ interface MapModelRow {
   scale: number;
   rotationDeg: number;
   altitudeOffset: number;
+  /** The model's real placement — was hardcoded to the project's own
+   * coordinates everywhere before the "multi-building-pick + reposition"
+   * pass; now the actual (possibly Admin-dragged) position. */
+  lng: number;
+  lat: number;
   enabled: boolean;
   hideBaseBuilding: boolean;
-  hiddenBuildingLng: number | null;
-  hiddenBuildingLat: number | null;
+  hiddenBuildings: { lng: number; lat: number; footprint: BuildingFootprint | null; featureId?: string | number }[];
 }
 
 /** "3D Map Control" placement, keyed by project id — a real, shared Postgres
@@ -244,8 +248,11 @@ export function MapView({
         {
           projectId: p.id,
           glbUrl: model.glbUrl,
-          lng: p.coords.lng,
-          lat: p.coords.lat,
+          // The model's own (possibly Admin-dragged) position — previously
+          // hardcoded to the project's own coordinates, which silently
+          // ignored any repositioning Admin did.
+          lng: model.lng,
+          lat: model.lat,
           scale: model.scale,
           rotationDeg: model.rotationDeg,
           altitudeOffset: model.altitudeOffset,
@@ -258,12 +265,14 @@ export function MapView({
     return visibleProjects.flatMap((p) => {
       const model = projectMapModels[p.id];
       if (!model?.enabled || !model.glbUrl || !model.hideBaseBuilding) return [];
-      // A manually picked building (Admin's "Pick Building to Remove")
-      // takes priority over the project's own coordinates — the project
-      // pin doesn't always sit exactly on the footprint that needs hiding.
-      const lng = model.hiddenBuildingLng ?? p.coords.lng;
-      const lat = model.hiddenBuildingLat ?? p.coords.lat;
-      return [{ key: p.id, lng, lat }];
+      // Every building Admin picked to remove for this project (0, 1, or
+      // several) — each with its own footprint captured at pick time.
+      return model.hiddenBuildings.map((b, i) => ({
+        key: `${p.id}-${i}`,
+        lng: b.lng,
+        lat: b.lat,
+        footprint: b.footprint,
+      }));
     });
   }, [visibleProjects, projectMapModels]);
 

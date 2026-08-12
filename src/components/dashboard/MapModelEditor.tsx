@@ -2,14 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
-import { Crosshair, History, RotateCcw, Trash2, Upload, X } from "lucide-react";
+import { Crosshair, History, MapPin, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { cn, formatRelativeDate } from "@/lib/utils";
-import { MapModelMapPreview } from "./MapModelMapPreview";
+import { MapModelMapPreview, type HiddenBuildingEntry } from "./MapModelMapPreview";
 import { ValidationBadge } from "./ValidationBadge";
+import type { BuildingFootprint } from "@/components/map/BuildingHider";
 import type { Project } from "@/lib/types";
 
 const MAX_FILE_BYTES = 60 * 1024 * 1024; // keep in sync with api/blob/upload's maximumSizeInBytes
+// Two picked buildings within this many degrees of each other are treated
+// as "the same building" for toggle-off purposes when neither has a usable
+// feature id — roughly 5m at Tirana's latitude.
+const SAME_BUILDING_EPSILON_DEG = 0.00005;
 
 interface VersionRow {
   id: string;
@@ -19,9 +24,10 @@ interface VersionRow {
   scale: number;
   heading: number;
   altitude: number;
+  latitude: number;
+  longitude: number;
   hideBaseBuilding: boolean;
-  hiddenBuildingLng: number | null;
-  hiddenBuildingLat: number | null;
+  hiddenBuildings: HiddenBuildingEntry[] | null;
   validationStatus: "ready" | "warning" | "blocked";
   validationIssues: string[] | null;
   publicationStatus: "draft" | "published" | "archived";
@@ -43,6 +49,13 @@ function formatBytes(bytes: number) {
  * versions/**) instead of the pre-versioning single mutable row. Preview
  * uses the SAME Mapbox map/style/ProjectModelLayer as every other map in
  * Rozaris, centered on this project's real coordinates.
+ *
+ * "Multi-building-pick + reposition" pass: `hiddenBuildingLng/Lat` (one
+ * point per project) is replaced by `hiddenBuildings` (a list — Admin can
+ * pick, and un-pick, several real buildings), and the model's own position
+ * is now draggable in the preview instead of being locked to the project's
+ * exact coordinates — see MapModelMapPreview.tsx and BuildingHider.ts for
+ * the mechanics.
  */
 export function MapModelEditor({ project, onClose }: { project: Project; onClose: () => void }) {
   const { t, locale } = useT();
@@ -64,9 +77,10 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
   const [scale, setScale] = useState(1);
   const [rotationDeg, setRotationDeg] = useState(0);
   const [altitudeOffset, setAltitudeOffset] = useState(0);
+  const [longitude, setLongitude] = useState(project.coords.lng);
+  const [latitude, setLatitude] = useState(project.coords.lat);
   const [hideBaseBuilding, setHideBaseBuilding] = useState(false);
-  const [hiddenBuildingLng, setHiddenBuildingLng] = useState<number | null>(null);
-  const [hiddenBuildingLat, setHiddenBuildingLat] = useState<number | null>(null);
+  const [hiddenBuildings, setHiddenBuildings] = useState<HiddenBuildingEntry[]>([]);
 
   async function refresh() {
     const res = await fetch(`/api/map-models/${project.id}/versions`);
@@ -77,9 +91,10 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
       setScale(active.scale);
       setRotationDeg(active.heading);
       setAltitudeOffset(active.altitude);
+      setLongitude(active.longitude ?? project.coords.lng);
+      setLatitude(active.latitude ?? project.coords.lat);
       setHideBaseBuilding(active.hideBaseBuilding);
-      setHiddenBuildingLng(active.hiddenBuildingLng);
-      setHiddenBuildingLat(active.hiddenBuildingLat);
+      setHiddenBuildings(active.hiddenBuildings ?? []);
     }
     return rows;
   }
@@ -133,9 +148,10 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
           scale,
           rotationDeg,
           altitudeOffset,
+          longitude,
+          latitude,
           hideBaseBuilding,
-          hiddenBuildingLng,
-          hiddenBuildingLat,
+          hiddenBuildings,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -194,7 +210,15 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
       const res = await fetch(`/api/map-models/${project.id}/versions/${activeVersion.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scale, rotationDeg, altitudeOffset, hideBaseBuilding, hiddenBuildingLng, hiddenBuildingLat }),
+        body: JSON.stringify({
+          scale,
+          rotationDeg,
+          altitudeOffset,
+          longitude,
+          latitude,
+          hideBaseBuilding,
+          hiddenBuildings,
+        }),
       });
       if (!res.ok) throw new Error(await res.text());
       await refresh();
@@ -265,9 +289,32 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
     }
   }
 
+  function handleToggleBuilding(point: { lng: number; lat: number }, feature: mapboxgl.MapboxGeoJSONFeature) {
+    setHiddenBuildings((current) => {
+      const idx = current.findIndex((b) =>
+        feature.id != null && b.featureId != null
+          ? b.featureId === feature.id
+          : Math.hypot(b.lng - point.lng, b.lat - point.lat) < SAME_BUILDING_EPSILON_DEG
+      );
+      if (idx >= 0) return current.filter((_, i) => i !== idx);
+      return [
+        ...current,
+        {
+          lng: point.lng,
+          lat: point.lat,
+          footprint: (feature.geometry as BuildingFootprint) ?? null,
+          featureId: feature.id,
+        },
+      ];
+    });
+    setHideBaseBuilding(true);
+  }
+
   const hasModel = !!activeVersion;
   const previewUrl = localPreviewUrl ?? (activeVersion?.publicAssetUrl || null);
   const canEdit = isDraftActive;
+  const positionMoved =
+    Math.abs(longitude - project.coords.lng) > 1e-9 || Math.abs(latitude - project.coords.lat) > 1e-9;
 
   return (
     <div
@@ -279,22 +326,19 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
         <div className="h-64 shrink-0 bg-neutral-900 lg:h-full lg:flex-1">
           <MapModelMapPreview
             coords={project.coords}
+            modelPosition={{ lng: longitude, lat: latitude }}
             glbUrl={previewUrl}
             scale={scale}
             rotationDeg={rotationDeg}
             altitudeOffset={altitudeOffset}
             hideBaseBuilding={hideBaseBuilding}
-            hiddenBuildingPoint={
-              hiddenBuildingLng != null && hiddenBuildingLat != null
-                ? { lng: hiddenBuildingLng, lat: hiddenBuildingLat }
-                : null
-            }
+            hiddenBuildings={hiddenBuildings}
             picking={picking}
-            onPickBuilding={(point) => {
-              setHiddenBuildingLng(point.lng);
-              setHiddenBuildingLat(point.lat);
-              setHideBaseBuilding(true);
-              setPicking(false);
+            onToggleBuilding={handleToggleBuilding}
+            canMoveModel={canEdit}
+            onMoveModel={(point) => {
+              setLongitude(point.lng);
+              setLatitude(point.lat);
             }}
           />
         </div>
@@ -415,6 +459,26 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
             )}
 
             <fieldset disabled={!canEdit} className="space-y-5 disabled:opacity-50">
+              {hasModel && (
+                <div className="flex items-center justify-between gap-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
+                  <div className="flex items-center gap-2 text-xs font-medium text-neutral-600">
+                    <MapPin className="h-3.5 w-3.5 text-brand-500" />
+                    {t("admin.mapModelPositionHint")}
+                  </div>
+                  {positionMoved && (
+                    <button
+                      onClick={() => {
+                        setLongitude(project.coords.lng);
+                        setLatitude(project.coords.lat);
+                      }}
+                      className="shrink-0 text-[11px] font-semibold text-red-500 hover:underline"
+                    >
+                      {t("admin.mapModelResetPosition")}
+                    </button>
+                  )}
+                </div>
+              )}
+
               <SliderField
                 label={t("admin.mapModelScale")}
                 min={0.01}
@@ -464,24 +528,42 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
                     )}
                   >
                     <Crosshair className="h-3.5 w-3.5" />
-                    {picking ? t("admin.mapModelPickCancel") : t("admin.mapModelPickBuilding")}
+                    {picking ? t("admin.mapModelPickDone") : t("admin.mapModelPickBuilding")}
                   </button>
                   <p className="text-[11px] text-neutral-400">
-                    {hiddenBuildingLng != null && hiddenBuildingLat != null
-                      ? t("admin.mapModelPickedCustom")
-                      : t("admin.mapModelPickedAuto")}
+                    {picking ? t("admin.mapModelPickHintList") : t("admin.mapModelPickedAuto")}
                   </p>
-                  {hiddenBuildingLng != null && hiddenBuildingLat != null && (
-                    <button
-                      onClick={() => {
-                        setHiddenBuildingLng(null);
-                        setHiddenBuildingLat(null);
-                        setPicking(false);
-                      }}
-                      className="text-[11px] font-semibold text-red-500 hover:underline"
-                    >
-                      {t("admin.mapModelPickClear")}
-                    </button>
+                  {hiddenBuildings.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-neutral-600">
+                          {t("admin.mapModelHiddenCount", { count: hiddenBuildings.length })}
+                        </span>
+                        <button
+                          onClick={() => setHiddenBuildings([])}
+                          className="text-[11px] font-semibold text-red-500 hover:underline"
+                        >
+                          {t("admin.mapModelClearAll")}
+                        </button>
+                      </div>
+                      <ul className="space-y-1">
+                        {hiddenBuildings.map((b, i) => (
+                          <li
+                            key={b.featureId != null ? String(b.featureId) : `${b.lng},${b.lat}`}
+                            className="flex items-center justify-between gap-2 rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-600"
+                          >
+                            <span>{t("admin.mapModelBuildingLabel", { index: i + 1 })}</span>
+                            <button
+                              onClick={() => setHiddenBuildings((cur) => cur.filter((_, j) => j !== i))}
+                              aria-label={t("admin.mapModelRemoveOne")}
+                              className="text-neutral-400 hover:text-red-500"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </div>
               )}

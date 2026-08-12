@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ChevronDown, MapPin } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { JoinMenu } from "@/components/layout/JoinMenu";
 import { Logo } from "@/components/layout/Logo";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { SentenceFilterBar } from "@/components/search/SentenceFilterBar";
 
 type DiscoveryMode = "buy" | "rent" | "new";
 
@@ -22,15 +23,12 @@ export function LandingHero() {
   const setTransaction = useAppStore((s) => s.setTransaction);
   const setMode = useAppStore((s) => s.setMode);
   const [mode, setDiscoveryMode] = useState<DiscoveryMode>("buy");
-  const [market, setMarket] = useState<"Albania" | "Kosovo">("Albania");
-  const [location, setLocation] = useState("");
   const active = MODES.find((item) => item.id === mode) ?? MODES[0];
 
   function search() {
     setMode("map");
     setTransaction(mode === "rent" ? "rent" : "buy");
     setFilters({
-      location: location.trim() || (market === "Albania" ? "Tirana, Albania" : "Pristina, Kosovo"),
       projectsOnly: mode === "new",
     });
     router.push("/search");
@@ -66,15 +64,8 @@ export function LandingHero() {
               ))}
             </div>
             <div className="space-y-4 pt-6">
-              <label className="block text-xs font-bold uppercase tracking-[0.08em] text-neutral-500">Search in</label>
-              <div className="grid grid-cols-2 gap-2">
-                {(["Albania", "Kosovo"] as const).map((country) => <button key={country} onClick={() => setMarket(country)} className={cn("flex h-12 items-center justify-between border px-3 text-sm font-semibold", market === country ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-300 bg-white text-neutral-700 hover:border-neutral-500")}>{country}<MapPin className="h-4 w-4" /></button>)}
-              </div>
-              <label className="block text-xs font-bold uppercase tracking-[0.08em] text-neutral-500">City, neighborhood or project</label>
-              <div className="flex h-12 items-center border border-neutral-300 bg-white px-3 focus-within:border-neutral-900">
-                <input value={location} onChange={(event) => setLocation(event.target.value)} onKeyDown={(event) => event.key === "Enter" && search()} placeholder={market === "Albania" ? "Tirana, Durrës, Vlora…" : "Pristina, Prizren, Peja…"} className="w-full bg-transparent text-base outline-none placeholder:text-neutral-400" />
-                <ChevronDown className="h-4 w-4 text-neutral-400" />
-              </div>
+              <p className="text-xs font-bold uppercase tracking-[0.08em] text-neutral-500">Tell us what you are looking for</p>
+              <SentenceFilterBar />
               <button onClick={search} className="flex h-12 w-full items-center justify-center gap-2 bg-brand-500 px-5 text-sm font-bold text-white hover:bg-brand-600">View properties <ArrowRight className="h-4 w-4" /></button>
             </div>
           </div>

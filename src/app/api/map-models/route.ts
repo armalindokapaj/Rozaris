@@ -21,10 +21,14 @@ function toLegacyShape(v: MapModelVersion) {
     scale: v.scale,
     rotationDeg: v.heading,
     altitudeOffset: v.altitude,
+    // Multi-building-pick + reposition pass — was hardcoded to the
+    // project's own coordinates by every consumer before this (these
+    // columns were write-only); now the actual, possibly-dragged position.
+    lng: v.longitude,
+    lat: v.latitude,
     enabled: v.publicationStatus === "published",
     hideBaseBuilding: v.hideBaseBuilding,
-    hiddenBuildingLng: v.hiddenBuildingLng,
-    hiddenBuildingLat: v.hiddenBuildingLat,
+    hiddenBuildings: v.hiddenBuildings ?? [],
     updatedAt: v.updatedAt,
   };
 }

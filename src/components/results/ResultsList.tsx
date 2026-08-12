@@ -144,8 +144,8 @@ export function ResultsList({
             {countBlock}
             <SortDropdown />
           </div>
-          {total === 0 ? <EmptyState /> : <div className="p-4">
-          <div className={`grid ${GRID_COLS_CLASS[columns]} gap-4`}>
+          {total === 0 ? <EmptyState /> : <div className="p-3">
+          <div className={`grid ${GRID_COLS_CLASS[columns]} gap-3`}>
             {pageRows.map((row) =>
               row.kind === "listing" ? (
                 <ListingCard key={row.item.id} listing={row.item} variant="grid" />

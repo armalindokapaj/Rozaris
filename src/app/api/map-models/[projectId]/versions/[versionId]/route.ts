@@ -3,13 +3,21 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 
+const hiddenBuildingSchema = z.object({
+  lng: z.number(),
+  lat: z.number(),
+  footprint: z.any().nullable(),
+  featureId: z.union([z.string(), z.number()]).optional(),
+});
+
 const patchSchema = z.object({
   scale: z.number().positive().max(1000).optional(),
   rotationDeg: z.number().optional(),
   altitudeOffset: z.number().optional(),
+  longitude: z.number().optional(),
+  latitude: z.number().optional(),
   hideBaseBuilding: z.boolean().optional(),
-  hiddenBuildingLng: z.number().nullable().optional(),
-  hiddenBuildingLat: z.number().nullable().optional(),
+  hiddenBuildings: z.array(hiddenBuildingSchema).optional(),
 });
 
 /** Update a draft's placement/visibility fields, or discard a draft
@@ -45,9 +53,10 @@ export async function PATCH(
       scale: parsed.data.scale,
       heading: parsed.data.rotationDeg,
       altitude: parsed.data.altitudeOffset,
+      longitude: parsed.data.longitude,
+      latitude: parsed.data.latitude,
       hideBaseBuilding: parsed.data.hideBaseBuilding,
-      hiddenBuildingLng: parsed.data.hiddenBuildingLng,
-      hiddenBuildingLat: parsed.data.hiddenBuildingLat,
+      hiddenBuildings: parsed.data.hiddenBuildings,
     },
   });
   return NextResponse.json(updated);

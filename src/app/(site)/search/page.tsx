@@ -5,7 +5,7 @@ import { List, Map as MapIcon, SlidersHorizontal } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { MapView, type MapCamera } from "@/components/map/MapView";
-import { SentenceFilterBar } from "@/components/search/SentenceFilterBar";
+import { TopFilterBar } from "@/components/search/TopFilterBar";
 import { FiltersForm } from "@/components/search/FiltersForm";
 import { ResultsList } from "@/components/results/ResultsList";
 import { CompareTray } from "@/components/compare/CompareTray";
@@ -148,9 +148,12 @@ export default function SearchPage() {
               restoreScrollTop={resultsScrollTop}
               onScrollTopChange={setResultsScrollTop}
               topContent={
-                <div className="border-b border-neutral-200 bg-neutral-50 px-5 pb-5 pt-5">
-                  <SentenceFilterBar />
-                  <div className="flex justify-end px-5 pt-3"><ModeSwitch /></div>
+                <div className="border-b border-neutral-200 bg-white px-5 pb-4 pt-5">
+                  <div className="mb-4 flex items-center justify-between gap-4">
+                    <h1 className="font-serif text-2xl text-neutral-900">Property search</h1>
+                    <ModeSwitch />
+                  </div>
+                  <TopFilterBar />
                 </div>
               }
             />}

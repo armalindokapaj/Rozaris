@@ -400,12 +400,15 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
 
         // Real sun — see src/lib/sunPosition.ts. Direction only; distance
         // is arbitrary for a DirectionalLight, scaled by boundingRadius
-        // once that's known below.
+        // once that's known below. Shadow bias/normalBias are scaled to
+        // boundingRadius too, not left as fixed absolute values — a fixed
+        // ~0.02-unit bias is negligible (and produces shadow-acne flicker,
+        // "faces hiding and reappearing") against a real building GLB tens
+        // or hundreds of meters across, even though it worked fine for the
+        // procedural fallback's small, roughly-uniform unit boxes.
         const sun = new THREE.DirectionalLight(0xffffff, 2);
         sun.castShadow = true;
         sun.shadow.mapSize.set(tier.shadowMapSize, tier.shadowMapSize);
-        sun.shadow.bias = -0.0005;
-        sun.shadow.normalBias = 0.02;
         const ambient = new THREE.AmbientLight(0xffffff, 0.15);
         scene.add(sun, sun.target, ambient);
         sunRef.current = sun;
@@ -418,7 +421,9 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
         glbUnitBoxesRef.current = new Map();
 
         let boundingRadius = 20;
+        let centerX = 0;
         let centerY = 1;
+        let centerZ = 0;
 
         if (usingGlb && detailModel) {
           // --- GLB content ---
@@ -472,7 +477,21 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
           const size = box.getSize(new THREE.Vector3());
           const center = box.getCenter(new THREE.Vector3());
           boundingRadius = Math.max(size.x, size.y, size.z) * 0.65 || 20;
+          // Unlike the procedural fallback (always laid out centered at
+          // X=0/Z=0 by computeProjectLayout), a real uploaded GLB is very
+          // often authored off-origin (real-world survey coordinates,
+          // arbitrary export origin, etc.) — using the bounding box's real
+          // center here, not a hardcoded (0, y, 0), is what was missing
+          // before. Locking the orbit pivot/shadow target to the wrong
+          // X/Z point meant the camera orbited around empty space instead
+          // of the building: it could swing through/inside the model at
+          // the fixed startDistance, producing exactly "faces hide and
+          // reappear" (near-plane clipping through walls) and "doesn't
+          // snap correctly when rotating" (the model swings instead of
+          // spinning in place).
+          centerX = center.x;
           centerY = center.y;
+          centerZ = center.z;
 
           disposeGeometry = () => {
             scene.remove(root);
@@ -554,9 +573,13 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
         }
         if (cancelled) return;
 
-        const target = new THREE.Vector3(0, centerY, 0);
+        const target = new THREE.Vector3(centerX, centerY, centerZ);
         const startDistance = boundingRadius * config.cameraStartDistanceMultiplier;
-        camera.position.set(startDistance * 0.6, startDistance * 0.55, startDistance * 0.9);
+        camera.position.set(
+          centerX + startDistance * 0.6,
+          centerY + startDistance * 0.55,
+          centerZ + startDistance * 0.9
+        );
         camera.lookAt(target);
         defaultCameraRef.current = { position: camera.position.clone(), target: target.clone() };
 
@@ -572,7 +595,14 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
         controls.update();
         controlsRef.current = controls;
 
-        sun.shadow.camera.near = 1;
+        // Bias scaled to boundingRadius, not a fixed absolute value — a
+        // fixed ~0.0005/0.02 bias is negligible against a real building
+        // tens/hundreds of meters across (shadow acne — the flicker
+        // reported as "faces hiding and reappearing"), even though it was
+        // fine for the procedural fallback's small, roughly-uniform units.
+        sun.shadow.bias = -0.00005 * boundingRadius;
+        sun.shadow.normalBias = 0.01 * boundingRadius;
+        sun.shadow.camera.near = Math.max(0.1, boundingRadius * 0.05);
         sun.shadow.camera.far = boundingRadius * 6;
         const shadowSpan = boundingRadius * 1.5;
         sun.shadow.camera.left = -shadowSpan;

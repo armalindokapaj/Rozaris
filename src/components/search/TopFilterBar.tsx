@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { RotateCcw, SlidersHorizontal } from "lucide-react";
 import { useAppStore, defaultFilters } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import {
@@ -12,7 +12,7 @@ import {
 import type { Amenity, Condition, EssentialPOI } from "@/lib/types";
 import { cn, formatPrice } from "@/lib/utils";
 import { mainFieldsFor } from "@/lib/propertyTypeFields";
-import { PROPERTY_TYPES, priceScaleFor } from "./FiltersForm";
+import { PROPERTY_TYPES, areaScaleFor, priceScaleFor } from "./FiltersForm";
 import { RangeSlider } from "./RangeSlider";
 import { FilterDropdown } from "./FilterDropdown";
 import { SearchBar } from "./SearchBar";
@@ -46,7 +46,7 @@ function Pill({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "rounded-pill border px-3 py-1.5 text-xs font-medium transition-colors",
+        "border px-3 py-2 text-sm font-semibold transition-colors",
         active
           ? "border-brand-500 bg-brand-500 text-white"
           : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300"
@@ -64,7 +64,7 @@ function toggleInArray<T>(arr: T[], value: T): T[] {
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-2">
-      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">{label}</p>
+      <p className="border-b border-neutral-300 pb-2 text-base font-bold text-neutral-700">{label}</p>
       {children}
     </div>
   );
@@ -93,12 +93,17 @@ export function TopFilterBar({ className }: { className?: string }) {
   const showBedBath = activeFields.includes("bedrooms") || activeFields.includes("bathrooms");
 
   const priceScale = priceScaleFor(filters);
+  const areaScale = areaScaleFor(filters);
   const priceIsSet = filters.priceMin != null || filters.priceMax != null;
   const priceLabel = priceIsSet
     ? `${formatPrice(filters.priceMin ?? priceScale.min, "EUR", { compact: true })}–${
         filters.priceMax != null ? formatPrice(filters.priceMax, "EUR", { compact: true }) : "+"
       }`
     : t("filters.priceShort");
+  const areaIsSet = filters.areaMin != null || filters.areaMax != null;
+  const areaLabel = areaIsSet
+    ? `${filters.areaMin ?? areaScale.min}–${filters.areaMax ?? "+"} m²`
+    : t("filters.areaM2");
 
   const bedsBathsSet = filters.bedrooms != null || filters.bathrooms != null;
   const bedsBathsLabel = bedsBathsSet
@@ -130,94 +135,42 @@ export function TopFilterBar({ className }: { className?: string }) {
 
   return (
     <div className={cn("grid grid-cols-12 gap-2", className)}>
-      <SearchBar className="col-span-8" />
-      {/* Buy / Rent */}
       <FilterDropdown
-        className="col-span-4"
+        className="col-span-3"
         label={filters.transaction === "rent" ? t("nav.rent") : t("nav.buy")}
         active={filters.transaction === "rent"}
+        panelClassName="w-full"
       >
         {() => (
           <div className="space-y-3">
-            <div className="relative grid grid-cols-2 rounded-control bg-neutral-100 p-1">
-              <div
-                className={cn(
-                  "absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-control bg-brand-500 shadow-[var(--shadow-1)] transition-transform duration-300 ease-in-out",
-                  filters.transaction === "rent" && "translate-x-full"
-                )}
-                aria-hidden="true"
-              />
+            <p className="border-b border-neutral-300 pb-2 text-base font-bold text-neutral-700">Your project</p>
+            <div className="grid gap-2">
               {(["buy", "rent"] as const).map((txn) => (
                 <button
                   key={txn}
                   onClick={() => setTransaction(txn)}
-                  className={cn(
-                    "relative z-10 rounded-control py-2 text-sm font-semibold transition-colors duration-200",
-                    filters.transaction === txn
-                      ? "text-white"
-                      : "text-neutral-500 hover:text-neutral-700 hover:bg-white/60"
-                  )}
+                  className={cn("flex w-full items-center justify-between border px-3 py-2.5 text-left text-sm font-semibold", filters.transaction === txn ? "border-brand-500 bg-brand-500 text-white" : "border-neutral-300 text-neutral-700 hover:border-neutral-500")}
                 >
                   {txn === "buy" ? t("nav.buy") : t("nav.rent")}
+                  <span aria-hidden="true">›</span>
                 </button>
               ))}
             </div>
             {filters.transaction === "rent" && (
               <div className="flex gap-2">
-                {(["long_term", "daily"] as const).map((s) => (
-                  <Pill
-                    key={s}
-                    active={filters.rentSubtype === s}
-                    onClick={() =>
-                      setFilters({
-                        rentSubtype: filters.rentSubtype === s ? undefined : s,
-                        priceMin: null,
-                        priceMax: null,
-                        areaMin: null,
-                        areaMax: null,
-                      })
-                    }
-                  >
-                    {s === "daily" ? t("filters.dailyRent") : t("filters.longTermRent")}
-                  </Pill>
-                ))}
+                {(["long_term", "daily"] as const).map((s) => <Pill key={s} active={filters.rentSubtype === s} onClick={() => setFilters({ rentSubtype: filters.rentSubtype === s ? undefined : s, priceMin: null, priceMax: null, areaMin: null, areaMax: null })}>{s === "daily" ? t("filters.dailyRent") : t("filters.longTermRent")}</Pill>)}
               </div>
             )}
           </div>
         )}
       </FilterDropdown>
-
-      {/* Location */}
-      <FilterDropdown
-        className="col-span-4"
-        label={
-          <span className="flex items-center gap-1.5">
-            <MapPin className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
-            <span className="max-w-[9rem] truncate">{filters.location || t("filters.location")}</span>
-          </span>
-        }
-        active={!!filters.location && filters.location !== defaultFilters.location}
-      >
-        {() => (
-          <Section label={t("filters.location")}>
-            <div className="flex items-center gap-2 rounded-control border border-neutral-200 px-3 py-2.5">
-              <MapPin className="h-4 w-4 shrink-0 text-neutral-400" />
-              <input
-                value={filters.location}
-                onChange={(e) => setFilters({ location: e.target.value })}
-                placeholder={t("filters.locationPlaceholder")}
-                className="w-full bg-transparent text-sm text-neutral-800 focus:outline-none"
-              />
-            </div>
-          </Section>
-        )}
-      </FilterDropdown>
-
+      <SearchBar className="col-span-9" />
       {/* Property type */}
-      <FilterDropdown className="col-span-4" label={typeLabel} active={typeCount > 0}>
+      <FilterDropdown className="col-span-3" label={typeLabel} active={typeCount > 0} panelClassName="w-[calc(400%+1.5rem)] max-w-[calc(100vw-2rem)]">
         {() => (
           <Section label={t("filters.propertyType")}>
-            <div className="flex flex-wrap gap-1.5">
+            <p className="pt-2 text-xs font-medium uppercase tracking-wide text-neutral-500">The most common</p>
+            <div className="grid grid-cols-3 gap-2 pt-1">
               {PROPERTY_TYPES.map((pt) => (
                 <Pill
                   key={pt}
@@ -235,7 +188,7 @@ export function TopFilterBar({ className }: { className?: string }) {
       </FilterDropdown>
 
       {/* Price */}
-      <FilterDropdown className="col-span-4" label={priceLabel} active={priceIsSet}>
+      <FilterDropdown className="col-span-3" label={priceLabel} active={priceIsSet} panelClassName="w-[calc(300%+1rem)] max-w-[calc(100vw-2rem)]">
         {() => (
           <Section label={t("filters.priceRangeEur")}>
             <RangeSlider
@@ -250,9 +203,24 @@ export function TopFilterBar({ className }: { className?: string }) {
         )}
       </FilterDropdown>
 
+      <FilterDropdown className="col-span-3" label={areaLabel} active={areaIsSet} panelClassName="w-[calc(300%+1rem)] max-w-[calc(100vw-2rem)]" align="right">
+        {() => (
+          <Section label={t("filters.areaM2")}>
+            <RangeSlider
+              scale={areaScale}
+              valueMin={filters.areaMin}
+              valueMax={filters.areaMax}
+              onChange={(areaMin, areaMax) => setFilters({ areaMin, areaMax })}
+              formatValue={(value) => `${value} m²`}
+              ariaLabel={t("filters.areaRangeAria")}
+            />
+          </Section>
+        )}
+      </FilterDropdown>
+
       {/* Bedrooms / Bathrooms */}
       {showBedBath && (
-        <FilterDropdown className="col-span-4" label={bedsBathsLabel} active={bedsBathsSet}>
+        <FilterDropdown className="col-span-3" label={bedsBathsLabel} active={bedsBathsSet} panelClassName="w-[calc(300%+1rem)] max-w-[calc(100vw-2rem)]" align="right">
           {() => (
             <div className="grid grid-cols-2 gap-4">
               <Section label={t("filters.bedrooms")}>
@@ -288,7 +256,7 @@ export function TopFilterBar({ className }: { className?: string }) {
 
       {/* More filters (condition / amenities / nearby / publisher) */}
       <FilterDropdown
-        className="col-span-4"
+        className="col-span-3"
         label={
           <span className="flex items-center gap-1.5">
             <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
@@ -297,7 +265,7 @@ export function TopFilterBar({ className }: { className?: string }) {
         }
         active={advancedCount > 0}
         align="right"
-        panelClassName="w-96 max-h-[70vh] overflow-y-auto scroll-thin space-y-5"
+        panelClassName="w-[calc(400%+1.5rem)] max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-y-auto scroll-thin space-y-5"
       >
         {() => (
           <>

@@ -601,8 +601,19 @@ model MapModelVersion {
   fullDetailZoom    Int                    @default(16)
   maxZoom           Int?
   hideBaseBuilding  Boolean                @default(false)
+  /// LEGACY as of the multi-building-pick pass — superseded by
+  /// `hiddenBuildings` below (one point could never express "delete these
+  /// 3 specific buildings"). Kept, unused, one-release safety net — same
+  /// pattern as ProjectMapModel elsewhere in this schema.
   hiddenBuildingLng Float?
   hiddenBuildingLat Float?
+  /// Array of `{ lng, lat, footprint: GeoJSON.Polygon | MultiPolygon | null,
+  /// featureId?: string | number }` — each entry is one real building Admin
+  /// picked to remove, with its footprint geometry captured once at pick
+  /// time (not re-queried later, so it survives the public map being at a
+  /// different zoom where the footprint might not be queryable). See
+  /// src/components/map/BuildingHider.ts.
+  hiddenBuildings   Json?
   validationStatus  ModelValidationStatus  @default(ready)
   validationIssues  Json?
   publicationStatus ModelPublicationStatus @default(draft)
