@@ -224,6 +224,36 @@ export interface Project3DConfig {
   lightingPreset: LightingPreset;
   backgroundPreset: BackgroundPreset;
   groundEnabled: boolean;
+  /** "disc" (default, unchanged behavior) is the original procedural-mode-
+   * only ground — sized off the computed layout, never available for a
+   * GLB project (no `layout.boundingRadius` to size it from). "infinite"
+   * (Ground Platform follow-up) is a large flat plane available in both
+   * content modes instead, colored via `groundColor` — this is the "GLB
+   * projects get a ground option too" fix, deliberately scoped to
+   * "infinite" only so no existing GLB project gains an unrequested disc
+   * the moment this field exists. */
+  groundStyle: "disc" | "infinite";
+  /** Applies to the ground regardless of `groundStyle` — both share one
+   * real `MeshStandardNodeMaterial` builder now (RenderEngine.ts's
+   * buildGroundMaterial). Default `"#d8d6e6"` is the exact hex the ground
+   * was hardcoded to before this field existed, so no existing project's
+   * ground changes color until an admin touches this. */
+  groundColor: string;
+  /** A second, deliberately different "fog" from `fogEnabled`/`fogColor`
+   * above — that one is `THREE.FogExp2`, distance-from-*camera*,
+   * affecting the whole scene. This one only affects the ground mesh's
+   * own material (a radial color fade toward `resolveFogColor(config)`,
+   * the same color the regular fog already resolves to), and the
+   * distance is measured from the fixed world origin (0,0,0), not the
+   * camera — a circular "misty edge" around a specific point rather than
+   * an atmospheric depth effect. Off by default. */
+  groundFogEnabled: boolean;
+  /** World-space distance from (0,0,0), in scene units — admin-entered
+   * directly (a free-text number, not a slider with an arbitrary cap),
+   * since this is tied to real project geometry the admin already knows
+   * the scale of, not a 0-1 "look" knob like the sliders elsewhere in
+   * this tab. */
+  groundFogRadius: number;
   cameraStartDistanceMultiplier: number;
   cameraMinDistanceMultiplier: number;
   cameraMaxDistanceMultiplier: number;
@@ -319,6 +349,42 @@ export interface Project3DConfig {
    * fresh mount to take effect (renderer-construction-time flag). Off by
    * default. */
   sectionCapStencilEnabled: boolean;
+
+  /** Real HDR bloom (TSL `bloom()` node, already wired but dormant since
+   * the Render/visual quality pass) — per-project opt-in, ANDed with
+   * `QUALITY_TIERS[qualityPreset].bloom` in RenderEngine.ts's
+   * buildRenderPipeline (same pattern `antialiasEnabled` already uses
+   * against `tier.antialias`). Off by default: zero behavior change for
+   * any existing project. Params mirror webgl_shaders_ocean.html's Bloom
+   * GUI folder exactly (`strength`/`radius`); `threshold` isn't exposed
+   * there either, so it stays fixed at the same 0.85 the demo hardcodes. */
+  bloomEnabled: boolean;
+  bloomStrength: number;
+  bloomRadius: number;
+
+  /** Real flat, reflective water plane (`WaterMesh`, the WebGPU-native
+   * port of webgl_shaders_ocean.html's `Water`) — per-project opt-in
+   * (most projects are buildings, not waterfront), auto-sized/positioned
+   * like the reference demo (see viewerPresets.ts's `WATER_PLANE_SIZE`)
+   * rather than adding placement fields the demo's own GUI doesn't have
+   * either. Sun-lit specular is driven by the same real sun this app
+   * already computes (RenderEngine.ts's applySunAndEnvironment), not a
+   * second independent light. Off by default. */
+  waterEnabled: boolean;
+  waterDistortionScale: number;
+  waterSize: number;
+
+  /** Procedural clouds baked into the physical sky dome's own shader
+   * (`SkyMesh.cloudCoverage`/`cloudDensity`/`cloudElevation` — not a
+   * separate mesh/system, same as webgl_shaders_ocean.html's "Clouds" GUI
+   * folder, which is really just 3 more uniforms on its `Sky` object).
+   * Off by default so the physical-sky rollout (replacing the old
+   * gradient texture) doesn't also silently add clouds on top for every
+   * existing project in the same pass. */
+  cloudsEnabled: boolean;
+  cloudCoverage: number;
+  cloudDensity: number;
+  cloudElevation: number;
 
   /** Hex colors for the four unit statuses (+ the shared "selected"
    * highlight) shown both in the 3D scene (GLB unit boxes and the

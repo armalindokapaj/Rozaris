@@ -2,7 +2,6 @@
 
 import { Move, RotateCw, Ruler, ArrowUpDown, Camera, Save, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { BuildingGroup } from "@/lib/units";
 import type { Section } from "@/lib/types";
 import type { SectionGizmoMode } from "@/components/project/viewerTypes";
 import { ColorField, SelectField, SliderField, TextField, ToggleField } from "../fields";
@@ -22,14 +21,16 @@ const GIZMO_MODES: [SectionGizmoMode, typeof Move, string][] = [
  * `RenderEngineCallbacks.onSectionDraftChange`, threaded down as `section`
  * by `EditorShell`), and editing a number here moves the gizmo the same
  * way (`EditorShell`'s `update` re-syncs `attachSectionGizmo`). Camera/
- * Cut-Style/Floor fields are the "settings" a gizmo drag can't express.
+ * Fill Gaps are the "settings" a gizmo drag can't express. ("Assign
+ * Floor" was removed 2026-08-13, user request — `Section.floorId` stays
+ * on the type/schema, unused by any UI now, in case a future Floors &
+ * Sections PRD wants it.)
  */
 export function SectionsPanel({
   section,
   update,
   gizmoMode,
   setGizmoMode,
-  floorGroups,
   onSetCamera,
   cameraSaved,
   onSave,
@@ -42,7 +43,6 @@ export function SectionsPanel({
   update: (partial: Partial<Section>, opts?: SetOpts) => void;
   gizmoMode: SectionGizmoMode;
   setGizmoMode: (mode: SectionGizmoMode) => void;
-  floorGroups: BuildingGroup[];
   onSetCamera: () => void;
   cameraSaved: boolean;
   /** Real explicit save — the same PATCH `/api/project-3d-config/[id]`
@@ -182,25 +182,6 @@ export function SectionsPanel({
             label={t("admin.sectionFillColor")}
             value={section.fillColor}
             onChange={(v) => update({ fillColor: v }, { commit: true })}
-          />
-        </fieldset>
-      </section>
-
-      <section className="border-t border-neutral-100 pt-5">
-        <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
-          {t("admin.sectionAssignFloor")}
-        </h3>
-        <fieldset className="space-y-3">
-          <SelectField
-            label={t("admin.sectionAssignFloor")}
-            value={section.floorId ?? ""}
-            onChange={(v) => update({ floorId: v || undefined }, { commit: true })}
-            options={[
-              ["", t("admin.detailModelUnlinked")],
-              ...floorGroups.flatMap((b) =>
-                b.floors.map((f): [string, string] => [f.floorId, `${b.name} · ${t("admin.detailModelFloorLabel", { floor: f.floor })}`])
-              ),
-            ]}
           />
         </fieldset>
       </section>

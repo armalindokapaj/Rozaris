@@ -10,6 +10,7 @@ import { pickDefaultQualityTier } from "@/lib/viewerPresets";
 import { useProject3DEditorState } from "@/hooks/useProject3DEditorState";
 import { useProjectUnits } from "@/hooks/useProjectUnits";
 import { useAutosave, type AutosaveStatus } from "@/hooks/useAutosave";
+import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import { EditorShell } from "./project3d/EditorShell";
 import type { DetailVersionRow } from "./project3d/types";
@@ -21,6 +22,34 @@ function formatBytes(bytes: number) {
   if (bytes <= 0) return "0 KB";
   const mb = bytes / (1024 * 1024);
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/** Real bug fix (3D Experience Configurator audit): a fetch that hits any
+ * of this editor's write routes (`src/lib/adminAuth.ts`'s `requireAdmin`)
+ * with a 401 used to just fail outright — `useAutosave` surfaces that as
+ * a tiny "error" line in the bottom status bar (easy to miss, no
+ * prominent banner), which is exactly what reproduces as "my changes
+ * don't save" reports. The existing repair mechanism
+ * (`useAdminSessionRepair`'s auto-effect) only reacts to next-auth's own
+ * cached client-side session status, which does NOT proactively notice
+ * a server-side session/cookie loss — confirmed live (Playwright): after
+ * clearing the real session cookie while the app still believed it was
+ * signed in, an autosave 401'd with no amber "session expired" banner
+ * ever appearing, because `useSession()`'s cached status never flipped to
+ * "unauthenticated" on its own. This reacts to the actual response
+ * instead of a cache: on a 401, re-establish the real session once, then
+ * retry the exact same request once. Covers whatever caused the 401
+ * (expired JWT, a dev-server restart invalidating it, anything else),
+ * not just the one scenario the cached-status check happens to catch. */
+async function fetchWithSessionRetry(
+  input: string,
+  init: RequestInit | undefined,
+  establishAdminSession: () => Promise<void>
+): Promise<Response> {
+  const res = await fetch(input, init);
+  if (res.status !== 401) return res;
+  await establishAdminSession();
+  return fetch(input, init);
 }
 
 /** A non-focused slot's real, currently-saved placement — no live-edit
@@ -97,6 +126,13 @@ export function Project3DConfigEditor({
   const [newPresetLabel, setNewPresetLabel] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const { t, locale } = useT();
+  // Real bug fix (Configurator audit) — see fetchWithSessionRetry's own
+  // doc comment above for why this is needed even though
+  // Admin3DExperiencePage (this component's parent route) already calls
+  // useAdminSessionRepair for its banner; that instance's `sessionStatus`
+  // is what drives the banner, this instance's `establishAdminSession` is
+  // what actually recovers a write.
+  const { establishAdminSession } = useAdminSessionRepair();
 
   // Units read-migration (Configurator scope) — real, live Postgres rows
   // instead of the static mockData/Zustand snapshot `project` arrives
@@ -191,11 +227,15 @@ export function Project3DConfigEditor({
         handleUploadUrl: "/api/blob/upload",
         multipart: true,
       });
-      const res = await fetch("/api/platform-hdri", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: file.name.replace(/\.(hdr|exr)$/i, ""), url: blob.url }),
-      });
+      const res = await fetchWithSessionRetry(
+        "/api/platform-hdri",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: file.name.replace(/\.(hdr|exr)$/i, ""), url: blob.url }),
+        },
+        establishAdminSession
+      );
       if (!res.ok) throw new Error(await res.text());
       await refreshHdris();
     } catch (err) {
@@ -216,7 +256,7 @@ export function Project3DConfigEditor({
     setHdriBusy(true);
     setHdriError(null);
     try {
-      const res = await fetch(`/api/platform-hdri/${hdri.id}`, { method: "DELETE" });
+      const res = await fetchWithSessionRetry(`/api/platform-hdri/${hdri.id}`, { method: "DELETE" }, establishAdminSession);
       if (!res.ok) throw new Error(await res.text());
       if (draft.hdriId === hdri.id) update({ hdriId: null }, { commit: true });
       await refreshHdris();
@@ -362,11 +402,15 @@ export function Project3DConfigEditor({
     const trimmed = name.trim();
     if (!trimmed) return;
     try {
-      const res = await fetch(`/api/detail-models/${project.id}/slots`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed }),
-      });
+      const res = await fetchWithSessionRetry(
+        `/api/detail-models/${project.id}/slots`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: trimmed }),
+        },
+        establishAdminSession
+      );
       if (!res.ok) throw new Error(await res.text());
       const slot: DetailModelSlot = await res.json();
       setSlots((prev) => [...prev, slot]);
@@ -383,11 +427,15 @@ export function Project3DConfigEditor({
     const trimmed = name.trim();
     if (!trimmed) return;
     try {
-      const res = await fetch(`/api/detail-models/${project.id}/slots/${slotId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed }),
-      });
+      const res = await fetchWithSessionRetry(
+        `/api/detail-models/${project.id}/slots/${slotId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: trimmed }),
+        },
+        establishAdminSession
+      );
       if (!res.ok) throw new Error(await res.text());
       const updated: DetailModelSlot = await res.json();
       setSlots((prev) => prev.map((s) => (s.id === slotId ? updated : s)));
@@ -403,7 +451,11 @@ export function Project3DConfigEditor({
     if (!slot) return;
     if (!window.confirm(t("admin.slotDeleteConfirm", { name: slot.name }))) return;
     try {
-      const res = await fetch(`/api/detail-models/${project.id}/slots/${slotId}`, { method: "DELETE" });
+      const res = await fetchWithSessionRetry(
+        `/api/detail-models/${project.id}/slots/${slotId}`,
+        { method: "DELETE" },
+        establishAdminSession
+      );
       if (!res.ok) throw new Error(await res.text());
       const remaining = slots.filter((s) => s.id !== slotId);
       setSlots(remaining);
@@ -487,11 +539,15 @@ export function Project3DConfigEditor({
         // same reason (detail models routinely run even larger).
         multipart: true,
       });
-      const res = await fetch(`/api/detail-models/${project.id}/slots/${activeSlotId}/versions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ glbUrl: blob.url, fileName: file.name, fileSize: file.size, scale, rotationDeg, altitudeOffset }),
-      });
+      const res = await fetchWithSessionRetry(
+        `/api/detail-models/${project.id}/slots/${activeSlotId}/versions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ glbUrl: blob.url, fileName: file.name, fileSize: file.size, scale, rotationDeg, altitudeOffset }),
+        },
+        establishAdminSession
+      );
       if (!res.ok) throw new Error(await res.text());
       await refreshActiveSlot();
     } catch (err) {
@@ -529,7 +585,11 @@ export function Project3DConfigEditor({
     setDetailBusy(true);
     setDetailError(null);
     try {
-      const res = await fetch(`/api/detail-models/${project.id}/versions/${activeVersion.id}`, { method: "DELETE" });
+      const res = await fetchWithSessionRetry(
+        `/api/detail-models/${project.id}/versions/${activeVersion.id}`,
+        { method: "DELETE" },
+        establishAdminSession
+      );
       // Was previously not checked at all — a failed delete (expired admin
       // session, already-published version, etc.) looked identical to a
       // successful one: no error shown, nothing removed. Only clear the
@@ -554,9 +614,11 @@ export function Project3DConfigEditor({
     setDetailBusy(true);
     setDetailError(null);
     try {
-      const res = await fetch(`/api/detail-models/${project.id}/versions/${activeVersion.id}/unpublish`, {
-        method: "POST",
-      });
+      const res = await fetchWithSessionRetry(
+        `/api/detail-models/${project.id}/versions/${activeVersion.id}/unpublish`,
+        { method: "POST" },
+        establishAdminSession
+      );
       if (!res.ok) throw new Error(await res.text());
       await refreshActiveSlot();
       setDetailFlash(t("admin.detailModelRemoved"));
@@ -581,7 +643,11 @@ export function Project3DConfigEditor({
     setDetailBusy(true);
     setDetailError(null);
     try {
-      const res = await fetch(`/api/detail-models/${project.id}/versions/${activeVersion.id}`, { method: "DELETE" });
+      const res = await fetchWithSessionRetry(
+        `/api/detail-models/${project.id}/versions/${activeVersion.id}`,
+        { method: "DELETE" },
+        establishAdminSession
+      );
       if (!res.ok) throw new Error(await res.text());
       if (localPreviewUrlRef.current) {
         URL.revokeObjectURL(localPreviewUrlRef.current);
@@ -606,7 +672,11 @@ export function Project3DConfigEditor({
     setDetailBusy(true);
     setDetailError(null);
     try {
-      const res = await fetch(`/api/detail-models/${project.id}/versions/${version.id}`, { method: "DELETE" });
+      const res = await fetchWithSessionRetry(
+        `/api/detail-models/${project.id}/versions/${version.id}`,
+        { method: "DELETE" },
+        establishAdminSession
+      );
       if (!res.ok) throw new Error(await res.text());
       await refreshActiveSlot();
       setDetailFlash(t("admin.versionDeleted"));
@@ -620,26 +690,38 @@ export function Project3DConfigEditor({
 
   async function handleSaveDetailModel() {
     if (!activeVersion || !isDraftActive) return;
-    const res = await fetch(`/api/detail-models/${project.id}/versions/${activeVersion.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scale, rotationDeg, altitudeOffset }),
-    });
+    const res = await fetchWithSessionRetry(
+      `/api/detail-models/${project.id}/versions/${activeVersion.id}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scale, rotationDeg, altitudeOffset }),
+      },
+      establishAdminSession
+    );
     if (!res.ok) throw new Error(await res.text());
     const links = Object.entries(linkSelections)
       .filter(([, unitId]) => unitId)
       .map(([meshName, unitId]) => ({ meshName, unitId }));
-    const linksRes = await fetch(`/api/detail-models/${project.id}/versions/${activeVersion.id}/links`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(links),
-    });
+    const linksRes = await fetchWithSessionRetry(
+      `/api/detail-models/${project.id}/versions/${activeVersion.id}/links`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(links),
+      },
+      establishAdminSession
+    );
     if (!linksRes.ok) throw new Error(await linksRes.text());
-    const sceneRes = await fetch(`/api/detail-models/${project.id}/versions/${activeVersion.id}/scene`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.values(nodeOverrides)),
-    });
+    const sceneRes = await fetchWithSessionRetry(
+      `/api/detail-models/${project.id}/versions/${activeVersion.id}/scene`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.values(nodeOverrides)),
+      },
+      establishAdminSession
+    );
     if (!sceneRes.ok) throw new Error(await sceneRes.text());
   }
 
@@ -683,9 +765,11 @@ export function Project3DConfigEditor({
     setDetailError(null);
     try {
       await handleSaveDetailModel();
-      const res = await fetch(`/api/detail-models/${project.id}/versions/${activeVersion.id}/publish`, {
-        method: "POST",
-      });
+      const res = await fetchWithSessionRetry(
+        `/api/detail-models/${project.id}/versions/${activeVersion.id}/publish`,
+        { method: "POST" },
+        establishAdminSession
+      );
       if (!res.ok) throw new Error(await res.text());
       await refreshActiveSlot();
       setDetailFlash(t("admin.versionPublished"));
@@ -701,9 +785,11 @@ export function Project3DConfigEditor({
     setDetailBusy(true);
     setDetailError(null);
     try {
-      const res = await fetch(`/api/detail-models/${project.id}/versions/${versionId}/rollback`, {
-        method: "POST",
-      });
+      const res = await fetchWithSessionRetry(
+        `/api/detail-models/${project.id}/versions/${versionId}/rollback`,
+        { method: "POST" },
+        establishAdminSession
+      );
       if (!res.ok) throw new Error(await res.text());
       await refreshActiveSlot();
       setDetailFlash(t("admin.versionRolledBack"));
@@ -720,11 +806,15 @@ export function Project3DConfigEditor({
    * "Save Scene" button call the exact same request, not two divergent
    * paths. */
   async function saveConfigValue(value: Project3DConfig) {
-    const res = await fetch(`/api/project-3d-config/${project.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(value),
-    });
+    const res = await fetchWithSessionRetry(
+      `/api/project-3d-config/${project.id}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(value),
+      },
+      establishAdminSession
+    );
     if (!res.ok) throw new Error(await res.text());
     const updated: Project3DConfig = await res.json();
     // Silent — echoing back what the server just persisted, not a new

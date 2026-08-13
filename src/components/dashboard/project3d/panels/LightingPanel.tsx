@@ -4,7 +4,7 @@ import { Trash2, Upload } from "lucide-react";
 import { useState, type RefObject } from "react";
 import type { PlatformHdri, Project3DConfig } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { ColorField, DateField, SelectField, SliderField, ToggleField } from "../fields";
+import { ColorField, DateField, SelectField, SliderField, TextField, ToggleField } from "../fields";
 import type { SetOpts, Translate } from "../editorTypes";
 
 function formatUTCHour(h: number): string {
@@ -13,11 +13,12 @@ function formatUTCHour(h: number): string {
   return `${String(hour).padStart(2, "0")}:${String(minutes).padStart(2, "0")} UTC`;
 }
 
-type LightingSubTab = "sunTime" | "sky" | "environment" | "effects" | "exposure";
+type LightingSubTab = "sunTime" | "sky" | "water" | "environment" | "effects" | "exposure";
 
 const SUB_TABS: { id: LightingSubTab; labelKey: string }[] = [
   { id: "sunTime", labelKey: "admin.lightingSubTabSunTime" },
   { id: "sky", labelKey: "admin.lightingSubTabSky" },
+  { id: "water", labelKey: "admin.lightingSubTabWater" },
   { id: "environment", labelKey: "admin.lightingSubTabEnvironment" },
   { id: "effects", labelKey: "admin.lightingSubTabEffects" },
   { id: "exposure", labelKey: "admin.lightingSubTabExposure" },
@@ -26,7 +27,8 @@ const SUB_TABS: { id: LightingSubTab; labelKey: string }[] = [
 /**
  * Lighting mode panel — originally moved verbatim from
  * Project3DConfigEditor.tsx's "Lighting & Sun" section (693-866); restructured
- * (2026-08-13, "Sun & Time" pass) into 5 sub-tabs so the tab reads as one
+ * (2026-08-13, "Sun & Time" pass) into sub-tabs (a 6th, "Water", added the
+ * same day by the Sky/Water/Bloom/Clouds pass) so the tab reads as one
  * coherent environment configurator instead of one long scroll — no new
  * top-level `EditorShell` tab, this is entirely internal to the panel (see
  * that pass's plan doc for the full rationale). Sub-tab selection is local
@@ -224,16 +226,143 @@ export function LightingPanel({
               onChange={(v) => update({ environmentIntensity: v })}
               suffix="×"
             />
+
+            {/* --- Clouds (Sky/Water/Bloom/Clouds pass) — real uniforms on
+                the physical sky dome itself (webgl_shaders_ocean.html's
+                "Clouds" GUI folder is really 3 more uniforms on its Sky
+                object too, not a separate mesh). Off by default. --- */}
+            <div className="rounded-panel border border-neutral-100 p-3">
+              <ToggleField
+                label={t("admin.sceneCloudsEnabled")}
+                checked={draft.cloudsEnabled}
+                onChange={(v) => update({ cloudsEnabled: v }, { commit: true })}
+              />
+              {draft.cloudsEnabled && (
+                <div className="mt-3 space-y-3">
+                  <SliderField
+                    label={t("admin.sceneCloudCoverage")}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={draft.cloudCoverage}
+                    onChange={(v) => update({ cloudCoverage: v })}
+                  />
+                  <SliderField
+                    label={t("admin.sceneCloudDensity")}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={draft.cloudDensity}
+                    onChange={(v) => update({ cloudDensity: v })}
+                  />
+                  <SliderField
+                    label={t("admin.sceneCloudElevation")}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={draft.cloudElevation}
+                    onChange={(v) => update({ cloudElevation: v })}
+                  />
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {subTab === "water" && (
+          <>
+            {/* Real flat, reflective water plane (WaterMesh) — per-project
+                opt-in (most projects are buildings, not waterfront).
+                Auto-sized/positioned like the reference demo; only its
+                wave-look sliders are exposed, same as
+                webgl_shaders_ocean.html's own Water GUI folder. */}
+            <ToggleField
+              label={t("admin.sceneWaterEnabled")}
+              checked={draft.waterEnabled}
+              onChange={(v) => update({ waterEnabled: v }, { commit: true })}
+            />
+            {draft.waterEnabled && (
+              <div className="space-y-3">
+                <SliderField
+                  label={t("admin.sceneWaterDistortionScale")}
+                  min={0}
+                  max={8}
+                  step={0.1}
+                  value={draft.waterDistortionScale}
+                  onChange={(v) => update({ waterDistortionScale: v })}
+                />
+                <SliderField
+                  label={t("admin.sceneWaterSize")}
+                  min={0.1}
+                  max={10}
+                  step={0.1}
+                  value={draft.waterSize}
+                  onChange={(v) => update({ waterSize: v })}
+                />
+                <p className="text-[11px] text-neutral-400">{t("admin.sceneWaterNote")}</p>
+              </div>
+            )}
           </>
         )}
 
         {subTab === "environment" && (
           <>
-            <ToggleField
-              label={t("admin.viewer3DGround")}
-              checked={draft.groundEnabled}
-              onChange={(v) => update({ groundEnabled: v }, { commit: true })}
-            />
+            {/* --- Ground Platform (Sky/Water/Bloom/Clouds follow-up) —
+                "infinite" is the only style available for a GLB project
+                ("disc" stays procedural-mode-only, unchanged); color and
+                the circular ground fog below apply to either style. --- */}
+            <div className="rounded-panel border border-neutral-100 p-3">
+              <ToggleField
+                label={t("admin.viewer3DGround")}
+                checked={draft.groundEnabled}
+                onChange={(v) => update({ groundEnabled: v }, { commit: true })}
+              />
+              {draft.groundEnabled && (
+                <div className="mt-3 space-y-3">
+                  <SelectField
+                    label={t("admin.sceneGroundStyle")}
+                    value={draft.groundStyle}
+                    onChange={(v) => update({ groundStyle: v as Project3DConfig["groundStyle"] }, { commit: true })}
+                    options={[
+                      ["disc", t("admin.sceneGroundStyleDisc")],
+                      ["infinite", t("admin.sceneGroundStyleInfinite")],
+                    ]}
+                  />
+                  <p className="text-[11px] text-neutral-400">{t("admin.sceneGroundStyleNote")}</p>
+                  <ColorField
+                    label={t("admin.sceneGroundColor")}
+                    value={draft.groundColor}
+                    onChange={(v) => update({ groundColor: v }, { commit: true })}
+                  />
+
+                  {/* --- Ground fog: a circular radial fade around world
+                      origin (0,0,0), NOT the camera-relative Fog below —
+                      see Project3DConfig.groundFogEnabled's own doc
+                      comment. --- */}
+                  <div className="rounded-control border border-neutral-100 p-2.5">
+                    <ToggleField
+                      label={t("admin.sceneGroundFogEnabled")}
+                      checked={draft.groundFogEnabled}
+                      onChange={(v) => update({ groundFogEnabled: v }, { commit: true })}
+                    />
+                    {draft.groundFogEnabled && (
+                      <div className="mt-3 space-y-1.5">
+                        <TextField
+                          label={t("admin.sceneGroundFogRadius")}
+                          value={String(draft.groundFogRadius)}
+                          onChange={(v) => {
+                            const n = Number(v);
+                            if (Number.isFinite(n) && n > 0) update({ groundFogRadius: n });
+                          }}
+                          placeholder="300"
+                        />
+                        <p className="text-[11px] text-neutral-400">{t("admin.sceneGroundFogNote")}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* --- Fog (full-configurator pass) --- */}
             <div className="rounded-panel border border-neutral-100 p-3">
@@ -332,6 +461,40 @@ export function LightingPanel({
               checked={draft.lensflareEnabled}
               onChange={(v) => update({ lensflareEnabled: v }, { commit: true })}
             />
+
+            {/* --- Bloom (Sky/Water/Bloom/Clouds pass) — real HDR bloom,
+                previously a dormant TSL node with no per-project toggle.
+                Threshold isn't exposed here either, matching
+                webgl_shaders_ocean.html's own Bloom GUI folder (strength/
+                radius only). --- */}
+            <div className="rounded-panel border border-neutral-100 p-3">
+              <ToggleField
+                label={t("admin.sceneBloomEnabled")}
+                checked={draft.bloomEnabled}
+                onChange={(v) => update({ bloomEnabled: v }, { commit: true })}
+              />
+              {draft.bloomEnabled && (
+                <div className="mt-3 space-y-3">
+                  <SliderField
+                    label={t("admin.sceneBloomStrength")}
+                    min={0}
+                    max={3}
+                    step={0.01}
+                    value={draft.bloomStrength}
+                    onChange={(v) => update({ bloomStrength: v })}
+                  />
+                  <SliderField
+                    label={t("admin.sceneBloomRadius")}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={draft.bloomRadius}
+                    onChange={(v) => update({ bloomRadius: v })}
+                  />
+                  <p className="text-[11px] text-neutral-400">{t("admin.sceneBloomNote")}</p>
+                </div>
+              )}
+            </div>
           </>
         )}
 

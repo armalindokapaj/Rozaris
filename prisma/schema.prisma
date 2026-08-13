@@ -507,6 +507,21 @@ model Project3DConfig {
   lightingPreset                String  @default("daylight")
   backgroundPreset              String  @default("sky")
   groundEnabled                 Boolean @default(true)
+  /// "disc" | "infinite" — Ground Platform follow-up (same day as Sky/
+  /// Water/Bloom/Clouds). "infinite" is the only style available in GLB
+  /// mode; "disc" stays procedural-mode-only, unchanged — deliberately
+  /// scoped so no existing GLB project gains an unrequested ground.
+  groundStyle       String  @default("disc")
+  /// Applies regardless of groundStyle — default matches the exact hex
+  /// the ground was hardcoded to before this column existed.
+  groundColor       String  @default("#d8d6e6")
+  /// Real "ground fog" — a circular radial color fade on the ground
+  /// mesh's own material around world origin (0,0,0), distinct from
+  /// fogEnabled/fogColor's camera-relative THREE.FogExp2 above. Off by
+  /// default.
+  groundFogEnabled  Boolean @default(false)
+  /// World-space distance from (0,0,0) — admin-entered directly.
+  groundFogRadius   Float   @default(300)
   cameraStartDistanceMultiplier Float   @default(1)
   cameraMinDistanceMultiplier   Float   @default(0.4)
   cameraMaxDistanceMultiplier   Float   @default(2.5)
@@ -587,6 +602,28 @@ model Project3DConfig {
   /// fresh mount() — mount-tier config, not a cheap live toggle. Default
   /// false: zero behavior/cost change for any existing project.
   sectionCapStencilEnabled Boolean @default(false)
+
+  // Sky/Water/Bloom/Clouds pass (webgl_shaders_ocean.html parity) —
+  // real HDR bloom (dormant TSL node, now a per-project toggle), a real
+  // WaterMesh water plane, and procedural clouds on the physical sky
+  // dome (SkyMesh — see RenderEngine.ts's rebuildEnvironment, which
+  // replaced the old CanvasTexture gradient sky with it this same pass).
+  // All default false/off: zero behavior change for any existing project
+  // beyond the sky itself becoming physically-based (an accepted visual
+  // change, not gated behind a flag — see the plan's Sky Rollout
+  // decision).
+  bloomEnabled  Boolean @default(false)
+  bloomStrength Float   @default(0.1)
+  bloomRadius   Float   @default(0)
+
+  waterEnabled         Boolean @default(false)
+  waterDistortionScale Float   @default(3.7)
+  waterSize            Float   @default(1)
+
+  cloudsEnabled  Boolean @default(false)
+  cloudCoverage  Float   @default(0.4)
+  cloudDensity   Float   @default(0.5)
+  cloudElevation Float   @default(0.5)
 
   /// Hex colors for the 4 unit statuses + the shared "selected" highlight —
   /// defaults match the previously-hardcoded UNIT_BOX_COLOR/SELECTED_COLOR

@@ -66,6 +66,7 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       showPerfStats = false,
       onPerfStats,
       onSectionDraftChange,
+      onSectionDraftCommit,
     },
     ref
   ) {
@@ -207,6 +208,7 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
         onPerfStats?.(stats);
       },
       onSectionDraftChange,
+      onSectionDraftCommit,
     };
     const engineRef = useRef<RenderEngine | null>(null);
     if (!engineRef.current) {
@@ -281,6 +283,18 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       // stencil: true on the renderer only takes effect at construction —
       // same "needs a full remount" reasoning as the flags above.
       config.sectionCapStencilEnabled,
+      // Sky/Water/Bloom/Clouds pass — both structurally add/remove a real
+      // object or pipeline node rather than just tweaking a number on an
+      // already-existing one, same "needs a full remount" reasoning as
+      // the flags above (their own strength/radius/distortionScale/size
+      // sliders are cheap live updates instead, see the effect below).
+      config.waterEnabled,
+      config.bloomEnabled,
+      // Ground Platform — "disc" vs "infinite" is a real geometry swap
+      // (CircleGeometry vs a big PlaneGeometry), same "needs a full
+      // remount" reasoning as the two flags above; groundEnabled/
+      // groundColor/groundFog* stay cheap live updates below instead.
+      config.groundStyle,
     ]);
 
     // --- Platform HDRI loading (Task 2 — Track A) ---
@@ -322,6 +336,16 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       // unrelated field also changing first. Same reference-equality
       // reasoning as `detailModels` above (a fresh array every edit).
       config.sections,
+      // Sky/Water/Bloom/Clouds pass — real UniformNode<float>s on the
+      // already-constructed waterMesh/bloomNode, no remount needed.
+      config.waterDistortionScale,
+      config.waterSize,
+      config.bloomStrength,
+      config.bloomRadius,
+      // Ground Platform's ground fog — real live UniformNodes, no remount.
+      config.groundColor,
+      config.groundFogEnabled,
+      config.groundFogRadius,
     ]);
 
     // --- Real geographic sun + sky/environment — recomputed whenever the
@@ -348,6 +372,13 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       config.sunIntensity,
       project.coords.lat,
       project.coords.lng,
+      // Sky/Water/Bloom/Clouds pass — clouds are 3 more uniforms on the
+      // same physical sky dome this effect already updates on every tick
+      // (see RenderEngine.ts's applySunAndEnvironment).
+      config.cloudsEnabled,
+      config.cloudCoverage,
+      config.cloudDensity,
+      config.cloudElevation,
     ]);
 
     // --- Re-evaluate per-unit appearance whenever selection, filters,

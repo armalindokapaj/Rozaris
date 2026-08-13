@@ -5,11 +5,20 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
-import { pass } from "three/tsl";
+import { pass, positionWorld, length as tslLength, smoothstep, mix, uniform } from "three/tsl";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
 import { smaa } from "three/examples/jsm/tsl/display/SMAANode.js";
 import { LensflareMesh, LensflareElement } from "three/examples/jsm/objects/LensflareMesh.js";
 import { LightProbeGenerator } from "three/examples/jsm/lights/LightProbeGenerator.js";
+// Sky/Water/Bloom/Clouds pass — WebGPU-native counterparts of
+// webgl_shaders_ocean.html's classic `Sky`/`Water` (those two are
+// WebGLRenderer-only, per their own source doc comments; `SkyMesh`/
+// `WaterMesh` are the TSL/NodeMaterial ports for this app's
+// WebGPURenderer pipeline). `SkyMesh` already ships the demo's "Clouds"
+// GUI folder baked in as 3 more uniforms on the same shader — no separate
+// cloud object exists in either version.
+import { SkyMesh } from "three/examples/jsm/objects/SkyMesh.js";
+import { WaterMesh } from "three/examples/jsm/objects/WaterMesh.js";
 import { computeProjectLayout, type UnitBox } from "@/lib/threeBuilding";
 import { DRACO_DECODER_PATH } from "@/lib/gltfDecoder";
 import { applyUnitBoxMaterial, disposeGlbObject3D } from "@/lib/glbUnitNodes";
@@ -18,14 +27,17 @@ import {
   ADAPTIVE_DOWNGRADE_ORDER,
   GLASS_NODE_PATTERN,
   GLASS_TIERS,
-  GROUND_COLOR,
+  GROUND_INFINITE_SIZE,
   MATERIAL_PRESETS,
   QUALITY_TIERS,
   SELECTED_COLOR,
+  SKY_DOME_SCALE,
   SKY_GRADIENTS,
+  SKY_PHYSICAL_PARAMS,
   UNIT_BOX_COLOR,
   UNIT_BOX_OPACITY,
   UNIT_BOX_SELECTED_OPACITY,
+  WATER_PLANE_SIZE,
   type QualityTierSettings,
 } from "@/lib/viewerPresets";
 import { buildSectionCapGeometry, buildSectionPlanes, sectionFromDragPoints, SECTION_INDICATOR_COLOR } from "./sections";
@@ -84,6 +96,18 @@ export interface RenderEngineCallbacks {
    * OrbitControls' camera position isn't itself React state). Optional,
    * same as `onSelectUnit` — only the admin editor supplies it. */
   onSectionDraftChange?: (section: Section) => void;
+  /** Real bug fix (Sections audit, 2026-08-13): `onSectionDraftChange`
+   * above only ever drove a local display value (`EditorShell.tsx`'s
+   * `liveSectionOverride`) — nothing wrote a gizmo drag's result back
+   * into `draft.sections`, the actual state `handleSaveScene`/autosave
+   * PATCH. That meant Move/Rotate/Resize/Height gizmo edits were 100%
+   * visual: they looked right in the live preview and the panel's own
+   * numbers while dragging, but "Save" (or autosave) would silently
+   * persist the *pre-drag* section, since nothing else ever changed.
+   * Fired once, from the gizmo's `dragging-changed` listener transitioning
+   * to "not dragging" (`attachSectionGizmo`) — a drag is one discrete
+   * undo/save-worthy edit, not a per-tick stream like the callback above. */
+  onSectionDraftCommit?: (section: Section) => void;
 }
 
 /** One detail-model slot's currently-relevant model, keyed by its real
@@ -178,6 +202,19 @@ export class RenderEngine {
   private camera: THREE.PerspectiveCamera | null = null;
   private controls: OrbitControls | null = null;
   private ground: THREE.Mesh | null = null;
+  /** Ground Platform's real "ground fog" (Sky/Water/Bloom/Clouds follow-up)
+   * — 4 live `UniformNode`s feeding `ground`'s `MeshStandardNodeMaterial.
+   * colorNode`, built once per mount in `buildGroundMaterial`. The node
+   * graph's *shape* never changes — `groundFogStrengthUniform` just goes
+   * 0↔1 — so even the `groundFogEnabled` toggle is a cheap live update
+   * (see `applyLiveUpdate`), not a pipeline rebuild. */
+  // Typed by their `.value` shape directly (not `ReturnType<typeof
+  // uniform>`) — that generic collapses `.value` to `unknown` without the
+  // call-site argument type to infer from.
+  private groundColorUniform: { value: THREE.Color } | null = null;
+  private groundFogColorUniform: { value: THREE.Color } | null = null;
+  private groundFogRadiusUniform: { value: number } | null = null;
+  private groundFogStrengthUniform: { value: number } | null = null;
   private sun: THREE.DirectionalLight | null = null;
   /** The scene's bounding-box center, computed once per mount() — `sun.target`
    * is pointed here once and never moves again, so `applySunAndEnvironment`
@@ -185,6 +222,34 @@ export class RenderEngine {
    * actual direction (position - target) only matches the intended
    * elevation/azimuth when the scene happens to sit near the world origin. */
   private sceneCenter: THREE.Vector3 | null = null;
+  // --- Sky/Water/Bloom/Clouds pass ---
+  /** The physical sky dome — replaces the old CanvasTexture gradient
+   * (`buildSkyTexture`) as the actual "sky" backgroundPreset's visible
+   * backdrop, live in the scene like webgl_shaders_ocean.html's `sky`
+   * (not painted onto `scene.background`). Built once per mount() (same
+   * lifecycle as `lensflare`/`lightProbe`); hidden (not removed — cheaper
+   * to toggle) whenever an HDRI is active or backgroundPreset isn't
+   * "sky". `null` only before the first mount()/after dispose(). */
+  private skyMesh: SkyMesh | null = null;
+  /** Last real sun *direction* (unit vector, world space) computed by
+   * `applySunAndEnvironment` — `sun.position` itself is an absolute point
+   * offset from `sceneCenter`, not a direction, so this is kept separately
+   * to feed `skyMesh.sunPosition`/`waterMesh.sunDirection` exactly like
+   * the reference demo's own `sun` Vector3 feeds both. */
+  private sunDirection = new THREE.Vector3(0, 1, 0);
+  /** The optional water plane (`WaterMesh`) — only constructed when
+   * `config.waterEnabled` (per-project opt-in; most projects have none),
+   * so toggling it needs a fresh mount() same as `sectionCapStencilEnabled`
+   * already does, rather than always paying for an unused texture
+   * load/reflection render target. */
+  private waterMesh: WaterMesh | null = null;
+  /** The bloom node itself (not just a boolean) — `strength`/`radius` are
+   * real `UniformNode<float>`s on this instance (confirmed against
+   * BloomNode.js's own source), so `applyLiveUpdate` can drag those live
+   * without rebuilding the whole post-processing pipeline; only
+   * `bloomEnabled` itself (which structurally adds/removes the node from
+   * the chain) needs a fresh mount, same as `antialiasEnabled`. */
+  private bloomNode: ReturnType<typeof bloom> | null = null;
   /** Debounces the expensive PMREM/light-probe rebuild inside
    * `applySunAndEnvironment` — see `scheduleEnvironmentRebuild`. */
   private environmentRebuildTimer: ReturnType<typeof setTimeout> | null = null;
@@ -266,6 +331,14 @@ export class RenderEngine {
   private liveSection: Section | null = null;
   private sectionCapMesh: THREE.Mesh | null = null;
   private sectionCapMaterial: THREE.MeshBasicMaterial | null = null;
+  /** Cheap signature of `sectionCapMaterial`'s pipeline-affecting state
+   * (transparent/depthWrite/stencil-branch) — lets `rebuildSectionCap`
+   * only bump `needsUpdate` (a real WebGPU pipeline rebuild, see that
+   * method's own doc comment) when that state actually changed, not on
+   * every call. Needed because this method also runs on every gizmo-drag
+   * tick (pure position/rotation/scale changes), where fill/stencil state
+   * never differs from the previous call. */
+  private sectionCapMaterialSignature: string | null = null;
   /** Stencil-derived cap (webgl_clipping_stencil.html technique,
    * `config.sectionCapStencilEnabled`) — invisible back/front marking
    * mesh pairs, one pair per real clippable object currently in
@@ -274,6 +347,29 @@ export class RenderEngine {
    * `rebuildSectionCap`; disposed on every rebuild and in `dispose()`
    * (materials only — the shared geometry is borrowed, not owned). */
   private stencilMarkMeshes: THREE.Mesh[] = [];
+  /** Real bug fix: the stencil cap technique used to set `clippingPlanes`
+   * directly on each material (`sectionCapMaterial`, the back/front
+   * marking materials) — verified against the installed three.js source
+   * (grepped the entire renderer/nodes tree for any consumer of
+   * `material.clippingPlanes`; only `ClippingContext`/`ClippingGroup` are
+   * ever read) that this is a **complete no-op** under this app's
+   * `THREE.WebGPURenderer`, same lesson [[rozaris-3d-sections-module]]
+   * already learned for the main clip — silently reintroduced here. For a
+   * closed/watertight mesh, marking WITHOUT the intended `[topPlane]`
+   * clip means every ray crosses equal front/back faces, so the
+   * increment/decrement passes always net to exactly 0 — the cap's
+   * `NotEqualStencilFunc` test then fails everywhere, rendering nothing.
+   * Fixed with two persistent, lazily-created `ClippingGroup`s (the same
+   * real mechanism `this.clippingGroup` already uses) nested inside
+   * `sectionHelperGroup`: this one clips the back/front marking mesh
+   * pairs to just the section's top plane. */
+  private stencilMarkClippingGroup: THREE.ClippingGroup | null = null;
+  /** Bounds the stencil-mode cap's flat quad to the section's other
+   * (non-top) planes — matches the upstream example's own
+   * `planes.filter(p => p !== plane)` cap-clipping pattern. See
+   * `stencilMarkClippingGroup`'s doc comment for why a `ClippingGroup`,
+   * not per-material `clippingPlanes`, is required here. */
+  private sectionCapClippingGroup: THREE.ClippingGroup | null = null;
   private activeSectionId: string | null = null;
   /** True for the admin editor's own live preview (`showChrome={false}`),
    * false for every public-facing viewer — set once at `mount()` from
@@ -757,44 +853,121 @@ export class RenderEngine {
     return SKY_GRADIENTS[config.skyPreset].horizon;
   }
 
+  /** Ground Platform's real "ground fog" (Sky/Water/Bloom/Clouds follow-up)
+   * — a deliberately different effect from the `fogEnabled`/`fogColor`
+   * `THREE.FogExp2` above (that one fades with distance *from the
+   * camera*, affecting the whole scene). This one lives entirely on the
+   * ground mesh's own material: a radial fade from `groundColor` to
+   * `resolveFogColor(config)` (the same target color the regular fog
+   * already resolves to) based on distance from the fixed world origin
+   * (0,0,0) — a circular "misty edge" around a specific point the admin
+   * chooses a radius for, not a camera-relative depth effect.
+   *
+   * Built as a `MeshStandardNodeMaterial` (not the plain
+   * `MeshStandardMaterial` the old procedural-only ground used) so the
+   * fade can be a real TSL `colorNode` while keeping standard PBR
+   * shading (roughness, shadow receiving, environment reflections). Every
+   * knob is a live `UniformNode` (see the class fields above) — including
+   * `groundFogEnabled` itself (`groundFogStrengthUniform` just goes
+   * 0↔1) — so nothing here ever needs a pipeline/material rebuild, unlike
+   * `bloomEnabled`/`waterEnabled` elsewhere in this pass. */
+  private buildGroundMaterial(config: Project3DConfig): THREE.MeshStandardNodeMaterial {
+    const groundColorUniform = uniform(new THREE.Color(config.groundColor));
+    const groundFogColorUniform = uniform(new THREE.Color(this.resolveFogColor(config)));
+    const groundFogRadiusUniform = uniform(Math.max(1, config.groundFogRadius));
+    const groundFogStrengthUniform = uniform(config.groundFogEnabled ? 1 : 0);
+    this.groundColorUniform = groundColorUniform;
+    this.groundFogColorUniform = groundFogColorUniform;
+    this.groundFogRadiusUniform = groundFogRadiusUniform;
+    this.groundFogStrengthUniform = groundFogStrengthUniform;
+
+    const material = new THREE.MeshStandardNodeMaterial({ roughness: 1 });
+    // Fade over the inner 30% of the radius rather than a hard-edged
+    // circle — an untunable fixed softness (no separate field), same
+    // "don't invent an extra slider beyond what's asked" scope discipline
+    // as webgl_shaders_ocean.html's own hardcoded bloom threshold.
+    const distanceFromOrigin = tslLength(positionWorld.xz);
+    const innerRadius = groundFogRadiusUniform.mul(0.7);
+    const fade = smoothstep(innerRadius, groundFogRadiusUniform, distanceFromOrigin).mul(groundFogStrengthUniform);
+    material.colorNode = mix(groundColorUniform, groundFogColorUniform, fade);
+    return material;
+  }
+
+  /** Sky/Water/Bloom/Clouds pass — the procedural (non-HDRI) branch used
+   * to feed a flat gradient `CanvasTexture` through
+   * `pmrem.fromEquirectangular`; it now captures the real physical sky
+   * dome (`this.skyMesh`) via `pmrem.fromScene`, the same "temporarily
+   * move the mesh into an offscreen capture scene, then back into the
+   * visible one" trick webgl_shaders_ocean.html's own `updateSun()` uses
+   * (that single mesh instance is also the visible backdrop when
+   * `backgroundPreset` is "sky", so it can't just live permanently in a
+   * separate scene). HDRI mode is untouched — same `fromEquirectangular`
+   * path as before, `skyMesh` simply stays hidden. */
   private rebuildEnvironment(config: Project3DConfig) {
     const renderer = this.renderer;
     const scene = this.scene;
+    const envScene = this.envScene;
     const pmrem = this.pmrem;
-    if (!renderer || !scene || !pmrem) return;
-    // Platform HDRI takes over from the procedural gradient once loaded
-    // (see setHdri below) — same PMREM path either way, so reflections/
-    // background/environment intensity all keep working identically
-    // regardless of which source the equirect texture came from. Only
-    // dispose the gradient texture (a throwaway CanvasTexture built fresh
-    // every call) — the HDRI texture is cached and owned by this.hdriTexture.
+    const skyMesh = this.skyMesh;
+    if (!renderer || !scene || !envScene || !pmrem || !skyMesh) return;
     const usingHdri = !!this.hdriTexture;
-    const skyTexture = usingHdri ? this.hdriTexture! : this.buildSkyTexture(config.skyPreset);
-    const renderTarget = pmrem.fromEquirectangular(skyTexture);
-    // Light probe capture — must happen before skyTexture is disposed
-    // below, since it consumes the exact same equirect texture PMREM
-    // just did (CubeRenderTarget.fromEquirectangularTexture is
-    // synchronous, confirmed against three's own source — no readback
-    // needed for this step, only for the SH generation kicked off after).
+
+    let renderTarget: ReturnType<typeof pmrem.fromEquirectangular>;
+    if (usingHdri) {
+      renderTarget = pmrem.fromEquirectangular(this.hdriTexture!);
+    } else {
+      // Env/reflection lighting always comes from the sky PMREM regardless
+      // of backgroundPreset (same rule this method already followed for
+      // the old gradient texture) — visibility of the dome itself as the
+      // literal backdrop is decided separately, below. `far` is passed
+      // defensively past `SKY_DOME_SCALE` (default is only 100, per
+      // PMREMGenerator's own source) — SkyMesh's vertex shader pins its
+      // own clip-space depth to the far plane either way (the standard
+      // "always render behind everything" skybox trick), so in practice
+      // this mostly guards against a future change to that shader, not a
+      // failure observed today.
+      skyMesh.visible = true;
+      scene.remove(skyMesh);
+      envScene.add(skyMesh);
+      renderTarget = pmrem.fromScene(envScene, 0, 0.1, SKY_DOME_SCALE * 1.5);
+      envScene.remove(skyMesh);
+      scene.add(skyMesh);
+    }
+
+    // Light-probe SH capture (optional, off by default) stays on the cheap
+    // equirect-texture path (`fromEquirectangularTexture`) rather than a
+    // second real render of `skyMesh` — an approximate indirect-light
+    // source is enough for a probe nobody has opted into yet; the gradient
+    // this reuses (`buildSkyTexture`) is a reasonable stand-in for the
+    // physical sky's general mood (same preset, same time of day) even
+    // though it won't reflect clouds or `SKY_PHYSICAL_PARAMS` exactly.
+    const lightProbeSource = usingHdri ? this.hdriTexture! : this.buildSkyTexture(config.skyPreset);
     if (config.lightProbeEnabled && this.lightProbeCubeTarget) {
-      this.lightProbeCubeTarget.fromEquirectangularTexture(renderer, skyTexture);
+      this.lightProbeCubeTarget.fromEquirectangularTexture(renderer, lightProbeSource);
       void this.captureLightProbe();
     } else if (this.lightProbe) {
       this.lightProbe.intensity = 0;
     }
-    if (!usingHdri) skyTexture.dispose();
+    if (!usingHdri) lightProbeSource.dispose();
+
     this.envRenderTarget?.dispose();
     this.envRenderTarget = renderTarget;
-    // Environment lighting/reflections always come from the sky PMREM,
-    // regardless of backgroundPreset — only the visible backdrop changes.
     scene.environment = renderTarget.texture;
     scene.environmentIntensity = config.environmentIntensity;
+
     if (config.backgroundPreset === "sky") {
-      scene.background = renderTarget.texture;
+      // The HDRI still paints scene.background as an equirect texture
+      // (unchanged behavior); the physical sky dome paints itself
+      // directly as real geometry instead, so background stays unset —
+      // the renderer draws `skyMesh` (visible below) rather than a flat
+      // equirect of it.
+      scene.background = usingHdri ? renderTarget.texture : null;
       scene.backgroundIntensity = config.environmentIntensity;
+      skyMesh.visible = !usingHdri;
     } else {
       scene.background = new THREE.Color(config.backgroundPreset === "studio_dark" ? 0x141414 : 0xf0efe9);
       scene.backgroundIntensity = 1;
+      skyMesh.visible = false;
     }
   }
 
@@ -895,10 +1068,18 @@ export class RenderEngine {
    * `QualityTierSettings` — no dead, do-nothing toggle left behind
    * anywhere. The real geographic sun, ambient light and PMREM sky
    * environment/reflections were never implicated in either failure and
-   * are completely untouched by this. */
+   * are completely untouched by this.
+   *
+   * Bloom (Sky/Water/Bloom/Clouds pass) — was a hardcoded-always-off TSL
+   * node before this; now a real per-project toggle
+   * (`config.bloomEnabled`), ANDed with `tier.bloom` exactly like
+   * `antialiasEnabled` already is against `tier.antialias`. Threshold
+   * stays fixed at 0.85 — same as webgl_shaders_ocean.html's own Bloom GUI
+   * folder, which only exposes strength/radius too. */
   private buildRenderPipeline(tier: QualityTierSettings) {
     this.renderPipeline?.dispose();
     this.renderPipeline = null;
+    this.bloomNode = null;
     const renderer = this.renderer;
     const scene = this.scene;
     const camera = this.camera;
@@ -908,7 +1089,11 @@ export class RenderEngine {
       const color = scenePass.getTextureNode("output");
 
       let chain: THREE.Node<"vec4"> = color;
-      if (tier.bloom) chain = chain.add(bloom(chain, 0.6, 0.4, 0.85));
+      if (tier.bloom && this.config.bloomEnabled) {
+        const bloomNode = bloom(chain, this.config.bloomStrength, this.config.bloomRadius, 0.85);
+        this.bloomNode = bloomNode;
+        chain = chain.add(bloomNode);
+      }
 
       const pipeline = new THREE.RenderPipeline(renderer);
       pipeline.outputNode = tier.antialias && this.config.antialiasEnabled ? smaa(chain) : chain;
@@ -916,6 +1101,7 @@ export class RenderEngine {
     } catch (err) {
       console.error("3D Experience: post-processing pipeline failed, falling back to direct render", err);
       this.renderPipeline = null;
+      this.bloomNode = null;
     }
   }
 
@@ -1043,6 +1229,45 @@ export class RenderEngine {
     sun.add(lensflare);
     this.lensflare = lensflare;
 
+    // Physical sky dome (Sky/Water/Bloom/Clouds pass) — built once per
+    // mount like lensflare/lightProbe above; visibility (only the actual
+    // backdrop when backgroundPreset is "sky" and no HDRI is active) and
+    // its turbidity/rayleigh/mie/cloud/sunPosition uniforms are handled by
+    // rebuildEnvironment/applySunAndEnvironment, not here.
+    const skyMesh = new SkyMesh();
+    skyMesh.scale.setScalar(SKY_DOME_SCALE);
+    scene.add(skyMesh);
+    this.skyMesh = skyMesh;
+
+    // Optional water plane (WaterMesh) — only built when
+    // config.waterEnabled (per-project opt-in; most projects have none),
+    // so toggling it on/off is a mount-time decision, same as
+    // sectionCapStencilEnabled. Auto-sized/positioned like
+    // webgl_shaders_ocean.html's own Water (no placement fields — see
+    // WATER_PLANE_SIZE's doc comment). The normals texture is the actual
+    // asset the reference demo loads (`textures/waternormals.jpg`),
+    // vendored into `public/textures/` rather than re-approximated with a
+    // procedural canvas gradient — this is exactly the kind of hand-
+    // authored tiling detail a gradient can't reproduce.
+    if (config.waterEnabled) {
+      const waterNormals = new THREE.TextureLoader().load("/textures/waternormals.jpg", (texture) => {
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      });
+      const waterMesh = new WaterMesh(new THREE.PlaneGeometry(WATER_PLANE_SIZE, WATER_PLANE_SIZE), {
+        waterNormals,
+        sunDirection: this.sunDirection.clone(),
+        sunColor: 0xffffff,
+        waterColor: 0x001e0f,
+        distortionScale: config.waterDistortionScale,
+        size: config.waterSize,
+      });
+      waterMesh.rotation.x = -Math.PI / 2;
+      scene.add(waterMesh);
+      this.waterMesh = waterMesh;
+    } else {
+      this.waterMesh = null;
+    }
+
     this.pickable = new Map();
     this.unitMeshes = new Map();
     this.shells = [];
@@ -1139,14 +1364,9 @@ export class RenderEngine {
       boundingRadius = layout.boundingRadius;
       centerY = layout.centerY;
 
-      const ground = new THREE.Mesh(
-        new THREE.CircleGeometry(layout.boundingRadius * 1.6, 48),
-        new THREE.MeshStandardMaterial({ color: GROUND_COLOR, roughness: 1 })
-      );
-      ground.rotation.x = -Math.PI / 2;
-      ground.receiveShadow = true;
-      clippingGroup.add(ground);
-      this.ground = ground;
+      // Ground Platform (Sky/Water/Bloom/Clouds follow-up) — built once,
+      // in both content modes, after `boundingRadius` is finalized below;
+      // see that shared block for why it moved out of this branch.
 
       for (const b of layout.buildings) {
         const shell = new THREE.Mesh(
@@ -1191,8 +1411,6 @@ export class RenderEngine {
             (obj.material as THREE.Material).dispose();
           }
         });
-        (ground.material as THREE.Material).dispose();
-        ground.geometry.dispose();
       };
     }
     if (token !== this.mountToken) return;
@@ -1233,7 +1451,34 @@ export class RenderEngine {
     sun.target.position.copy(target);
     this.sceneCenter = target.clone();
 
-    if (this.ground) this.ground.visible = config.groundEnabled;
+    // Ground Platform (Sky/Water/Bloom/Clouds follow-up) — unified across
+    // both content modes. "disc" (the original ground, sized off
+    // `boundingRadius`) stays procedural-mode-only exactly as before
+    // (`usingGlb` guard below) — a GLB project only ever gets a ground
+    // when explicitly switched to "infinite", so no existing GLB project
+    // gains an unrequested ground the moment this field exists.
+    // `groundEnabled` still just toggles `.visible` on an
+    // always-constructed mesh (unchanged pattern) so it stays a cheap
+    // live toggle, not a remount — only `groundStyle` itself (a real
+    // geometry swap) needs one, see ProceduralProjectViewer.tsx's mount
+    // effect deps.
+    const groundGeometry =
+      config.groundStyle === "infinite"
+        ? new THREE.PlaneGeometry(GROUND_INFINITE_SIZE, GROUND_INFINITE_SIZE)
+        : usingGlb
+          ? null
+          : new THREE.CircleGeometry(boundingRadius * 1.6, 48);
+    if (groundGeometry) {
+      const ground = new THREE.Mesh(groundGeometry, this.buildGroundMaterial(config));
+      ground.rotation.x = -Math.PI / 2;
+      ground.receiveShadow = true;
+      ground.visible = config.groundEnabled;
+      clippingGroup.add(ground);
+      this.ground = ground;
+    } else {
+      this.ground = null;
+    }
+
     const showShells = project.status === "under_construction" && config.constructionStagesEnabled;
     this.shells.forEach((shell) => (shell.visible = showShells));
     scene.fog = config.fogEnabled ? new THREE.FogExp2(this.resolveFogColor(config), config.fogDensity) : null;
@@ -1452,8 +1697,14 @@ export class RenderEngine {
     this.detachSectionGizmo();
     this.sectionCapMaterial?.dispose();
     this.sectionCapMaterial = null;
+    this.sectionCapMaterialSignature = null;
     this.sectionCapMesh = null;
     this.clearStencilMarking();
+    // Plain `ClippingGroup`s (Group subclass) — no GPU resources of their
+    // own, same as `sectionHelperGroup`/`clippingGroup` right below;
+    // discarded along with the scene, just null the references.
+    this.stencilMarkClippingGroup = null;
+    this.sectionCapClippingGroup = null;
     this.clippingGroup = null;
     this.sectionHelperGroup = null;
     this.liveSection = null;
@@ -1467,6 +1718,39 @@ export class RenderEngine {
     this.hdriUrlLoaded = null;
     this.renderPipeline?.dispose();
     this.renderPipeline = null;
+    // Sky/Water/Bloom/Clouds pass — bloomNode owns its own internal blur/
+    // composite render targets (see BloomNode.js's own dispose()); holding
+    // a direct reference here disposes them explicitly rather than relying
+    // on renderPipeline's teardown to reach into the node graph.
+    this.bloomNode?.dispose();
+    this.bloomNode = null;
+    if (this.skyMesh) {
+      this.skyMesh.geometry.dispose();
+      (this.skyMesh.material as THREE.Material).dispose();
+      this.skyMesh = null;
+    }
+    if (this.waterMesh) {
+      const waterNormalsTexture = this.waterMesh.waterNormals.value as THREE.Texture | null;
+      waterNormalsTexture?.dispose();
+      this.waterMesh.geometry.dispose();
+      (this.waterMesh.material as THREE.Material).dispose();
+      this.waterMesh = null;
+    }
+    // Ground Platform — centrally built/disposed now regardless of
+    // content mode (see mount()'s unified ground block); the geometry
+    // double-dispose this can overlap with in procedural mode (that
+    // branch's own `disposeGeometry` traversal above already caught
+    // `ground`'s geometry too, generically) is a documented no-op in
+    // three.js, not a bug.
+    if (this.ground) {
+      this.ground.geometry.dispose();
+      (this.ground.material as THREE.Material).dispose();
+      this.ground = null;
+    }
+    this.groundColorUniform = null;
+    this.groundFogColorUniform = null;
+    this.groundFogRadiusUniform = null;
+    this.groundFogStrengthUniform = null;
     // LensflareMesh's own dispose() already disposes every element's
     // texture (see LensflareMesh.js's own `this.dispose` — iterates
     // `elements[i].texture.dispose()`) — no separate texture cleanup
@@ -1564,6 +1848,31 @@ export class RenderEngine {
     }
     if (this.renderer) this.renderer.toneMappingExposure = config.exposure;
 
+    // Sky/Water/Bloom/Clouds pass — wave-look and bloom-look sliders are
+    // real live `UniformNode<float>`s on the already-constructed
+    // waterMesh/bloomNode, so these drag live with no pipeline rebuild;
+    // only the `waterEnabled`/`bloomEnabled` toggles themselves need a
+    // fresh mount (they change what exists, not just a number on it —
+    // same distinction `antialiasEnabled` already draws against a plain
+    // uniform tweak).
+    if (this.waterMesh) {
+      this.waterMesh.distortionScale.value = config.waterDistortionScale;
+      this.waterMesh.size.value = config.waterSize;
+    }
+    if (this.bloomNode) {
+      this.bloomNode.strength.value = config.bloomStrength;
+      this.bloomNode.radius.value = config.bloomRadius;
+    }
+
+    // Ground Platform's ground fog — same live-`UniformNode` pattern as
+    // above; `groundFogEnabled` itself is included here (not the mount
+    // deps) since it's just `groundFogStrengthUniform` going 0↔1, not a
+    // structural change (see buildGroundMaterial's own doc comment).
+    if (this.groundColorUniform) this.groundColorUniform.value.set(config.groundColor);
+    if (this.groundFogColorUniform) this.groundFogColorUniform.value.set(this.resolveFogColor(config));
+    if (this.groundFogRadiusUniform) this.groundFogRadiusUniform.value = Math.max(1, config.groundFogRadius);
+    if (this.groundFogStrengthUniform) this.groundFogStrengthUniform.value = config.groundFogEnabled ? 1 : 0;
+
     // Sections module — re-applies the currently active section's
     // clipping/cap from the freshest `config.sections` (e.g. a numeric
     // field edit in `SectionsPanel`, or a "dragend" commit that just
@@ -1648,6 +1957,38 @@ export class RenderEngine {
     // Below-horizon sun shouldn't show a flare from a light source that
     // isn't visibly up — same isNight signal sun.intensity already uses.
     if (this.lensflare) this.lensflare.visible = config.lensflareEnabled && !sunPos.isNight;
+
+    // Sky/Water/Bloom/Clouds pass — feeds the same real sun direction into
+    // the physical sky dome and water plane, exactly like
+    // webgl_shaders_ocean.html's own `updateSun()` feeds one `sun` Vector3
+    // into both `sky`/`water`. Kept raw/unclamped (unlike `sun.position`'s
+    // `Math.max(dir.y, 0.05)` above, a practical floor so the *light*
+    // never comes from below ground) so sunrise/sunset coloring on the sky
+    // dome itself still looks correct at low sun angles. All of this is
+    // cheap uniform writes — safe to run every tick alongside the rest of
+    // this method; only the PMREM capture below is debounced.
+    this.sunDirection.set(dir.x, dir.y, dir.z);
+    if (this.skyMesh) {
+      const physical = SKY_PHYSICAL_PARAMS[config.skyPreset];
+      this.skyMesh.turbidity.value = physical.turbidity;
+      this.skyMesh.rayleigh.value = physical.rayleigh;
+      this.skyMesh.mieCoefficient.value = physical.mieCoefficient;
+      this.skyMesh.mieDirectionalG.value = physical.mieDirectionalG;
+      this.skyMesh.sunPosition.value.copy(this.sunDirection);
+      // Clouds (webgl_shaders_ocean.html's "Clouds" folder — really just 3
+      // more uniforms on the sky shader, see SkyMesh's own field docs).
+      // Off by default: coverage/density forced to 0 rather than leaving
+      // config.cloudCoverage/cloudDensity's own defaults active, so the
+      // physical-sky rollout doesn't also silently add clouds for every
+      // project in the same pass.
+      this.skyMesh.cloudCoverage.value = config.cloudsEnabled ? config.cloudCoverage : 0;
+      this.skyMesh.cloudDensity.value = config.cloudsEnabled ? config.cloudDensity : 0;
+      this.skyMesh.cloudElevation.value = config.cloudElevation;
+    }
+    if (this.waterMesh) {
+      this.waterMesh.sunDirection.value.copy(this.sunDirection);
+      this.waterMesh.sunColor.value.setHex(sunColorForElevation(sunPos.elevationDeg));
+    }
 
     // Everything above is cheap (a few scalar/vector writes) and applies
     // synchronously on every call, so a live-drag time/date scrubber
@@ -1842,9 +2183,14 @@ export class RenderEngine {
   }
 
   private clearStencilMarking() {
-    const helpers = this.sectionHelperGroup;
+    // Marking meshes live inside `stencilMarkClippingGroup`, not
+    // `sectionHelperGroup` directly (see that field's doc comment) — fall
+    // back to removing from `helpers` too in case a mesh somehow ended up
+    // there (defensive, `remove()` is a no-op for a non-child).
+    const parent = this.stencilMarkClippingGroup ?? this.sectionHelperGroup;
     for (const mesh of this.stencilMarkMeshes) {
-      helpers?.remove(mesh);
+      parent?.remove(mesh);
+      this.sectionHelperGroup?.remove(mesh);
       (mesh.material as THREE.Material).dispose();
     }
     this.stencilMarkMeshes = [];
@@ -1878,12 +2224,33 @@ export class RenderEngine {
    * section plane (bounding it to the footprint, exactly matching the
    * upstream example's own `planes.filter(p => p !== plane)` pattern for
    * its cap) — so it only shows within the stencil-marked, real-geometry
-   * silhouette, not the section's full authored rectangle. */
+   * silhouette, not the section's full authored rectangle.
+   *
+   * **Real bug fixed 2026-08-14** ("gaps that are clipped does not fill
+   * with color"): the "clipped by only that one top plane" / "clipped by
+   * every other section plane" parts above were never actually true —
+   * this used to set `clippingPlanes` directly on each material, which
+   * has zero consumers anywhere in this app's WebGPURenderer pipeline
+   * (grepped the full renderer/nodes source tree to confirm; only
+   * `ClippingGroup` traversal is ever read — same lesson
+   * `rozaris-3d-sections-module`'s original build already learned for the
+   * *main* clip, silently reintroduced when this stencil technique was
+   * added later). Unclipped, a closed/watertight source mesh's back/front
+   * faces always pair up 1:1, so the increment/decrement marking passes
+   * netted to exactly 0 everywhere — the cap's stencil test failed
+   * everywhere, rendering nothing. Fixed with two real `ClippingGroup`s
+   * (`stencilMarkClippingGroup`/`sectionCapClippingGroup`), the same
+   * mechanism the main clip already uses. */
   private rebuildSectionCap(section: Section | null) {
     const helpers = this.sectionHelperGroup;
     if (!helpers) return;
     if (this.sectionCapMesh) {
+      // The cap can have been parented to either `helpers` directly
+      // (non-stencil mode) or `sectionCapClippingGroup` (stencil mode) on
+      // the previous rebuild — remove from both, `remove()` is a no-op
+      // for a non-child.
       helpers.remove(this.sectionCapMesh);
+      this.sectionCapClippingGroup?.remove(this.sectionCapMesh);
       this.sectionCapMesh.geometry.dispose();
       this.sectionCapMesh = null;
     }
@@ -1895,11 +2262,21 @@ export class RenderEngine {
     const geometry = buildSectionCapGeometry(section);
     const color = section.fillGapsEnabled ? section.fillColor : SECTION_INDICATOR_COLOR;
     const opacity = section.fillGapsEnabled ? 1 : 0.5;
+    // Real bug fix ("Fill gaps with color" reported as rendering solid
+    // black): `transparent` used to be hardcoded `true` forever, for both
+    // the translucent indicator AND the fully-opaque fill — contradicting
+    // this method's own stated intent one line below ("should still
+    // occlude/sort like solid geometry"). A fully-opaque fill now
+    // genuinely renders through the OPAQUE pass like real geometry
+    // (`transparent: false`), matching `depthWrite` below; only the
+    // translucent indicator stays in the transparent/blended pass.
+    const transparent = !section.fillGapsEnabled;
     if (!this.sectionCapMaterial) {
-      this.sectionCapMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide });
+      this.sectionCapMaterial = new THREE.MeshBasicMaterial({ color, transparent, opacity, side: THREE.DoubleSide });
     } else {
       this.sectionCapMaterial.color.set(color);
       this.sectionCapMaterial.opacity = opacity;
+      this.sectionCapMaterial.transparent = transparent;
     }
     // A fully-opaque real fill should still occlude/sort like solid
     // geometry; the translucent indicator disables depth-write (standard
@@ -1911,7 +2288,17 @@ export class RenderEngine {
       const planes = buildSectionPlanes(section);
       const topPlane = planes[4];
       const otherPlanes = [...planes.slice(0, 4), ...planes.slice(5)];
-      this.sectionCapMaterial.clippingPlanes = otherPlanes;
+      // Real bug fix — see `sectionCapClippingGroup`'s field doc comment:
+      // `Material.clippingPlanes` has zero consumers in this app's
+      // WebGPURenderer pipeline, confirmed by reading the actual installed
+      // source. Bounding the cap's flat quad to the section's other
+      // (non-top) planes now goes through a real `ClippingGroup`, the
+      // same mechanism `this.clippingGroup` already proves works.
+      if (!this.sectionCapClippingGroup) {
+        this.sectionCapClippingGroup = new THREE.ClippingGroup();
+        helpers.add(this.sectionCapClippingGroup);
+      }
+      this.sectionCapClippingGroup.clippingPlanes = otherPlanes;
       this.sectionCapMaterial.stencilWrite = true;
       this.sectionCapMaterial.stencilRef = 0;
       this.sectionCapMaterial.stencilFunc = THREE.NotEqualStencilFunc;
@@ -1919,13 +2306,25 @@ export class RenderEngine {
       this.sectionCapMaterial.stencilZFail = THREE.ReplaceStencilOp;
       this.sectionCapMaterial.stencilZPass = THREE.ReplaceStencilOp;
 
+      // Same real bug fix for the marking pair — without a genuine
+      // `[topPlane]` clip, a closed/watertight source mesh's back/front
+      // faces always pair up 1:1 (every ray crosses equal counts of each),
+      // so the increment/decrement passes net to exactly 0 everywhere and
+      // the cap's `NotEqualStencilFunc` test fails everywhere — this is
+      // the actual mechanism behind "gaps that are clipped does not fill
+      // with color."
+      if (!this.stencilMarkClippingGroup) {
+        this.stencilMarkClippingGroup = new THREE.ClippingGroup();
+        helpers.add(this.stencilMarkClippingGroup);
+      }
+      this.stencilMarkClippingGroup.clippingPlanes = [topPlane];
+
       for (const source of this.collectStencilableMeshes()) {
         const backMat = new THREE.MeshBasicMaterial({
           side: THREE.BackSide,
           colorWrite: false,
           depthWrite: false,
           depthTest: false,
-          clippingPlanes: [topPlane],
           stencilWrite: true,
           stencilFunc: THREE.AlwaysStencilFunc,
           stencilFail: THREE.IncrementWrapStencilOp,
@@ -1944,7 +2343,10 @@ export class RenderEngine {
         // clippingGroup) — sectionHelperGroup sits at identity at the
         // scene root, so copying world-space matrixWorld straight into
         // local .matrix (with matrixAutoUpdate off, so nothing overwrites
-        // it) reproduces the same placement.
+        // it) reproduces the same placement. `stencilMarkClippingGroup`
+        // (their real parent, added to `helpers` above) also sits at
+        // identity, so this world-space copy is still valid one level
+        // deeper.
         backMesh.matrixAutoUpdate = false;
         frontMesh.matrixAutoUpdate = false;
         backMesh.matrix.copy(source.matrixWorld);
@@ -1955,16 +2357,45 @@ export class RenderEngine {
         // stencil buffer is fully written before the cap reads it.
         backMesh.renderOrder = 9;
         frontMesh.renderOrder = 9;
-        helpers.add(backMesh, frontMesh);
+        this.stencilMarkClippingGroup.add(backMesh, frontMesh);
         this.stencilMarkMeshes.push(backMesh, frontMesh);
       }
     } else {
       // Explicit reset — this.sectionCapMaterial is reused across
       // rebuilds (see the color/opacity update above), so a project that
       // had stencil mode on and then off must not keep stale stencil
-      // state from a previous rebuild.
-      this.sectionCapMaterial.clippingPlanes = null;
+      // state from a previous rebuild. (`sectionCapClippingGroup`'s
+      // planes don't need resetting — the cap goes straight into
+      // `helpers` below when not in stencil mode, bypassing that group
+      // entirely.)
       this.sectionCapMaterial.stencilWrite = false;
+    }
+    // Real bug fix, same "Fill gaps with color" report: this material is
+    // reused across rebuilds (every mutation above is an in-place property
+    // write, not a `new THREE.MeshBasicMaterial(...)`), but nothing ever
+    // told the renderer its *pipeline-affecting* state (transparent/
+    // depthWrite/stencilWrite/clippingPlanes) had changed. Verified
+    // against the installed three.js WebGPU backend
+    // (node_modules/three/src/renderers/common/RenderObjects.js:127):
+    // a cached render object/pipeline is only rebuilt when
+    // `material.version` has advanced past what it was compiled with, and
+    // `material.version` only advances when `needsUpdate` is explicitly
+    // set `true` (Material.js's setter). Without this, toggling "Fill
+    // gaps with a color" on/off could keep rendering through a stale
+    // pipeline compiled for whichever state (translucent-indicator vs.
+    // opaque-fill) this exact material instance happened to compile for
+    // first — a real, plausible cause of a fill that renders wrong
+    // (including solid black) instead of the picked color.
+    //
+    // Only bumped when the signature actually changed, not on every call
+    // — this method also runs on every gizmo-drag tick (pure move/rotate/
+    // resize), where fill/stencil state is unchanged from the previous
+    // call; forcing a pipeline rebuild every frame of a drag would be real
+    // wasted GPU work for no visual benefit.
+    const signature = `${transparent}|${section.fillGapsEnabled}|${stencilMode}`;
+    if (signature !== this.sectionCapMaterialSignature) {
+      this.sectionCapMaterialSignature = signature;
+      this.sectionCapMaterial.needsUpdate = true;
     }
 
     const mesh = new THREE.Mesh(geometry, this.sectionCapMaterial);
@@ -1974,7 +2405,16 @@ export class RenderEngine {
     // own marking pair above) so it doesn't z-fight with whatever real
     // geometry the cut happens to graze exactly at heightM.
     mesh.renderOrder = 10;
-    helpers.add(mesh);
+    // Stencil mode parents through `sectionCapClippingGroup` (bounds the
+    // quad to the section's other planes, a real ClippingGroup — see that
+    // field's doc comment); non-stencil mode's geometry is already sized
+    // exactly to widthM×depthM, so it goes straight into `helpers`
+    // unclipped, same as before this fix.
+    if (stencilMode && this.sectionCapClippingGroup) {
+      this.sectionCapClippingGroup.add(mesh);
+    } else {
+      helpers.add(mesh);
+    }
     this.sectionCapMesh = mesh;
   }
 
@@ -2003,7 +2443,18 @@ export class RenderEngine {
       centerX: anchor.position.x,
       centerZ: anchor.position.z,
       heightM: anchor.position.y,
-      rotationDeg: THREE.MathUtils.radToDeg(anchor.rotation.y),
+      // Wrapped into (-180, 180] — real bug fix: `anchor.rotation.y` is a
+      // raw Euler radian value that three.js never re-normalizes, so
+      // spinning the Rotate handle more than one full turn (very easy to
+      // do by accident, dragging in a circle) used to produce values like
+      // 540° or -720°. That's outside both the panel slider's own
+      // [-180, 180] range AND the PATCH route's zod
+      // `rotationDeg: z.number().min(-360).max(360)` — an out-of-range
+      // value here would 400 the *entire* config save (sections is one
+      // field in one all-or-nothing PATCH body), not just fail to persist
+      // this one section. Wrapping preserves the exact same visual
+      // rotation (sin/cos are periodic) while always staying in range.
+      rotationDeg: THREE.MathUtils.euclideanModulo(THREE.MathUtils.radToDeg(anchor.rotation.y) + 180, 360) - 180,
       widthM: Math.max(0.5, anchor.scale.x),
       depthM: Math.max(0.5, anchor.scale.z),
     };
@@ -2086,6 +2537,22 @@ export class RenderEngine {
       const gizmo = new TransformControls(camera, renderer.domElement);
       gizmo.addEventListener("dragging-changed", (event: { value: unknown }) => {
         if (this.controls) this.controls.enabled = !event.value;
+        // Real bug fix (Sections "doesn't save" audit): `onSectionDraftChange`
+        // (fired per-tick by `onSectionGizmoChange` below, via
+        // `objectChange`) only ever updated the live 3D preview and the
+        // panel's *displayed* numbers (`EditorShell.tsx`'s
+        // `liveSectionOverride`) — nothing wrote the drag's result back
+        // into `draft.sections`, the state Save/autosave actually PATCH.
+        // So Move/Rotate/Resize/Height gizmo edits looked correct
+        // on-screen but silently reverted on save. Fired once here, on
+        // drag-end (`event.value` false = "no longer dragging"), with
+        // whatever `onSectionGizmoChange` last computed into
+        // `this.liveSection` — one drag, one real commit into React
+        // state, matching every other panel field's `commit: true`
+        // convention for a discrete edit.
+        if (!event.value && this.liveSection) {
+          this.callbacks.onSectionDraftCommit?.(this.liveSection);
+        }
       });
       gizmo.addEventListener("objectChange", () => this.onSectionGizmoChange());
       helpers.add(gizmo.getHelper());

@@ -50,6 +50,10 @@ export const defaultProject3DConfig: Project3DConfig = {
   lightingPreset: "daylight",
   backgroundPreset: "sky",
   groundEnabled: true,
+  groundStyle: "disc",
+  groundColor: "#d8d6e6",
+  groundFogEnabled: false,
+  groundFogRadius: 300,
   cameraStartDistanceMultiplier: 1,
   cameraMinDistanceMultiplier: 0.4,
   cameraMaxDistanceMultiplier: 2.5,
@@ -84,6 +88,21 @@ export const defaultProject3DConfig: Project3DConfig = {
   lensflareEnabled: false,
   lightProbeEnabled: false,
   sectionCapStencilEnabled: false,
+  // Sky/Water/Bloom/Clouds pass — all off by default (bloom/water/clouds),
+  // param defaults mirror webgl_shaders_ocean.html's own GUI defaults
+  // exactly (bloom strength 0.1/radius 0, water distortionScale 3.7/
+  // size 1, cloud coverage 0.4/density 0.5/elevation 0.5) so turning one
+  // on for the first time looks like the reference demo, not an untuned 0.
+  bloomEnabled: false,
+  bloomStrength: 0.1,
+  bloomRadius: 0,
+  waterEnabled: false,
+  waterDistortionScale: 3.7,
+  waterSize: 1,
+  cloudsEnabled: false,
+  cloudCoverage: 0.4,
+  cloudDensity: 0.5,
+  cloudElevation: 0.5,
   // Match the previously-hardcoded UNIT_BOX_COLOR/SELECTED_COLOR constants
   // in viewerPresets.ts exactly, so existing projects render identically.
   unitColorAvailable: "#22c55e",

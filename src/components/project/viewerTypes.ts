@@ -92,4 +92,10 @@ export interface ThreeProjectViewerProps {
    * `RenderEngineCallbacks.onSectionDraftChange`. Public-viewer usages
    * never supply this (nothing there drags a gizmo). */
   onSectionDraftChange?: (section: Section) => void;
+  /** Sections module — fires once per gizmo drag, on release, mirroring
+   * `RenderEngineCallbacks.onSectionDraftCommit`. This is the one that
+   * must write into `draft.sections` (real save bug fix, 2026-08-13) —
+   * `onSectionDraftChange` above is display-only. Public-viewer usages
+   * never supply this. */
+  onSectionDraftCommit?: (section: Section) => void;
 }

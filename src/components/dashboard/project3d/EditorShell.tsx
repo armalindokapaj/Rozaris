@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { ThreeProjectViewer } from "@/components/project/ThreeProjectViewer";
 import type { SectionGizmoMode, ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import type {
@@ -16,7 +16,6 @@ import type {
 } from "@/lib/types";
 import type { AutosaveStatus } from "@/hooks/useAutosave";
 import { cn } from "@/lib/utils";
-import { groupUnitsByFloor } from "@/lib/units";
 import { EDITOR_MODES, type EditorMode } from "./modes";
 import type { FloorFilter, PreviewWidth, SetOpts, Translate } from "./editorTypes";
 import type { DetailVersionRow } from "./types";
@@ -280,7 +279,6 @@ export function EditorShell({
 
   // --- Sections module (first-class Configurator module) ---
   const sections = draft.sections;
-  const floorGroups = useMemo(() => groupUnitsByFloor(project.units), [project.units]);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [gizmoMode, setGizmoMode] = useState<SectionGizmoMode>("move");
   const [drawingSection, setDrawingSection] = useState(false);
@@ -421,6 +419,26 @@ export function EditorShell({
     if (updated) syncSectionGizmo(updated, gizmoMode, { debounce: true });
   }
 
+  // Real save bug fix (Sections audit, 2026-08-13): fired once per gizmo
+  // drag, on release (`RenderEngineCallbacks.onSectionDraftCommit`, wired
+  // below via `onSectionDraftCommit` on `<ThreeProjectViewer>`) — this is
+  // the ONLY place a Move/Rotate/Resize/Height gizmo edit actually reaches
+  // `draft.sections`. Previously nothing did: `onSectionDraftChange`
+  // (below, still real, still needed) only ever updated
+  // `liveSectionOverride`, a purely-visual display value the panel reads
+  // while dragging — so a gizmo-edited section looked right on screen and
+  // in the panel's own numbers, but Save/autosave PATCHed the *pre-drag*
+  // section every time, since `draft.sections` itself never changed. A
+  // drag-end is one discrete, undo-worthy edit — `commit: true`, matching
+  // every other panel's discrete-control convention.
+  function handleSectionDraftCommit(section: Section) {
+    setLiveSectionOverride(null);
+    update(
+      { sections: sections.map((s) => (s.id === section.id ? section : s)) },
+      { commit: true }
+    );
+  }
+
   function handleDuplicateSection(section: Section) {
     const copy: Section = { ...section, id: `section-${Date.now()}`, name: `${section.name} 2` };
     update({ sections: [...sections, copy] }, { commit: true });
@@ -545,6 +563,7 @@ export function EditorShell({
               onSectionDraftChange={(section) => {
                 if (section.id === selectedSectionId) setLiveSectionOverride(section);
               }}
+              onSectionDraftCommit={handleSectionDraftCommit}
             />
             {/* Live Sun & Time scrubber — Lighting-tab-only, see
                 SunTimeOverlay.tsx's own doc comment for why it's scoped
@@ -653,7 +672,6 @@ export function EditorShell({
                   update={handleUpdateSection}
                   gizmoMode={gizmoMode}
                   setGizmoMode={handleGizmoModeChange}
-                  floorGroups={floorGroups}
                   onSetCamera={handleSetSectionCamera}
                   cameraSaved={cameraSavedFlash}
                   onSave={onSaveScene}

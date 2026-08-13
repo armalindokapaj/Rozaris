@@ -21,7 +21,27 @@ export const UNIT_BOX_OPACITY = 0.2;
 export const UNIT_BOX_SELECTED_OPACITY = 0.65;
 
 export const SELECTED_COLOR = 0x6b55f5; // --color-brand-500
-export const GROUND_COLOR = 0xd8d6e6;
+// The old hardcoded ground color constant (0xd8d6e6) was removed when
+// Ground Platform made `Project3DConfig.groundColor` the one real source
+// for it (Sky/Water/Bloom/Clouds follow-up) — its default value is the
+// same hex, so existing projects render identically until an admin
+// changes it.
+
+/** Physical-sky dome (`SkyMesh`) scale and water-plane extent, in scene
+ * units — both fixed, not per-project fields (Sky/Water/Bloom/Clouds
+ * pass, matches the webgl_shaders_ocean.html reference exactly: neither
+ * is admin-configurable there either, only their surface-look uniforms
+ * are). Kept comfortably inside the viewer's fixed camera far plane
+ * (2000, see RenderEngine.ts's `mount()`) regardless of a project's own
+ * bounding radius. */
+export const SKY_DOME_SCALE = 1600;
+export const WATER_PLANE_SIZE = 1600;
+/** Ground Platform's "infinite" style (Sky/Water/Bloom/Clouds pass'
+ * same-day follow-up) — a separate constant from `WATER_PLANE_SIZE`
+ * despite sharing the same value/reasoning (large enough to read as
+ * infinite, safely inside the fixed camera far plane) so the two aren't
+ * accidentally coupled if either is retuned later. */
+export const GROUND_INFINITE_SIZE = 1600;
 
 export const TIME_PRESETS: [string, number][] = [
   ["project.presetMorning", 8],
@@ -55,8 +75,18 @@ export const TIME_PRESETS: [string, number][] = [
 // buffers, and the HDR clamp that only existed to support them are all
 // gone from `RenderEngine.ts` too — no dead, do-nothing toggle left
 // anywhere (`Project3DConfig.ssrEnabled`/`gtaoEnabled` are gone from the
-// schema/DB entirely, see the migration). `bloom` stays off everywhere —
-// no per-project toggle exists for it at all, untouched by this removal.
+// schema/DB entirely, see the migration).
+//
+// `bloom` here is an upper bound per tier ("can this device afford it"),
+// ANDed with the real per-project `Project3DConfig.bloomEnabled` toggle in
+// RenderEngine.ts's buildRenderPipeline — same AND-gate pattern
+// antialiasEnabled already uses against `tier.antialias`. Turned back on
+// for the three desktop-oriented tiers (Sky/Water/Bloom/Clouds pass,
+// same day as the SSR/GTAO removal above) — bloom itself, a single
+// self-contained TSL node with no MRT/extra buffers, was never
+// implicated in either of that chain's real-GPU failures. Mobile tiers
+// stay `false` for performance, same reasoning `antialias` already uses
+// there.
 // The real geographic sun, ambient light and PMREM sky environment/
 // reflections (`rebuildEnvironment`/`applySunAndEnvironment`) are what
 // deliver the realistic sky dome and were never implicated in either
@@ -82,7 +112,7 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     renderScale: 1,
     dprCap: 2,
     shadowMapSize: 4096,
-    bloom: false,
+    bloom: true,
     antialias: true,
     ssgi: false,
   },
@@ -90,7 +120,7 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     renderScale: 0.95,
     dprCap: 2,
     shadowMapSize: 2048,
-    bloom: false,
+    bloom: true,
     antialias: true,
     ssgi: false,
   },
@@ -98,7 +128,7 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     renderScale: 0.8,
     dprCap: 1.5,
     shadowMapSize: 1536,
-    bloom: false,
+    bloom: true,
     antialias: true,
     ssgi: false,
   },
@@ -212,16 +242,47 @@ export interface SkyGradientStops {
   ground: string;
 }
 
-/** Procedural gradient-sky presets (spec §15) — a vertical-gradient
- * equirect texture, backend-agnostic (plain `CanvasTexture`, works
- * identically under WebGPU or WebGL2), fed through `PMREMGenerator` for
- * real environment/reflection lighting instead of today's flat
- * `scene.background = Color`. Not full atmospheric scattering — see the
- * Phase 1 plan for that trade-off. */
+/** Originally the procedural sky itself (a vertical-gradient
+ * `CanvasTexture` fed through `PMREMGenerator`) — the Sky/Water/Bloom/
+ * Clouds pass replaced that with a real physically-based sky dome
+ * (`SkyMesh`, see `SKY_PHYSICAL_PARAMS` below and RenderEngine.ts's
+ * `rebuildEnvironment`). These gradient stops now only feed
+ * `resolveFogColor`'s `fogMatchesSky` fallback (an HDRI has no
+ * equivalently-cheap single "horizon color" to derive either way, so both
+ * cases already accepted an approximation, not a regression). */
 export const SKY_GRADIENTS: Record<SkyPreset, SkyGradientStops> = {
   clear_day: { top: "#3a7bd5", horizon: "#bfe0ff", ground: "#e8ecef" },
   soft_day: { top: "#8fb8e0", horizon: "#e3edf5", ground: "#eef1f0" },
   overcast: { top: "#7c848f", horizon: "#a9afb6", ground: "#b7bbb9" },
   golden_hour: { top: "#3a4a7a", horizon: "#ff9d5c", ground: "#7a5a4a" },
   evening: { top: "#0c1440", horizon: "#4a3a6a", ground: "#241f33" },
+};
+
+export interface SkyPhysicalParams {
+  /** Atmospheric haze — higher looks hazier/more washed out. */
+  turbidity: number;
+  /** Rayleigh scattering coefficient — drives blue-sky intensity. */
+  rayleigh: number;
+  mieCoefficient: number;
+  mieDirectionalG: number;
+}
+
+/** Preetham-model atmospheric parameters for `SkyMesh` (Sky/Water/Bloom/
+ * Clouds pass) — one fixed, tuned tuple per existing `skyPreset`, the same
+ * "Admin picks a controlled preset rather than authoring raw shader
+ * uniforms" approach `SKY_GRADIENTS` above already used, so the existing
+ * Sky preset dropdown keeps producing 5 visually distinct results instead
+ * of gaining a second, competing set of manual turbidity/rayleigh/mie
+ * sliders (webgl_shaders_ocean.html hardcodes one fixed tuple the same
+ * way — its GUI never exposes these either, only elevation/azimuth/
+ * exposure, which this app already has via the Sun & Time and Exposure
+ * sub-tabs). Sun elevation/azimuth/color still come from the real
+ * geographic/manual sun (`applySunAndEnvironment`) exactly as before —
+ * only the sky dome's own atmosphere physics are preset-driven. */
+export const SKY_PHYSICAL_PARAMS: Record<SkyPreset, SkyPhysicalParams> = {
+  clear_day: { turbidity: 4, rayleigh: 2.4, mieCoefficient: 0.004, mieDirectionalG: 0.78 },
+  soft_day: { turbidity: 6, rayleigh: 1.6, mieCoefficient: 0.006, mieDirectionalG: 0.8 },
+  overcast: { turbidity: 18, rayleigh: 0.6, mieCoefficient: 0.02, mieDirectionalG: 0.9 },
+  golden_hour: { turbidity: 8, rayleigh: 3, mieCoefficient: 0.01, mieDirectionalG: 0.85 },
+  evening: { turbidity: 10, rayleigh: 1.2, mieCoefficient: 0.012, mieDirectionalG: 0.88 },
 };

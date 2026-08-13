@@ -70,6 +70,10 @@ const patchSchema = z.object({
   lightingPreset: z.enum(["daylight", "overcast", "evening"]).optional(),
   backgroundPreset: z.enum(["sky", "studio_light", "studio_dark"]).optional(),
   groundEnabled: z.boolean().optional(),
+  groundStyle: z.enum(["disc", "infinite"]).optional(),
+  groundColor: hexColorSchema.optional(),
+  groundFogEnabled: z.boolean().optional(),
+  groundFogRadius: z.number().min(1).max(20_000).optional(),
   cameraStartDistanceMultiplier: z.number().positive().max(10).optional(),
   cameraMinDistanceMultiplier: z.number().positive().max(10).optional(),
   cameraMaxDistanceMultiplier: z.number().positive().max(20).optional(),
@@ -115,6 +119,20 @@ const patchSchema = z.object({
   shadowsEnabled: z.boolean().optional(),
   antialiasEnabled: z.boolean().optional(),
   sections: z.array(sectionSchema).optional(),
+  // Sky/Water/Bloom/Clouds pass — ranges mirror webgl_shaders_ocean.html's
+  // own GUI folders exactly (Bloom strength 0-3/radius 0-1, Water
+  // distortionScale 0-8/size 0.1-10, Clouds coverage/density/elevation
+  // 0-1 each).
+  bloomEnabled: z.boolean().optional(),
+  bloomStrength: z.number().min(0).max(3).optional(),
+  bloomRadius: z.number().min(0).max(1).optional(),
+  waterEnabled: z.boolean().optional(),
+  waterDistortionScale: z.number().min(0).max(8).optional(),
+  waterSize: z.number().min(0.1).max(10).optional(),
+  cloudsEnabled: z.boolean().optional(),
+  cloudCoverage: z.number().min(0).max(1).optional(),
+  cloudDensity: z.number().min(0).max(1).optional(),
+  cloudElevation: z.number().min(0).max(1).optional(),
 });
 
 export async function GET(
