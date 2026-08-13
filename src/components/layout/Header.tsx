@@ -75,7 +75,7 @@ function ResourcesDropdown() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         className={cn(
-          "flex items-center gap-1 rounded-control px-2 py-2 text-[11px] font-medium uppercase tracking-[0.12em] transition-colors",
+          "flex items-center gap-1 rounded-control px-2 py-2 text-[11px] font-bold uppercase tracking-[0.12em] transition-colors",
           open ? "text-brand-600" : "text-neutral-600 hover:text-neutral-900"
         )}
       >
@@ -130,7 +130,7 @@ export function Header() {
   const { t } = useT();
 
   const navLinkClass =
-    "rounded-control px-2 py-2 text-[11px] font-medium uppercase tracking-[0.12em] text-neutral-600 hover:text-neutral-900 transition-colors";
+    "rounded-control px-2 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-600 hover:text-neutral-900 transition-colors";
   const activeNavLinkClass = (active: boolean) =>
     cn(navLinkClass, "relative", active && "text-neutral-900 after:absolute after:inset-x-2 after:-bottom-[1px] after:h-px after:bg-neutral-900");
 

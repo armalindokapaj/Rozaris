@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
+import { refreshExperienceDocument } from "@/lib/experienceDocument";
 
 /**
  * Takes the currently-published detailed model off the project's 3D
@@ -33,6 +34,7 @@ export async function POST(
     where: { id: versionId },
     data: { publicationStatus: "archived" },
   });
+  await refreshExperienceDocument(prisma, projectId, versionId);
 
   await logAuditEvent({
     actor,

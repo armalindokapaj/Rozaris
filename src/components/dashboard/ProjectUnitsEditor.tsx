@@ -32,6 +32,36 @@ export function ProjectUnitsEditor({
   const priceFmt = usePriceFormat();
   const { t } = useT();
 
+  // Phase 3 — real Postgres write path (src/app/api/projects/[projectId]/
+  // units) added alongside the pre-existing Zustand actions below, not in
+  // place of them: Zustand stays the immediate/optimistic update and the
+  // only thing any read surface in the app actually displays (unchanged,
+  // see the plan's "write-path + admin UI cutover" scope) — these calls
+  // are a dual-write so the same data also lands in Postgres, going
+  // forward, for whatever future read-migration work needs it. A failed
+  // Postgres write is surfaced, not silently dropped, but never rolls
+  // back the Zustand update.
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  async function syncUnit(method: "POST" | "PATCH" | "DELETE", unitId: string, body?: object) {
+    try {
+      const url =
+        method === "POST"
+          ? `/api/projects/${project.id}/units`
+          : `/api/projects/${project.id}/units/${unitId}`;
+      const res = await fetch(url, {
+        method,
+        headers: body ? { "Content-Type": "application/json" } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setSyncError(null);
+    } catch (err) {
+      console.error("Project units: Postgres sync failed", method, unitId, err);
+      setSyncError(t("admin.projectUnitsSyncFailed"));
+    }
+  }
+
   const [code, setCode] = useState("");
   const [buildingName, setBuildingName] = useState(project.buildings[0] ?? "A");
   const [floor, setFloor] = useState(1);
@@ -62,6 +92,7 @@ export function ProjectUnitsEditor({
       floorPlanImage: "",
     };
     addProjectUnit(project.id, unit);
+    void syncUnit("POST", unit.id, unit);
     setCode("");
   }
 
@@ -99,7 +130,9 @@ export function ProjectUnitsEditor({
   function saveEdit() {
     if (!editingId || !editDraft) return;
     if (!editDraft.code.trim() || editDraft.area <= 0 || editDraft.price <= 0) return;
-    updateProjectUnit(project.id, editingId, { ...editDraft, code: editDraft.code.trim() });
+    const patch = { ...editDraft, code: editDraft.code.trim() };
+    updateProjectUnit(project.id, editingId, patch);
+    void syncUnit("PATCH", editingId, patch);
     cancelEdit();
   }
 
@@ -150,6 +183,7 @@ export function ProjectUnitsEditor({
               <h3 className="text-sm font-bold text-neutral-900">{t("admin.projectUnitsListTitle")}</h3>
               <span className="text-xs text-neutral-500">{t("unit.unitsMatch", { matched: units.length, total: units.length })}</span>
             </div>
+            {syncError && <p className="mb-2 text-xs font-medium text-red-600">{syncError}</p>}
 
             {units.length === 0 ? (
               <p className="rounded-control border border-dashed border-neutral-200 p-4 text-center text-xs text-neutral-400">
@@ -273,7 +307,10 @@ export function ProjectUnitsEditor({
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <button
-                          onClick={() => removeProjectUnit(project.id, u.id)}
+                          onClick={() => {
+                            removeProjectUnit(project.id, u.id);
+                            void syncUnit("DELETE", u.id);
+                          }}
                           aria-label={t("common.close")}
                           className="rounded-full p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500"
                         >

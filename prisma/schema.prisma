@@ -455,6 +455,7 @@ model Project3DConfig {
   cameraMinDistanceMultiplier   Float    @default(0.4)
   cameraMaxDistanceMultiplier   Float    @default(2.5)
   cameraMaxPolarDeg             Int      @default(85)
+  cameraMinPolarDeg             Int      @default(0)
   autoRotate                    Boolean  @default(true)
   constructionStagesEnabled     Boolean  @default(true)
   status                        String   @default("draft")
@@ -473,6 +474,53 @@ model Project3DConfig {
   allowUserTimeChange  Boolean @default(true)
   cameraFovDesktop     Int     @default(38)
   cameraFovMobile      Int     @default(48)
+
+  // Platform HDRI + manual sun position (Task 2 — Track A). `hdriId` null
+  // means "no HDRI, use the existing procedural `skyPreset` gradient" —
+  // this is additive, not a replacement, so every existing project keeps
+  // rendering exactly as before. `onDelete: SetNull` so deleting a shared
+  // HDRI from the library just falls a project back to its procedural sky
+  // rather than breaking it.
+  hdriId String?
+  hdri   PlatformHdri? @relation(fields: [hdriId], references: [id], onDelete: SetNull)
+
+  /// "geographic" (default, unchanged behavior — real sun via
+  /// src/lib/sunPosition.ts) or "manual" (admin sets azimuth/elevation/
+  /// intensity directly, no date/time math involved).
+  sunMode         String @default("geographic")
+  sunAzimuthDeg   Float  @default(180)
+  sunElevationDeg Float  @default(45)
+  /// Multiplier on the sun's base intensity — now applies under both sun
+  /// modes (previously ignored under "geographic"; see RenderEngine.ts's
+  /// applySunAndEnvironment).
+  sunIntensity    Float  @default(1)
+
+  // Full-configurator pass — Fog, per-project unit status colors, and
+  // per-project post-processing overrides (ANDed with, not replacing,
+  // QUALITY_TIERS' own tier-level flags — see viewerPresets.ts).
+  fogEnabled Boolean @default(false)
+  fogColor   String  @default("#c9d6e0")
+  fogDensity Float   @default(0.015)
+
+  /// Hex colors for the 4 unit statuses + the shared "selected" highlight —
+  /// defaults match the previously-hardcoded UNIT_BOX_COLOR/SELECTED_COLOR
+  /// constants in viewerPresets.ts exactly, so existing projects render
+  /// identically until an admin changes them.
+  unitColorAvailable String @default("#22c55e")
+  unitColorReserved  String @default("#eab308")
+  unitColorSold      String @default("#ef4444")
+  unitColorSelected  String @default("#6b55f5")
+
+  /// shadowsEnabled is real and functional. ssrEnabled/gtaoEnabled/
+  /// antialiasEnabled are real and schema-backed but currently inert for
+  /// ssr/gtao — every QUALITY_TIERS tier force-disables those two
+  /// underlying effects platform-wide (two unexplained real-GPU rendering
+  /// failures), so RenderEngine.ts ANDs this column with the tier's own
+  /// flag rather than trusting it alone.
+  shadowsEnabled    Boolean @default(true)
+  ssrEnabled        Boolean @default(true)
+  gtaoEnabled       Boolean @default(true)
+  antialiasEnabled  Boolean @default(true)
 
   // Render/visual quality pass — real TSL post-processing, camera
   // presets. See src/lib/viewerPresets.ts (quality-tier post-fx flags)
@@ -499,6 +547,24 @@ model Project3DConfig {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("project_3d_configs")
+}
+
+/// A shared, platform-wide HDRI environment map — uploaded once by an
+/// admin, selectable across every project's 3D Experience instead of each
+/// project needing its own upload (Task 2 — Track A). First genuinely
+/// shared/reusable asset table in this schema; every other model here is
+/// project- or version-scoped.
+model PlatformHdri {
+  id           String   @id @default(cuid())
+  name         String
+  url          String
+  thumbnailUrl String?
+  createdAt    DateTime @default(now())
+  uploadedBy   String?
+
+  configs Project3DConfig[]
+
+  @@map("platform_hdris")
 }
 
 /// Admin's "3D Map Control" GLB placement — glbUrl now points at a real
@@ -684,6 +750,13 @@ model DetailModelVersion {
   /// needs_review, hand-rolled here since this is a JSON blob, not a
   /// relational table with its own mappingStatus column).
   nodeOverrides     Json?
+  /// The full ExperienceDocument snapshot for this revision (rewrite Track
+  /// B, Phase 1 — src/lib/experienceDocument.ts's buildExperienceDocument()
+  /// is the only writer). Additive: assembled FROM the fields above plus
+  /// the project's Project3DConfig row at write time, not a replacement
+  /// for them yet — every existing route/hook keeps reading those directly.
+  /// Null for any version created before this column existed.
+  experienceDocument Json?
   publicationStatus ModelPublicationStatus @default(draft)
   uploadedBy        String?
   publishedBy       String?

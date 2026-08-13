@@ -6,6 +6,8 @@ import { Camera, Expand, Minimize, SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useProjectConstruction } from "@/hooks/useProjectConstruction";
 import { useProject3DConfig } from "@/hooks/useProject3DConfig";
+import { useProjectDetailModel } from "@/hooks/useProjectDetailModel";
+import { usePlatformHdris } from "@/hooks/usePlatformHdris";
 import { useT } from "@/lib/i18n/useT";
 import { ThreeProjectViewer, type ThreeProjectViewerHandle } from "@/components/project/ThreeProjectViewer";
 import { ConstructionTimelineStrip } from "@/components/project/ConstructionTimelineStrip";
@@ -33,6 +35,9 @@ export function ArchVizClient({ project }: { project: Project }) {
   const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
   const construction = useProjectConstruction(project);
   const viewerConfig = useProject3DConfig(project.id);
+  const detailModel = useProjectDetailModel(project.id);
+  const platformHdris = usePlatformHdris();
+  const hdriUrl = platformHdris.find((h) => h.id === viewerConfig.hdriId)?.url ?? null;
   const { t } = useT();
 
   // Fullscreen targets this whole page wrapper — not ThreeProjectViewer's
@@ -137,6 +142,8 @@ export function ArchVizClient({ project }: { project: Project }) {
         ref={viewerRef}
         project={project}
         config={viewerConfig}
+        detailModel={detailModel}
+        hdriUrl={hdriUrl}
         className="relative h-full w-full"
         selectedUnitId={selectedUnit?.id ?? null}
         onSelectUnit={(u) => {
@@ -158,7 +165,12 @@ export function ArchVizClient({ project }: { project: Project }) {
           setFullDetailOpen(false);
         }}
       />
-      {selectedUnit && !fullDetailOpen && (
+      {/* Interaction toggle (full-configurator pass) — "Show unit
+          information" independently gates the info card/panel even when a
+          unit is still selectable/highlightable in the 3D scene; missing
+          key (pre-existing config rows) defaults to `true`, same pattern
+          as the other viewerUI toggles. */}
+      {selectedUnit && !fullDetailOpen && (viewerConfig.viewerUI.showUnitInfo ?? true) && (
         <UnitPreviewCard
           project={project}
           unit={selectedUnit}
@@ -166,7 +178,7 @@ export function ArchVizClient({ project }: { project: Project }) {
           onViewDetails={() => setFullDetailOpen(true)}
         />
       )}
-      {selectedUnit && fullDetailOpen && (
+      {selectedUnit && fullDetailOpen && (viewerConfig.viewerUI.showUnitInfo ?? true) && (
         <UnitDetailPanel
           project={project}
           unit={selectedUnit}

@@ -3,24 +3,43 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Building2, Calculator, ChevronRight, CircleDollarSign, Lightbulb } from "lucide-react";
+import { Building2, Calculator, ChevronRight, CircleDollarSign, Home, KeyRound, Sparkles } from "lucide-react";
 import { Header } from "@/components/layout/Header";
-import { SentenceFilterBar } from "@/components/search/SentenceFilterBar";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { HeroWallpaper } from "./HeroWallpaper";
+import { LandingSearchCard } from "./LandingSearchCard";
+import { TypewriterWord } from "./TypewriterWord";
 
 type DiscoveryMode = "buy" | "rent" | "new";
 
-const MODES: { id: DiscoveryMode; label: string; image: string; heading: string }[] = [
-  { id: "buy", label: "Buy", image: "/landing/hero-buy.png", heading: "Imagine yourself there.\nReally." },
-  { id: "rent", label: "Rental", image: "/landing/hero-rent.png", heading: "Find a place that\nfeels like home." },
-  { id: "new", label: "New developments", image: "/landing/hero-new.png", heading: "See what is being\nbuilt next." },
+const MODES: { id: DiscoveryMode; label: string; icon: typeof Home }[] = [
+  { id: "buy", label: "Buy", icon: Home },
+  { id: "rent", label: "Rental", icon: KeyRound },
+  { id: "new", label: "New developments", icon: Building2 },
 ];
 
+const CYCLE_WORDS = ["home", "apartment", "villa", "house", "studio"];
+
 const tools = [
-  { href: "/rent-vs-buy", icon: CircleDollarSign, label: "Rent vs Buy" },
-  { href: "/new-projects", icon: Lightbulb, label: "Explore new developments" },
-  { href: "/rent-vs-buy", icon: Calculator, label: "Plan your mortgage" },
+  {
+    href: "/rent-vs-buy",
+    icon: CircleDollarSign,
+    title: "Rent vs Buy",
+    description: "Compare costs and benefits to make the right decision.",
+  },
+  {
+    href: "/new-projects",
+    icon: Building2,
+    title: "Explore New Developments",
+    description: "Browse the latest projects and invest in tomorrow.",
+  },
+  {
+    href: "/resources/mortgage-calculator",
+    icon: Calculator,
+    title: "Plan Your Mortgage",
+    description: "Estimate payments and find the best mortgage for you.",
+  },
 ];
 
 export function LandingHero() {
@@ -29,7 +48,6 @@ export function LandingHero() {
   const setTransaction = useAppStore((s) => s.setTransaction);
   const setMode = useAppStore((s) => s.setMode);
   const [mode, setDiscoveryMode] = useState<DiscoveryMode>("buy");
-  const active = MODES.find((item) => item.id === mode) ?? MODES[0];
 
   function selectMode(next: DiscoveryMode) {
     setDiscoveryMode(next);
@@ -45,57 +63,94 @@ export function LandingHero() {
   }
 
   return (
-    <main className="relative flex min-h-dvh flex-col overflow-hidden bg-neutral-100">
-      <Header />
+    <div className="relative min-h-dvh">
+      {/* Fixed full-page backdrop — sits behind the header, hero and
+          tools row alike, not boxed into one column. */}
+      <HeroWallpaper />
 
-      <section className="relative min-h-[44rem] flex-1 overflow-hidden lg:min-h-[calc(100dvh-4rem)]">
-        {MODES.map((item) => (
-          // eslint-disable-next-line @next/next/no-img-element -- full-bleed illustrative city scene
-          <img key={item.id} src={item.image} alt="" className={cn("absolute inset-0 h-full w-full object-cover transition-opacity duration-700", item.id === mode ? "opacity-100" : "opacity-0")} />
-        ))}
-        <div className="absolute inset-0 bg-gradient-to-r from-black/10 via-transparent to-black/10" />
+      <main className="relative z-10 min-h-dvh">
+        <Header />
 
-        <div className="relative z-10 mx-auto flex h-full max-w-[96rem] items-center justify-end px-5 py-10 sm:px-8 lg:px-12 lg:pb-28">
-          <div className="w-full max-w-[36rem]">
-            <h1 className="mb-6 whitespace-pre-line text-4xl font-extrabold leading-[0.94] tracking-tight text-white drop-shadow-[0_3px_4px_rgba(0,0,0,0.36)] sm:text-5xl lg:text-6xl">
-              {active.heading}
+        <section className="mx-auto grid max-w-[88rem] grid-cols-1 items-center gap-10 px-5 py-8 sm:px-8 lg:grid-cols-2 lg:gap-14 lg:px-12 lg:py-12">
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-brand-100 bg-white px-4 py-1.5 text-sm font-semibold text-brand-700 shadow-[0_2px_10px_rgba(17,24,39,0.06)]">
+              <Sparkles className="h-4 w-4 text-accent" />
+              Your next chapter starts here
+            </span>
+
+            {/* Two fixed rows on purpose: the animated word's width changes
+                as it types/backspaces, and letting "that fits your life"
+                share a line with it meant that line's wrap point shifted
+                underneath it constantly. A hard break keeps row two static
+                regardless of what row one is doing. */}
+            <h1 className="mt-4 text-4xl font-extrabold leading-[1.15] tracking-tight text-neutral-900 sm:text-5xl lg:text-[3.2rem]">
+              Find <TypewriterWord words={CYCLE_WORDS} className="text-brand-600" />
+              <br />
+              that fits your life.
             </h1>
 
-            <div className="landing-search-tabs grid grid-cols-3 gap-1">
-                {MODES.map((item) => (
-                  <button key={item.id} onClick={() => selectMode(item.id)} className={cn("flex min-h-14 items-center justify-center border px-2 text-center text-[11px] font-extrabold uppercase leading-tight tracking-[0.06em] transition-colors sm:text-xs", item.id === mode ? "border-brand-500 bg-brand-500 text-white shadow-[0_3px_9px_rgba(107,85,245,0.28)]" : "border-white bg-white text-neutral-600 hover:border-neutral-200 hover:text-neutral-900")}>
-                    {item.label}
-                  </button>
-                ))}
-            </div>
-            <div key={mode} className="landing-search-card bg-white text-neutral-900 shadow-[0_8px_24px_rgba(17,24,39,0.24)]">
-              <div className="mx-auto max-w-[31rem] px-7 pb-8 pt-8 sm:px-10">
-                <p className="mb-6 text-center text-xl leading-relaxed text-neutral-600">I would like to find a home that fits me.</p>
-                <div className="landing-sentence-filter">
-                  <SentenceFilterBar />
-                </div>
-                <div className="mt-7 flex justify-center">
-                  <button onClick={search} className="flex min-h-13 items-center gap-2 bg-accent px-9 text-sm font-extrabold uppercase tracking-[0.08em] text-neutral-900 transition-colors hover:bg-accent/90">
-                    View properties <ArrowRight className="h-4 w-4" />
-                  </button>
-                </div>
+            <p className="mt-3 max-w-md text-lg leading-relaxed text-neutral-600">
+              Discover thousands of properties across Albania. Buy, rent, or explore new developments with confidence.
+            </p>
+
+            <div className="mt-5 max-w-lg border border-neutral-200 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
+              <div className="grid grid-cols-3">
+                {MODES.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => selectMode(item.id)}
+                      className={cn(
+                        "flex min-h-14 items-center justify-center gap-2 border-b-2 px-2 text-center text-xs font-extrabold uppercase leading-tight tracking-[0.04em] transition-all duration-150 ease-[var(--ease-rz)]",
+                        item.id === mode
+                          ? "border-brand-600 bg-brand-600 text-white"
+                          : "border-transparent bg-white text-neutral-500 hover:bg-neutral-50 hover:text-brand-700"
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {item.label}
+                    </button>
+                  );
+                })}
               </div>
-              <Link href="/search" className="flex items-center justify-between border-t border-neutral-200 bg-neutral-100 px-7 py-5 text-sm font-semibold text-neutral-600 hover:bg-neutral-200">
-                <span className="flex items-center gap-3"><Building2 className="h-6 w-6" />Browse all homes on the map</span><ChevronRight className="h-4 w-4" />
-              </Link>
+              <LandingSearchCard onSubmit={search} />
             </div>
           </div>
-        </div>
 
-        <div className="absolute inset-x-0 bottom-0 z-10 hidden border-t border-neutral-200 bg-white lg:block">
-          <div className="mx-auto grid max-w-[96rem] grid-cols-3 divide-x divide-neutral-200 px-12">
+          {/* Right column is intentionally empty — the wallpaper itself is
+              a fixed full-page backdrop (see HeroWallpaper below the
+              header), so this column just reserves the split without
+              re-boxing it into a panel. Hidden below lg since there's
+              nothing to show there and the space is better spent on the
+              search card at narrower widths. */}
+          <div aria-hidden="true" className="hidden lg:block" />
+        </section>
+
+        <section className="mx-auto max-w-[88rem] px-5 pb-8 sm:px-8 lg:px-12 lg:pb-12">
+          <div className="grid gap-3 sm:grid-cols-3">
             {tools.map((item) => {
               const Icon = item.icon;
-              return <Link key={item.href} href={item.href} className="flex min-h-24 items-center gap-4 px-7 text-sm font-extrabold uppercase tracking-[0.04em] text-brand-700 hover:bg-neutral-50"><Icon className="h-8 w-8 shrink-0 text-accent" />{item.label}<ChevronRight className="ml-auto h-4 w-4" /></Link>;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="group flex items-center gap-3 border border-neutral-200 bg-white p-3.5 transition-all duration-150 ease-[var(--ease-rz)] hover:-translate-y-1 hover:border-brand-200 hover:shadow-[var(--shadow-2)]"
+                >
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600 transition-transform duration-150 ease-[var(--ease-rz)] group-hover:scale-105">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <span className="flex-1">
+                    <span className="block text-sm font-extrabold text-neutral-900">{item.title}</span>
+                    <span className="block text-xs leading-snug text-neutral-500">{item.description}</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400 transition-transform duration-150 group-hover:translate-x-1 group-hover:text-brand-600" />
+                </Link>
+              );
             })}
           </div>
-        </div>
-      </section>
-    </main>
+        </section>
+      </main>
+    </div>
   );
 }

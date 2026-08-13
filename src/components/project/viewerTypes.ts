@@ -1,4 +1,4 @@
-import type { Project, Project3DConfig, Unit } from "@/lib/types";
+import type { Project, Project3DConfig, ProjectDetailModel, Unit } from "@/lib/types";
 
 /** Shared imperative handle + props contract between ThreeProjectViewer.tsx
  * (a thin re-export) and ProceduralProjectViewer.tsx (the real engine) —
@@ -19,6 +19,23 @@ export interface ThreeProjectViewerHandle {
 export interface ThreeProjectViewerProps {
   project: Project;
   config: Project3DConfig;
+  /** The admin-uploaded detailed GLB (or `null` if none/not enabled) —
+   * caller-supplied, not fetched internally, so both real callers control
+   * their own source: the public page uses `useProjectDetailModel` (the
+   * published version, unchanged); the Admin editor's live preview
+   * supplies its own object built from the currently active draft/
+   * published version plus every in-progress slider/link/override edit,
+   * so the preview never lags behind unsaved changes. Mirrors how `config`
+   * above already works — no internal fetch there either. */
+  detailModel: ProjectDetailModel | null;
+  /** Resolved URL of `config.hdriId`'s shared PlatformHdri row, or `null`
+   * if none is selected (or it failed to resolve) — the engine loads and
+   * uses it in place of the procedural sky gradient. Caller-resolved for
+   * the same reason `detailModel` is: both real callers already fetch
+   * their own copy of the platform HDRI list (usePlatformHdris) and
+   * resolve `config.hdriId` against it, so the engine itself doesn't need
+   * its own network fetch just to look up one URL. */
+  hdriUrl?: string | null;
   className?: string;
   selectedUnitId?: string | null;
   onSelectUnit?: (unit: Unit) => void;

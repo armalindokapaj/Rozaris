@@ -229,6 +229,10 @@ export interface Project3DConfig {
   cameraMaxDistanceMultiplier: number;
   /** Degrees, 0-180 — caps how far under the building the camera can orbit. */
   cameraMaxPolarDeg: number;
+  /** Degrees, 0-180 — floor on how far *over the top* the camera can orbit
+   * (mirrors cameraMaxPolarDeg's floor/ceiling pair; 0 = can look straight
+   * down from directly above, the OrbitControls default). */
+  cameraMinPolarDeg: number;
   autoRotate: boolean;
   constructionStagesEnabled: boolean;
   status: "draft" | "published";
@@ -263,7 +267,68 @@ export interface Project3DConfig {
    * real state (a loaded GLB / at least one saved preset). */
   viewerUI: ViewerUIToggles;
 
+  /** `null` = no HDRI, use `skyPreset`'s procedural gradient (unchanged
+   * default behavior). Otherwise the environment/reflections come from
+   * this shared library entry's `.hdr`/`.exr` instead. */
+  hdriId: string | null;
+  /** "geographic" (default) computes the sun from real lat/lng/date/time
+   * via src/lib/sunPosition.ts, unchanged; "manual" uses the three fields
+   * below directly instead. */
+  sunMode: "geographic" | "manual";
+  /** Degrees, 0-360 — compass direction the sun comes from. Manual mode only. */
+  sunAzimuthDeg: number;
+  /** Degrees, -90 to 90 — angle above the horizon. Manual mode only. */
+  sunElevationDeg: number;
+  /** Multiplier on the sun's base intensity — applies under both sun modes
+   * (geographic mode used to ignore this entirely; fixed so the slider is
+   * meaningful regardless of mode). Defaults to 1, so every project's
+   * behavior is unchanged until an admin touches the slider. */
+  sunIntensity: number;
+
+  /** Exponential fog (THREE.FogExp2) — off by default, so every existing
+   * project renders unchanged until an admin enables it. */
+  fogEnabled: boolean;
+  fogColor: string;
+  /** THREE.FogExp2's density factor — small values (0-0.05ish) are the
+   * useful range; higher gets opaque very quickly at typical scene scale. */
+  fogDensity: number;
+
+  /** Hex colors for the four unit statuses (+ the shared "selected"
+   * highlight) shown both in the 3D scene (GLB unit boxes and the
+   * procedural box fallback) and the public viewer's status legend/filter
+   * dot — see RenderEngine.ts's refreshGlbUnitBoxAppearance/refreshBoxAppearance
+   * and ProceduralProjectViewer.tsx's StatusLegend usage. Default values
+   * match the previously-hardcoded UNIT_BOX_COLOR/SELECTED_COLOR constants
+   * in viewerPresets.ts exactly, so existing projects render identically
+   * until an admin changes them. */
+  unitColorAvailable: string;
+  unitColorReserved: string;
+  unitColorSold: string;
+  unitColorSelected: string;
+
+  /** Real per-project overrides for the post-processing chain — ANDed with
+   * QUALITY_TIERS' own tier-level flags in RenderEngine.ts's
+   * buildRenderPipeline, not a replacement for them. ssrEnabled/gtaoEnabled
+   * are currently inert (every tier's ssr/gtao is force-false platform-wide
+   * — see viewerPresets.ts's QUALITY_TIERS comment) but real and
+   * schema-backed, ready for whenever that's safely re-enabled. */
+  shadowsEnabled: boolean;
+  ssrEnabled: boolean;
+  gtaoEnabled: boolean;
+  antialiasEnabled: boolean;
+
   updatedAt: string;
+}
+
+/** A shared, platform-wide HDRI environment map — uploaded once, selectable
+ * across every project via `Project3DConfig.hdriId`. See PlatformHdri in
+ * prisma/schema.prisma. */
+export interface PlatformHdri {
+  id: string;
+  name: string;
+  url: string;
+  thumbnailUrl: string | null;
+  createdAt: string;
 }
 
 export interface ViewerUIToggles {
@@ -271,6 +336,15 @@ export interface ViewerUIToggles {
   unitSearch: boolean;
   timeOfDay: boolean;
   viewPreset: boolean;
+  /** Interaction toggles (added alongside the full-configurator pass) —
+   * optional since `viewerUI` is a nullable Json? column and every
+   * pre-existing row predates these keys; every read site defaults a
+   * missing key to `true` (today's hardcoded always-on behavior), same
+   * pattern this codebase already established for new Json? keys (see
+   * "rozaris-3d-editor-render-hardening" memory). */
+  hoverEnabled?: boolean;
+  selectEnabled?: boolean;
+  showUnitInfo?: boolean;
 }
 
 export interface CameraPreset {
@@ -367,6 +441,11 @@ export interface NodeOverride {
   colorHex?: string;
   roughness?: number;
   metalness?: number;
+  /** 0-1. Unset means "use the GLB's own opacity." Applying it also flips
+   * the material's `transparent` flag on (see RenderEngine.ts's
+   * applyNodeOverrides) — a value of 1 is functionally "opaque" even
+   * though it's stored, matching the slider's own full-range default. */
+  opacity?: number;
   visible?: boolean;
   carried?: boolean;
 }
@@ -404,6 +483,77 @@ export interface ProjectDetailModel {
   meshCount: number | null;
   materialCount: number | null;
   textureCount: number | null;
+}
+
+/**
+ * The single, versioned authoring-state snapshot for one revision of a
+ * project's 3D Experience — rewrite Track B, Phase 1 ("Consolidate the
+ * schema into one versioned ExperienceDocument", per the master PRD's
+ * non-negotiable principle P2 "One editor state"). Stored as
+ * `DetailModelVersion.experienceDocument`, one snapshot per version,
+ * mirroring the PRD's `LIVE r12 / DRAFT r13` revision model (a
+ * `DetailModelVersion` row already *is* a revision).
+ *
+ * Deliberately additive for now: built from and alongside the existing
+ * scattered fields (`Project3DConfig` + `DetailModelVersion`'s own
+ * placement/overrides/links), not yet the thing every read path consumes
+ * — see buildExperienceDocument() in src/lib/experienceDocument.ts, the
+ * one function that assembles it. The engine module (Phase 1's next step)
+ * is the first real consumer; every existing route/hook keeps reading the
+ * scattered fields directly, unchanged, for at least one more release.
+ */
+export interface ExperienceDocument {
+  schemaVersion: 1;
+  projectId: string;
+  /** = the owning DetailModelVersion's `version` number. */
+  revision: number;
+  model: {
+    scale: number;
+    rotationDeg: number;
+    altitudeOffset: number;
+  };
+  materials: {
+    overrides: NodeOverride[];
+  };
+  environment: {
+    skyPreset: SkyPreset;
+    backgroundPreset: BackgroundPreset;
+    environmentIntensity: number;
+    hdriId: string | null;
+  };
+  lighting: {
+    sunMode: "geographic" | "manual";
+    sunAzimuthDeg: number;
+    sunElevationDeg: number;
+    sunIntensity: number;
+    northRotationDeg: number;
+    defaultTimeOfDay: number;
+    allowUserTimeChange: boolean;
+  };
+  camera: {
+    presets: CameraPreset[];
+    fovDesktop: number;
+    fovMobile: number;
+    startDistanceMultiplier: number;
+    minDistanceMultiplier: number;
+    maxDistanceMultiplier: number;
+    maxPolarDeg: number;
+    autoRotate: boolean;
+  };
+  effects: {
+    qualityPreset: QualityPreset;
+    renderingMode: RenderingMode;
+    glassPreset: GlassPreset;
+    exposure: number;
+  };
+  units: {
+    bindings: UnitMeshLink[];
+  };
+  viewer: ViewerUIToggles;
+  publishing: {
+    publicationStatus: "draft" | "published" | "archived";
+    validationStatus: "ready" | "warning" | "blocked";
+  };
 }
 
 export type SavedEntityType = "listing" | "project" | "neighborhood";

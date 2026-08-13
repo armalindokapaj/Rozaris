@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
+import { refreshExperienceDocument } from "@/lib/experienceDocument";
 
 /** Restores a previously-published (now archived) version back to
  * published — PRD_Admin_3D_Project_Experience §37 "Rollback" (restores
@@ -41,6 +42,8 @@ export async function POST(
       include: { unitLinks: true },
     });
   });
+
+  await refreshExperienceDocument(prisma, projectId, versionId);
 
   await logAuditEvent({
     actor,

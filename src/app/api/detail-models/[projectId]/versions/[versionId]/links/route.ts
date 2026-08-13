@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
+import { refreshExperienceDocument } from "@/lib/experienceDocument";
 
 const linksSchema = z.array(
   z.object({
@@ -57,6 +58,7 @@ export async function PUT(
     });
     return tx.unitMeshLinkV2.findMany({ where: { detailModelVersionId: versionId } });
   });
+  await refreshExperienceDocument(prisma, projectId, versionId);
 
   // Every other write route in this directory (upload/publish/rollback/
   // discard) logs — this one was the one gap, presumably an oversight

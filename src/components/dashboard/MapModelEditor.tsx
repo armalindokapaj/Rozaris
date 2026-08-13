@@ -87,6 +87,7 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
+  const [relocating, setRelocating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Editable placement — synced from the active draft (or the published
@@ -227,6 +228,7 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
       }
       await refresh();
       setPicking(false);
+      setRelocating(false);
     } catch {
       setError(t("admin.mapModelDeleteFailed"));
     } finally {
@@ -367,6 +369,16 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
             setLongitude(point.lng);
             setLatitude(point.lat);
           }}
+          relocating={canEdit && relocating}
+          onRelocate={(point) => {
+            setLongitude(point.lng);
+            setLatitude(point.lat);
+            // One click is the whole action — auto-exit so Admin gets
+            // immediate visual confirmation (the marker/model jumping to
+            // the new spot) instead of staying in a mode that now reads as
+            // "did that work?".
+            setRelocating(false);
+          }}
         />
       </div>
 
@@ -487,22 +499,43 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
 
             <fieldset disabled={!canEdit} className="space-y-5 disabled:opacity-50">
               {hasModel && (
-                <div className="flex items-center justify-between gap-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
-                  <div className="flex items-center gap-2 text-xs font-medium text-neutral-600">
-                    <MapPin className="h-3.5 w-3.5 text-brand-500" />
-                    {t("admin.mapModelPositionHint")}
+                <div className="space-y-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs font-medium text-neutral-600">
+                      <MapPin className="h-3.5 w-3.5 text-brand-500" />
+                      {t("admin.mapModelPositionHint")}
+                    </div>
+                    {positionMoved && (
+                      <button
+                        onClick={() => {
+                          setRelocating(false);
+                          setLongitude(project.coords.lng);
+                          setLatitude(project.coords.lat);
+                        }}
+                        className="shrink-0 text-[11px] font-semibold text-red-500 hover:underline"
+                      >
+                        {t("admin.mapModelResetPosition")}
+                      </button>
+                    )}
                   </div>
-                  {positionMoved && (
-                    <button
-                      onClick={() => {
-                        setLongitude(project.coords.lng);
-                        setLatitude(project.coords.lat);
-                      }}
-                      className="shrink-0 text-[11px] font-semibold text-red-500 hover:underline"
-                    >
-                      {t("admin.mapModelResetPosition")}
-                    </button>
-                  )}
+                  <button
+                    onClick={() => {
+                      // Mutually exclusive with "Pick buildings to remove"
+                      // — see that button's own comment.
+                      setPicking(false);
+                      setRelocating((v) => !v);
+                    }}
+                    aria-pressed={relocating}
+                    className={cn(
+                      "flex w-full items-center justify-center gap-1.5 rounded-control py-2 text-xs font-semibold",
+                      relocating
+                        ? "bg-brand-500 text-white hover:bg-brand-600"
+                        : "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100"
+                    )}
+                  >
+                    <Crosshair className="h-3.5 w-3.5" />
+                    {relocating ? t("admin.mapModelRelocateDone") : t("admin.mapModelRelocate")}
+                  </button>
                 </div>
               )}
 
@@ -545,7 +578,14 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
               {hideBaseBuilding && (
                 <div className="space-y-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
                   <button
-                    onClick={() => setPicking((v) => !v)}
+                    onClick={() => {
+                      // Mutually exclusive with "Relocate position" — both
+                      // modes turn plain map clicks into an action, and
+                      // leaving both on at once would make a click do two
+                      // conflicting things at once.
+                      setRelocating(false);
+                      setPicking((v) => !v);
+                    }}
                     aria-pressed={picking}
                     className={cn(
                       "flex w-full items-center justify-center gap-1.5 rounded-control py-2 text-xs font-semibold",

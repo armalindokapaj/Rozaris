@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { signIn as nextAuthSignIn, useSession } from "next-auth/react";
 import {
   ShieldCheck,
   ListChecks,
@@ -23,6 +22,7 @@ import {
   Settings,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
+import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
 import { listings, projects, publishers } from "@/lib/mockData";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
@@ -101,47 +101,11 @@ function AdminPageInner() {
   );
   const { t } = useT();
 
-  // The real Auth.js session (checked by every 3D-pipeline write route via
-  // src/lib/adminAuth.ts) is a SEPARATE thing from the Zustand `auth` mock
-  // above, and the two can fall out of sync: the mock persists to
-  // localStorage indefinitely, while the real session cookie can expire, or
-  // its establishing signIn() call can fail/lag, leaving the UI looking
-  // "signed in as Admin" while every upload/delete/publish silently 401s.
-  // This was the root cause behind "can't upload/delete a 3D model" reports
-  // — surface and actively repair that mismatch instead of hiding it.
-  const { status: sessionStatus } = useSession();
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [reauthing, setReauthing] = useState(false);
-
-  async function establishAdminSession() {
-    setReauthing(true);
-    setAuthError(null);
-    try {
-      const result = await nextAuthSignIn("credentials", {
-        email: "admin@rozaris.demo",
-        password: "1",
-        redirect: false,
-      });
-      if (!result || result.error) {
-        setAuthError(t("admin.sessionEstablishFailed"));
-      }
-    } catch {
-      setAuthError(t("admin.sessionEstablishFailed"));
-    } finally {
-      setReauthing(false);
-    }
-  }
-
-  useEffect(() => {
-    // Auto-repair once the real session is confirmed missing (not while
-    // still "loading") for a user the mock already believes is signed in —
-    // e.g. after the JWT cookie expired since the last visit.
-    if (auth.signedIn && sessionStatus === "unauthenticated" && !reauthing) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      establishAdminSession();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth.signedIn, sessionStatus]);
+  // Real Auth.js session repair, separate from the Zustand `auth` mock flag
+  // above — see useAdminSessionRepair's doc comment. This was the root
+  // cause behind "can't upload/delete a 3D model" reports; the two
+  // full-page 3D editors use the same hook.
+  const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
 
   // In this frontend prototype, any signed-in demo account may preview the
   // Admin console — a real deployment gates this behind the Admin role.
@@ -482,13 +446,26 @@ function Viewer3DTab() {
           <h1 className="font-serif text-xl text-neutral-900">{t("admin.viewer3DTabTitle")}</h1>
           <p className="text-sm text-neutral-500">{t("admin.viewer3DTabSubtitle")}</p>
         </div>
-        <button
-          onClick={() => setCreating(true)}
-          className="flex items-center gap-1.5 rounded-control bg-brand-500 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-brand-600"
-        >
-          <Plus className="h-4 w-4" />
-          {t("admin.newProjectButton")}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* MVP test pipe (Create → Upload → Configure → Preview), separate
+              from the modal below — see "rozaris-mvp-admin-project-pipe"
+              memory. Doesn't replace the modal; both routes to a new
+              project coexist for now. */}
+          <button
+            onClick={() => router.push("/admin/projects/new")}
+            className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3.5 py-2.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-100"
+          >
+            <Plus className="h-4 w-4" />
+            {t("admin.newProjectPipeButton")}
+          </button>
+          <button
+            onClick={() => setCreating(true)}
+            className="flex items-center gap-1.5 rounded-control bg-brand-500 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-brand-600"
+          >
+            <Plus className="h-4 w-4" />
+            {t("admin.newProjectButton")}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

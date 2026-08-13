@@ -52,10 +52,33 @@ export async function POST(request: Request) {
     );
   }
 
-  const project = await prisma.project.upsert({
-    where: { id: data.id },
-    update: { ...data, publisherId },
-    create: { ...data, publisherId, approvalStatus: "active" },
-  });
-  return NextResponse.json(project);
+  // `slug` carries its own `@unique` constraint independent of the `id`
+  // this upsert is keyed on — two different projects submitting the same
+  // (client-computed, name-derived) slug previously crashed this route
+  // with an unhandled Prisma P2002, surfaced to the caller as a raw HTML
+  // 500 page instead of JSON. Real bug hit by the MVP admin wizard
+  // (`/admin/projects/new`) on a retry with the same project name after a
+  // page reload — see "rozaris-mvp-admin-project-pipe" memory. Auto-dedupe
+  // instead of crashing: a genuine update (same id) keeps its own slug.
+  let { slug } = data;
+  const existingBySlug = await prisma.project.findUnique({ where: { slug } });
+  if (existingBySlug && existingBySlug.id !== data.id) {
+    let suffix = 2;
+    while (await prisma.project.findUnique({ where: { slug: `${data.slug}-${suffix}` } })) {
+      suffix++;
+    }
+    slug = `${data.slug}-${suffix}`;
+  }
+
+  try {
+    const project = await prisma.project.upsert({
+      where: { id: data.id },
+      update: { ...data, slug, publisherId },
+      create: { ...data, slug, publisherId, approvalStatus: "active" },
+    });
+    return NextResponse.json(project);
+  } catch (err) {
+    console.error("POST /api/projects failed", err);
+    return NextResponse.json({ error: "Could not save the project — try again." }, { status: 500 });
+  }
 }

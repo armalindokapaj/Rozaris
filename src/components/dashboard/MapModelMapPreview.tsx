@@ -42,6 +42,8 @@ export function MapModelMapPreview({
   onToggleBuilding,
   canMoveModel = false,
   onMoveModel,
+  relocating = false,
+  onRelocate,
   className,
 }: {
   /** The project's own coordinates — only used to center/recenter the map,
@@ -67,6 +69,14 @@ export function MapModelMapPreview({
   /** Shows a draggable position marker on the model's anchor point. */
   canMoveModel?: boolean;
   onMoveModel?: (point: GeoPoint) => void;
+  /** True while Admin is in "Relocate position" mode — swaps the cursor to
+   * a crosshair and turns the next map click into an instant "place the
+   * model here" instead of requiring Admin to find and drag the (often
+   * small, easy-to-miss) position marker handle. Same on/off shape as
+   * `picking` above; the caller is responsible for keeping the two mutually
+   * exclusive (both listen for plain map clicks). */
+  relocating?: boolean;
+  onRelocate?: (point: GeoPoint) => void;
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +88,10 @@ export function MapModelMapPreview({
   useEffect(() => {
     onMoveModelRef.current = onMoveModel;
   }, [onMoveModel]);
+  const onRelocateRef = useRef(onRelocate);
+  useEffect(() => {
+    onRelocateRef.current = onRelocate;
+  }, [onRelocate]);
   const [ready, setReady] = useState(false);
   const [webglFailReason, setWebglFailReason] = useState<string | null>(null);
   // Tracks which glbUrl (if any) last failed to load. Deriving `loadError`
@@ -272,6 +286,27 @@ export function MapModelMapPreview({
     };
   }, [ready, picking, onToggleBuilding]);
 
+  // --- "Relocate position": crosshair cursor + click-anywhere-to-place, the
+  // faster alternative to hunting down and dragging the small position
+  // marker handle. Off by default; the caller (MapModelEditor) turns it on
+  // via the "Relocate position" button and is responsible for keeping it
+  // mutually exclusive with `picking` (both bind plain map clicks). ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !relocating) return;
+    const canvas = map.getCanvas();
+    canvas.style.cursor = "crosshair";
+
+    function onClick(e: mapboxgl.MapMouseEvent) {
+      onRelocateRef.current?.({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+    }
+    map.on("click", onClick);
+    return () => {
+      map.off("click", onClick);
+      canvas.style.cursor = "";
+    };
+  }, [ready, relocating]);
+
   // --- Persistent highlight on every currently-picked building, whenever
   // not actively picking ---
   useEffect(() => {
@@ -306,6 +341,13 @@ export function MapModelMapPreview({
         <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
           <span className="glass-panel-dark rounded-pill px-3.5 py-2 text-xs font-medium text-white">
             {t("admin.mapModelPickHint")}
+          </span>
+        </div>
+      )}
+      {relocating && (
+        <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+          <span className="glass-panel-dark rounded-pill px-3.5 py-2 text-xs font-medium text-white">
+            {t("admin.mapModelRelocateHint")}
           </span>
         </div>
       )}

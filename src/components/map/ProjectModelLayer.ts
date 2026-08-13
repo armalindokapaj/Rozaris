@@ -151,6 +151,18 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
         root.matrixAutoUpdate = false;
         root.traverse((child) => {
           child.userData.projectId = entry.projectId;
+          // Three.js's automatic per-mesh frustum culling derives its
+          // clip planes from `camera.projectionMatrix` — here that's
+          // Mapbox's own mercator/pitch projection matrix (see render()
+          // below), not a standard OpenGL projection. Testing each mesh's
+          // bounding sphere against those incorrectly-derived planes
+          // silently drops meshes that are actually on-screen, and which
+          // ones get dropped shifts with bearing/pitch — this is exactly
+          // the "faces disappear when rotating and don't come back"
+          // symptom. Mapbox's own viewport clipping already keeps the
+          // layer from drawing off-screen, so per-mesh culling here is
+          // both redundant and actively wrong — disable it.
+          child.frustumCulled = false;
         });
         this.scene.add(root);
         const loaded: LoadedModel = { root, entry, lastGroundElevation: 0 };

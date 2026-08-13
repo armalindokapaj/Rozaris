@@ -69,6 +69,23 @@ export const TIME_PRESETS: [string, number][] = [
 // the same MRT normal buffer as GTAO/SSR but is materially more expensive
 // and, per its own node design, expects a temporal/spatial denoiser
 // downstream — the highest-risk effect to wire blind, so it stays off.
+//
+// `bloom`/`gtao`/`ssr` are now forced `false` on every tier below (2026-08-13)
+// — that TSL chain (RenderEngine.ts `buildRenderPipeline`) is the confirmed
+// source of two separate, still-unexplained visual failures on real GPUs:
+// a fully black viewer (three real SSRNode/GTAONode crashes were found and
+// fixed, but the screen stayed black with a clean console afterward), then
+// — after this exact code had never actually been opened in a browser
+// since — solid red, a classic symptom of NaN/out-of-range HDR values
+// hitting `ACESFilmicToneMapping` with no way to inspect the shader
+// pipeline's internal state from here to root-cause it further. Disabling
+// the chain removes the unstable code path entirely rather than guessing a
+// fourth blind fix; the real geographic sun, ambient light and PMREM sky
+// environment/reflections (`rebuildEnvironment`/`applySunAndEnvironment`,
+// untouched by this change) are what actually deliver a realistic sky dome
+// and are not implicated in either failure. `antialias` (SMAA, a separate,
+// much simpler effect applied to the plain scene-pass color) is left as-is
+// per tier. Re-enable per-tier only alongside real browser verification.
 // ---------------------------------------------------------------------------
 
 export interface QualityTierSettings {
@@ -91,9 +108,9 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     renderScale: 1,
     dprCap: 2,
     shadowMapSize: 4096,
-    bloom: true,
-    gtao: true,
-    ssr: true,
+    bloom: false,
+    gtao: false,
+    ssr: false,
     antialias: true,
     ssgi: false,
   },
@@ -101,9 +118,9 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     renderScale: 0.95,
     dprCap: 2,
     shadowMapSize: 2048,
-    bloom: true,
-    gtao: true,
-    ssr: true,
+    bloom: false,
+    gtao: false,
+    ssr: false,
     antialias: true,
     ssgi: false,
   },
@@ -111,8 +128,8 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     renderScale: 0.8,
     dprCap: 1.5,
     shadowMapSize: 1536,
-    bloom: true,
-    gtao: true,
+    bloom: false,
+    gtao: false,
     ssr: false,
     antialias: true,
     ssgi: false,
@@ -121,7 +138,7 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     renderScale: 0.75,
     dprCap: 1.25,
     shadowMapSize: 1024,
-    bloom: true,
+    bloom: false,
     gtao: false,
     ssr: false,
     antialias: false,

@@ -1,11 +1,16 @@
+import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
 import { requireAdmin } from "@/lib/adminAuth";
 import { fetchAndValidateGlb } from "@/lib/glbValidate";
+import { optimizeGlbForDelivery } from "@/lib/glbOptimize";
 import { logAuditEvent } from "@/lib/audit";
-import type { NodeOverride, SceneManifestNode } from "@/lib/types";
+import { buildExperienceDocument } from "@/lib/experienceDocument";
+import type { CameraPreset, NodeOverride, Project3DConfig, SceneManifestNode, ViewerUIToggles } from "@/lib/types";
+
+const DEFAULT_VIEWER_UI: ViewerUIToggles = { home: true, unitSearch: true, timeOfDay: true, viewPreset: true };
 
 const createSchema = z.object({
   glbUrl: z.string().url(),
@@ -66,6 +71,33 @@ export async function POST(
   const nextVersion = (last?.version ?? 0) + 1;
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
 
+  // Real original/delivery asset split (rewrite Track B, step 5):
+  // `sourceAssetUrl` stays the untouched upload; `publicAssetUrl` — what
+  // the public viewer and admin preview actually load — becomes a
+  // separately-optimized copy when optimization succeeds. Skipped for an
+  // already-blocked file (nothing to gain, and a structurally broken GLB
+  // is exactly the input this step is least likely to handle predictably).
+  // Falls back to the original URL on ANY failure — this step must never
+  // be why an upload fails; worst case is today's exact pre-rewrite
+  // behavior (source and delivery identical).
+  let publicAssetUrl = parsed.data.glbUrl;
+  if (validation.status !== "blocked") {
+    try {
+      const sourceRes = await fetch(parsed.data.glbUrl);
+      if (!sourceRes.ok) throw new Error(`Could not re-fetch source asset (HTTP ${sourceRes.status})`);
+      const sourceBuffer = await sourceRes.arrayBuffer();
+      const optimized = await optimizeGlbForDelivery(sourceBuffer);
+      const delivery = await put(`project-detail-models/delivery-${projectId}-v${nextVersion}.glb`, Buffer.from(optimized), {
+        access: "public",
+        addRandomSuffix: true,
+        contentType: "model/gltf-binary",
+      });
+      publicAssetUrl = delivery.url;
+    } catch (err) {
+      console.error("3D Experience: delivery-asset optimization failed, using source asset as delivery too", err);
+    }
+  }
+
   const publishedVersion = await prisma.detailModelVersion.findFirst({
     where: { projectId, publicationStatus: "published" },
     include: { unitLinks: true },
@@ -89,13 +121,51 @@ export async function POST(
     return [{ ...o, rzNodeId: newRzNodeId, carried: true }];
   });
 
+  // Carry forward mappings whose mesh name still exists in the new GLB —
+  // PRD §19: "When a replacement GLB uses identical stable mesh names,
+  // ROZARIS attempts to carry mappings forward." Anything else (renamed/
+  // new/removed nodes) simply isn't created here; the admin editor's node
+  // list will show it unlinked, same as a first upload. Lifted above the
+  // transaction (doesn't depend on the new version's id) so it can also
+  // feed the ExperienceDocument snapshot below.
+  const carryable = (publishedVersion?.unitLinks ?? []).filter((l) =>
+    validation.unitNodeNames.includes(l.meshName)
+  );
+
+  // ExperienceDocument snapshot (rewrite Track B, Phase 1) — additive,
+  // only built when the project already has a Project3DConfig row (it's
+  // an optional per-project row; nothing reads this document yet, so
+  // there's no fallback-default to maintain here, unlike the read paths
+  // real visitors hit).
+  const config3d = await prisma.project3DConfig.findUnique({ where: { projectId } });
+  const experienceDocument = config3d
+    ? buildExperienceDocument(
+        {
+          ...config3d,
+          cameraPresets: (config3d.cameraPresets as unknown as CameraPreset[]) ?? [],
+          viewerUI: (config3d.viewerUI as unknown as ViewerUIToggles) ?? DEFAULT_VIEWER_UI,
+        } as unknown as Project3DConfig,
+        {
+          projectId,
+          version: nextVersion,
+          scale: parsed.data.scale,
+          rotationDeg: parsed.data.rotationDeg,
+          altitudeOffset: parsed.data.altitudeOffset,
+          nodeOverrides: carriedOverrides,
+          unitLinks: carryable.map((l) => ({ meshName: l.meshName, unitId: l.unitId })),
+          publicationStatus: "draft",
+          validationStatus: validation.status,
+        }
+      )
+    : null;
+
   const created = await prisma.$transaction(async (tx) => {
     const version = await tx.detailModelVersion.create({
       data: {
         projectId,
         version: nextVersion,
         sourceAssetUrl: parsed.data.glbUrl,
-        publicAssetUrl: parsed.data.glbUrl,
+        publicAssetUrl,
         fileName: parsed.data.fileName,
         fileSize: parsed.data.fileSize,
         triangleCount: validation.triangleCount,
@@ -116,19 +186,14 @@ export async function POST(
         nodeOverrides: carriedOverrides.length
           ? (carriedOverrides as unknown as Prisma.InputJsonValue)
           : undefined,
+        experienceDocument: experienceDocument
+          ? (experienceDocument as unknown as Prisma.InputJsonValue)
+          : undefined,
         publicationStatus: "draft",
         uploadedBy: actor,
       },
     });
 
-    // Carry forward mappings whose mesh name still exists in the new GLB —
-    // PRD §19: "When a replacement GLB uses identical stable mesh names,
-    // ROZARIS attempts to carry mappings forward." Anything else (renamed/
-    // new/removed nodes) simply isn't created here; the admin editor's node
-    // list will show it unlinked, same as a first upload.
-    const carryable = (publishedVersion?.unitLinks ?? []).filter((l) =>
-      validation.unitNodeNames.includes(l.meshName)
-    );
     if (carryable.length > 0) {
       await tx.unitMeshLinkV2.createMany({
         data: carryable.map((l) => ({

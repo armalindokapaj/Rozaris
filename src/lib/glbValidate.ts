@@ -196,14 +196,40 @@ export async function validateGlb(
     issues.push(`Triangle count ${triangleCount.toLocaleString()} exceeds the ${warnTriangles.toLocaleString()} recommended limit — ${consequence}. Consider simplifying the model before publishing.`);
   }
 
-  let status: ValidationStatus = "ready";
-  if (meshCount === 0 || triangleCount > blockTriangles) status = "blocked";
-  else if (issues.length > 0) status = "warning";
-
   // Only the detail-model pipeline has any use for a full node manifest
   // (Scene Explorer, per-node overrides) — skip the walk for map-model
   // uploads rather than compute and immediately discard it.
   const sceneManifest = kind === "detailModel" ? buildSceneManifest(json) : [];
+
+  // Rewrite Track B, step 4 (stable-ID resolution — honestly scoped): a
+  // node override/unit link is stored keyed by `rzNodeId`, but resolving
+  // that to a live Object3D at render time is still name-based (three.js's
+  // GLTFLoader doesn't expose the raw glTF node array index anywhere on
+  // the parsed scene graph, so recomputing a matching rzNodeId client-side
+  // isn't reliably possible — a real, documented limitation, not
+  // something this pass can silently solve). What IS solvable: warning
+  // admin up front when two nodes in the SAME file share a name, since
+  // that's exactly the situation where name-based resolution becomes
+  // genuinely ambiguous (an override/link could silently apply to the
+  // wrong one of the two).
+  if (kind === "detailModel") {
+    const nameCounts = new Map<string, number>();
+    for (const n of sceneManifest) nameCounts.set(n.name, (nameCounts.get(n.name) ?? 0) + 1);
+    const duplicates = Array.from(nameCounts.entries()).filter(([, count]) => count > 1);
+    if (duplicates.length > 0) {
+      const sample = duplicates
+        .slice(0, 5)
+        .map(([name, count]) => `"${name}" (×${count})`)
+        .join(", ");
+      issues.push(
+        `${duplicates.length} node name${duplicates.length === 1 ? "" : "s"} used more than once (${sample}${duplicates.length > 5 ? ", …" : ""}) — material overrides and unit links are matched by name, so a duplicate can silently apply to the wrong node. Consider renaming for clarity before linking units or setting overrides.`
+      );
+    }
+  }
+
+  let status: ValidationStatus = "ready";
+  if (meshCount === 0 || triangleCount > blockTriangles) status = "blocked";
+  else if (issues.length > 0) status = "warning";
 
   return { status, issues, triangleCount, meshCount, materialCount, textureCount, unitNodeNames, sceneManifest };
 }

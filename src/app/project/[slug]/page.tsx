@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { getProjectBySlug, projects } from "@/lib/mockData";
 import { SITE_URL } from "@/lib/constants";
 import { ArchVizClient } from "./ArchVizClient";
+import { CustomProjectPreview } from "./CustomProjectPreview";
 
 export function generateStaticParams() {
   return projects.map((p) => ({ slug: p.slug }));
@@ -29,7 +29,13 @@ export default async function ProjectArchVizPage({
 }) {
   const { slug } = await params;
   const project = getProjectBySlug(slug);
-  if (!project) notFound();
+  if (!project) {
+    // Not in the static mockData catalog — could still be an admin-created
+    // project that only exists in Zustand `customProjects` (MVP admin pipe,
+    // see "rozaris-mvp-admin-project-pipe" memory). Hand off to a client
+    // component that checks there instead of 404ing outright.
+    return <CustomProjectPreview slug={slug} />;
+  }
 
   const jsonLd = {
     "@context": "https://schema.org",

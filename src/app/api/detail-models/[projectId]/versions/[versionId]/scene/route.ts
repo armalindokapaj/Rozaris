@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
+import { refreshExperienceDocument } from "@/lib/experienceDocument";
 
 const nodeOverrideSchema = z.object({
   rzNodeId: z.string().min(1),
@@ -57,6 +58,7 @@ export async function PUT(
     // comment in ../route.ts's POST handler.
     data: { nodeOverrides: (parsed.data.length ? parsed.data : []) as unknown as Prisma.InputJsonValue },
   });
+  await refreshExperienceDocument(prisma, projectId, versionId);
 
   await logAuditEvent({
     actor: gate.user?.email ?? gate.user?.name ?? "admin",

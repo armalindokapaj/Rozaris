@@ -1,0 +1,408 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { upload } from "@vercel/blob/client";
+import { CheckCircle2, ShieldCheck, UploadCloud } from "lucide-react";
+import { useAppStore } from "@/lib/store";
+import { useT } from "@/lib/i18n/useT";
+import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
+import { CITY_CENTER, DEMO_PUBLISHER, stageTemplate } from "@/lib/mockData";
+import type { Project } from "@/lib/types";
+
+/** Best-effort read of a JSON `{ error }` body; every route in this app
+ * that can fail now returns one (see the "rozaris-mvp-admin-project-pipe"
+ * memory — `POST /api/projects` used to crash as raw HTML on a slug
+ * collision, which `res.text()` alone would show verbatim and unreadably). */
+async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (typeof body?.error === "string") return body.error;
+    if (body?.error) return JSON.stringify(body.error);
+  } catch {
+    // Non-JSON body (framework error page, etc.) — fall through.
+  }
+  return fallback;
+}
+
+const MAX_FILE_BYTES = 60 * 1024 * 1024; // keep in sync with api/blob/upload's maximumSizeInBytes
+
+function slugify(name: string) {
+  return (
+    name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "") || `project-${Date.now()}`
+  );
+}
+
+function formatBytes(bytes: number) {
+  if (bytes <= 0) return "0 KB";
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+interface PublisherOption {
+  id: string;
+  name: string;
+}
+
+/**
+ * Temporary MVP admin flow: "Create Project → Upload 3D → Configure →
+ * Preview" — a deliberately stripped-down pipe whose only purpose is to
+ * test the 3D Experience Configurator end-to-end, per the user's explicit
+ * request (see "rozaris-mvp-admin-project-pipe" memory). Separate route
+ * from `NewProjectModal.tsx` / the admin `viewer3d` tab — doesn't touch
+ * either, so nothing else that already depends on that flow regresses.
+ * Deliberately NOT built here (per the user's scope): inventory import,
+ * map placement, search integration, construction progress, media
+ * management, SEO, publishing workflow, developer management.
+ */
+export default function NewAdminProjectPage() {
+  const router = useRouter();
+  const auth = useAppStore((s) => s.auth);
+  const addProject = useAppStore((s) => s.addProject);
+  const { t } = useT();
+
+  useEffect(() => {
+    // Same console-wide gate every other direct-URL admin route applies —
+    // see the identical effect in /admin/3d-experience/[projectId]/page.tsx.
+    if (!auth.signedIn) router.replace("/admin");
+  }, [auth.signedIn, router]);
+
+  // The real Auth.js session (checked by every write route this page calls)
+  // is separate from the `auth.signedIn` Zustand mock above and can go
+  // stale independently — this route is reachable directly by URL, same as
+  // /admin/3d-experience/[projectId], so it needs the same repair path.
+  // This exact gap was the confirmed root cause of an earlier "upload
+  // always fails" bug this session — see "rozaris-3d-editor-render-hardening"
+  // memory.
+  const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
+
+  const [step, setStep] = useState<1 | 2>(1);
+
+  // --- Step 1: Create Project ---
+  const [name, setName] = useState("");
+  const [city, setCity] = useState("Tirana");
+  const [publishers, setPublishers] = useState<PublisherOption[]>([]);
+  const [publisherId, setPublisherId] = useState(DEMO_PUBLISHER.id);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/publishers")
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+      .then((rows: PublisherOption[]) => {
+        if (!cancelled && rows.length > 0) {
+          setPublishers(rows);
+          setPublisherId(rows[0].id);
+        }
+      })
+      .catch(() => {
+        // Non-fatal — the form still works with the DEMO_PUBLISHER fallback
+        // already selected by default.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const canSubmit = name.trim().length > 0 && !creating;
+
+  async function handleCreate() {
+    if (!canSubmit) return;
+    setCreating(true);
+    setCreateError(null);
+
+    const developer = publishers.find((p) => p.id === publisherId) ?? DEMO_PUBLISHER;
+    const newProject: Project = {
+      id: `custom-${Date.now()}`,
+      slug: slugify(name),
+      name: name.trim(),
+      developer: { ...DEMO_PUBLISHER, id: developer.id, name: developer.name },
+      status: "coming_soon",
+      progressPercent: 0,
+      coords: CITY_CENTER,
+      neighborhoodId: "custom",
+      city: city.trim() || "Tirana",
+      setting: "residential_complex",
+      propertyType: "apartment",
+      availableUnits: 0,
+      totalUnits: 0,
+      heroImage: "",
+      gallery: [],
+      description: { en: "", sq: "" },
+      buildings: ["A"],
+      amenities: [],
+      premium: false,
+      completionLabel: "",
+      units: [],
+      constructionStages: stageTemplate(0),
+    };
+
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: newProject.id,
+          slug: newProject.slug,
+          name: newProject.name,
+          publisherId: newProject.developer.id,
+          status: newProject.status,
+          progressPercent: newProject.progressPercent,
+          lat: newProject.coords.lat,
+          lng: newProject.coords.lng,
+          neighborhoodId: newProject.neighborhoodId,
+          city: newProject.city,
+          setting: newProject.setting,
+          propertyType: newProject.propertyType,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(await readErrorMessage(res, t("admin.newProjectCreateFailed")));
+      }
+      // The server may have deduped `slug` (two projects submitted with the
+      // same name would otherwise collide on Postgres's unique constraint —
+      // see the route's own doc comment) — use whatever it actually saved,
+      // not the client-computed guess, so every later step (upload, the
+      // Configurator's Preview button, /project/[slug]) stays consistent.
+      const saved: { slug: string } = await res.json();
+      const finalProject: Project = { ...newProject, slug: saved.slug };
+      // Await-ed (unlike NewProjectModal.tsx's fire-and-forget POST) — step
+      // 2 needs the real Postgres `Project` row to exist before its GLB
+      // version API call can succeed.
+      addProject(finalProject);
+      setProject(finalProject);
+      setStep(2);
+    } catch (err) {
+      console.error("New project: create failed", err);
+      setCreateError(err instanceof Error ? err.message : t("admin.newProjectCreateFailed"));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  // --- Step 2: Upload 3D ---
+  const [detailFile, setDetailFile] = useState<File | null>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailDone, setDetailDone] = useState(false);
+  const [unitsFile, setUnitsFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
+  async function handleDetailUpload(file: File) {
+    if (!project) return;
+    setDetailError(null);
+    if (!file.name.toLowerCase().endsWith(".glb")) {
+      setDetailError(t("admin.detailModelInvalidFile"));
+      return;
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      setDetailError(t("admin.detailModelTooLarge", { max: formatBytes(MAX_FILE_BYTES) }));
+      return;
+    }
+    setDetailFile(file);
+    setDetailBusy(true);
+    setUploadProgress(0);
+    try {
+      // Same mechanics as Project3DConfigEditor.tsx's handleDetailFile —
+      // direct client upload to Vercel Blob, then a real versioned-model
+      // API call. Duplicated rather than shared: this page is a temporary
+      // MVP surface, not meant to become a long-term dependency of the
+      // full editor.
+      const blob = await upload(`project-detail-models/${project.id}-${file.name}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/blob/upload",
+        onUploadProgress: (p) => setUploadProgress(p.percentage),
+        multipart: true,
+      });
+      const res = await fetch(`/api/detail-models/${project.id}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ glbUrl: blob.url, fileName: file.name, fileSize: file.size }),
+      });
+      if (!res.ok) {
+        throw new Error(await readErrorMessage(res, t("admin.detailModelUploadFailed")));
+      }
+      setDetailDone(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      console.error("New project: 3D upload failed", err);
+      setDetailError(
+        message.includes("Not authorized") || message.includes("authoriz")
+          ? t("admin.sessionExpiredNote")
+          : message
+          ? `${t("admin.detailModelUploadFailed")} (${message})`
+          : t("admin.detailModelUploadFailed")
+      );
+    } finally {
+      setDetailBusy(false);
+      setUploadProgress(null);
+    }
+  }
+
+  if (!auth.signedIn) return null;
+
+  return (
+    <div className="mx-auto max-w-xl px-4 py-10">
+      {sessionStatus === "unauthenticated" && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-control border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-700">
+          <span>{authError ?? t("admin.sessionExpiredNote")}</span>
+          <button
+            onClick={establishAdminSession}
+            disabled={reauthing}
+            className="shrink-0 rounded-control border border-amber-300 bg-white px-2.5 py-1 font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+          >
+            {reauthing ? t("admin.sessionReconnecting") : t("admin.sessionReconnect")}
+          </button>
+        </div>
+      )}
+      <div className="mb-6 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+        <ShieldCheck className="h-4 w-4" />
+        {t("admin.newProjectPipeTitle")}
+      </div>
+
+      <div className="mb-6 flex items-center gap-3 text-xs font-medium text-neutral-500">
+        <span className={step === 1 ? "text-brand-600" : "text-neutral-400"}>
+          1. {t("admin.newProjectPipeStep1")}
+        </span>
+        <span className="text-neutral-300">→</span>
+        <span className={step === 2 ? "text-brand-600" : "text-neutral-400"}>
+          2. {t("admin.newProjectPipeStep2")}
+        </span>
+        <span className="text-neutral-300">→</span>
+        <span className="text-neutral-400">3. {t("admin.newProjectPipeStep3")}</span>
+      </div>
+
+      {step === 1 && (
+        <div className="space-y-4 rounded-panel border border-neutral-200 bg-white p-5">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-neutral-500">
+              {t("admin.newProjectName")}
+            </span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("admin.newProjectNamePlaceholder")}
+              className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+            />
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-neutral-500">
+                {t("admin.newProjectCity")}
+              </span>
+              <input
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-neutral-500">
+                {t("admin.newProjectDeveloper")}
+              </span>
+              <select
+                value={publisherId}
+                onChange={(e) => setPublisherId(e.target.value)}
+                className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+              >
+                {(publishers.length > 0 ? publishers : [DEMO_PUBLISHER]).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="block">
+            <span className="mb-1.5 block text-xs font-medium text-neutral-500">
+              {t("admin.newProjectStatus")}
+            </span>
+            <div className="w-full rounded-control border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500">
+              {t("admin.newProjectStatusDraft")}
+            </div>
+          </div>
+
+          {createError && <p className="text-xs text-red-600">{createError}</p>}
+
+          <button
+            onClick={handleCreate}
+            disabled={!canSubmit}
+            className="w-full rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
+          >
+            {creating ? t("admin.newProjectCreating") : t("admin.newProjectCreate")}
+          </button>
+        </div>
+      )}
+
+      {step === 2 && project && (
+        <div className="space-y-5 rounded-panel border border-neutral-200 bg-white p-5">
+          <div>
+            <span className="mb-1.5 block text-xs font-medium text-neutral-500">
+              {t("admin.newProjectDetailGlb")}
+            </span>
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-control border border-dashed border-neutral-300 px-3 py-6 text-sm text-neutral-500 hover:border-brand-400 hover:text-brand-600">
+              <UploadCloud className="h-4 w-4" />
+              {detailFile ? detailFile.name : t("admin.newProjectDetailGlbPrompt")}
+              <input
+                type="file"
+                accept=".glb"
+                className="hidden"
+                disabled={detailBusy}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleDetailUpload(file);
+                }}
+              />
+            </label>
+            {detailBusy && uploadProgress != null && (
+              <p className="mt-1.5 text-xs text-neutral-400">
+                {t("admin.newProjectUploading", { percent: Math.round(uploadProgress) })}
+              </p>
+            )}
+            {detailDone && (
+              <p className="mt-1.5 flex items-center gap-1 text-xs text-emerald-600">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                {t("admin.newProjectUploadDone")}
+              </p>
+            )}
+            {detailError && <p className="mt-1.5 text-xs text-red-600">{detailError}</p>}
+          </div>
+
+          <div>
+            <span className="mb-1.5 block text-xs font-medium text-neutral-500">
+              {t("admin.newProjectUnitsGlb")}
+              <span className="ml-1 font-normal text-neutral-400">({t("common.optional")})</span>
+            </span>
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-control border border-dashed border-neutral-200 px-3 py-6 text-sm text-neutral-400 hover:border-neutral-300">
+              <UploadCloud className="h-4 w-4" />
+              {unitsFile ? unitsFile.name : t("admin.newProjectUnitsGlbPrompt")}
+              <input
+                type="file"
+                accept=".glb"
+                className="hidden"
+                onChange={(e) => setUnitsFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <p className="mt-1.5 text-xs text-neutral-400">{t("admin.newProjectUnitsGlbNote")}</p>
+          </div>
+
+          <button
+            onClick={() => router.push(`/admin/3d-experience/${project.id}`)}
+            disabled={!detailDone}
+            className="w-full rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
+          >
+            {t("admin.newProjectOpenConfigurator")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

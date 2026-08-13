@@ -54,6 +54,7 @@ export const defaultProject3DConfig: Project3DConfig = {
   cameraMinDistanceMultiplier: 0.4,
   cameraMaxDistanceMultiplier: 2.5,
   cameraMaxPolarDeg: 85,
+  cameraMinPolarDeg: 0,
   autoRotate: true,
   constructionStagesEnabled: true,
   status: "published",
@@ -70,6 +71,24 @@ export const defaultProject3DConfig: Project3DConfig = {
   cameraPresets: [],
   exposure: 1,
   viewerUI: { home: true, unitSearch: true, timeOfDay: true, viewPreset: true },
+  hdriId: null,
+  sunMode: "geographic",
+  sunAzimuthDeg: 180,
+  sunElevationDeg: 45,
+  sunIntensity: 1,
+  fogEnabled: false,
+  fogColor: "#c9d6e0",
+  fogDensity: 0.015,
+  // Match the previously-hardcoded UNIT_BOX_COLOR/SELECTED_COLOR constants
+  // in viewerPresets.ts exactly, so existing projects render identically.
+  unitColorAvailable: "#22c55e",
+  unitColorReserved: "#eab308",
+  unitColorSold: "#ef4444",
+  unitColorSelected: "#6b55f5",
+  shadowsEnabled: true,
+  ssrEnabled: true,
+  gtaoEnabled: true,
+  antialiasEnabled: true,
   updatedAt: "2025-01-01T00:00:00.000Z",
 };
 

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
+import { refreshExperienceDocument } from "@/lib/experienceDocument";
 
 const vector3Schema = z.object({ x: z.number(), y: z.number(), z: z.number() });
 
@@ -21,7 +22,15 @@ const viewerUISchema = z.object({
   unitSearch: z.boolean(),
   timeOfDay: z.boolean(),
   viewPreset: z.boolean(),
+  // Interaction toggles (full-configurator pass) — optional since existing
+  // rows predate these keys; client-side default is `true` (see
+  // ViewerUIToggles in src/lib/types.ts).
+  hoverEnabled: z.boolean().optional(),
+  selectEnabled: z.boolean().optional(),
+  showUnitInfo: z.boolean().optional(),
 });
+
+const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Expected a #rrggbb hex color");
 
 /**
  * "3D Experience Phase 1" — makes `Project3DConfig` real (it was 100% dead
@@ -41,6 +50,7 @@ const patchSchema = z.object({
   cameraMinDistanceMultiplier: z.number().positive().max(10).optional(),
   cameraMaxDistanceMultiplier: z.number().positive().max(20).optional(),
   cameraMaxPolarDeg: z.number().min(0).max(180).optional(),
+  cameraMinPolarDeg: z.number().min(0).max(180).optional(),
   autoRotate: z.boolean().optional(),
   constructionStagesEnabled: z.boolean().optional(),
   status: z.enum(["draft", "published"]).optional(),
@@ -57,6 +67,22 @@ const patchSchema = z.object({
   cameraPresets: z.array(cameraPresetSchema).optional(),
   exposure: z.number().min(0).max(4).optional(),
   viewerUI: viewerUISchema.optional(),
+  hdriId: z.string().nullable().optional(),
+  sunMode: z.enum(["geographic", "manual"]).optional(),
+  sunAzimuthDeg: z.number().min(0).max(360).optional(),
+  sunElevationDeg: z.number().min(-90).max(90).optional(),
+  sunIntensity: z.number().min(0).max(4).optional(),
+  fogEnabled: z.boolean().optional(),
+  fogColor: hexColorSchema.optional(),
+  fogDensity: z.number().min(0).max(0.1).optional(),
+  unitColorAvailable: hexColorSchema.optional(),
+  unitColorReserved: hexColorSchema.optional(),
+  unitColorSold: hexColorSchema.optional(),
+  unitColorSelected: hexColorSchema.optional(),
+  shadowsEnabled: z.boolean().optional(),
+  ssrEnabled: z.boolean().optional(),
+  gtaoEnabled: z.boolean().optional(),
+  antialiasEnabled: z.boolean().optional(),
 });
 
 export async function GET(
@@ -104,6 +130,17 @@ export async function PATCH(
     update: data,
     create: { projectId, ...data },
   });
+
+  // Config changes (lighting/camera/effects/environment) are embedded in
+  // every version's ExperienceDocument snapshot too — refresh the latest
+  // version's so it doesn't go stale relative to the config it was built
+  // from. Best-effort: a project with no versions yet has nothing to
+  // refresh, which refreshExperienceDocument already handles (no-op).
+  const latestVersion = await prisma.detailModelVersion.findFirst({
+    where: { projectId },
+    orderBy: { version: "desc" },
+  });
+  if (latestVersion) await refreshExperienceDocument(prisma, projectId, latestVersion.id);
 
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
   await logAuditEvent({

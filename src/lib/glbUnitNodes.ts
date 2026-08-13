@@ -39,23 +39,52 @@ export async function extractUnitNodeNames(glbUrl: string): Promise<string[]> {
 /** Overrides every mesh under `node` (itself, or its mesh descendants if
  * it's a Group) with a translucent, non-depth-writing MeshBasicMaterial —
  * the "80% transparent colored box" look for a detail GLB's `Unit_<number>`
- * nodes, applied fresh each call rather than mutating a shared material
- * instance. Moved here (was DetailModelLayer.ts's private helper, now
+ * nodes. Moved here (was DetailModelLayer.ts's private helper, now
  * retired) since ProceduralProjectViewer.tsx is the one real GLB-rendering
- * viewer as of "3D Experience Phase 1". */
-export function applyUnitBoxMaterial(node: THREE.Object3D, color: number, opacity: number) {
+ * viewer as of "3D Experience Phase 1".
+ *
+ * `cache`/`cacheKey` (Phase 3, UnitManager fix): unit-box appearance only
+ * varies across a small, finite state space — `(status, selected, hovered,
+ * xray)`, at most ~24 combinations — but this function used to allocate a
+ * fresh `MeshBasicMaterial` and dispose the previous one on every call,
+ * including every single hover-in/hover-out frame over a GLB unit box
+ * (`RenderEngine.ts`'s `refreshGlbUnitBoxAppearance`, called from
+ * `handleMove`). When a cache + key are supplied, an existing material for
+ * that exact `(color, opacity)` combination is reused instead of
+ * reallocated — real fix for a confirmed GC-churn problem. Callers that
+ * omit the cache keep the original dispose-and-recreate behavior
+ * (backward compatible, not a breaking change to this function's
+ * contract). */
+export function applyUnitBoxMaterial(
+  node: THREE.Object3D,
+  color: number,
+  opacity: number,
+  cache?: Map<string, THREE.MeshBasicMaterial>,
+  cacheKey?: string
+) {
+  let material: THREE.MeshBasicMaterial | undefined;
+  if (cache && cacheKey) {
+    material = cache.get(cacheKey);
+    if (!material) {
+      material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+      cache.set(cacheKey, material);
+    }
+  } else {
+    material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+  }
   node.traverse((child) => {
     const mesh = child as THREE.Mesh;
     if (!mesh.isMesh) return;
     const prev = mesh.material as THREE.Material | THREE.Material[] | undefined;
-    if (Array.isArray(prev)) prev.forEach((m) => m.dispose());
-    else prev?.dispose();
-    mesh.material = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity,
-      depthWrite: false,
-    });
+    // Only dispose the previous material when NOT using the cache — a
+    // cached material may still be assigned to other meshes/nodes, so
+    // disposing it here would pull the rug out from under them. The
+    // no-cache path is unchanged from the original behavior.
+    if (!cache) {
+      if (Array.isArray(prev)) prev.forEach((m) => m.dispose());
+      else prev?.dispose();
+    }
+    mesh.material = material;
   });
 }
 
