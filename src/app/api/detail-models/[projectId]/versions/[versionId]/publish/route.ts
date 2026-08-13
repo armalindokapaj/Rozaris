@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/adminAuth";
+import { requireAdmin, requireSuperAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { refreshExperienceDocument } from "@/lib/experienceDocument";
 
@@ -19,20 +19,32 @@ import { refreshExperienceDocument } from "@/lib/experienceDocument";
  * zero saved presets (requiring one would block the common case, not
  * protect against a real problem), and poster generation needs a new
  * client-side capture flow this pass doesn't add — both explicitly
- * deferred, not silently dropped. */
+ * deferred, not silently dropped.
+ *
+ * `{"force": true}` (Super Admin control/audit pass) bypasses BOTH gates
+ * above for the "broken production 3D, need it back now" emergency case —
+ * Super Admin only, mandatory `reason`, same pattern as the map-model
+ * publish route's identical addition. */
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ projectId: string; versionId: string }> }
 ) {
-  const gate = await requireAdmin();
+  const body = await request.json().catch(() => ({}));
+  const force = Boolean(body?.force);
+  const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+
+  const gate = force ? await requireSuperAdmin() : await requireAdmin();
   if (gate instanceof NextResponse) return gate;
+  if (force && !reason) {
+    return NextResponse.json({ error: "A reason is required to force-publish." }, { status: 400 });
+  }
 
   const { projectId, versionId } = await params;
   const version = await prisma.detailModelVersion.findUnique({ where: { id: versionId } });
-  if (!version || version.projectId !== projectId) {
+  if (!version || version.projectId !== projectId || version.deletedAt) {
     return NextResponse.json({ error: "Version not found." }, { status: 404 });
   }
-  if (version.validationStatus === "blocked") {
+  if (version.validationStatus === "blocked" && !force) {
     return NextResponse.json(
       { error: "Blocked by validation — fix the source GLB and upload a new version." },
       { status: 422 }
@@ -43,7 +55,7 @@ export async function POST(
   const unitIdCounts = new Map<string, number>();
   for (const l of links) unitIdCounts.set(l.unitId, (unitIdCounts.get(l.unitId) ?? 0) + 1);
   const duplicateUnitIds = Array.from(unitIdCounts.entries()).filter(([, count]) => count > 1);
-  if (duplicateUnitIds.length > 0) {
+  if (duplicateUnitIds.length > 0 && !force) {
     return NextResponse.json(
       {
         error: `${duplicateUnitIds.length} real unit${duplicateUnitIds.length === 1 ? " is" : "s are"} linked to more than one mesh in this version — fix the duplicate mapping${duplicateUnitIds.length === 1 ? "" : "s"} in Link Units before publishing.`,
@@ -55,8 +67,11 @@ export async function POST(
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
   const now = new Date();
   const updated = await prisma.$transaction(async (tx) => {
+    // Multiple Detail-Model Slots pass — scoped to THIS version's own
+    // slotId, not the whole project: publishing "Surroundings" must not
+    // archive "Building"'s independently-published version.
     await tx.detailModelVersion.updateMany({
-      where: { projectId, publicationStatus: "published", NOT: { id: versionId } },
+      where: { slotId: version.slotId, publicationStatus: "published", NOT: { id: versionId } },
       data: { publicationStatus: "archived" },
     });
     return tx.detailModelVersion.update({
@@ -70,10 +85,12 @@ export async function POST(
 
   await logAuditEvent({
     actor,
-    action: "Detail model published",
+    actorId: gate.user?.id,
+    action: force ? "Detail model force-published (validation bypassed)" : "Detail model published",
     entityType: "DetailModelVersion",
     entityId: versionId,
     entityLabel: `v${updated.version}`,
+    reason: force ? reason : undefined,
   });
 
   return NextResponse.json(updated);

@@ -2,7 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { GLASS_TIERS, QUALITY_PRESET_ORDER, QUALITY_TIERS } from "@/lib/viewerPresets";
+import { GLASS_TIERS, QUALITY_TIERS } from "@/lib/viewerPresets";
 import type { Project3DConfig } from "@/lib/types";
 import { SelectField, ToggleField } from "../fields";
 import type { SetOpts, Translate } from "../editorTypes";
@@ -56,12 +56,10 @@ export function EffectsPanel({
               ["webgl2", t("admin.sceneRenderingModeWebgl2")],
             ]}
           />
-          <SelectField
-            label={t("admin.sceneQualityPreset")}
-            value={draft.qualityPreset}
-            onChange={(v) => update({ qualityPreset: v as Project3DConfig["qualityPreset"] }, { commit: true })}
-            options={QUALITY_PRESET_ORDER.map((id): [string, string] => [id, t(`admin.sceneQuality_${id}`)])}
-          />
+          {/* Quality preset itself moved to the global bottom status bar
+              (Inventory/Floors mockup pass) — one editable location for the
+              field instead of two live selects at once; this note still
+              reads the same live value/suggestion. */}
           <p className="text-[11px] text-neutral-400">
             {t("admin.sceneQualitySuggested", { tier: t(`admin.sceneQuality_${suggestedTier}`) })}
           </p>
@@ -109,13 +107,17 @@ export function EffectsPanel({
       </section>
 
       {/* --- Performance (full-configurator pass). Shadows/Antialiasing
-          are real, working toggles. Reflections(SSR)/AO(GTAO) are real,
-          schema-backed fields too, but currently inert platform-wide —
-          every QUALITY_TIERS entry force-disables the underlying effect
-          (see that file's header comment: two unexplained real-GPU
-          rendering failures in this exact chain) — RenderEngine.ts's
-          buildRenderPipeline ANDs this toggle with the tier's own flag, so
-          flipping it here can't reintroduce the crash. SSGI is
+          are real, working toggles. Reflections(SSR)/AO(GTAO) are real
+          too, re-enabled on desktop quality tiers after a hardening pass
+          (an HDR-safety clamp — see viewerPresets.ts's QUALITY_TIERS
+          header comment for the full history: two unexplained real-GPU
+          rendering failures in this exact chain, disabled by default for
+          a while, since re-enabled with real, if unverified-in-a-browser,
+          mitigation). RenderEngine.ts's buildRenderPipeline ANDs this
+          toggle with the tier's own flag — mobile tiers keep both off
+          regardless, `balanced` gets AO only, `ultra_desktop`/
+          `high_desktop` get both — so this toggle's real effect depends
+          on the project's Quality Preset, not just this switch. SSGI is
           intentionally not exposed at all — already permanently `false`
           project-wide, deferred (needs a temporal denoiser, judged too
           risky to wire blind). --- */}
@@ -135,7 +137,7 @@ export function EffectsPanel({
               checked={draft.ssrEnabled}
               onChange={(v) => update({ ssrEnabled: v }, { commit: true })}
             />
-            <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceInertNote")}</p>
+            <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceReflectionsNote")}</p>
           </div>
           <div>
             <ToggleField
@@ -143,13 +145,21 @@ export function EffectsPanel({
               checked={draft.gtaoEnabled}
               onChange={(v) => update({ gtaoEnabled: v }, { commit: true })}
             />
-            <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceInertNote")}</p>
+            <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceAONote")}</p>
           </div>
           <ToggleField
             label={t("admin.performanceAntialiasing")}
             checked={draft.antialiasEnabled}
             onChange={(v) => update({ antialiasEnabled: v }, { commit: true })}
           />
+          <div>
+            <ToggleField
+              label={t("admin.performanceSectionCapStencil")}
+              checked={draft.sectionCapStencilEnabled}
+              onChange={(v) => update({ sectionCapStencilEnabled: v }, { commit: true })}
+            />
+            <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceSectionCapStencilNote")}</p>
+          </div>
         </div>
       </section>
 

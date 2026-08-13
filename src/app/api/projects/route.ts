@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { auth } from "@/auth";
+import { logAuditEvent } from "@/lib/audit";
 
 const projectSchema = z.object({
   id: z.string().min(1),
@@ -70,12 +72,41 @@ export async function POST(request: Request) {
     slug = `${data.slug}-${suffix}`;
   }
 
+  // A soft-deleted project must be restored from the Super Admin Recycle
+  // Bin before it can be edited again — an ordinary save must not silently
+  // revive it.
+  const existingById = await prisma.project.findUnique({ where: { id: data.id } });
+  if (existingById?.deletedAt) {
+    return NextResponse.json(
+      { error: "This project is in the Recycle Bin — restore it from Super Admin before editing." },
+      { status: 409 }
+    );
+  }
+
   try {
     const project = await prisma.project.upsert({
       where: { id: data.id },
       update: { ...data, slug, publisherId },
       create: { ...data, slug, publisherId, approvalStatus: "active" },
     });
+
+    // Soft (not required) session read — this route still has no real
+    // auth gate (see the doc comment above), so `actor` falls back to an
+    // honest "unattributed" label rather than fabricating one; Before/
+    // After tracking is still real either way (previousState/newState).
+    const session = await auth().catch(() => null);
+    const actor = session?.user?.email ?? session?.user?.name ?? "unattributed (no auth gate on this route)";
+    await logAuditEvent({
+      actor,
+      actorId: session?.user?.id,
+      action: existingById ? "Project updated" : "Project created",
+      entityType: "Project",
+      entityId: project.id,
+      entityLabel: project.name,
+      previousState: existingById ?? undefined,
+      newState: project,
+    });
+
     return NextResponse.json(project);
   } catch (err) {
     console.error("POST /api/projects failed", err);

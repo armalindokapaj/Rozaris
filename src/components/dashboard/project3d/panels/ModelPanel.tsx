@@ -46,7 +46,6 @@ export function ModelPanel({
   matchedCount,
   nodeOverrideCount,
   onDetailSave,
-  onDetailPublish,
   detailLoaded,
   showHistory,
   setShowHistory,
@@ -78,7 +77,6 @@ export function ModelPanel({
   matchedCount: number;
   nodeOverrideCount: number;
   onDetailSave: () => void;
-  onDetailPublish: () => void;
   detailLoaded: boolean;
   showHistory: boolean;
   setShowHistory: (v: boolean | ((prev: boolean) => boolean)) => void;
@@ -255,6 +253,11 @@ export function ModelPanel({
         </div>
       )}
 
+      {/* Publish itself moved to the global header (Inventory/Floors mockup
+          pass) — same real onDetailPublish + disabled logic, just reachable
+          from every tab instead of only here. Save Draft stays — it's
+          Model-tab-specific (persists scale/rotation/link/override edits
+          without publishing). */}
       {hasDetailModel && (
         <div className="flex gap-2">
           <button
@@ -263,13 +266,6 @@ export function ModelPanel({
             className="flex-1 rounded-control border border-neutral-200 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
           >
             {t("admin.saveDraft")}
-          </button>
-          <button
-            onClick={onDetailPublish}
-            disabled={!canEditDetail || detailBusy || !detailLoaded || activeVersion?.validationStatus === "blocked"}
-            className="flex-1 rounded-control bg-brand-500 py-2 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
-          >
-            {t("admin.publish")}
           </button>
         </div>
       )}

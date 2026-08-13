@@ -12,6 +12,7 @@ export interface UnitLinkRow {
 
 export interface DetailVersionRow {
   id: string;
+  slotId: string;
   version: number;
   fileName: string;
   fileSize: number;

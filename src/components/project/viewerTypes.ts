@@ -1,5 +1,6 @@
-import type { Project, Project3DConfig, ProjectDetailModel, Unit } from "@/lib/types";
-import type { ViewPreset } from "@/lib/viewerPresets";
+import type { Project, Project3DConfig, ProjectDetailModel, Section, Unit } from "@/lib/types";
+
+export type SectionGizmoMode = "move" | "rotate" | "resize" | "height";
 
 /** Shared imperative handle + props contract between ThreeProjectViewer.tsx
  * (a thin re-export) and ProceduralProjectViewer.tsx (the real engine) —
@@ -15,24 +16,45 @@ export interface ThreeProjectViewerHandle {
    * renderer isn't ready. Used by Project3DConfigEditor's "Save current
    * view" camera-preset button (Render/visual quality pass). */
   getCameraState: () => { position: { x: number; y: number; z: number }; target: { x: number; y: number; z: number }; fov: number } | null;
+  /** Sections module — real editor-authoring entry points. Only
+   * `EditorShell.tsx` (admin) calls these; public-viewer usages never do.
+   * `beginDrawSection`'s `onComplete` fires once with a new, unsaved
+   * `Section` once the two viewport clicks land — the caller owns adding
+   * it to `draft.sections`. */
+  beginDrawSection: (
+    opts: { id: string; name: string; scope: Section["scope"]; buildingName?: string },
+    onComplete: (section: Section) => void
+  ) => void;
+  cancelDrawSection: () => void;
+  attachSectionGizmo: (section: Section, mode: SectionGizmoMode) => void;
+  setSectionGizmoMode: (mode: SectionGizmoMode) => void;
+  detachSectionGizmo: () => void;
+  getLiveSectionDraft: () => Section | null;
+  /** Real for both the admin editor (live-previewing while editing) and
+   * the public runtime (a visitor activating a floor from the
+   * bottom-chrome Sections panel) — clips + shows the section's cap;
+   * `null` clears it. */
+  activateSection: (sectionId: string | null) => void;
 }
 
 export interface ThreeProjectViewerProps {
   project: Project;
   config: Project3DConfig;
-  /** The admin-uploaded detailed GLB (or `null` if none/not enabled) —
+  /** Every admin-uploaded detailed GLB slot ("Building", "Surroundings",
+   * ... — Multiple Detail-Model Slots pass), empty if none enabled yet —
    * caller-supplied, not fetched internally, so both real callers control
-   * their own source: the public page uses `useProjectDetailModel` (the
-   * published version, unchanged); the Admin editor's live preview
-   * supplies its own object built from the currently active draft/
-   * published version plus every in-progress slider/link/override edit,
-   * so the preview never lags behind unsaved changes. Mirrors how `config`
-   * above already works — no internal fetch there either. */
-  detailModel: ProjectDetailModel | null;
+   * their own source: the public page uses `useProjectDetailModel` (each
+   * slot's published version, unchanged fetch); the Admin editor's live
+   * preview supplies its own array built from the currently active
+   * draft/published version of whichever slot is selected plus every
+   * in-progress slider/link/override edit, so the preview never lags
+   * behind unsaved changes. Mirrors how `config` above already works —
+   * no internal fetch there either. */
+  detailModels: { slotId: string; model: ProjectDetailModel }[];
   /** Resolved URL of `config.hdriId`'s shared PlatformHdri row, or `null`
    * if none is selected (or it failed to resolve) — the engine loads and
    * uses it in place of the procedural sky gradient. Caller-resolved for
-   * the same reason `detailModel` is: both real callers already fetch
+   * the same reason `detailModels` is: both real callers already fetch
    * their own copy of the platform HDRI list (usePlatformHdris) and
    * resolve `config.hdriId` against it, so the engine itself doesn't need
    * its own network fetch just to look up one URL. */
@@ -65,20 +87,9 @@ export interface ThreeProjectViewerProps {
    * underlying tracking (RenderEngine.ts's samplePerfStats) is unchanged,
    * this only adds a second place the same numbers can be read from. */
   onPerfStats?: (stats: { fps: number; drawCalls: number; triangles: number; dpr: number } | null) => void;
-  /** Controlled-mode override for the realistic/conceptual/sketch view
-   * switcher — normally 100% internal state, only reachable via the
-   * bottom chrome menu that the Admin editor keeps hidden
-   * (`showChrome={false}`). Supplying both props lets a caller (the
-   * Configurator's new viewport toolbar) drive it externally instead;
-   * omit both to keep the existing uncontrolled/internal behavior (every
-   * public-viewer usage, unchanged). */
-  viewPreset?: ViewPreset;
-  onViewPresetChange?: (preset: ViewPreset) => void;
-  /** Same controlled-mode pattern for X-Ray — normally derived from which
-   * bottom-menu panel is open (`panel === "xray"`), which never happens
-   * when `showChrome={false}`. Supplying `xrayEnabled` overrides that
-   * derivation entirely; the caller (EditorShell's own toolbar) owns the
-   * boolean itself, so there's no matching `onXrayChange` — nothing
-   * internal ever needs to set it back. */
-  xrayEnabled?: boolean;
+  /** Sections module — fires continuously while a section gizmo is being
+   * dragged in the admin editor, mirroring
+   * `RenderEngineCallbacks.onSectionDraftChange`. Public-viewer usages
+   * never supply this (nothing there drags a gizmo). */
+  onSectionDraftChange?: (section: Section) => void;
 }

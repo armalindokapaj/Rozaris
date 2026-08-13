@@ -21,16 +21,40 @@ const viewerUISchema = z.object({
   home: z.boolean(),
   unitSearch: z.boolean(),
   timeOfDay: z.boolean(),
-  viewPreset: z.boolean(),
   // Interaction toggles (full-configurator pass) — optional since existing
   // rows predate these keys; client-side default is `true` (see
   // ViewerUIToggles in src/lib/types.ts).
   hoverEnabled: z.boolean().optional(),
   selectEnabled: z.boolean().optional(),
   showUnitInfo: z.boolean().optional(),
+  // Sections module — same optional/defaults-true pattern as the three
+  // toggles above.
+  sectionsEnabled: z.boolean().optional(),
 });
 
 const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Expected a #rrggbb hex color");
+
+// Sections module — mirrors the `Section` TS interface (src/lib/types.ts)
+// field-for-field; same validate-at-the-edge role cameraPresetSchema
+// already plays for cameraPresets.
+const sectionSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  scope: z.enum(["project", "building"]),
+  buildingName: z.string().optional(),
+  centerX: z.number(),
+  centerZ: z.number(),
+  widthM: z.number().positive().max(500),
+  depthM: z.number().positive().max(500),
+  rotationDeg: z.number().min(-360).max(360),
+  heightM: z.number().min(-50).max(500),
+  bottomEnabled: z.boolean(),
+  fillGapsEnabled: z.boolean(),
+  fillColor: hexColorSchema,
+  cameraPreset: z.object({ position: vector3Schema, target: vector3Schema, fov: z.number().min(10).max(120) }).optional(),
+  floorId: z.string().optional(),
+  hidden: z.boolean().optional(),
+});
 
 /**
  * "3D Experience Phase 1" — makes `Project3DConfig` real (it was 100% dead
@@ -75,6 +99,10 @@ const patchSchema = z.object({
   fogEnabled: z.boolean().optional(),
   fogColor: hexColorSchema.optional(),
   fogDensity: z.number().min(0).max(0.1).optional(),
+  fogMatchesSky: z.boolean().optional(),
+  lensflareEnabled: z.boolean().optional(),
+  lightProbeEnabled: z.boolean().optional(),
+  sectionCapStencilEnabled: z.boolean().optional(),
   unitColorAvailable: hexColorSchema.optional(),
   unitColorReserved: hexColorSchema.optional(),
   unitColorSold: hexColorSchema.optional(),
@@ -83,6 +111,7 @@ const patchSchema = z.object({
   ssrEnabled: z.boolean().optional(),
   gtaoEnabled: z.boolean().optional(),
   antialiasEnabled: z.boolean().optional(),
+  sections: z.array(sectionSchema).optional(),
 });
 
 export async function GET(
@@ -108,12 +137,16 @@ export async function PATCH(
   }
 
   const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) {
+  if (!project || project.deletedAt) {
     return NextResponse.json(
       { error: `No project row for "${projectId}" — run \`npm run db:seed\`.` },
       { status: 404 }
     );
   }
+  // Whole-row snapshot before the write — Project3DConfig is a 1:1
+  // singleton (no version table of its own), so this row's audit history
+  // IS its version history; restore-version PATCHes a past snapshot back.
+  const previousConfig = await prisma.project3DConfig.findUnique({ where: { projectId } });
 
   // Cast needed for Prisma's Json input type on cameraPresets/viewerUI —
   // plain zod-inferred objects don't structurally satisfy
@@ -124,6 +157,7 @@ export async function PATCH(
     ...parsed.data,
     cameraPresets: parsed.data.cameraPresets as unknown as Prisma.InputJsonValue,
     viewerUI: parsed.data.viewerUI as unknown as Prisma.InputJsonValue,
+    sections: parsed.data.sections as unknown as Prisma.InputJsonValue,
   };
   const updated = await prisma.project3DConfig.upsert({
     where: { projectId },
@@ -145,10 +179,13 @@ export async function PATCH(
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
   await logAuditEvent({
     actor,
+    actorId: gate.user?.id,
     action: "3D Experience config updated",
     entityType: "Project3DConfig",
     entityId: projectId,
     entityLabel: project.name,
+    previousState: previousConfig,
+    newState: updated,
   });
 
   return NextResponse.json(updated);

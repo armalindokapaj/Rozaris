@@ -1,8 +1,8 @@
 import { Prisma } from "@/generated/prisma";
 import type { PrismaClient } from "@/generated/prisma";
-import type { CameraPreset, ExperienceDocument, NodeOverride, Project3DConfig, UnitMeshLink, ViewerUIToggles } from "./types";
+import type { CameraPreset, ExperienceDocument, NodeOverride, Project3DConfig, Section, UnitMeshLink, ViewerUIToggles } from "./types";
 
-const DEFAULT_VIEWER_UI: ViewerUIToggles = { home: true, unitSearch: true, timeOfDay: true, viewPreset: true };
+const DEFAULT_VIEWER_UI: ViewerUIToggles = { home: true, unitSearch: true, timeOfDay: true };
 
 /** The subset of a `DetailModelVersion` row `buildExperienceDocument` needs
  * — deliberately narrow (not the whole Prisma row) so callers can pass
@@ -10,6 +10,8 @@ const DEFAULT_VIEWER_UI: ViewerUIToggles = { home: true, unitSearch: true, timeO
  * generated Prisma types here. */
 export interface ExperienceDocumentVersionInput {
   projectId: string;
+  slotId: string;
+  slotName: string;
   version: number;
   scale: number;
   rotationDeg: number;
@@ -36,6 +38,8 @@ export function buildExperienceDocument(
   return {
     schemaVersion: 1,
     projectId: version.projectId,
+    slotId: version.slotId,
+    slotName: version.slotName,
     revision: version.version,
     model: {
       scale: version.scale,
@@ -79,6 +83,7 @@ export function buildExperienceDocument(
     units: {
       bindings: version.unitLinks,
     },
+    sections: config.sections,
     viewer: config.viewerUI,
     publishing: {
       publicationStatus: version.publicationStatus,
@@ -99,7 +104,7 @@ export function buildExperienceDocument(
  * site already runs inside its own `$transaction`.
  */
 export async function refreshExperienceDocument(
-  tx: Pick<PrismaClient, "detailModelVersion" | "project3DConfig">,
+  tx: Pick<PrismaClient, "detailModelVersion" | "project3DConfig" | "detailModelSlot">,
   projectId: string,
   versionId: string
 ): Promise<void> {
@@ -108,6 +113,13 @@ export async function refreshExperienceDocument(
     tx.project3DConfig.findUnique({ where: { projectId } }),
   ]);
   if (!version) return;
+  // Multiple Detail-Model Slots pass — the document's slotName is a
+  // denormalized label (real slot management stays on DetailModelSlot,
+  // this is just for a reader to know which slot a standalone document
+  // describes without a second lookup). A missing slot (shouldn't happen,
+  // slotId is a required FK) falls back to the raw id rather than
+  // failing the whole refresh.
+  const slot = await tx.detailModelSlot.findUnique({ where: { id: version.slotId } });
 
   const experienceDocument = config3d
     ? buildExperienceDocument(
@@ -115,9 +127,12 @@ export async function refreshExperienceDocument(
           ...config3d,
           cameraPresets: (config3d.cameraPresets as unknown as CameraPreset[]) ?? [],
           viewerUI: (config3d.viewerUI as unknown as ViewerUIToggles) ?? DEFAULT_VIEWER_UI,
+          sections: (config3d.sections as unknown as Section[]) ?? [],
         } as unknown as Project3DConfig,
         {
           projectId,
+          slotId: version.slotId,
+          slotName: slot?.name ?? version.slotId,
           version: version.version,
           scale: version.scale,
           rotationDeg: version.rotationDeg,

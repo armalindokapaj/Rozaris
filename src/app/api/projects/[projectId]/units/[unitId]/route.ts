@@ -40,7 +40,7 @@ export async function PATCH(
   }
 
   const existing = await prisma.unit.findUnique({ where: { id: unitId } });
-  if (!existing || existing.projectId !== projectId) {
+  if (!existing || existing.projectId !== projectId || existing.deletedAt) {
     return NextResponse.json({ error: "Unit not found." }, { status: 404 });
   }
 
@@ -49,15 +49,23 @@ export async function PATCH(
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
   await logAuditEvent({
     actor,
+    actorId: gate.user?.id,
     action: "Unit updated",
     entityType: "Unit",
     entityId: unit.id,
     entityLabel: unit.code,
+    previousState: existing,
+    newState: unit,
   });
 
   return NextResponse.json(unit);
 }
 
+/**
+ * Soft-deletes a unit — Super Admin control/audit pass, no longer a real
+ * `prisma.unit.delete()`. Restorable from the Recycle Bin; permanently
+ * gone only via a Super Admin hard-delete.
+ */
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ projectId: string; unitId: string }> }
@@ -67,19 +75,24 @@ export async function DELETE(
 
   const { projectId, unitId } = await params;
   const existing = await prisma.unit.findUnique({ where: { id: unitId } });
-  if (!existing || existing.projectId !== projectId) {
+  if (!existing || existing.projectId !== projectId || existing.deletedAt) {
     return NextResponse.json({ error: "Unit not found." }, { status: 404 });
   }
 
-  await prisma.unit.delete({ where: { id: unitId } });
-
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
+  await prisma.unit.update({
+    where: { id: unitId },
+    data: { deletedAt: new Date(), deletedBy: actor },
+  });
+
   await logAuditEvent({
     actor,
-    action: "Unit deleted",
+    actorId: gate.user?.id,
+    action: "Unit soft-deleted",
     entityType: "Unit",
     entityId: unitId,
     entityLabel: existing.code,
+    previousState: existing,
   });
 
   return NextResponse.json({ ok: true });

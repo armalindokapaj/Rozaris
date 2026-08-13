@@ -35,7 +35,7 @@ export function ArchVizClient({ project }: { project: Project }) {
   const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
   const construction = useProjectConstruction(project);
   const viewerConfig = useProject3DConfig(project.id);
-  const detailModel = useProjectDetailModel(project.id);
+  const detailModels = useProjectDetailModel(project.id);
   const platformHdris = usePlatformHdris();
   const hdriUrl = platformHdris.find((h) => h.id === viewerConfig.hdriId)?.url ?? null;
   const { t } = useT();
@@ -142,7 +142,7 @@ export function ArchVizClient({ project }: { project: Project }) {
         ref={viewerRef}
         project={project}
         config={viewerConfig}
-        detailModel={detailModel}
+        detailModels={detailModels}
         hdriUrl={hdriUrl}
         className="relative h-full w-full"
         selectedUnitId={selectedUnit?.id ?? null}

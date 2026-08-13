@@ -35,7 +35,7 @@ function toLegacyShape(v: MapModelVersion) {
 
 export async function GET() {
   const models = await prisma.mapModelVersion.findMany({
-    where: { publicationStatus: "published" },
+    where: { publicationStatus: "published", deletedAt: null },
   });
   return NextResponse.json(models.map(toLegacyShape));
 }

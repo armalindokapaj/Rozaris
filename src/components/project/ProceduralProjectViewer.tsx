@@ -1,17 +1,11 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Bath, BedDouble, Box, Camera, Home, Layers, Palette, Ruler, Search, Sun, X } from "lucide-react";
+import { Bath, BedDouble, Box, Camera, Home, Ruler, Scissors, Search, Sun, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
-import {
-  TIME_PRESETS,
-  UNIT_BOX_COLOR,
-  VIEW_PRESETS,
-  XRAY_DEFAULT_FACADE_OPACITY,
-  type ViewPreset,
-} from "@/lib/viewerPresets";
+import { TIME_PRESETS, UNIT_BOX_COLOR } from "@/lib/viewerPresets";
 import { RenderEngine, type AvailabilityFilter, type RenderEngineCallbacks, type UnitFilters } from "@/lib/render-engine/RenderEngine";
 import { DarkSelect, MenuIconButton, StatusLegend, formatHour } from "./ViewerChrome";
 import type { Unit } from "@/lib/types";
@@ -25,6 +19,16 @@ const STATUS_LABEL_KEY: Record<Unit["status"], string> = {
   reserved: "unit.statusReserved",
   sold: "unit.statusSold",
 };
+
+/** Multiple Detail-Model Slots pass — the admin perf overlay's per-model
+ * counts (mesh/material/texture) now sum across every loaded slot; "—"
+ * only when every one of them is null (predates server-side validation
+ * recording it), not just the first slot checked. */
+function sumOrDash(values: (number | null)[]): string {
+  const known = values.filter((v): v is number => v != null);
+  if (known.length === 0) return "—";
+  return known.reduce((a, b) => a + b, 0).toLocaleString();
+}
 
 /**
  * ROZARIS's one real "3D Experience" engine — a standalone WebGPU/WebGL2
@@ -51,7 +55,7 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
     {
       project,
       config,
-      detailModel,
+      detailModels,
       hdriUrl = null,
       className,
       selectedUnitId = null,
@@ -61,23 +65,39 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       onBarOpenChange,
       showPerfStats = false,
       onPerfStats,
-      viewPreset: viewPresetProp,
-      onViewPresetChange,
-      xrayEnabled: xrayEnabledProp,
+      onSectionDraftChange,
     },
     ref
   ) {
-    // Failure recovery: a GLB that fails to load (bad URL/network/corrupt
-    // file) flips this, which turns `usingGlb` off and — since it's in
-    // the setup effect's own dependency array — makes the effect
-    // naturally re-run and fall back to procedural massing. Reset below
-    // whenever the URL itself changes, so a freshly-published fix gets a
-    // real retry instead of staying stuck in fallback mode.
+    // Failure recovery: RenderEngine.ts's mount() only reports total
+    // failure (this callback) once EVERY enabled slot's GLB fails to
+    // load — a single slot failing just gets skipped there, the others
+    // keep rendering (the whole point of independent slots — see
+    // "rozaris-3d-multiple-detail-model-slots" memory). This flag is
+    // that all-slots-failed fallback to full procedural massing. Reset
+    // below whenever the set of slot URLs changes, so a freshly-
+    // published fix gets a real retry instead of staying stuck.
     const [glbLoadFailed, setGlbLoadFailed] = useState(false);
+    const detailModelUrlsKey = detailModels.map((d) => d.model.glbUrl).join("|");
     useEffect(() => {
       setGlbLoadFailed(false);
-    }, [detailModel?.glbUrl]);
-    const usingGlb = !!(detailModel?.enabled && detailModel.glbUrl) && !glbLoadFailed;
+    }, [detailModelUrlsKey]);
+    // Units read-migration (Configurator scope): computeProjectLayout()
+    // inside engine.mount() only depends on which unit ids exist plus
+    // each one's buildingName/floor/status (geometry/position/color —
+    // see threeBuilding.ts), never bedrooms/bathrooms/area/price/etc.,
+    // so this key deliberately only tracks those 4 fields. Same pattern
+    // as detailModelUrlsKey above: gives the full-mount effect below a
+    // meaningful primitive to re-key on instead of an array reference,
+    // since `project.units` now arrives from useProjectUnits (a fresh
+    // array on every fetch) rather than a stable mockData/Zustand
+    // literal — without this, the editor's live preview would silently
+    // keep rendering whatever `project.units` looked like on first
+    // mount, never rebuilding once the live Postgres fetch resolves.
+    const unitsKey = project.units
+      .map((u) => `${u.id}:${u.buildingName}:${u.floor}:${u.status}`)
+      .join("|");
+    const usingGlb = detailModels.some((d) => d.model.enabled && d.model.glbUrl) && !glbLoadFailed;
 
     const containerRef = useRef<HTMLDivElement>(null);
     const tooltipElRef = useRef<HTMLDivElement>(null);
@@ -88,19 +108,13 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
     const [bedroomFilter, setBedroomFilter] = useState<number | null>(null);
     const [bathroomFilter, setBathroomFilter] = useState<number | null>(null);
     const [minArea, setMinArea] = useState<number | null>(null);
-    const [panel, setPanel] = useState<"search" | "time" | "viewPreset" | "xray" | "cameraPresets" | null>(null);
+    const [panel, setPanel] = useState<"search" | "time" | "cameraPresets" | "sections" | null>(null);
+    // Sections module — which section a visitor has activated (real clip
+    // + cap via RenderEngine.activateSection), if any. Runtime-only UI
+    // state, not persisted (mirrors `panel`'s own "not part of config"
+    // nature).
+    const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
     const [timeOfDay, setTimeOfDay] = useState(() => config.defaultTimeOfDay);
-    // Controlled/uncontrolled hybrid (dark-theme configurator restyle) —
-    // the Admin editor's new viewport toolbar drives these externally
-    // (via viewPresetProp/onViewPresetChange) since showChrome={false}
-    // there means the internal bottom-menu switcher that used to be the
-    // only way to change this is hidden. Every public-viewer call site
-    // passes neither prop, so `internalViewPreset` (this component's
-    // original, unchanged behavior) is what's actually used there.
-    const [internalViewPreset, setInternalViewPreset] = useState<ViewPreset>("realistic");
-    const viewPreset = viewPresetProp ?? internalViewPreset;
-    const setViewPreset = onViewPresetChange ?? setInternalViewPreset;
-    const [xrayFacadeOpacity, setXrayFacadeOpacity] = useState(XRAY_DEFAULT_FACADE_OPACITY);
     const [hoveredUnit, setHoveredUnit] = useState<Unit | null>(null);
     // Performance inspector (Publish/runtime hardening pass) — admin-only,
     // gated by showPerfStats not showChrome (see viewerTypes.ts).
@@ -110,15 +124,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
     // "Unit Search" gates GLB unit-box visibility, same as the old
     // MapboxProjectViewer — procedural units are always visible/filterable.
     const showUnitBoxes = panel === "search";
-    // X-Ray is GLB-only — "facade" isn't a meaningful concept for the
-    // procedural massing fallback's already-see-through construction
-    // shells — and, same "gated by which panel is open" pattern as
-    // showUnitBoxes above, is only active while its own panel is open.
-    // `xrayEnabledProp` (controlled mode, dark-theme configurator restyle)
-    // overrides this derivation entirely when supplied — the Admin
-    // editor's viewport toolbar drives it directly since `panel` never
-    // becomes "xray" there (the bottom menu that sets it is hidden).
-    const xrayEnabled = xrayEnabledProp ?? (usingGlb && panel === "xray");
     const { t } = useT();
     const priceFmt = usePriceFormat();
 
@@ -164,6 +169,9 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       onBarOpenChange?.(panel !== null && showChrome);
     }, [panel, showChrome, onBarOpenChange]);
 
+    // Sections module — real, non-hidden sections a visitor can activate.
+    const visibleSections = useMemo(() => config.sections.filter((s) => !s.hidden), [config.sections]);
+
     const areaBounds = useMemo(() => {
       const areas = project.units.map((u) => u.area);
       const min = areas.length ? Math.floor(Math.min(...areas) / 5) * 5 : 0;
@@ -198,6 +206,7 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
         // suppressed when a caller opts into rendering its own).
         onPerfStats?.(stats);
       },
+      onSectionDraftChange,
     };
     const engineRef = useRef<RenderEngine | null>(null);
     if (!engineRef.current) {
@@ -217,6 +226,13 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       resetView: resetCamera,
       captureScreenshot: () => engineRef.current?.captureScreenshot() ?? null,
       getCameraState: () => engineRef.current?.getCameraState() ?? null,
+      beginDrawSection: (opts, onComplete) => engineRef.current?.beginDrawSection(opts, onComplete),
+      cancelDrawSection: () => engineRef.current?.cancelDrawSection(),
+      attachSectionGizmo: (section, mode) => engineRef.current?.attachSectionGizmo(section, mode),
+      setSectionGizmoMode: (mode) => engineRef.current?.setSectionGizmoMode(mode),
+      detachSectionGizmo: () => engineRef.current?.detachSectionGizmo(),
+      getLiveSectionDraft: () => engineRef.current?.getLiveSectionDraft() ?? null,
+      activateSection: (sectionId) => engineRef.current?.activateSection(sectionId),
     }));
 
     // --- One-time scene setup per project/content-mode/rendering-mode —
@@ -228,15 +244,17 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       engine.mount(container, {
         project,
         config,
-        detailModel,
+        detailModels,
         usingGlb,
-        viewPreset,
-        xrayEnabled,
-        xrayFacadeOpacity,
         selectedUnitId,
         filters,
         constructionProgressPercent,
         showUnitBoxes,
+        // Sections module — `showChrome={false}` is already this
+        // codebase's existing signal for "this is the admin editor's own
+        // live preview" (see the prop's own doc comment); reused here
+        // instead of adding a second, parallel "am I the editor" prop.
+        isEditorPreview: !showChrome,
       });
       return () => {
         engine.dispose();
@@ -251,14 +269,18 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
       project.id,
+      unitsKey,
       usingGlb,
-      detailModel?.glbUrl,
+      detailModelUrlsKey,
       config.renderingMode,
       config.qualityPreset,
       config.shadowsEnabled,
       config.ssrEnabled,
       config.gtaoEnabled,
       config.antialiasEnabled,
+      // stencil: true on the renderer only takes effect at construction —
+      // same "needs a full remount" reasoning as the flags above.
+      config.sectionCapStencilEnabled,
     ]);
 
     // --- Platform HDRI loading (Task 2 — Track A) ---
@@ -269,10 +291,10 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
     }, [ready, hdriUrl]);
 
     // --- Apply lower-cost config changes without a full rebuild: ground/
-    // shell visibility, camera limits, glass tier, view preset. ---
+    // shell visibility, camera limits, glass tier. ---
     useEffect(() => {
       if (!ready) return;
-      engineRef.current?.applyLiveUpdate({ project, config, detailModel, usingGlb, viewPreset, xrayEnabled, xrayFacadeOpacity });
+      engineRef.current?.applyLiveUpdate({ project, config, detailModels, usingGlb });
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
       ready,
@@ -286,15 +308,11 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       config.exposure,
       config.cameraFovDesktop,
       config.cameraFovMobile,
-      viewPreset,
-      xrayEnabled,
-      xrayFacadeOpacity,
-      detailModel?.scale,
-      detailModel?.rotationDeg,
-      detailModel?.altitudeOffset,
-      detailModel?.unitLinks,
-      detailModel?.nodeOverrides,
-      detailModel?.sceneManifest,
+      // Whole array, same "depend on the caller's own object/array
+      // reference" reasoning the single-model version already relied on
+      // (Project3DConfigEditor.tsx/ArchVizClient.tsx rebuild this array
+      // fresh whenever any slot's placement/links/overrides change).
+      detailModels,
     ]);
 
     // --- Real geographic sun + sky/environment — recomputed whenever the
@@ -332,10 +350,8 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
         usingGlb,
         selectedUnitId,
         filters,
-        viewPreset,
         constructionProgressPercent,
         showUnitBoxes,
-        xrayEnabled,
       });
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
@@ -344,11 +360,9 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       bedroomFilter,
       bathroomFilter,
       minArea,
-      viewPreset,
       constructionProgressPercent,
       config.constructionStagesEnabled,
       showUnitBoxes,
-      xrayEnabled,
     ]);
 
     if (webglFailReason) {
@@ -406,21 +420,22 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
                 {config.viewerUI.timeOfDay && (
                   <MenuIconButton icon={Sun} label={t("project.timeOfDay")} onClick={() => setPanel("time")} />
                 )}
-                {config.viewerUI.viewPreset && (
-                  <MenuIconButton
-                    icon={Palette}
-                    label={t("project.viewPreset")}
-                    onClick={() => setPanel("viewPreset")}
-                  />
-                )}
-                {usingGlb && (
-                  <MenuIconButton icon={Layers} label={t("project.xray")} onClick={() => setPanel("xray")} />
-                )}
                 {config.cameraPresets.length > 0 && (
                   <MenuIconButton
                     icon={Camera}
                     label={t("project.cameraPresets")}
                     onClick={() => setPanel("cameraPresets")}
+                  />
+                )}
+                {/* Sections module — same "gated on real availability" pattern
+                    as Camera Presets above (config.cameraPresets.length > 0):
+                    hidden unless the admin actually saved a non-hidden
+                    section AND didn't turn the public entry point off. */}
+                {(config.viewerUI.sectionsEnabled ?? true) && visibleSections.length > 0 && (
+                  <MenuIconButton
+                    icon={Scissors}
+                    label={t("project.sections")}
+                    onClick={() => setPanel("sections")}
                   />
                 )}
               </div>
@@ -536,48 +551,34 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
               </div>
             )}
 
-            {panel === "viewPreset" && (
+            {panel === "sections" && (
               <div className="glass-panel-dark relative flex w-full flex-wrap items-center gap-2 rounded-panel px-4 py-3.5 pr-11 sm:w-auto sm:flex-nowrap">
-                {VIEW_PRESETS.map(([id, labelKey]) => (
+                {visibleSections.map((section) => (
                   <button
-                    key={id}
-                    onClick={() => setViewPreset(id)}
-                    aria-pressed={viewPreset === id}
+                    key={section.id}
+                    onClick={() => {
+                      const nextActive = activeSectionId === section.id ? null : section.id;
+                      setActiveSectionId(nextActive);
+                      engineRef.current?.activateSection(nextActive);
+                      if (nextActive && section.cameraPreset) {
+                        engineRef.current?.jumpToCameraPreset({
+                          id: "section-camera",
+                          label: section.name,
+                          durationMs: 900,
+                          ...section.cameraPreset,
+                        });
+                      }
+                      setPanel(null);
+                    }}
+                    aria-pressed={activeSectionId === section.id}
                     className={cn(
-                      "rounded-control px-4 py-2.5 text-sm font-semibold transition-colors",
-                      viewPreset === id ? "bg-brand-500 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
+                      "rounded-control px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-white/10 hover:text-white",
+                      activeSectionId === section.id ? "bg-white/10 text-white" : "text-white/70"
                     )}
                   >
-                    {t(labelKey)}
+                    {section.name}
                   </button>
                 ))}
-
-                <button
-                  onClick={() => setPanel(null)}
-                  aria-label={t("common.close")}
-                  className="absolute right-2.5 top-2.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/60 hover:bg-white/10 hover:text-white"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-
-            {panel === "xray" && (
-              <div className="glass-panel-dark relative flex w-full flex-wrap items-center gap-4 rounded-panel px-4 py-3.5 pr-11 sm:w-auto sm:flex-nowrap">
-                <div className="min-w-[10rem] flex-1">
-                  <div className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                    <span>{t("project.xrayFacadeOpacity")}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={0.6}
-                    step={0.05}
-                    value={xrayFacadeOpacity}
-                    onChange={(e) => setXrayFacadeOpacity(Number(e.target.value))}
-                    className="h-6 w-full accent-white"
-                  />
-                </div>
 
                 <button
                   onClick={() => setPanel(null)}
@@ -616,7 +617,24 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
           </div>
         )}
 
-        {showChrome && ready && (!usingGlb || showUnitBoxes || xrayEnabled) && presentStatuses.length > 0 && (
+        {/* Sections module — persistent "exit" affordance while a section
+            is active, so a visitor doesn't have to remember re-clicking
+            the same Sections menu entry toggles it off. */}
+        {showChrome && ready && activeSectionId && (
+          <button
+            onClick={() => {
+              setActiveSectionId(null);
+              engineRef.current?.activateSection(null);
+            }}
+            className="glass-panel-dark absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-pill px-3.5 py-2 text-xs font-semibold text-white"
+          >
+            <Scissors className="h-3.5 w-3.5" />
+            {visibleSections.find((s) => s.id === activeSectionId)?.name}
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+
+        {showChrome && ready && (!usingGlb || showUnitBoxes) && presentStatuses.length > 0 && (
           <StatusLegend
             className="absolute bottom-4 left-4 z-10"
             statuses={presentStatuses}
@@ -673,10 +691,17 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
               {perfStats.triangles.toLocaleString()}
             </p>
             <p>DPR {perfStats.dpr.toFixed(2)}×</p>
-            {detailModel && (
+            {detailModels.length > 0 && (
               <p className="text-white/50">
-                {t("admin.perfPublished")} {detailModel.meshCount ?? "—"}m / {detailModel.materialCount ?? "—"}mat /{" "}
-                {detailModel.textureCount ?? "—"}tex / {(detailModel.triangleCount ?? 0).toLocaleString()}tri
+                {/* Multiple Detail-Model Slots pass — real sums across
+                    every loaded slot, not just one; "—" only if EVERY
+                    slot is missing that count (predates server-side
+                    validation recording it). */}
+                {t("admin.perfPublished")}{" "}
+                {sumOrDash(detailModels.map((d) => d.model.meshCount))}m /{" "}
+                {sumOrDash(detailModels.map((d) => d.model.materialCount))}mat /{" "}
+                {sumOrDash(detailModels.map((d) => d.model.textureCount))}tex /{" "}
+                {detailModels.reduce((sum, d) => sum + (d.model.triangleCount ?? 0), 0).toLocaleString()}tri
               </p>
             )}
           </div>

@@ -42,6 +42,17 @@ enum PublisherType {
   developer
 }
 
+/// Account-level access state, enforced at real sign-in (src/auth.ts's
+/// authorize()) — Super Admin control/audit pass. `restricted` is reserved
+/// for a future lighter-touch state; only suspended/disabled currently
+/// block sign-in.
+enum UserStatus {
+  active
+  restricted
+  suspended
+  disabled
+}
+
 model User {
   id            String    @id @default(cuid())
   email         String?   @unique
@@ -52,6 +63,21 @@ model User {
   emailVerified DateTime?
   image         String?
   createdAt     DateTime  @default(now())
+
+  // Super Admin control/audit pass (PRD_ROZARIS_Admin §12 "Account
+  // controls", §14 "Change Admin permissions"). adminScopes values mirror
+  // the PRD's "Future Admin permission scopes" table — free-text (not an
+  // enum) so a new scope can be granted without a migration:
+  // listing_reviewer | publisher_verification | 3d_manager |
+  // content_manager | finance_admin | support_admin.
+  status          UserStatus @default(active)
+  statusReason    String?
+  statusChangedAt DateTime?
+  statusChangedBy String?
+  superAdmin      Boolean    @default(false)
+  adminScopes     String[]   @default([])
+  deletedAt       DateTime?
+  deletedBy       String?
 
   // Auth.js
   accounts Account[]
@@ -129,6 +155,15 @@ model Publisher {
   whatsapp String?
   bio      String?
 
+  /// "Restrict publishing" (PRD §6 Publisher Admin actions) — prevents new
+  /// publication while preserving traceability. Distinct from the owning
+  /// User's `status` (that blocks sign-in entirely); this blocks only new
+  /// publish actions.
+  restricted       Boolean   @default(false)
+  restrictedReason String?
+  deletedAt        DateTime?
+  deletedBy        String?
+
   ownerUserId String @unique
   owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
 
@@ -186,6 +221,13 @@ model Listing {
   createdAt      DateTime      @default(now())
   reviewedAt     DateTime?
 
+  /// Super Admin recycle bin — see the schema-header note on Listing: no
+  /// route has ever written a real row here yet (public catalog is still
+  /// mockData.ts), so this column exists for forward-compat, not because
+  /// there's anything to soft-delete today.
+  deletedAt DateTime?
+  deletedBy String?
+
   publisherId String
   publisher   Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
 
@@ -230,6 +272,13 @@ model Project {
   createdAt       DateTime              @default(now())
   reviewedAt      DateTime?
 
+  /// Super Admin recycle bin. `approvalStatus` already has `archived` for
+  /// the normal "force unpublish" transition (see the admin PATCH route) —
+  /// deletedAt is the separate, heavier "remove from every admin view,
+  /// restorable from the Recycle Bin" action.
+  deletedAt DateTime?
+  deletedBy String?
+
   publisherId String
   publisher   Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
 
@@ -241,6 +290,7 @@ model Project {
   detailModel         ProjectDetailModel?
   mapModelVersions    MapModelVersion[]
   detailModelVersions DetailModelVersion[]
+  detailModelSlots    DetailModelSlot[]
   leads               LeadItem[]
 
   @@map("projects")
@@ -263,6 +313,12 @@ model Unit {
   floorPlanImage String?
   facadeImage    String?
   videoUrl       String?
+
+  /// Super Admin recycle bin — the unit PATCH/DELETE route
+  /// (api/projects/[projectId]/units/[unitId]) now soft-deletes here
+  /// instead of a real prisma.unit.delete().
+  deletedAt DateTime?
+  deletedBy String?
 
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -447,18 +503,18 @@ model ConstructionTimelineRequest {
 // ---------------------------------------------------------------------------
 
 model Project3DConfig {
-  projectId                     String   @id
-  lightingPreset                String   @default("daylight")
-  backgroundPreset              String   @default("sky")
-  groundEnabled                 Boolean  @default(true)
-  cameraStartDistanceMultiplier Float    @default(1)
-  cameraMinDistanceMultiplier   Float    @default(0.4)
-  cameraMaxDistanceMultiplier   Float    @default(2.5)
-  cameraMaxPolarDeg             Int      @default(85)
-  cameraMinPolarDeg             Int      @default(0)
-  autoRotate                    Boolean  @default(true)
-  constructionStagesEnabled     Boolean  @default(true)
-  status                        String   @default("draft")
+  projectId                     String  @id
+  lightingPreset                String  @default("daylight")
+  backgroundPreset              String  @default("sky")
+  groundEnabled                 Boolean @default(true)
+  cameraStartDistanceMultiplier Float   @default(1)
+  cameraMinDistanceMultiplier   Float   @default(0.4)
+  cameraMaxDistanceMultiplier   Float   @default(2.5)
+  cameraMaxPolarDeg             Int     @default(85)
+  cameraMinPolarDeg             Int     @default(0)
+  autoRotate                    Boolean @default(true)
+  constructionStagesEnabled     Boolean @default(true)
+  status                        String  @default("draft")
 
   // "3D Experience Phase 1" — rendering foundation, quality presets, glass,
   // real geographic sun. See src/lib/sunPosition.ts, src/lib/viewerPresets.ts.
@@ -501,6 +557,29 @@ model Project3DConfig {
   fogEnabled Boolean @default(false)
   fogColor   String  @default("#c9d6e0")
   fogDensity Float   @default(0.015)
+  /// When true, fog color is derived live from the resolved sky/background
+  /// color instead of the authored `fogColor` above — the "seamless
+  /// horizon" technique from three.js's webgl_geometry_terrain example.
+  /// Default false: zero behavior change for any existing project.
+  fogMatchesSky Boolean @default(false)
+  /// Real lens flare (webgl_lensflares.html technique) attached to the
+  /// sun, via three.js's WebGPU-native LensflareMesh port. Default false:
+  /// zero behavior change for any existing project.
+  lensflareEnabled Boolean @default(false)
+  /// Real spherical-harmonics light probe (webgl_lightprobes_sponza.html
+  /// technique) — direction-dependent indirect/ambient lighting captured
+  /// from the live sky/HDRI environment via a CubeCamera, supplementing
+  /// the flat AmbientLight. Default false: zero behavior change for any
+  /// existing project (the extra cube-capture cost only happens when an
+  /// admin opts in).
+  lightProbeEnabled Boolean @default(false)
+  /// Real stencil-buffer-derived Section cap silhouette
+  /// (webgl_clipping_stencil.html technique — RenderEngine.ts's
+  /// rebuildSectionCap) instead of the default flat-quad cap. Requires
+  /// `stencil: true` on the WebGPURenderer, which only takes effect on a
+  /// fresh mount() — mount-tier config, not a cheap live toggle. Default
+  /// false: zero behavior/cost change for any existing project.
+  sectionCapStencilEnabled Boolean @default(false)
 
   /// Hex colors for the 4 unit statuses + the shared "selected" highlight —
   /// defaults match the previously-hardcoded UNIT_BOX_COLOR/SELECTED_COLOR
@@ -517,10 +596,10 @@ model Project3DConfig {
   /// underlying effects platform-wide (two unexplained real-GPU rendering
   /// failures), so RenderEngine.ts ANDs this column with the tier's own
   /// flag rather than trusting it alone.
-  shadowsEnabled    Boolean @default(true)
-  ssrEnabled        Boolean @default(true)
-  gtaoEnabled       Boolean @default(true)
-  antialiasEnabled  Boolean @default(true)
+  shadowsEnabled   Boolean @default(true)
+  ssrEnabled       Boolean @default(true)
+  gtaoEnabled      Boolean @default(true)
+  antialiasEnabled Boolean @default(true)
 
   // Render/visual quality pass — real TSL post-processing, camera
   // presets. See src/lib/viewerPresets.ts (quality-tier post-fx flags)
@@ -542,6 +621,16 @@ model Project3DConfig {
   /// no backfill migration needed for existing rows.
   viewerUI Json?
 
+  // Sections module (first-class Configurator module) — admin-authored
+  // rectangular clipping-plane cuts. [{ id, name, scope, buildingName?,
+  // centerX, centerZ, widthM, depthM, rotationDeg, heightM, bottomEnabled,
+  // stylePreset, cameraPreset?, floorId?, hidden? }], see the `Section`
+  // TS interface (src/lib/types.ts) for the full shape. Never touches the
+  // GLB itself — render-time clipping planes/cap only. Null/absent reads
+  // as `[]` client-side, same nullable-Json?-column pattern as
+  // cameraPresets/viewerUI above — no backfill needed for existing rows.
+  sections Json?
+
   updatedAt DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -561,6 +650,10 @@ model PlatformHdri {
   thumbnailUrl String?
   createdAt    DateTime @default(now())
   uploadedBy   String?
+
+  /// Super Admin recycle bin ("media").
+  deletedAt DateTime?
+  deletedBy String?
 
   configs Project3DConfig[]
 
@@ -709,6 +802,12 @@ model MapModelVersion {
   updatedAt         DateTime               @updatedAt
   publishedAt       DateTime?
 
+  /// Super Admin recycle bin — the version DELETE route now soft-deletes
+  /// (Blob file kept) instead of a real prisma.delete(); a Super Admin
+  /// hard-delete is what actually removes the Blob object.
+  deletedAt DateTime?
+  deletedBy String?
+
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, version])
@@ -716,40 +815,64 @@ model MapModelVersion {
   @@map("map_model_versions")
 }
 
+/// A named "slot" a project's detailed 3D Experience can hang independent
+/// GLBs off of — e.g. "Building" and "Surroundings" — so replacing one
+/// doesn't touch the other. Admin-created (name is free text), always at
+/// least one per project once any detail GLB exists (the migrate-detail-
+/// model-slots.ts backfill creates a "Building" slot for every project
+/// that already had DetailModelVersion rows before this table existed).
+model DetailModelSlot {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  project  Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions DetailModelVersion[]
+
+  @@index([projectId])
+  @@map("detail_model_slots")
+}
+
 /// One immutable version of a project's detailed Three.js-experience GLB —
 /// same versioning shape as MapModelVersion above, plus its own unit mesh
 /// mapping (UnitMeshLinkV2) since mappings are meaningful per-version, not
-/// per-project (a replacement GLB can rename/remove mesh nodes).
+/// per-project (a replacement GLB can rename/remove mesh nodes). Scoped to
+/// one DetailModelSlot — `projectId` is kept alongside `slotId` too
+/// (denormalized, same tolerance this schema already has elsewhere) so
+/// existing `where: { projectId }` queries don't all need an extra join.
 model DetailModelVersion {
-  id                String                 @id @default(cuid())
-  projectId         String
-  version           Int
-  sourceAssetUrl    String
-  publicAssetUrl    String
-  fileName          String
-  fileSize          Int
-  triangleCount     Int?
-  meshCount         Int?
-  materialCount     Int?
-  textureCount      Int?
-  scale             Float                  @default(1)
-  rotationDeg       Float                  @default(0)
-  altitudeOffset    Float                  @default(0)
-  validationStatus  ModelValidationStatus  @default(ready)
-  validationIssues  Json?
+  id                 String                 @id @default(cuid())
+  projectId          String
+  slotId             String
+  version            Int
+  sourceAssetUrl     String
+  publicAssetUrl     String
+  fileName           String
+  fileSize           Int
+  triangleCount      Int?
+  meshCount          Int?
+  materialCount      Int?
+  textureCount       Int?
+  scale              Float                  @default(1)
+  rotationDeg        Float                  @default(0)
+  altitudeOffset     Float                  @default(0)
+  validationStatus   ModelValidationStatus  @default(ready)
+  validationIssues   Json?
   /// Full node list for this version's GLB (not just Unit_* — see
   /// UnitMeshLinkV2 for that), computed server-side at upload time by
   /// glbValidate.ts. One entry per glTF node: { rzNodeId, name, meshIndex,
   /// parentRzNodeId, depth, isMesh, autoClassification }. Regenerated
   /// fresh on every new version, same lifecycle as validationIssues.
-  sceneManifest     Json?
+  sceneManifest      Json?
   /// Admin-authored classification/material overrides, keyed by rzNodeId:
   /// { rzNodeId, classification?, materialPreset?, colorHex?, roughness?,
   /// metalness?, visible?, carried? }[]. Carried forward by node NAME on a
   /// new version upload (same idea as UnitMeshLinkV2's carried/
   /// needs_review, hand-rolled here since this is a JSON blob, not a
   /// relational table with its own mappingStatus column).
-  nodeOverrides     Json?
+  nodeOverrides      Json?
   /// The full ExperienceDocument snapshot for this revision (rewrite Track
   /// B, Phase 1 — src/lib/experienceDocument.ts's buildExperienceDocument()
   /// is the only writer). Additive: assembled FROM the fields above plus
@@ -757,18 +880,25 @@ model DetailModelVersion {
   /// for them yet — every existing route/hook keeps reading those directly.
   /// Null for any version created before this column existed.
   experienceDocument Json?
-  publicationStatus ModelPublicationStatus @default(draft)
-  uploadedBy        String?
-  publishedBy       String?
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  publishedAt       DateTime?
+  publicationStatus  ModelPublicationStatus @default(draft)
+  uploadedBy         String?
+  publishedBy        String?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  publishedAt        DateTime?
+
+  /// Super Admin recycle bin — same soft-delete-then-Blob-on-hard-delete
+  /// pattern as MapModelVersion.
+  deletedAt DateTime?
+  deletedBy String?
 
   project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  slot      DetailModelSlot  @relation(fields: [slotId], references: [id], onDelete: Cascade)
   unitLinks UnitMeshLinkV2[]
 
-  @@unique([projectId, version])
+  @@unique([slotId, version])
   @@index([projectId, publicationStatus])
+  @@index([slotId, publicationStatus])
   @@map("detail_model_versions")
 }
 
@@ -809,8 +939,42 @@ model AuditLog {
   entityLabel String?
   createdAt   DateTime @default(now())
 
+  // Super Admin control/audit pass — all additive/optional so every one of
+  // the ~15 pre-existing logAuditEvent() call sites keeps compiling
+  // untouched. This table now doubles as the version-history source: any
+  // row carrying previousState/newState IS a restorable version, read back
+  // by /api/admin/entities/[type]/[id]/restore-version instead of a
+  // separate per-entity revision table.
+  actorId       String?
+  actorRole     String?
+  reason        String?
+  previousState Json?
+  newState      Json?
+  metadata      Json?
+  ip            String?
+  /// Set only on the final row written by a Super Admin hard-delete — the
+  /// underlying record is gone, but this entry (with its previousState
+  /// snapshot) is kept forever as the last trace of it.
+  hardDeleted   Boolean @default(false)
+
   @@index([entityType, entityId])
+  @@index([actorId])
   @@map("admin_audit_log")
+}
+
+/// Forward-only log of real failures from the new admin write routes'
+/// catch blocks (System Health panel). No retroactive backfill — errors
+/// from before this table existed aren't recoverable.
+model ApiErrorLog {
+  id        String   @id @default(cuid())
+  route     String
+  message   String
+  stack     String?
+  actor     String?
+  createdAt DateTime @default(now())
+
+  @@index([route])
+  @@map("admin_api_error_log")
 }
 
 // ---------------------------------------------------------------------------

@@ -66,7 +66,7 @@ export async function GET(
 ) {
   const { projectId } = await params;
   const version = await prisma.mapModelVersion.findFirst({
-    where: { projectId, publicationStatus: "published" },
+    where: { projectId, publicationStatus: "published", deletedAt: null },
   });
   return NextResponse.json(version ? toLegacyShape(version) : null);
 }

@@ -19,38 +19,9 @@ export const UNIT_BOX_COLOR: Record<Unit["status"], number> = {
 };
 export const UNIT_BOX_OPACITY = 0.2;
 export const UNIT_BOX_SELECTED_OPACITY = 0.65;
-// X-Ray mode (PRD §51): boosts unit-box opacity above its normal
-// idle/selected level so units read clearly once the facade around them
-// has been faded, and dims the facade itself down to a near-see-through
-// default the admin/buyer can still raise via a slider.
-export const UNIT_BOX_XRAY_OPACITY_BOOST = 0.3;
-export const XRAY_DEFAULT_FACADE_OPACITY = 0.15;
 
 export const SELECTED_COLOR = 0x6b55f5; // --color-brand-500
 export const GROUND_COLOR = 0xd8d6e6;
-
-export type ViewPreset = "realistic" | "conceptual" | "sketch";
-
-export const VIEW_PRESETS: [ViewPreset, string][] = [
-  ["realistic", "project.viewPresetRealistic"],
-  ["conceptual", "project.viewPresetConceptual"],
-  ["sketch", "project.viewPresetSketch"],
-];
-
-// Material treatment per preset — Realistic keeps real per-unit status
-// colors and PBR-ish shading; Conceptual flattens to a uniform massing-
-// model gray with edge lines; Sketch goes further (near-white, more
-// pronounced edges), the classic "white card model + black outline" look.
-// Applied by ProceduralProjectViewer.tsx to whichever content is loaded —
-// procedural unit meshes, or a detailed GLB's own meshes.
-export const VIEW_PRESET_MATERIAL: Record<
-  ViewPreset,
-  { color: number | null; roughness: number; metalness: number; edges: boolean; edgeOpacity: number }
-> = {
-  realistic: { color: null, roughness: 0.6, metalness: 0.05, edges: false, edgeOpacity: 0 },
-  conceptual: { color: 0xd9d4c8, roughness: 1, metalness: 0, edges: true, edgeOpacity: 0.35 },
-  sketch: { color: 0xfbfaf7, roughness: 1, metalness: 0, edges: true, edgeOpacity: 0.85 },
-};
 
 export const TIME_PRESETS: [string, number][] = [
   ["project.presetMorning", 8],
@@ -70,22 +41,32 @@ export const TIME_PRESETS: [string, number][] = [
 // and, per its own node design, expects a temporal/spatial denoiser
 // downstream — the highest-risk effect to wire blind, so it stays off.
 //
-// `bloom`/`gtao`/`ssr` are now forced `false` on every tier below (2026-08-13)
-// — that TSL chain (RenderEngine.ts `buildRenderPipeline`) is the confirmed
-// source of two separate, still-unexplained visual failures on real GPUs:
-// a fully black viewer (three real SSRNode/GTAONode crashes were found and
-// fixed, but the screen stayed black with a clean console afterward), then
-// — after this exact code had never actually been opened in a browser
-// since — solid red, a classic symptom of NaN/out-of-range HDR values
-// hitting `ACESFilmicToneMapping` with no way to inspect the shader
-// pipeline's internal state from here to root-cause it further. Disabling
-// the chain removes the unstable code path entirely rather than guessing a
-// fourth blind fix; the real geographic sun, ambient light and PMREM sky
-// environment/reflections (`rebuildEnvironment`/`applySunAndEnvironment`,
-// untouched by this change) are what actually deliver a realistic sky dome
-// and are not implicated in either failure. `antialias` (SMAA, a separate,
-// much simpler effect applied to the plain scene-pass color) is left as-is
-// per tier. Re-enable per-tier only alongside real browser verification.
+// `gtao`/`ssr` were force-disabled platform-wide on every tier from
+// 2026-08-13 through this same day — that TSL chain (RenderEngine.ts
+// `buildRenderPipeline`) was the confirmed source of two separate,
+// still-unexplained visual failures on real GPUs: a fully black viewer
+// (three real SSRNode/GTAONode crashes were found and fixed, but the
+// screen stayed black with a clean console afterward — root cause never
+// found), then solid red, a classic symptom of NaN/out-of-range HDR
+// values hitting `ACESFilmicToneMapping`. Re-enabled the same day on
+// desktop-oriented tiers after adding a real, targeted mitigation for
+// the *stated* red-screen theory (an HDR-safety clamp right before
+// tone-mapping — see `buildRenderPipeline`'s own comment on exactly what
+// it does and doesn't guarantee); the earlier black-screen failure's
+// root cause was still never found, so this remains a reasoned
+// mitigation, not a confirmed fix, and — same caveat as everything else
+// 3D this session — has not been opened in a real browser. `mobile_high`/
+// `mobile_low` keep both off regardless: screen-space reflections/AO are
+// a poor fit for that tier's performance budget independent of the crash
+// history. `balanced` gets AO only, not the pricier SSR. `bloom` stays
+// off everywhere — no per-project toggle exists for it at all (unlike
+// gtao/ssr, never schema-backed), so it was never part of this pass.
+// The real geographic sun, ambient light and PMREM sky environment/
+// reflections (`rebuildEnvironment`/`applySunAndEnvironment`, untouched
+// throughout) are what deliver the realistic sky dome and were never
+// implicated in either failure. `antialias` (SMAA, a separate, much
+// simpler effect applied to the plain scene-pass color) is unaffected,
+// left as-is per tier.
 // ---------------------------------------------------------------------------
 
 export interface QualityTierSettings {
@@ -109,8 +90,8 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     dprCap: 2,
     shadowMapSize: 4096,
     bloom: false,
-    gtao: false,
-    ssr: false,
+    gtao: true,
+    ssr: true,
     antialias: true,
     ssgi: false,
   },
@@ -119,8 +100,8 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     dprCap: 2,
     shadowMapSize: 2048,
     bloom: false,
-    gtao: false,
-    ssr: false,
+    gtao: true,
+    ssr: true,
     antialias: true,
     ssgi: false,
   },
@@ -129,7 +110,7 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     dprCap: 1.5,
     shadowMapSize: 1536,
     bloom: false,
-    gtao: false,
+    gtao: true,
     ssr: false,
     antialias: true,
     ssgi: false,

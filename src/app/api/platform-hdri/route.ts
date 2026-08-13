@@ -21,7 +21,10 @@ const createSchema = z.object({
 });
 
 export async function GET() {
-  const hdris = await prisma.platformHdri.findMany({ orderBy: { createdAt: "desc" } });
+  const hdris = await prisma.platformHdri.findMany({
+    where: { deletedAt: null },
+    orderBy: { createdAt: "desc" },
+  });
   return NextResponse.json(hdris);
 }
 

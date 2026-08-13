@@ -70,7 +70,7 @@ export const defaultProject3DConfig: Project3DConfig = {
   cameraFovMobile: 48,
   cameraPresets: [],
   exposure: 1,
-  viewerUI: { home: true, unitSearch: true, timeOfDay: true, viewPreset: true },
+  viewerUI: { home: true, unitSearch: true, timeOfDay: true },
   hdriId: null,
   sunMode: "geographic",
   sunAzimuthDeg: 180,
@@ -79,6 +79,10 @@ export const defaultProject3DConfig: Project3DConfig = {
   fogEnabled: false,
   fogColor: "#c9d6e0",
   fogDensity: 0.015,
+  fogMatchesSky: false,
+  lensflareEnabled: false,
+  lightProbeEnabled: false,
+  sectionCapStencilEnabled: false,
   // Match the previously-hardcoded UNIT_BOX_COLOR/SELECTED_COLOR constants
   // in viewerPresets.ts exactly, so existing projects render identically.
   unitColorAvailable: "#22c55e",
@@ -89,6 +93,7 @@ export const defaultProject3DConfig: Project3DConfig = {
   ssrEnabled: true,
   gtaoEnabled: true,
   antialiasEnabled: true,
+  sections: [],
   updatedAt: "2025-01-01T00:00:00.000Z",
 };
 

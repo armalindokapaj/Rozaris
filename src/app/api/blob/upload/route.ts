@@ -13,7 +13,7 @@ import { auth } from "@/auth";
  * gap — see the "rozaris-backend-plan" memory): checks the real Auth.js
  * session (src/auth.ts), established when the Admin console's "Sign In as
  * Admin" button also calls next-auth/react's signIn() — see
- * src/app/(site)/admin/page.tsx and src/lib/adminAuth.ts.
+ * src/app/admin/page.tsx and src/lib/adminAuth.ts.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   const body = (await request.json()) as HandleUploadBody;

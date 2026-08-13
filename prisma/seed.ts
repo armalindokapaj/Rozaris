@@ -22,20 +22,27 @@ const prisma = new PrismaClient();
  * src/lib/demoAccounts.ts. Clearly prototype-only; a real launch needs a
  * real credential-issuing flow, not a seeded password. Everything else in
  * the admin UI still gates on the Zustand mock (unchanged) — this is only
- * so the new versioned-3D write routes have a real session to check. */
+ * so the new versioned-3D write routes have a real session to check.
+ *
+ * `superAdmin: true` (Super Admin control/audit pass) — this is the one
+ * real admin account in the whole app, so it gets every capability
+ * (hard delete, permission management, impersonation, force publish)
+ * immediately rather than needing a second admin to grant them. */
 async function seedAdmin() {
   const passwordHash = await bcrypt.hash("1", 10);
   await prisma.user.upsert({
     where: { email: "admin@rozaris.demo" },
-    update: { passwordHash, role: "admin", name: "Admin" },
+    update: { passwordHash, role: "admin", name: "Admin", superAdmin: true, status: "active" },
     create: {
       email: "admin@rozaris.demo",
       name: "Admin",
       role: "admin",
       passwordHash,
+      superAdmin: true,
+      status: "active",
     },
   });
-  console.log("Seeded admin@rozaris.demo (password: 1).");
+  console.log("Seeded admin@rozaris.demo (password: 1, superAdmin: true).");
 }
 
 async function main() {

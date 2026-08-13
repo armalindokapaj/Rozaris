@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Box, Check, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useAppStore } from "@/lib/store";
+import { useProjectUnits } from "@/hooks/useProjectUnits";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import type { Project, Unit } from "@/lib/types";
@@ -15,6 +15,15 @@ import type { Project, Unit } from "@/lib/types";
  * object storage in this prototype, "Add 3D model" stays an honest,
  * non-functional mock (matching the dashboard's existing Media tab) rather
  * than pretending to persist a file.
+ *
+ * Drift-bug fix: this used to dual-write to Zustand `customProjects` (the
+ * app-wide read source at the time) and a fire-and-forget Postgres call.
+ * The Zustand action silently no-op'd for any of the 7 seeded mockData
+ * projects (never added to `customProjects`), so editing a seeded
+ * project's units here wrote *only* to Postgres, invisibly — this same
+ * editor's own `units` selector kept showing stale data forever. Postgres
+ * (via `useProjectUnits`) is now the only path — see that hook's doc
+ * comment for the full history.
  */
 export function ProjectUnitsEditor({
   project,
@@ -23,44 +32,14 @@ export function ProjectUnitsEditor({
   project: Project;
   onClose: () => void;
 }) {
-  const units = useAppStore(
-    (s) => s.customProjects.find((p) => p.id === project.id)?.units ?? project.units
-  );
-  const addProjectUnit = useAppStore((s) => s.addProjectUnit);
-  const removeProjectUnit = useAppStore((s) => s.removeProjectUnit);
-  const updateProjectUnit = useAppStore((s) => s.updateProjectUnit);
+  const { units: liveUnits, error: syncError, createUnit, updateUnit, deleteUnit } = useProjectUnits(project.id);
+  // Falls back to the caller's own project.units for visual continuity on
+  // first paint — same reasoning as Project3DConfigEditor.tsx's
+  // `effectiveProject` (useProjectUnits's `units` is `null` while the
+  // initial fetch is in flight).
+  const units = liveUnits ?? project.units;
   const priceFmt = usePriceFormat();
   const { t } = useT();
-
-  // Phase 3 — real Postgres write path (src/app/api/projects/[projectId]/
-  // units) added alongside the pre-existing Zustand actions below, not in
-  // place of them: Zustand stays the immediate/optimistic update and the
-  // only thing any read surface in the app actually displays (unchanged,
-  // see the plan's "write-path + admin UI cutover" scope) — these calls
-  // are a dual-write so the same data also lands in Postgres, going
-  // forward, for whatever future read-migration work needs it. A failed
-  // Postgres write is surfaced, not silently dropped, but never rolls
-  // back the Zustand update.
-  const [syncError, setSyncError] = useState<string | null>(null);
-
-  async function syncUnit(method: "POST" | "PATCH" | "DELETE", unitId: string, body?: object) {
-    try {
-      const url =
-        method === "POST"
-          ? `/api/projects/${project.id}/units`
-          : `/api/projects/${project.id}/units/${unitId}`;
-      const res = await fetch(url, {
-        method,
-        headers: body ? { "Content-Type": "application/json" } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      if (!res.ok) throw new Error(await res.text());
-      setSyncError(null);
-    } catch (err) {
-      console.error("Project units: Postgres sync failed", method, unitId, err);
-      setSyncError(t("admin.projectUnitsSyncFailed"));
-    }
-  }
 
   const [code, setCode] = useState("");
   const [buildingName, setBuildingName] = useState(project.buildings[0] ?? "A");
@@ -73,7 +52,7 @@ export function ProjectUnitsEditor({
 
   const canAdd = code.trim().length > 0 && area > 0 && price > 0;
 
-  function handleAddUnit() {
+  async function handleAddUnit() {
     if (!canAdd) return;
     const unit: Unit = {
       id: `${project.id}-unit-${Date.now()}`,
@@ -91,9 +70,12 @@ export function ProjectUnitsEditor({
       images: [],
       floorPlanImage: "",
     };
-    addProjectUnit(project.id, unit);
-    void syncUnit("POST", unit.id, unit);
-    setCode("");
+    // Only clear the form on confirmed success — unlike the old
+    // fire-and-forget dual-write, which cleared it unconditionally even
+    // when the (only real) write failed. `syncError` still surfaces the
+    // failure either way.
+    const ok = await createUnit(unit);
+    if (ok) setCode("");
   }
 
   // Inline per-row editing — the only way to change a unit's status (or any
@@ -127,13 +109,15 @@ export function ProjectUnitsEditor({
     setEditDraft(null);
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     if (!editingId || !editDraft) return;
     if (!editDraft.code.trim() || editDraft.area <= 0 || editDraft.price <= 0) return;
     const patch = { ...editDraft, code: editDraft.code.trim() };
-    updateProjectUnit(project.id, editingId, patch);
-    void syncUnit("PATCH", editingId, patch);
-    cancelEdit();
+    // Only leave edit-mode on confirmed success — same reasoning as
+    // handleAddUnit above; a failed write now leaves the row exactly as
+    // the admin left it instead of silently closing over a lost edit.
+    const ok = await updateUnit(editingId, patch);
+    if (ok) cancelEdit();
   }
 
   return (
@@ -307,10 +291,7 @@ export function ProjectUnitsEditor({
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <button
-                          onClick={() => {
-                            removeProjectUnit(project.id, u.id);
-                            void syncUnit("DELETE", u.id);
-                          }}
+                          onClick={() => void deleteUnit(u.id)}
                           aria-label={t("common.close")}
                           className="rounded-full p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500"
                         >

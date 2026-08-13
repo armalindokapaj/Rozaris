@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, type RefObject } from "react";
-import { ArrowLeft, ExternalLink, Redo2, RotateCcw, Undo2 } from "lucide-react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 import { ThreeProjectViewer } from "@/components/project/ThreeProjectViewer";
-import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
+import type { SectionGizmoMode, ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import type {
+  DetailModelSlot,
   Locale,
   NodeOverride,
   PlatformHdri,
@@ -12,40 +12,67 @@ import type {
   Project3DConfig,
   ProjectDetailModel,
   SceneManifestNode,
+  Section,
 } from "@/lib/types";
 import type { AutosaveStatus } from "@/hooks/useAutosave";
-import type { ViewPreset } from "@/lib/viewerPresets";
+import { cn } from "@/lib/utils";
+import { groupUnitsByFloor } from "@/lib/units";
 import { EDITOR_MODES, type EditorMode } from "./modes";
-import type { SetOpts, Translate } from "./editorTypes";
+import type { FloorFilter, PreviewWidth, SetOpts, Translate } from "./editorTypes";
 import type { DetailVersionRow } from "./types";
+import { EditorHeader } from "./EditorHeader";
 import { ModeTabBar } from "./ModeTabBar";
+import { BuildingNavRail } from "./BuildingNavRail";
 import { SceneTreeRail } from "./SceneTreeRail";
-import { ViewportToolbar } from "./ViewportToolbar";
+import { SectionsListRail } from "./SectionsListRail";
+import { SlotTabStrip } from "./SlotTabStrip";
+import { EditorStatusBar } from "./EditorStatusBar";
 import { ModelPanel } from "./panels/ModelPanel";
 import { MaterialsPanel } from "./panels/MaterialsPanel";
 import { LightingPanel } from "./panels/LightingPanel";
 import { CameraPanel } from "./panels/CameraPanel";
 import { UnitsPanel } from "./panels/UnitsPanel";
+import { SectionsPanel } from "./panels/SectionsPanel";
 import { EffectsPanel } from "./panels/EffectsPanel";
 import { ViewerPanel } from "./panels/ViewerPanel";
 
+const THEME_STORAGE_KEY = "rz-editor-theme";
+
+const PREVIEW_WIDTH_STYLE: Record<PreviewWidth, string | undefined> = {
+  desktop: undefined,
+  tablet: "768px",
+  mobile: "390px",
+};
+
 /**
  * Editor shell — replaces Project3DConfigEditor.tsx's old single scrolling
- * `<div>` (was ~950 lines of inline JSX). As of the 2026-08-13 3-column
- * layout pass, a fixed 25/50/25 split: a persistent left panel (Scene
- * Explorer + Units linking — always visible, not gated by tab selection),
- * the `<ThreeProjectViewer>` in the middle, and the remaining 6 option
- * tabs (Model/Materials/Lighting/Camera/Render/Viewer — "Units" moved out
- * to the left panel, see modes.ts) on the right. Reset/Save Scene stay
- * global chrome in the right panel (not per-tab) since one save persists
- * fields spread across several tabs at once — same as the original single
- * Save button.
+ * `<div>` (was ~950 lines of inline JSX). As of the 2026-08-13
+ * Inventory/Floors mockup pass, the layout matches a user-supplied
+ * screenshot of that mockup's own Inventory screen: a full-width
+ * `EditorHeader` (back/title/undo-redo/night-mode/Preview/Reset/Save/
+ * Publish), a full-width `ModeTabBar` (7 tabs — "Inventory" is back, see
+ * modes.ts), a 3-column body (`BuildingNavRail` — building/floor
+ * navigation only, real `Unit.buildingName`/`Unit.floor` grouping — /
+ * viewport / the active tab's settings panel), and a full-width
+ * `EditorStatusBar`. The Materials tab also renders `SceneTreeRail`
+ * (mesh tree + per-node overrides) above `MaterialsPanel` — it moved out
+ * of the old permanent left panel now that the left rail is
+ * building-only, and `MaterialsPanel` was always meant to be shown
+ * alongside it (see that file's own doc comment).
+ *
+ * `nightMode` is new: default light (matching the rest of the platform),
+ * toggled from the header, persisted to `localStorage`. `.rz-editor-dark`
+ * (globals.css, from the prior always-on dark redesign) is now applied
+ * conditionally to this whole wrapper instead of hardcoded on two
+ * columns — the 3D canvas itself stays permanently dark either way, same
+ * as every other viewer in the app.
  *
  * Originally built (Milestone A of the Phase 2 plan) as a pure extraction
  * driven by the same flat state Project3DConfigEditor.tsx already owned —
- * every prop below is exactly what the original inline JSX read/wrote,
- * just named instead of closed-over; undo/redo and autosave were added in
- * later milestones, the 3-column relayout and dark theme later still.
+ * every data/mutation prop below is exactly what the original inline JSX
+ * read/wrote, just named instead of closed-over; undo/redo, autosave, the
+ * 3-column relayout, the dark theme, and this Inventory/Floors layout all
+ * came later.
  */
 export function EditorShell({
   project,
@@ -71,7 +98,13 @@ export function EditorShell({
   autosaveError,
   onAutosaveRetry,
   viewerRef,
-  previewDetailModel,
+  previewDetailModels,
+  slots,
+  activeSlotId,
+  onSelectSlot,
+  onAddSlot,
+  onRenameSlot,
+  onDeleteSlot,
   platformHdris,
   hdriBusy,
   hdriError,
@@ -149,7 +182,13 @@ export function EditorShell({
   autosaveLastSavedAt: string | null;
   onAutosaveRetry: () => void;
   viewerRef: RefObject<ThreeProjectViewerHandle | null>;
-  previewDetailModel: ProjectDetailModel | null;
+  previewDetailModels: { slotId: string; model: ProjectDetailModel }[];
+  slots: DetailModelSlot[];
+  activeSlotId: string | null;
+  onSelectSlot: (id: string) => void;
+  onAddSlot: (name: string) => void;
+  onRenameSlot: (id: string, name: string) => void;
+  onDeleteSlot: (id: string) => void;
   platformHdris: PlatformHdri[];
   hdriBusy: boolean;
   hdriError: string | null;
@@ -210,281 +249,388 @@ export function EditorShell({
   linkedMeshNames: Set<string>;
 }) {
   const [activeMode, setActiveMode] = useState<EditorMode>("model");
-  // Viewport toolbar state (dark-theme configurator restyle) — drives
-  // ProceduralProjectViewer's new controlled-mode props; see that
-  // component's viewPreset/xrayEnabled prop doc comments for why this
-  // lives here instead of the viewer's own (hidden, showChrome={false})
-  // internal state.
-  const [viewPreset, setViewPreset] = useState<ViewPreset>("realistic");
-  const [xrayEnabled, setXrayEnabled] = useState(false);
   const [perfStats, setPerfStats] = useState<{ fps: number; drawCalls: number; triangles: number; dpr: number } | null>(
     null
   );
-  const usingGlb = !!(previewDetailModel?.enabled && previewDetailModel?.glbUrl);
+  // Left rail selection (Inventory/Floors mockup pass) — threaded into the
+  // Inventory tab for real filtering; see editorTypes.ts's FloorFilter doc.
+  const [selectedFloor, setSelectedFloor] = useState<FloorFilter | null>(null);
+  // Bottom bar's device-preview toggle — real, constrains the viewport
+  // column below.
+  const [previewWidth, setPreviewWidth] = useState<PreviewWidth>("desktop");
+  // Night mode — default light (matches the rest of the platform), opt-in,
+  // persisted per-browser. Read from localStorage in an effect (not at
+  // render time) since this component's initial render also happens
+  // server-side and `window` isn't available there.
+  const [nightMode, setNightMode] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNightMode(window.localStorage.getItem(THEME_STORAGE_KEY) === "dark");
+  }, []);
+  function toggleNightMode() {
+    setNightMode((v) => {
+      const next = !v;
+      window.localStorage.setItem(THEME_STORAGE_KEY, next ? "dark" : "light");
+      return next;
+    });
+  }
+
   const hasSceneTree = hasDetailModel && sceneManifest.length > 0;
 
+  // --- Sections module (first-class Configurator module) ---
+  const sections = draft.sections;
+  const floorGroups = useMemo(() => groupUnitsByFloor(project.units), [project.units]);
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [gizmoMode, setGizmoMode] = useState<SectionGizmoMode>("move");
+  const [drawingSection, setDrawingSection] = useState(false);
+  // Mirrors RenderEngine's live gizmo-drag transform (see
+  // RenderEngineCallbacks.onSectionDraftChange) so SectionsPanel's fields
+  // update in real time without waiting for a draft/update round trip —
+  // cleared once a field edit or a fresh selection supersedes it.
+  const [liveSectionOverride, setLiveSectionOverride] = useState<Section | null>(null);
+  const [cameraSavedFlash, setCameraSavedFlash] = useState(false);
+  const selectedSection = sections.find((s) => s.id === selectedSectionId) ?? null;
+  const displaySection = liveSectionOverride ?? selectedSection;
+
+  // Leaving the Sections tab always returns the viewer to its normal,
+  // unclipped state — browsing Materials/Lighting/etc. shouldn't leave a
+  // stale cut applied. Also covers the very first render (activeMode
+  // starts as "model"), where every call below is a harmless no-op since
+  // nothing is attached yet.
+  useEffect(() => {
+    if (activeMode !== "sections") {
+      viewerRef.current?.cancelDrawSection();
+      viewerRef.current?.detachSectionGizmo();
+      viewerRef.current?.activateSection(null);
+      // Synchronizing React's "which section is selected" state with the
+      // tab switch above (an external-ish concern — it also drives the
+      // imperative viewer calls right above) — same justified case as the
+      // nightMode initial-load effect elsewhere in this file.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedSectionId(null);
+      setLiveSectionOverride(null);
+      setDrawingSection(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMode]);
+
+  function handleSelectSection(id: string) {
+    setSelectedSectionId(id);
+    setLiveSectionOverride(null);
+    const section = sections.find((s) => s.id === id);
+    if (section) viewerRef.current?.attachSectionGizmo(section, gizmoMode);
+  }
+
+  function handleDrawSection() {
+    if (drawingSection) {
+      viewerRef.current?.cancelDrawSection();
+      setDrawingSection(false);
+      return;
+    }
+    setDrawingSection(true);
+    const buildingName = selectedFloor?.building;
+    viewerRef.current?.beginDrawSection(
+      {
+        id: `section-${Date.now()}`,
+        name: t("admin.sectionDefaultName", { n: sections.length + 1 }),
+        scope: buildingName ? "building" : "project",
+        buildingName,
+      },
+      (section) => {
+        update({ sections: [...sections, section] }, { commit: true });
+        setDrawingSection(false);
+        setSelectedSectionId(section.id);
+        setGizmoMode("move");
+        viewerRef.current?.attachSectionGizmo(section, "move");
+      }
+    );
+  }
+
+  function handleGizmoModeChange(mode: SectionGizmoMode) {
+    setGizmoMode(mode);
+    viewerRef.current?.setSectionGizmoMode(mode);
+  }
+
+  function handleUpdateSection(partial: Partial<Section>) {
+    if (!selectedSectionId) return;
+    const next = sections.map((s) => (s.id === selectedSectionId ? { ...s, ...partial } : s));
+    update({ sections: next }, { commit: true });
+    setLiveSectionOverride(null);
+    const updated = next.find((s) => s.id === selectedSectionId);
+    if (updated) viewerRef.current?.attachSectionGizmo(updated, gizmoMode);
+  }
+
+  function handleDuplicateSection(section: Section) {
+    const copy: Section = { ...section, id: `section-${Date.now()}`, name: `${section.name} 2` };
+    update({ sections: [...sections, copy] }, { commit: true });
+    setSelectedSectionId(copy.id);
+    setLiveSectionOverride(null);
+    viewerRef.current?.attachSectionGizmo(copy, gizmoMode);
+  }
+
+  function handleRenameSection(id: string, name: string) {
+    update({ sections: sections.map((s) => (s.id === id ? { ...s, name } : s)) }, { commit: true });
+  }
+
+  function handleToggleHiddenSection(id: string) {
+    update({ sections: sections.map((s) => (s.id === id ? { ...s, hidden: !s.hidden } : s)) }, { commit: true });
+  }
+
+  function handleDeleteSection(id: string) {
+    update({ sections: sections.filter((s) => s.id !== id) }, { commit: true });
+    if (selectedSectionId === id) {
+      setSelectedSectionId(null);
+      setLiveSectionOverride(null);
+      viewerRef.current?.detachSectionGizmo();
+      viewerRef.current?.activateSection(null);
+    }
+  }
+
+  function handleSetSectionCamera() {
+    if (!selectedSectionId) return;
+    const state = viewerRef.current?.getCameraState();
+    if (!state) return;
+    handleUpdateSection({ cameraPreset: state });
+    setCameraSavedFlash(true);
+    setTimeout(() => setCameraSavedFlash(false), 2000);
+  }
+
   return (
-    // 3-column 25/50/25 layout (2026-08-13): Scene Explorer + Units linking
-    // (left) / viewport (middle) / option tabs (right). `order-*` keeps the
-    // viewport first on a stacked mobile layout (unchanged from before this
-    // pass) while `lg:order-*` restores true left/middle/right on desktop.
-    <div className="flex h-full min-h-0 w-full flex-col lg:flex-row">
-      {/* LEFT 25% — Scene Explorer + Units linking, always visible (not a
-          tab anymore — see modes.ts's EDITOR_MODES comment for why). */}
-      <div className="rz-editor-dark order-2 flex min-h-0 w-full flex-col border-b border-neutral-200 lg:order-1 lg:h-full lg:w-1/4 lg:shrink-0 lg:border-b-0 lg:border-r">
-        <div className="shrink-0 border-b border-neutral-100 px-5 py-4">
-          <h2 className="text-base font-bold text-neutral-900">{t("admin.editorSceneUnitsTitle")}</h2>
-          <p className="text-xs text-neutral-500">{t("admin.editorSceneUnitsSubtitle")}</p>
-        </div>
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scroll-thin p-5">
-          {hasSceneTree && (
-            <SceneTreeRail
-              sceneManifest={sceneManifest}
-              selectedNodeRzId={selectedNodeRzId}
-              setSelectedNodeRzId={setSelectedNodeRzId}
-              nodeOverrides={nodeOverrides}
-              setNodeOverrides={setNodeOverrides}
-              linkedMeshNames={linkedMeshNames}
-              canEditDetail={canEditDetail}
-              t={t}
-            />
-          )}
-          <div className={hasSceneTree ? "border-t border-neutral-100 pt-5" : undefined}>
-            <UnitsPanel
-              units={project.units}
-              detectedNodes={detectedNodes}
-              nodesLoading={nodesLoading}
-              matchedCount={matchedCount}
-              needsReviewCount={needsReviewCount}
-              visibleNodes={visibleNodes}
-              showOnlyNeedsReview={showOnlyNeedsReview}
-              setShowOnlyNeedsReview={setShowOnlyNeedsReview}
-              canEditDetail={canEditDetail}
-              linkSelections={linkSelections}
-              setLinkSelections={setLinkSelections}
-              carriedMeshNames={carriedMeshNames}
-              setCarriedMeshNames={setCarriedMeshNames}
-              draft={draft}
-              update={update}
-              t={t}
-            />
+    <div className={cn("flex h-full min-h-0 w-full flex-col", nightMode && "rz-editor-dark")}>
+      <EditorHeader
+        projectName={project.name}
+        projectSlug={project.slug}
+        onClose={onClose}
+        undo={undo}
+        redo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        nightMode={nightMode}
+        onToggleNightMode={toggleNightMode}
+        onReset={onReset}
+        onSaveScene={onSaveScene}
+        configBusy={configBusy}
+        configLoaded={configLoaded}
+        savedFlash={savedFlash}
+        configError={configError}
+        onDetailPublish={onDetailPublish}
+        canEditDetail={canEditDetail}
+        detailBusy={detailBusy}
+        detailLoaded={detailLoaded}
+        activeVersion={activeVersion}
+        t={t}
+      />
+      <ModeTabBar active={activeMode} onChange={setActiveMode} t={t} />
+
+      {/* 3-column body: building/floor nav (left) / viewport (middle) /
+          active tab's settings (right). `order-*` keeps the viewport
+          visually first on a stacked mobile layout, `lg:order-*` restores
+          true left/middle/right on desktop — same technique as the prior
+          3-column pass. */}
+      <div className="flex flex-1 min-h-0 w-full flex-col lg:flex-row">
+        {/* LEFT — building/floor navigation, except the Sections tab
+            (first-class Configurator module), which uses this space for
+            the sections list + "+ Draw Section" instead — see
+            SectionsListRail.tsx's own doc comment. */}
+        <div className="order-2 flex min-h-0 w-full shrink-0 flex-col border-b border-neutral-200 lg:order-1 lg:h-full lg:w-1/4 lg:border-b-0 lg:border-r">
+          <div className="min-h-0 flex-1 overflow-y-auto scroll-thin p-5">
+            {activeMode === "sections" ? (
+              <SectionsListRail
+                sections={sections}
+                selectedSectionId={selectedSectionId}
+                onSelect={handleSelectSection}
+                onDrawNew={handleDrawSection}
+                drawing={drawingSection}
+                onDuplicate={handleDuplicateSection}
+                onRename={handleRenameSection}
+                onToggleHidden={handleToggleHiddenSection}
+                onDelete={handleDeleteSection}
+                t={t}
+              />
+            ) : (
+              <BuildingNavRail units={project.units} selectedFloor={selectedFloor} setSelectedFloor={setSelectedFloor} t={t} />
+            )}
           </div>
         </div>
-      </div>
 
-      {/* MIDDLE 50% — viewport */}
-      <div className="relative order-1 h-64 shrink-0 bg-neutral-900 lg:order-2 lg:h-full lg:w-1/2">
-        <ThreeProjectViewer
-          ref={viewerRef}
-          project={project}
-          config={draft}
-          detailModel={previewDetailModel}
-          hdriUrl={platformHdris.find((h) => h.id === draft.hdriId)?.url ?? null}
-          showChrome={false}
-          showPerfStats
-          onPerfStats={setPerfStats}
-          viewPreset={viewPreset}
-          onViewPresetChange={setViewPreset}
-          xrayEnabled={xrayEnabled}
-        />
-        <ViewportToolbar
-          viewPreset={viewPreset}
-          onViewPresetChange={setViewPreset}
-          xrayEnabled={xrayEnabled}
-          onXrayChange={setXrayEnabled}
-          xrayAvailable={usingGlb}
-          t={t}
-        />
-      </div>
-
-      {/* RIGHT 25% — option tabs (Model/Materials/Lighting/Camera/Render/Viewer) */}
-      <div className="rz-editor-dark order-3 flex min-h-0 w-full flex-col border-t border-neutral-200 lg:h-full lg:w-1/4 lg:shrink-0 lg:border-l lg:border-t-0">
-        <div className="flex shrink-0 items-center gap-3 border-b border-neutral-100 px-5 py-4">
-          <button
-            onClick={onClose}
-            aria-label={t("common.back")}
-            className="shrink-0 rounded-control p-2 text-neutral-500 hover:bg-neutral-100"
+        {/* MIDDLE — viewport. `previewWidth` constrains it to simulate a
+            tablet/mobile breakpoint (real — not a stub). */}
+        <div className="relative order-1 flex h-64 shrink-0 items-stretch justify-center bg-neutral-900 lg:order-2 lg:h-full lg:flex-1">
+          <div
+            className="relative h-full w-full"
+            style={previewWidth === "desktop" ? undefined : { maxWidth: PREVIEW_WIDTH_STYLE[previewWidth] }}
           >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-base font-bold text-neutral-900">{t("admin.viewer3DTitle")}</h2>
-            <p className="truncate text-xs text-neutral-500">{project.name}</p>
-          </div>
-          {/* Step 4 of the MVP admin pipe ("Create → Upload → Configure →
-              Preview") — opens exactly what a customer sees. Real public
-              route; a freshly admin-created project resolves there via
-              CustomProjectPreview.tsx's client-side Zustand fallback (see
-              "rozaris-mvp-admin-project-pipe" memory) since it isn't in the
-              static mockData catalog. */}
-          <a
-            href={`/project/${project.slug}`}
-            target="_blank"
-            rel="noreferrer"
-            className="flex shrink-0 items-center gap-1.5 rounded-control border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-100"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            {t("admin.editorPreviewExperience")}
-          </a>
-          {/* Undo/redo (Phase 2, Milestone C) — act across all 7 tabs at
-              once, since the underlying history covers the whole editable
-              snapshot, not a per-tab slice; global header is the natural
-              home rather than duplicating on every panel. */}
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              onClick={undo}
-              disabled={!canUndo}
-              aria-label={t("admin.editorUndo")}
-              title={t("admin.editorUndo")}
-              className="rounded-control p-2 text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
-            >
-              <Undo2 className="h-4 w-4" />
-            </button>
-            <button
-              onClick={redo}
-              disabled={!canRedo}
-              aria-label={t("admin.editorRedo")}
-              title={t("admin.editorRedo")}
-              className="rounded-control p-2 text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
-            >
-              <Redo2 className="h-4 w-4" />
-            </button>
+            <ThreeProjectViewer
+              ref={viewerRef}
+              project={project}
+              config={draft}
+              detailModels={previewDetailModels}
+              hdriUrl={platformHdris.find((h) => h.id === draft.hdriId)?.url ?? null}
+              showChrome={false}
+              showPerfStats
+              onPerfStats={setPerfStats}
+              onSectionDraftChange={(section) => {
+                if (section.id === selectedSectionId) setLiveSectionOverride(section);
+              }}
+            />
           </div>
         </div>
 
-        {/* Autosave status (Milestone D) — one combined pill for both
-            background instances (config + detail-model); Publish is never
-            reflected here since it's never autosaved. */}
-        <div className="flex shrink-0 items-center gap-2 border-b border-neutral-100 px-5 py-2 text-[11px]">
-          {autosaveStatus === "saving" && <span className="text-neutral-500">{t("admin.autosaveSaving")}</span>}
-          {autosaveStatus === "saved" && (
-            // `formatRelativeDate` is day-granularity (built for version
-            // history timestamps) — "Saved Today" right after a save reads
-            // stranger than just "Saved," so the timestamp isn't shown
-            // here despite `autosaveLastSavedAt` being tracked precisely;
-            // kept in the prop/hook for whoever wants a finer-grained
-            // "Saved Xs ago" formatter later.
-            <span className="text-neutral-400">{t("admin.autosaveSaved")}</span>
-          )}
-          {autosaveStatus === "error" && (
-            <>
-              <span className="font-medium text-red-600">{autosaveError || t("admin.autosaveError")}</span>
-              <button onClick={onAutosaveRetry} className="font-semibold text-red-600 underline hover:text-red-700">
-                {t("admin.autosaveRetry")}
-              </button>
-            </>
-          )}
-          {autosaveStatus === "idle" && <span className="text-neutral-300">{t("admin.autosaveIdle")}</span>}
-        </div>
-
-        <ModeTabBar active={activeMode} onChange={setActiveMode} t={t} />
-
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scroll-thin p-5">
-          {activeMode === "model" && (
-            <ModelPanel
-              fileInputRef={fileInputRef}
-              onFile={onDetailFile}
-              hasDetailModel={hasDetailModel}
-              activeVersion={activeVersion}
-              canEditDetail={canEditDetail}
-              detailBusy={detailBusy}
-              onDiscardDraft={onDiscardDraft}
-              onRemoveDetailModel={onRemoveDetailModel}
-              onDeleteModel={onDeleteModel}
-              uploadProgress={uploadProgress}
-              detailError={detailError}
-              scale={scale}
-              setScale={setScale}
-              rotationDeg={rotationDeg}
-              setRotationDeg={setRotationDeg}
-              altitudeOffset={altitudeOffset}
-              setAltitudeOffset={setAltitudeOffset}
-              detailFlash={detailFlash}
-              needsReviewCount={needsReviewCount}
-              matchedCount={matchedCount}
-              nodeOverrideCount={Object.keys(nodeOverrides).length}
-              onDetailSave={onDetailSave}
-              onDetailPublish={onDetailPublish}
-              detailLoaded={detailLoaded}
-              showHistory={showHistory}
-              setShowHistory={setShowHistory}
-              versions={versions}
-              onDetailRollback={onDetailRollback}
-              onDeleteVersion={onDeleteVersion}
-              locale={locale}
-              t={t}
-            />
-          )}
-          {activeMode === "materials" && <MaterialsPanel draft={draft} update={update} t={t} />}
-          {activeMode === "lighting" && (
-            <LightingPanel
-              draft={draft}
-              update={update}
-              platformHdris={platformHdris}
-              hdriBusy={hdriBusy}
-              hdriError={hdriError}
-              hdriFileInputRef={hdriFileInputRef}
-              onHdriUpload={onHdriUpload}
-              onDeleteHdri={onDeleteHdri}
-              sunTimes={sunTimes}
-              t={t}
-            />
-          )}
-          {activeMode === "camera" && (
-            <CameraPanel
-              draft={draft}
-              update={update}
-              viewerRef={viewerRef}
-              newPresetLabel={newPresetLabel}
-              setNewPresetLabel={setNewPresetLabel}
-              t={t}
-            />
-          )}
-          {activeMode === "effects" && (
-            <EffectsPanel
-              draft={draft}
-              update={update}
-              suggestedTier={suggestedTier}
-              advancedOpen={advancedOpen}
-              setAdvancedOpen={setAdvancedOpen}
-              perfStats={perfStats}
-              t={t}
-            />
-          )}
-          {activeMode === "viewer" && <ViewerPanel draft={draft} update={update} t={t} />}
-        </div>
-
-        {/* Global chrome: Reset/Save Scene act on the whole `draft` object,
-            which spans fields from several tabs at once (rendering,
-            lighting, camera, glass, viewer UI) — kept outside the per-tab
-            panels rather than duplicated on each one, same as the
-            original single Save button. */}
-        <div className="shrink-0 space-y-2 border-t border-neutral-100 p-5">
-          <div className="flex gap-2">
-            <button
-              onClick={onReset}
-              disabled={configBusy}
-              className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              {t("admin.viewer3DReset")}
-            </button>
-            <button
-              onClick={onSaveScene}
-              disabled={configBusy || !configLoaded}
-              className="flex-1 rounded-control bg-brand-500 py-2 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
-            >
-              {t("admin.viewer3DSave")}
-            </button>
+        {/* RIGHT — settings for the active top tab. */}
+        <div className="order-3 flex min-h-0 w-full shrink-0 flex-col border-t border-neutral-200 lg:h-full lg:w-1/4 lg:border-l lg:border-t-0">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scroll-thin p-5">
+            {activeMode === "model" && (
+              <>
+                <SlotTabStrip
+                  slots={slots}
+                  activeSlotId={activeSlotId}
+                  onSelect={onSelectSlot}
+                  onAdd={onAddSlot}
+                  onRename={onRenameSlot}
+                  onDelete={onDeleteSlot}
+                  t={t}
+                />
+                <ModelPanel
+                  fileInputRef={fileInputRef}
+                  onFile={onDetailFile}
+                  hasDetailModel={hasDetailModel}
+                  activeVersion={activeVersion}
+                  canEditDetail={canEditDetail}
+                  detailBusy={detailBusy}
+                  onDiscardDraft={onDiscardDraft}
+                  onRemoveDetailModel={onRemoveDetailModel}
+                  onDeleteModel={onDeleteModel}
+                  uploadProgress={uploadProgress}
+                  detailError={detailError}
+                  scale={scale}
+                  setScale={setScale}
+                  rotationDeg={rotationDeg}
+                  setRotationDeg={setRotationDeg}
+                  altitudeOffset={altitudeOffset}
+                  setAltitudeOffset={setAltitudeOffset}
+                  detailFlash={detailFlash}
+                  needsReviewCount={needsReviewCount}
+                  matchedCount={matchedCount}
+                  nodeOverrideCount={Object.keys(nodeOverrides).length}
+                  onDetailSave={onDetailSave}
+                  detailLoaded={detailLoaded}
+                  showHistory={showHistory}
+                  setShowHistory={setShowHistory}
+                  versions={versions}
+                  onDetailRollback={onDetailRollback}
+                  onDeleteVersion={onDeleteVersion}
+                  locale={locale}
+                  t={t}
+                />
+              </>
+            )}
+            {activeMode === "materials" && (
+              <div className="space-y-5">
+                {hasSceneTree && (
+                  <SceneTreeRail
+                    sceneManifest={sceneManifest}
+                    selectedNodeRzId={selectedNodeRzId}
+                    setSelectedNodeRzId={setSelectedNodeRzId}
+                    nodeOverrides={nodeOverrides}
+                    setNodeOverrides={setNodeOverrides}
+                    linkedMeshNames={linkedMeshNames}
+                    canEditDetail={canEditDetail}
+                    t={t}
+                  />
+                )}
+                <div className={hasSceneTree ? "border-t border-neutral-100 pt-5" : undefined}>
+                  <MaterialsPanel draft={draft} update={update} t={t} />
+                </div>
+              </div>
+            )}
+            {activeMode === "lighting" && (
+              <LightingPanel
+                draft={draft}
+                update={update}
+                platformHdris={platformHdris}
+                hdriBusy={hdriBusy}
+                hdriError={hdriError}
+                hdriFileInputRef={hdriFileInputRef}
+                onHdriUpload={onHdriUpload}
+                onDeleteHdri={onDeleteHdri}
+                sunTimes={sunTimes}
+                t={t}
+              />
+            )}
+            {activeMode === "camera" && (
+              <CameraPanel
+                draft={draft}
+                update={update}
+                viewerRef={viewerRef}
+                newPresetLabel={newPresetLabel}
+                setNewPresetLabel={setNewPresetLabel}
+                t={t}
+              />
+            )}
+            {activeMode === "sections" &&
+              (displaySection ? (
+                <SectionsPanel
+                  section={displaySection}
+                  update={handleUpdateSection}
+                  gizmoMode={gizmoMode}
+                  setGizmoMode={handleGizmoModeChange}
+                  floorGroups={floorGroups}
+                  onSetCamera={handleSetSectionCamera}
+                  cameraSaved={cameraSavedFlash}
+                  t={t}
+                />
+              ) : (
+                <p className="text-xs text-neutral-400">{t("admin.sectionsSelectPrompt")}</p>
+              ))}
+            {activeMode === "inventory" && (
+              <UnitsPanel
+                units={project.units}
+                detectedNodes={detectedNodes}
+                nodesLoading={nodesLoading}
+                matchedCount={matchedCount}
+                needsReviewCount={needsReviewCount}
+                visibleNodes={visibleNodes}
+                showOnlyNeedsReview={showOnlyNeedsReview}
+                setShowOnlyNeedsReview={setShowOnlyNeedsReview}
+                canEditDetail={canEditDetail}
+                linkSelections={linkSelections}
+                setLinkSelections={setLinkSelections}
+                carriedMeshNames={carriedMeshNames}
+                setCarriedMeshNames={setCarriedMeshNames}
+                draft={draft}
+                update={update}
+                selectedFloor={selectedFloor}
+                setSelectedFloor={setSelectedFloor}
+                t={t}
+              />
+            )}
+            {activeMode === "effects" && (
+              <EffectsPanel
+                draft={draft}
+                update={update}
+                suggestedTier={suggestedTier}
+                advancedOpen={advancedOpen}
+                setAdvancedOpen={setAdvancedOpen}
+                perfStats={perfStats}
+                t={t}
+              />
+            )}
+            {activeMode === "viewer" && <ViewerPanel draft={draft} update={update} t={t} />}
           </div>
-          {savedFlash && (
-            <p className="rounded-control bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
-              {t("admin.viewer3DSaved")}
-            </p>
-          )}
-          {configError && <p className="text-xs font-medium text-red-600">{configError}</p>}
         </div>
       </div>
+
+      <EditorStatusBar
+        autosaveStatus={autosaveStatus}
+        autosaveError={autosaveError}
+        onAutosaveRetry={onAutosaveRetry}
+        perfStats={perfStats}
+        qualityPreset={draft.qualityPreset}
+        onQualityPresetChange={(v) => update({ qualityPreset: v }, { commit: true })}
+        previewWidth={previewWidth}
+        onPreviewWidthChange={setPreviewWidth}
+        t={t}
+      />
     </div>
   );
 }

@@ -9,9 +9,12 @@ import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { HeroWallpaper } from "./HeroWallpaper";
 import { LandingSearchCard } from "./LandingSearchCard";
+import { MobileLandingHero } from "./MobileLandingHero";
 import { TypewriterWord } from "./TypewriterWord";
 
-type DiscoveryMode = "buy" | "rent" | "new";
+// Exported for MobileLandingHero, which shares this session's mode
+// selection/search logic rather than keeping its own copy of it.
+export type DiscoveryMode = "buy" | "rent" | "new";
 
 const MODES: { id: DiscoveryMode; label: string; icon: typeof Home }[] = [
   { id: "buy", label: "Buy", icon: Home },
@@ -19,9 +22,14 @@ const MODES: { id: DiscoveryMode; label: string; icon: typeof Home }[] = [
   { id: "new", label: "New developments", icon: Building2 },
 ];
 
-const CYCLE_WORDS = ["home", "apartment", "villa", "house", "studio"];
+// Exported so MobileLandingHero's heading animates the exact same cycle
+// instead of a second, drifting copy of the word list.
+export const CYCLE_WORDS = ["home", "apartment", "villa", "house", "studio"];
 
-const tools = [
+// Exported — MobileLandingHero's tools grid reuses this verbatim (same
+// titles/descriptions the mockup's mobile tool cards show) instead of
+// keeping a second, drifting copy.
+export const tools = [
   {
     href: "/rent-vs-buy",
     icon: CircleDollarSign,
@@ -64,15 +72,26 @@ export function LandingHero() {
 
   return (
     <div className="relative min-h-dvh">
-      {/* Fixed full-page backdrop — sits behind the header, hero and
-          tools row alike, not boxed into one column. */}
-      <HeroWallpaper />
+      {/* Phone/tablet (< lg): a bienici-style photo hero with the logo and
+          menu overlaid directly on it, fitted to one screen with no
+          scroll. See MobileLandingHero for why it doesn't just reflow the
+          desktop markup below. */}
+      <MobileLandingHero mode={mode} onSelectMode={selectMode} onSearch={search} />
 
-      <main className="relative z-10 min-h-dvh">
-        <Header />
+      {/* Desktop (>= lg): unchanged split hero + wallpaper backdrop. */}
+      <div className="hidden lg:block">
+        {/* Fixed full-page backdrop — sits behind the header, hero and
+            tools row alike, not boxed into one column. */}
+        <HeroWallpaper />
 
-        <section className="mx-auto grid max-w-[88rem] grid-cols-1 items-center gap-10 px-5 py-8 sm:px-8 lg:grid-cols-2 lg:gap-14 lg:px-12 lg:py-12">
-          <div>
+        <main className="relative z-10 min-h-dvh">
+          <Header />
+
+          {/* Single centered column, not a 2-col grid with an empty second
+              cell — that empty half read as a layout bug ("empty space on
+              the right") rather than intentional breathing room once the
+              page was actually looked at on a real desktop screen. */}
+          <section className="mx-auto max-w-2xl px-5 py-10 sm:px-8 lg:px-12 lg:py-16">
             <span className="inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-brand-100 bg-white px-4 py-1.5 text-sm font-semibold text-brand-700 shadow-[0_2px_10px_rgba(17,24,39,0.06)]">
               <Sparkles className="h-4 w-4 text-accent" />
               Your next chapter starts here
@@ -116,41 +135,33 @@ export function LandingHero() {
               </div>
               <LandingSearchCard onSubmit={search} />
             </div>
-          </div>
+          </section>
 
-          {/* Right column is intentionally empty — the wallpaper itself is
-              a fixed full-page backdrop (see HeroWallpaper below the
-              header), so this column just reserves the split without
-              re-boxing it into a panel. Hidden below lg since there's
-              nothing to show there and the space is better spent on the
-              search card at narrower widths. */}
-          <div aria-hidden="true" className="hidden lg:block" />
-        </section>
-
-        <section className="mx-auto max-w-[88rem] px-5 pb-8 sm:px-8 lg:px-12 lg:pb-12">
-          <div className="grid gap-3 sm:grid-cols-3">
-            {tools.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="group flex items-center gap-3 border border-neutral-200 bg-white p-3.5 transition-all duration-150 ease-[var(--ease-rz)] hover:-translate-y-1 hover:border-brand-200 hover:shadow-[var(--shadow-2)]"
-                >
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600 transition-transform duration-150 ease-[var(--ease-rz)] group-hover:scale-105">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <span className="flex-1">
-                    <span className="block text-sm font-extrabold text-neutral-900">{item.title}</span>
-                    <span className="block text-xs leading-snug text-neutral-500">{item.description}</span>
-                  </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400 transition-transform duration-150 group-hover:translate-x-1 group-hover:text-brand-600" />
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-      </main>
+          <section className="mx-auto max-w-[88rem] px-5 pb-8 sm:px-8 lg:px-12 lg:pb-12">
+            <div className="grid gap-3 sm:grid-cols-3">
+              {tools.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="group flex items-center gap-3 border border-neutral-200 bg-white p-3.5 transition-all duration-150 ease-[var(--ease-rz)] hover:-translate-y-1 hover:border-brand-200 hover:shadow-[var(--shadow-2)]"
+                  >
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600 transition-transform duration-150 ease-[var(--ease-rz)] group-hover:scale-105">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <span className="flex-1">
+                      <span className="block text-sm font-extrabold text-neutral-900">{item.title}</span>
+                      <span className="block text-xs leading-snug text-neutral-500">{item.description}</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400 transition-transform duration-150 group-hover:translate-x-1 group-hover:text-brand-600" />
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        </main>
+      </div>
     </div>
   );
 }

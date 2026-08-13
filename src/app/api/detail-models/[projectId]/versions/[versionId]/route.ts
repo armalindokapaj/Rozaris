@@ -1,4 +1,3 @@
-import { del } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -26,7 +25,7 @@ export async function PATCH(
   }
 
   const version = await prisma.detailModelVersion.findUnique({ where: { id: versionId } });
-  if (!version || version.projectId !== projectId) {
+  if (!version || version.projectId !== projectId || version.deletedAt) {
     return NextResponse.json({ error: "Version not found." }, { status: 404 });
   }
   if (version.publicationStatus === "published") {
@@ -50,19 +49,15 @@ export async function PATCH(
 }
 
 /**
- * Permanently deletes a version — its Postgres row AND its stored blob(s).
- * Previously only allowed for non-published rows and never touched
- * storage (a draft's underlying GLB stayed on Vercel Blob forever, and
- * there was no way to remove a published/archived model at all — "remove"
- * elsewhere in the editor only ever archives). This is the real delete
- * path both the editor's single "Delete Model" button (any status,
- * including the currently published version) and its per-version history
- * delete (old archived versions) call. No "cannot delete published" guard
- * anymore — that used to protect against orphaning the live experience,
- * but "delete the model" is a real, intentional destructive action now;
- * the public viewer already degrades to procedural massing when no
- * published version exists (see ProceduralProjectViewer's glbLoadFailed/
- * usingGlb fallback).
+ * Soft-deletes a version — Postgres row marked `deletedAt`/`deletedBy`,
+ * stored blob(s) left alone (Super Admin control/audit pass; this route
+ * previously ran a real `prisma.delete()` + `del(blobUrl)` here — see git
+ * history for that version if the old unconditional-hard-delete behavior
+ * is ever needed again). Both the editor's "Delete Model" button (any
+ * status, including the currently published version — no "cannot delete
+ * published" guard, unchanged from before) and its per-version history
+ * delete call this. The row is restorable from the Super Admin Recycle
+ * Bin; only a Super Admin hard-delete actually removes the blob.
  */
 export async function DELETE(
   _request: Request,
@@ -73,32 +68,24 @@ export async function DELETE(
 
   const { projectId, versionId } = await params;
   const version = await prisma.detailModelVersion.findUnique({ where: { id: versionId } });
-  if (!version || version.projectId !== projectId) {
+  if (!version || version.projectId !== projectId || version.deletedAt) {
     return NextResponse.json({ error: "Version not found." }, { status: 404 });
   }
 
-  // Best-effort blob cleanup — sourceAssetUrl/publicAssetUrl are the same
-  // URL today (no delivery-asset split yet), so dedupe before deleting;
-  // a blob that's already gone (or shared/already-deleted) must not block
-  // the Postgres row from being removed.
-  const blobUrls = Array.from(new Set([version.sourceAssetUrl, version.publicAssetUrl].filter(Boolean)));
-  await Promise.all(
-    blobUrls.map((url) =>
-      del(url).catch((err) => {
-        console.error("3D Experience: blob delete failed (continuing)", url, err);
-      })
-    )
-  );
-
-  await prisma.detailModelVersion.delete({ where: { id: versionId } });
-
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
+  await prisma.detailModelVersion.update({
+    where: { id: versionId },
+    data: { deletedAt: new Date(), deletedBy: actor },
+  });
+
   await logAuditEvent({
     actor,
-    action: "Detail model deleted",
+    actorId: gate.user?.id,
+    action: "Detail model soft-deleted",
     entityType: "DetailModelVersion",
     entityId: versionId,
     entityLabel: `v${version.version}`,
+    previousState: version,
   });
 
   return NextResponse.json({ ok: true });

@@ -22,7 +22,7 @@ export async function POST(
 
   const { projectId, versionId } = await params;
   const version = await prisma.detailModelVersion.findUnique({ where: { id: versionId } });
-  if (!version || version.projectId !== projectId) {
+  if (!version || version.projectId !== projectId || version.deletedAt) {
     return NextResponse.json({ error: "Version not found." }, { status: 404 });
   }
   if (version.publicationStatus !== "published") {

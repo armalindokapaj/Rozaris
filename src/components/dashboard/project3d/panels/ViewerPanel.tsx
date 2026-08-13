@@ -38,11 +38,6 @@ export function ViewerPanel({
           checked={draft.viewerUI.timeOfDay}
           onChange={(v) => update({ viewerUI: { ...draft.viewerUI, timeOfDay: v } }, { commit: true })}
         />
-        <ToggleField
-          label={t("project.viewPreset")}
-          checked={draft.viewerUI.viewPreset}
-          onChange={(v) => update({ viewerUI: { ...draft.viewerUI, viewPreset: v } }, { commit: true })}
-        />
       </div>
       <p className="mt-1.5 text-[11px] text-neutral-400">{t("admin.sceneViewerUINote")}</p>
 
@@ -69,6 +64,16 @@ export function ViewerPanel({
           label={t("admin.interactionShowUnitInfo")}
           checked={draft.viewerUI.showUnitInfo ?? true}
           onChange={(v) => update({ viewerUI: { ...draft.viewerUI, showUnitInfo: v } }, { commit: true })}
+        />
+        {/* Sections module — same optional/defaults-true pattern as the 3
+            toggles above. Only meaningful once at least one non-hidden
+            section exists (ProceduralProjectViewer.tsx's own menu-button
+            gate) — this just lets Admin turn the public entry point off
+            entirely regardless. */}
+        <ToggleField
+          label={t("admin.interactionShowSections")}
+          checked={draft.viewerUI.sectionsEnabled ?? true}
+          onChange={(v) => update({ viewerUI: { ...draft.viewerUI, sectionsEnabled: v } }, { commit: true })}
         />
       </div>
     </section>

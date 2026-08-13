@@ -44,8 +44,11 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
+  // deletedAt: null — a soft-deleted (discarded) draft is gone from the
+  // editor's own version-history list, restorable only via the Super
+  // Admin Recycle Bin, not this list.
   const versions = await prisma.mapModelVersion.findMany({
-    where: { projectId },
+    where: { projectId, deletedAt: null },
     orderBy: { version: "desc" },
   });
   return NextResponse.json(versions);
@@ -65,7 +68,7 @@ export async function POST(
   }
 
   const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) {
+  if (!project || project.deletedAt) {
     return NextResponse.json(
       { error: `No project row for "${projectId}" — run \`npm run db:seed\`.` },
       { status: 404 }
@@ -73,6 +76,10 @@ export async function POST(
   }
 
   const validation = await fetchAndValidateGlb(parsed.data.glbUrl, "mapModel");
+  // Deliberately NOT filtering deletedAt here — the (projectId, version)
+  // unique index still counts soft-deleted rows, so the next version
+  // number must be computed from every version ever created or a restored
+  // draft could collide with a new upload.
   const last = await prisma.mapModelVersion.findFirst({
     where: { projectId },
     orderBy: { version: "desc" },

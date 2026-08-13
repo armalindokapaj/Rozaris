@@ -13,45 +13,62 @@ const detailModelSchema = z.object({
 });
 
 /**
- * ⚠️ LEGACY as of the versioning pass — GET below now resolves the
- * project's currently-*published* `DetailModelVersion` (see
- * ./versions/route.ts for the full history/draft/publish/rollback/
- * carry-forward pipeline) instead of the old single-row
- * `ProjectDetailModel`, keeping the exact same response shape
- * (`glbUrl/fileName/.../enabled/unitLinks: {meshName,unitId}[]`) so
- * useProjectDetailModel.ts and every other existing caller needs zero
- * changes. PUT/DELETE further down and ./links/route.ts still write the
- * legacy `ProjectDetailModel`/`UnitMeshLink` tables — left in place,
- * unused by the admin UI once it switches to POST/PATCH .../versions, as a
- * one-release safety net. Do not build new features against them.
+ * ⚠️ LEGACY name as of the versioning pass, shape changed again by the
+ * Multiple Detail-Model Slots pass. GET now resolves EVERY one of the
+ * project's slots' currently-*published* `DetailModelVersion` (see
+ * ./slots/[slotId]/versions/route.ts for the full per-slot history/draft/
+ * publish/rollback/carry-forward pipeline) instead of a single row —
+ * a project can have several independently-published slots ("Building",
+ * "Surroundings", ...) rendering simultaneously. Each array entry keeps
+ * the exact same per-model shape the old single-object response had
+ * (`glbUrl/fileName/.../enabled/unitLinks: {meshName,unitId}[]`), just
+ * wrapped with `slotId`/`slotName` and returned as a list —
+ * `useProjectDetailModel.ts` and its 2 call sites updated together. PUT/
+ * DELETE further down and ./links/route.ts still write the legacy
+ * `ProjectDetailModel`/`UnitMeshLink` tables — left in place, unused by
+ * the admin UI, as a one-release safety net. Do not build new features
+ * against them.
  */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  const version = await prisma.detailModelVersion.findFirst({
-    where: { projectId, publicationStatus: "published" },
-    include: { unitLinks: true },
+  const slots = await prisma.detailModelSlot.findMany({
+    where: { projectId },
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
   });
-  if (!version) return NextResponse.json(null);
-  return NextResponse.json({
-    glbUrl: version.publicAssetUrl,
-    fileName: version.fileName,
-    fileSize: version.fileSize,
-    scale: version.scale,
-    rotationDeg: version.rotationDeg,
-    altitudeOffset: version.altitudeOffset,
-    enabled: version.publicationStatus === "published",
-    updatedAt: version.updatedAt,
-    unitLinks: version.unitLinks.map((l) => ({ meshName: l.meshName, unitId: l.unitId })),
-    sceneManifest: version.sceneManifest ?? [],
-    nodeOverrides: version.nodeOverrides ?? [],
-    triangleCount: version.triangleCount,
-    meshCount: version.meshCount,
-    materialCount: version.materialCount,
-    textureCount: version.textureCount,
-  });
+  const models = await Promise.all(
+    slots.map(async (slot) => {
+      const version = await prisma.detailModelVersion.findFirst({
+        where: { slotId: slot.id, publicationStatus: "published", deletedAt: null },
+        include: { unitLinks: true },
+      });
+      if (!version) return null;
+      return {
+        slotId: slot.id,
+        slotName: slot.name,
+        model: {
+          glbUrl: version.publicAssetUrl,
+          fileName: version.fileName,
+          fileSize: version.fileSize,
+          scale: version.scale,
+          rotationDeg: version.rotationDeg,
+          altitudeOffset: version.altitudeOffset,
+          enabled: version.publicationStatus === "published",
+          updatedAt: version.updatedAt,
+          unitLinks: version.unitLinks.map((l) => ({ meshName: l.meshName, unitId: l.unitId })),
+          sceneManifest: version.sceneManifest ?? [],
+          nodeOverrides: version.nodeOverrides ?? [],
+          triangleCount: version.triangleCount,
+          meshCount: version.meshCount,
+          materialCount: version.materialCount,
+          textureCount: version.textureCount,
+        },
+      };
+    })
+  );
+  return NextResponse.json(models.filter((m): m is NonNullable<typeof m> => m !== null));
 }
 
 /**

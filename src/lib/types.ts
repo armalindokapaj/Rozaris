@@ -292,6 +292,26 @@ export interface Project3DConfig {
   /** THREE.FogExp2's density factor — small values (0-0.05ish) are the
    * useful range; higher gets opaque very quickly at typical scene scale. */
   fogDensity: number;
+  /** When true, fog color is derived live from the resolved sky/background
+   * color instead of `fogColor` above — the "seamless horizon" technique
+   * from three.js's webgl_geometry_terrain example. Off by default: zero
+   * behavior change for any existing project until an admin enables it. */
+  fogMatchesSky: boolean;
+  /** Real lens flare attached to the sun (webgl_lensflares.html
+   * technique, via three.js's WebGPU-native LensflareMesh port). Off by
+   * default. */
+  lensflareEnabled: boolean;
+  /** Real spherical-harmonics light probe (webgl_lightprobes_sponza.html
+   * technique) — direction-dependent indirect lighting captured from the
+   * live sky/HDRI environment, supplementing the flat AmbientLight. Off
+   * by default — the extra cube-capture cost only happens when enabled. */
+  lightProbeEnabled: boolean;
+  /** Real stencil-buffer-derived Section cap silhouette
+   * (webgl_clipping_stencil.html technique) instead of the default
+   * flat-quad cap — see RenderEngine.ts's rebuildSectionCap. Requires a
+   * fresh mount to take effect (renderer-construction-time flag). Off by
+   * default. */
+  sectionCapStencilEnabled: boolean;
 
   /** Hex colors for the four unit statuses (+ the shared "selected"
    * highlight) shown both in the 3D scene (GLB unit boxes and the
@@ -317,6 +337,11 @@ export interface Project3DConfig {
   gtaoEnabled: boolean;
   antialiasEnabled: boolean;
 
+  /** Manual clipping-plane sections (Sections module) — admin-authored,
+   * real Postgres-backed, same "typed array in a Json column" pattern as
+   * `cameraPresets` above. See the `Section` interface's own doc comment. */
+  sections: Section[];
+
   updatedAt: string;
 }
 
@@ -335,7 +360,6 @@ export interface ViewerUIToggles {
   home: boolean;
   unitSearch: boolean;
   timeOfDay: boolean;
-  viewPreset: boolean;
   /** Interaction toggles (added alongside the full-configurator pass) —
    * optional since `viewerUI` is a nullable Json? column and every
    * pre-existing row predates these keys; every read site defaults a
@@ -345,6 +369,11 @@ export interface ViewerUIToggles {
   hoverEnabled?: boolean;
   selectEnabled?: boolean;
   showUnitInfo?: boolean;
+  /** Public "Sections" bottom-menu button (Sections module, first-class
+   * pass) — same optional/defaults-true pattern as the three toggles
+   * above. Hidden regardless once `Project3DConfig.sections` is empty,
+   * same as the Camera Presets menu button already does. */
+  sectionsEnabled?: boolean;
 }
 
 export interface CameraPreset {
@@ -355,6 +384,74 @@ export interface CameraPreset {
   fov: number;
   /** Transition duration when this preset is clicked, ms. */
   durationMs: number;
+}
+
+/** One manual clipping-section — a rectangular, rotatable, finite cut
+ * volume through the detail GLB (Sections module, first-class pass).
+ * Authored in the admin editor by drawing/dragging directly in the
+ * viewport (`RenderEngine.ts`'s section methods, `TransformControls`-
+ * driven); persisted as one entry in `Project3DConfig.sections`, the same
+ * "typed array in a nullable Json column, flows through the existing
+ * draft/update/undo/autosave pipeline for free" pattern `cameraPresets`
+ * already established. Never stored inside the GLB itself — the geometry
+ * is untouched, only the render-time clipping planes/cap change.
+ *
+ * `scope`/`buildingName` are a label, not an enforcement mechanism: the
+ * clipping volume is already spatially finite (5-6 planes, AND/
+ * intersection semantics), so a rectangle drawn over one building only
+ * ever clips that building's geometry regardless of scope — see
+ * RenderEngine.ts's section-planes doc comment. True per-node building
+ * tagging / a "Selected Objects" scope is deferred (no per-node building
+ * tag exists on architecture GLB meshes today, only on `Unit` rows).
+ *
+ * `floorId` is not a foreign key to a real Floor table (none exists) —
+ * it's the same `` `${buildingName}::${floor}` `` composite identity
+ * `src/lib/units.ts`'s `groupUnitsByFloor` derives from real `Unit`
+ * rows, which is also what `BuildingNavRail.tsx`/`UnitsPanel.tsx`'s
+ * `selectedFloor` filter already keys on. */
+export interface Section {
+  id: string;
+  name: string;
+  scope: "project" | "building";
+  buildingName?: string;
+  /** World-space footprint, meters — X/Z ground-plane center, Three.js
+   * Y-up convention (matches every other spatial field in this app). */
+  centerX: number;
+  centerZ: number;
+  widthM: number;
+  depthM: number;
+  /** Degrees around the vertical (Y) axis — matches this schema's other
+   * angle fields (`cameraMinPolarDeg`, `northRotationDeg`, etc.), all
+   * degree-based, not radians. */
+  rotationDeg: number;
+  /** World-space Y (meters) the horizontal cut plane sits at. */
+  heightM: number;
+  /** Whether a 6th, bottom clipping plane is also applied — off by
+   * default (open-bottomed cut, matching the reference mockup). */
+  bottomEnabled: boolean;
+  /** The cut's cap surface — real behavior, not just a color: whichever
+   * is currently true drives BOTH the material AND whether it renders
+   * at all (see RenderEngine.ts's `rebuildSectionCap`):
+   * - `fillGapsEnabled: false` (default) — a translucent (50% opacity)
+   *   "clip plane indicator" in the admin's own live-preview only,
+   *   purely an editing aid (matches the section rectangle it's editing
+   *   against) — 100% transparent, i.e. not rendered at all, in the
+   *   public viewer, since visitors shouldn't see an abstract reference
+   *   plane.
+   * - `fillGapsEnabled: true` — a fully opaque, admin-picked `fillColor`
+   *   fill, shown in both the editor and the public viewer, so a
+   *   customer-facing cutaway doesn't look hollow/broken. */
+  fillGapsEnabled: boolean;
+  fillColor: string;
+  /** Saved via the same `getCameraState()` flow `CameraPanel`'s "Save
+   * current view" already uses. Unset = activating this section clips
+   * without moving the camera. */
+  cameraPreset?: { position: { x: number; y: number; z: number }; target: { x: number; y: number; z: number }; fov: number };
+  floorId?: string;
+  /** Excluded from the left rail's default list view and the public
+   * viewer's Sections panel — stays in `Project3DConfig.sections`,
+   * doesn't delete it. */
+  hidden?: boolean;
 }
 
 /** Admin's "3D Map Control" — an outdoor GLB placed at a project's real
@@ -462,6 +559,20 @@ export interface NodeOverride {
  * classification/material overrides on top of it. When absent or
  * `enabled: false`, the project falls back to the existing procedural
  * Three.js viewer unchanged. */
+/** A named container a project's detail GLBs hang off of — e.g.
+ * "Building" and "Surroundings" — so replacing one doesn't touch the
+ * other (Multiple Detail-Model Slots pass). Every project has at least
+ * one (auto-created "Building" for any project that had a detail model
+ * before this existed — see scripts/migrate-detail-model-slots.ts).
+ * `ProjectDetailModel` below is now per-slot, not per-project. */
+export interface DetailModelSlot {
+  id: string;
+  projectId: string;
+  name: string;
+  order: number;
+  createdAt: string;
+}
+
 export interface ProjectDetailModel {
   glbUrl: string;
   fileName: string;
@@ -505,6 +616,18 @@ export interface ProjectDetailModel {
 export interface ExperienceDocument {
   schemaVersion: 1;
   projectId: string;
+  /** Multiple Detail-Model Slots pass — one `DetailModelVersion` row (and
+   * so one `experienceDocument`) now describes one *slot's* revision, not
+   * necessarily "the whole project's 3D experience" (a project can have
+   * several independently-versioned slots at once). Kept as a simple
+   * per-version fragment rather than aggregating every sibling slot's
+   * current state into one document — this field isn't consumed by any
+   * live read path yet (see the class doc comment above), so there's
+   * nothing that actually needs the aggregate view today, and building it
+   * would mean every slot's save re-querying every *other* slot's latest
+   * version for no real consumer. */
+  slotId: string;
+  slotName: string;
   /** = the owning DetailModelVersion's `version` number. */
   revision: number;
   model: {
@@ -549,6 +672,9 @@ export interface ExperienceDocument {
   units: {
     bindings: UnitMeshLink[];
   };
+  /** Sections module — same array `Project3DConfig.sections` already
+   * carries, folded into the published snapshot unchanged. */
+  sections: Section[];
   viewer: ViewerUIToggles;
   publishing: {
     publicationStatus: "draft" | "published" | "archived";

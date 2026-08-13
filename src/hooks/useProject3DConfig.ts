@@ -31,7 +31,12 @@ export function useProject3DConfig(projectId: string): Project3DConfig {
         // isn't a hypothetical edge case, it's the common case.
         setConfig(
           row
-            ? { ...row, cameraPresets: row.cameraPresets ?? [], viewerUI: row.viewerUI ?? defaultProject3DConfig.viewerUI }
+            ? {
+                ...row,
+                cameraPresets: row.cameraPresets ?? [],
+                viewerUI: row.viewerUI ?? defaultProject3DConfig.viewerUI,
+                sections: row.sections ?? [],
+              }
             : defaultProject3DConfig
         );
       })

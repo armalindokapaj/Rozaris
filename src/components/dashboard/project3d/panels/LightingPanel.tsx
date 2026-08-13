@@ -89,11 +89,20 @@ export function LightingPanel({
           />
           {draft.fogEnabled && (
             <div className="mt-3 space-y-3">
-              <ColorField
-                label={t("admin.sceneFogColor")}
-                value={draft.fogColor}
-                onChange={(v) => update({ fogColor: v }, { commit: true })}
+              <ToggleField
+                label={t("admin.sceneFogMatchesSky")}
+                checked={draft.fogMatchesSky}
+                onChange={(v) => update({ fogMatchesSky: v }, { commit: true })}
               />
+              {draft.fogMatchesSky ? (
+                <p className="text-[11px] text-neutral-400">{t("admin.sceneFogMatchesSkyNote")}</p>
+              ) : (
+                <ColorField
+                  label={t("admin.sceneFogColor")}
+                  value={draft.fogColor}
+                  onChange={(v) => update({ fogColor: v }, { commit: true })}
+                />
+              )}
               <SliderField
                 label={t("admin.sceneFogDensity")}
                 min={0}
@@ -163,6 +172,11 @@ export function LightingPanel({
           onChange={(v) => update({ environmentIntensity: v })}
           suffix="×"
         />
+        <ToggleField
+          label={t("admin.sceneLightProbeEnabled")}
+          checked={draft.lightProbeEnabled}
+          onChange={(v) => update({ lightProbeEnabled: v }, { commit: true })}
+        />
         <SliderField
           label={t("admin.sceneExposure")}
           min={0}
@@ -218,6 +232,13 @@ export function LightingPanel({
               value={draft.sunIntensity}
               onChange={(v) => update({ sunIntensity: v })}
               suffix="×"
+            />
+          </div>
+          <div className="mt-3">
+            <ToggleField
+              label={t("admin.sunLensflare")}
+              checked={draft.lensflareEnabled}
+              onChange={(v) => update({ lensflareEnabled: v }, { commit: true })}
             />
           </div>
           {draft.sunMode === "manual" && (

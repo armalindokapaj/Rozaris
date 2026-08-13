@@ -29,23 +29,28 @@ const unitSchema = z.object({
 
 /**
  * Phase 3 (UnitManager + live-inventory write path) — the first real read
- * AND write surface the Postgres `Unit` table has ever had. Prior to this,
- * `prisma.unit` was written only by `prisma/seed.ts` and read by nothing
- * (confirmed by a full-repo grep before this route was added). Every real
- * app surface — search, project pages, dashboard, the 3D viewer, this
- * project's own admin Units editor — still reads `src/lib/mockData.ts` +
- * Zustand `customProjects` exclusively; that stays true after this route
- * exists. This is deliberately additive/foundational, not a cutover: see
- * `ProjectUnitsEditor.tsx`'s dual-write (Zustand stays the source of truth
- * for what's displayed; this table now also gets the same data, for
- * whatever future read-migration work picks it up).
+ * AND write surface the Postgres `Unit` table has ever had. Prior to
+ * Phase 3, `prisma.unit` was written only by `prisma/seed.ts` and read by
+ * nothing. Two later passes cut this table over to being the real source
+ * of truth: the 3D Experience Configurator's own display (UnitsPanel,
+ * BuildingNavRail, the live preview viewport — see `useProjectUnits.ts`)
+ * reads it, and `ProjectUnitsEditor.tsx` (the admin dashboard's CRUD
+ * surface) writes to it exclusively — no more Zustand `customProjects`
+ * dual-write, which used to silently no-op for any of the 7 seeded
+ * mockData projects and cause real, invisible data loss. Public search,
+ * project pages, and dashboard analytics still read
+ * `src/lib/mockData.ts` + Zustand exclusively — unaffected by either
+ * pass, a separate, larger migration if ever wanted.
  */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  const units = await prisma.unit.findMany({ where: { projectId }, orderBy: { code: "asc" } });
+  const units = await prisma.unit.findMany({
+    where: { projectId, deletedAt: null },
+    orderBy: { code: "asc" },
+  });
   return NextResponse.json(units);
 }
 
@@ -63,7 +68,7 @@ export async function POST(
   }
 
   const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) {
+  if (!project || project.deletedAt) {
     return NextResponse.json(
       { error: `No project row for "${projectId}" — run \`npm run db:seed\`.` },
       { status: 404 }

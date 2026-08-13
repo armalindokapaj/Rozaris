@@ -1,14 +1,17 @@
 import * as THREE from "three/webgpu";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
-import { metalness, mrt, normalView, output, pass, roughness } from "three/tsl";
+import { clamp, metalness, mrt, normalView, output, pass, roughness } from "three/tsl";
 import { ao } from "three/examples/jsm/tsl/display/GTAONode.js";
 import { ssr } from "three/examples/jsm/tsl/display/SSRNode.js";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
 import { smaa } from "three/examples/jsm/tsl/display/SMAANode.js";
+import { LensflareMesh, LensflareElement } from "three/examples/jsm/objects/LensflareMesh.js";
+import { LightProbeGenerator } from "three/examples/jsm/lights/LightProbeGenerator.js";
 import { computeProjectLayout, type UnitBox } from "@/lib/threeBuilding";
 import { DRACO_DECODER_PATH } from "@/lib/gltfDecoder";
 import { applyUnitBoxMaterial, disposeGlbObject3D } from "@/lib/glbUnitNodes";
@@ -25,12 +28,10 @@ import {
   UNIT_BOX_COLOR,
   UNIT_BOX_OPACITY,
   UNIT_BOX_SELECTED_OPACITY,
-  UNIT_BOX_XRAY_OPACITY_BOOST,
-  VIEW_PRESET_MATERIAL,
   type QualityTierSettings,
-  type ViewPreset,
 } from "@/lib/viewerPresets";
-import type { CameraPreset, Project, Project3DConfig, ProjectDetailModel, Unit, UnitMeshLink } from "@/lib/types";
+import { buildSectionCapGeometry, buildSectionPlanes, sectionFromDragPoints, SECTION_INDICATOR_COLOR } from "./sections";
+import type { CameraPreset, Project, Project3DConfig, ProjectDetailModel, Section, Unit, UnitMeshLink } from "@/lib/types";
 
 export type AvailabilityFilter = "all" | Unit["status"];
 
@@ -48,6 +49,11 @@ interface GlbUnitBoxEntry {
 
 const UNIT_NODE_PATTERN = /^Unit_/i;
 const MOBILE_VIEWPORT_BREAKPOINT = 768; // matches Tailwind's `md` — used for FOV/quality only, not a full UA probe
+// Light probe (webgl_lightprobes_sponza.html technique) cube capture size
+// — this only feeds 9 spherical-harmonics coefficients, not visible
+// reflections (the existing PMREM environment already handles those), so
+// a tiny cube keeps the async pixel-readback cost negligible.
+const LIGHT_PROBE_CUBE_SIZE = 16;
 
 export interface RenderEngineCallbacks {
   /** i18n — only used for the WebGPU-unavailable message. */
@@ -74,37 +80,50 @@ export interface RenderEngineCallbacks {
   onPointerMove: (clientX: number, clientY: number) => void;
   onSelectUnit?: (unit: Unit) => void;
   onPerfStats: (stats: { fps: number; drawCalls: number; triangles: number; dpr: number } | null) => void;
+  /** Sections module — fires continuously while a section gizmo is being
+   * dragged (every "objectChange" tick) so `SectionsPanel`'s numeric
+   * fields stay live without a React round-trip per frame (same reasoning
+   * OrbitControls' camera position isn't itself React state). Optional,
+   * same as `onSelectUnit` — only the admin editor supplies it. */
+  onSectionDraftChange?: (section: Section) => void;
+}
+
+/** One detail-model slot's currently-relevant model, keyed by its real
+ * `DetailModelSlot.id` (Multiple Detail-Model Slots pass) — a project can
+ * have several independently-placed/versioned GLBs loaded and rendered
+ * simultaneously ("Building", "Surroundings", ...). */
+export interface DetailModelSlotEntry {
+  slotId: string;
+  model: ProjectDetailModel;
 }
 
 export interface MountParams {
   project: Project;
   config: Project3DConfig;
-  detailModel: ProjectDetailModel | null;
+  detailModels: DetailModelSlotEntry[];
   usingGlb: boolean;
-  /** Whatever the component's viewPreset/xray/selection/filter state
-   * happens to be at the moment this particular mount runs — matches the
-   * original component's setup() closing over that render's ENTIRE
-   * props/state (not necessarily today's live values; the very next
+  /** Whatever the component's selection/filter state happens to be at the
+   * moment this particular mount runs — matches the original component's
+   * setup() closing over that render's ENTIRE props/state (not
+   * necessarily today's live values; the very next
    * `applyLiveUpdate`/`refreshAppearance` call re-applies with fresh ones
    * once `ready`, same two-pass behavior as before). Also doubles as the
    * initial `refreshAppearance` call at the end of mount() — see there. */
-  viewPreset: ViewPreset;
-  xrayEnabled: boolean;
-  xrayFacadeOpacity: number;
   selectedUnitId: string | null;
   filters: UnitFilters;
   constructionProgressPercent: number | undefined;
   showUnitBoxes: boolean;
+  /** True for the admin editor's own live preview, false for every
+   * public-facing viewer — see `this.isEditorPreview`'s field doc
+   * comment for what this drives (Sections module cap rendering). */
+  isEditorPreview: boolean;
 }
 
 export interface LiveUpdateParams {
   project: Project;
   config: Project3DConfig;
-  detailModel: ProjectDetailModel | null;
+  detailModels: DetailModelSlotEntry[];
   usingGlb: boolean;
-  viewPreset: ViewPreset;
-  xrayEnabled: boolean;
-  xrayFacadeOpacity: number;
 }
 
 export interface SunEnvironmentParams {
@@ -119,10 +138,8 @@ export interface RefreshAppearanceParams {
   usingGlb: boolean;
   selectedUnitId: string | null;
   filters: UnitFilters;
-  viewPreset: ViewPreset;
   constructionProgressPercent: number | undefined;
   showUnitBoxes: boolean;
-  xrayEnabled: boolean;
 }
 
 /**
@@ -165,6 +182,14 @@ export class RenderEngine {
   private ground: THREE.Mesh | null = null;
   private sun: THREE.DirectionalLight | null = null;
   private ambient: THREE.AmbientLight | null = null;
+  private lensflare: LensflareMesh | null = null;
+  private lightProbe: THREE.LightProbe | null = null;
+  private lightProbeCubeTarget: THREE.CubeRenderTarget | null = null;
+  /** Guards the async LightProbeGenerator readback against a slow-
+   * resolving, since-superseded capture (rebuildEnvironment can fire
+   * many times per mount — every time-of-day tick re-runs it) applying
+   * stale SH data out of order, or applying after dispose(). */
+  private lightProbeToken = 0;
 
   private renderPipeline: InstanceType<typeof THREE.RenderPipeline> | null = null;
   private effectiveTier: QualityTierSettings;
@@ -190,17 +215,65 @@ export class RenderEngine {
 
   // Procedural mode
   private unitMeshes = new Map<string, THREE.Mesh>();
-  private unitEdges = new Map<string, THREE.LineSegments>();
   private shells: THREE.Mesh[] = [];
   private unitBoxes: UnitBox[] = [];
 
-  // GLB mode
-  private glbRoot: THREE.Group | null = null;
+  // GLB mode — one root per detail-model slot (Multiple Detail-Model
+  // Slots pass), keyed by slotId. `glbUnitBoxes` keys became
+  // `` `${slotId}:${meshName}` `` (see applyDetailUnitLinks) so two
+  // different slots' GLBs coincidentally sharing a node name can't
+  // collide — `pickable` stays keyed by the real (globally unique)
+  // unitId, no change needed there.
+  private glbRoots = new Map<string, THREE.Group>();
   private glbUnitBoxes = new Map<string, GlbUnitBoxEntry>();
 
   private pickable = new Map<string, THREE.Object3D>();
   private hoveredId: string | null = null;
   private defaultCamera: { position: THREE.Vector3; target: THREE.Vector3; fov: number } | null = null;
+
+  // Sections module (first-class Configurator module) — manual clipping-
+  // plane authoring/runtime. `clippingGroup` wraps every "clippable"
+  // object (GLB root / procedural ground+shells+unit boxes) — a
+  // `THREE.ClippingGroup` is the WebGPURenderer-only mechanism for this
+  // (encodes clipping into the scene graph); there is no equivalent to
+  // the classic `WebGLRenderer`'s per-material `clippingPlanes` +
+  // `renderer.localClippingEnabled` in this app's unified WebGPURenderer
+  // pipeline (WebGL2 fallback included — both run through the same
+  // renderers/common/* code, confirmed by reading three's own source
+  // rather than assumed). Starts with `clippingPlanes: []` (no clipping)
+  // — every existing project renders unchanged until a section is
+  // actually activated.
+  private clippingGroup: InstanceType<typeof THREE.ClippingGroup> | null = null;
+  // Draw-preview rectangle, gizmo helper, and the active section's cap —
+  // deliberately NOT inside `clippingGroup` (editing chrome must stay
+  // visible regardless of the very clip it's controlling), and hidden
+  // entirely in the public runtime except the one active section's cap.
+  private sectionHelperGroup: THREE.Group | null = null;
+  private sectionDrawPreview: THREE.Line | null = null;
+  private drawSection: { onMove: (e: PointerEvent) => void; onClick: (e: PointerEvent) => void } | null = null;
+  private sectionGizmo: InstanceType<typeof TransformControls> | null = null;
+  private sectionGizmoAnchor: THREE.Object3D | null = null;
+  /** The section currently being live-edited via the gizmo — kept in sync
+   * with the anchor's transform on every "objectChange" tick; read back
+   * by `getLiveSectionDraft()`/streamed via `onSectionDraftChange`. */
+  private liveSection: Section | null = null;
+  private sectionCapMesh: THREE.Mesh | null = null;
+  private sectionCapMaterial: THREE.MeshBasicMaterial | null = null;
+  /** Stencil-derived cap (webgl_clipping_stencil.html technique,
+   * `config.sectionCapStencilEnabled`) — invisible back/front marking
+   * mesh pairs, one pair per real clippable object currently in
+   * `clippingGroup`, sharing that object's own geometry (not cloned) and
+   * world transform. Rebuilt alongside `sectionCapMesh` in
+   * `rebuildSectionCap`; disposed on every rebuild and in `dispose()`
+   * (materials only — the shared geometry is borrowed, not owned). */
+  private stencilMarkMeshes: THREE.Mesh[] = [];
+  private activeSectionId: string | null = null;
+  /** True for the admin editor's own live preview (`showChrome={false}`),
+   * false for every public-facing viewer — set once at `mount()` from
+   * `MountParams.isEditorPreview`. Drives whether an inactive section's
+   * "clip plane indicator" cap renders at all (editor-only aid) vs. a
+   * real `fillGapsEnabled` fill, which renders in both. */
+  private isEditorPreview = false;
 
   /** The latest project/config passed to any apply/refresh method — see
    * the class doc comment on why this is a mutable field rather than a
@@ -350,33 +423,28 @@ export class RenderEngine {
   private applyUnitAppearance(
     mesh: THREE.Mesh,
     box: UnitBox,
-    params: { selectedUnitId: string | null; viewPreset: ViewPreset; filters: UnitFilters; constructionProgressPercent: number | undefined; constructionStagesEnabled: boolean }
+    params: { selectedUnitId: string | null; filters: UnitFilters; constructionProgressPercent: number | undefined; constructionStagesEnabled: boolean }
   ) {
     const material = mesh.material as THREE.MeshStandardMaterial;
     const isSelected = box.unit.id === params.selectedUnitId;
     const isHovered = box.unit.id === this.hoveredId;
-    const preset = VIEW_PRESET_MATERIAL[params.viewPreset];
     const unitColors = this.resolveUnitColors();
-    const baseColor = preset.color ?? unitColors[box.unit.status];
-    material.color.setHex(isSelected ? unitColors.selected : baseColor);
+    // `?? unitColors.available`: Postgres's `Unit.status` column is an
+    // unconstrained String (no DB enum) as of the Units read-migration —
+    // this Record lookup would otherwise silently resolve to `undefined`
+    // for any value outside "available"/"reserved"/"sold"/"selected".
+    material.color.setHex(isSelected ? unitColors.selected : unitColors[box.unit.status] ?? unitColors.available);
     material.emissive.setHex(isSelected ? unitColors.selected : isHovered ? 0x333333 : 0x000000);
     material.emissiveIntensity = isSelected ? 0.35 : isHovered ? 0.5 : 0;
-    material.roughness = preset.roughness;
-    material.metalness = preset.metalness;
+    material.roughness = 0.6;
+    material.metalness = 0.05;
 
     const progress = params.constructionProgressPercent ?? this.project.progressPercent;
     const isBuilt =
       !params.constructionStagesEnabled ||
       this.project.status !== "under_construction" ||
       box.floorIndex / Math.max(1, box.totalFloorsInBuilding) <= progress / 100;
-    const visible = this.matchesFilters(box.unit, params.filters) && isBuilt;
-    mesh.visible = visible;
-
-    const edges = this.unitEdges.get(box.unit.id);
-    if (edges) {
-      edges.visible = visible && preset.edges;
-      (edges.material as THREE.LineBasicMaterial).opacity = preset.edgeOpacity;
-    }
+    mesh.visible = this.matchesFilters(box.unit, params.filters) && isBuilt;
   }
 
   /** Resolves the 4 admin-configurable unit-status colors (added alongside
@@ -402,7 +470,7 @@ export class RenderEngine {
     };
   }
 
-  private refreshGlbUnitBoxAppearance(params: { selectedUnitId: string | null; filters: UnitFilters; showUnitBoxes: boolean; xrayEnabled: boolean }) {
+  private refreshGlbUnitBoxAppearance(params: { selectedUnitId: string | null; filters: UnitFilters; showUnitBoxes: boolean }) {
     const unitColors = this.resolveUnitColors();
     this.glbUnitBoxes.forEach(({ node, unitId }) => {
       const unit = this.unitById.get(unitId);
@@ -412,21 +480,18 @@ export class RenderEngine {
       }
       const isSelected = unitId === params.selectedUnitId;
       const isHovered = unitId === this.hoveredId;
-      // X-Ray forces boxes visible even with the Unit Search panel closed —
-      // fading the facade to see nothing behind it would defeat the point.
-      node.visible = (params.showUnitBoxes || params.xrayEnabled) && this.matchesFilters(unit, params.filters);
-      const color = isSelected ? unitColors.selected : unitColors[unit.status];
-      const baseOpacity = isSelected || isHovered ? UNIT_BOX_SELECTED_OPACITY : UNIT_BOX_OPACITY;
-      const opacity = params.xrayEnabled ? Math.min(1, baseOpacity + UNIT_BOX_XRAY_OPACITY_BOOST) : baseOpacity;
-      // Color is now part of the cache key (was status|selected|hovered|
-      // xray only) — an admin changing a status color mid-session must
-      // produce a fresh cache entry, not silently reuse a stale-colored
-      // cached material. Old-color entries become orphaned in the Map
-      // until the next full mount() rebuild (which already disposes and
-      // recreates the whole cache) — acceptable for a bounded admin
-      // editing session, same trade-off already accepted for the cache's
+      node.visible = params.showUnitBoxes && this.matchesFilters(unit, params.filters);
+      const color = isSelected ? unitColors.selected : unitColors[unit.status] ?? unitColors.available;
+      const opacity = isSelected || isHovered ? UNIT_BOX_SELECTED_OPACITY : UNIT_BOX_OPACITY;
+      // Color is part of the cache key (not just status|selected|hovered)
+      // — an admin changing a status color mid-session must produce a
+      // fresh cache entry, not silently reuse a stale-colored cached
+      // material. Old-color entries become orphaned in the Map until the
+      // next full mount() rebuild (which already disposes and recreates
+      // the whole cache) — acceptable for a bounded admin editing
+      // session, same trade-off already accepted for the cache's
       // hover/select dimensions.
-      const cacheKey = `${unit.status}|${isSelected}|${isHovered}|${params.xrayEnabled}|${color}`;
+      const cacheKey = `${unit.status}|${isSelected}|${isHovered}|${color}`;
       applyUnitBoxMaterial(node, color, opacity, this.unitMaterialCache, cacheKey);
     });
   }
@@ -447,7 +512,6 @@ export class RenderEngine {
         selectedUnitId: params.selectedUnitId,
         filters: params.filters,
         showUnitBoxes: params.showUnitBoxes,
-        xrayEnabled: params.xrayEnabled,
       });
     } else {
       this.unitBoxes.forEach((box) => {
@@ -455,7 +519,6 @@ export class RenderEngine {
         if (mesh) {
           this.applyUnitAppearance(mesh, box, {
             selectedUnitId: params.selectedUnitId,
-            viewPreset: params.viewPreset,
             filters: params.filters,
             constructionProgressPercent: params.constructionProgressPercent,
             constructionStagesEnabled: params.config.constructionStagesEnabled,
@@ -480,13 +543,22 @@ export class RenderEngine {
    * linked (and hidden) by a previous call but is no longer linked back to
    * its normal unlinked-visibility rule first — otherwise toggling a link
    * off would leave that mesh permanently hidden from the earlier pass. */
-  private applyDetailUnitLinks(root: THREE.Object3D, unitLinks: UnitMeshLink[]) {
+  /** `slotId`-scoped (Multiple Detail-Model Slots pass) — the old
+   * unconditional `.clear()` of `glbUnitBoxes`/`pickable` would wipe out
+   * every OTHER already-processed slot's tracked nodes when this runs in
+   * a per-slot loop; instead only this slot's own previous keys (the
+   * `` `${slotId}:` `` prefix `glbUnitBoxes` entries carry) are removed
+   * before repopulating. */
+  private applyDetailUnitLinks(slotId: string, root: THREE.Object3D, unitLinks: UnitMeshLink[]) {
     const linkByName = new Map(unitLinks.map((l) => [l.meshName, l.unitId]));
-    this.glbUnitBoxes.forEach(({ node }, meshName) => {
-      if (!linkByName.has(meshName)) node.visible = !UNIT_NODE_PATTERN.test(meshName);
-    });
-    this.glbUnitBoxes.clear();
-    this.pickable.clear();
+    const prefix = `${slotId}:`;
+    for (const [key, entry] of Array.from(this.glbUnitBoxes.entries())) {
+      if (!key.startsWith(prefix)) continue;
+      const meshName = key.slice(prefix.length);
+      if (!linkByName.has(meshName)) entry.node.visible = !UNIT_NODE_PATTERN.test(meshName);
+      this.glbUnitBoxes.delete(key);
+      this.pickable.delete(entry.unitId);
+    }
     root.traverse((child) => {
       const unitId = linkByName.get(child.name);
       if (!unitId) {
@@ -495,37 +567,8 @@ export class RenderEngine {
       }
       child.visible = false;
       child.userData.unitId = unitId;
-      this.glbUnitBoxes.set(child.name, { node: child, unitId });
+      this.glbUnitBoxes.set(`${prefix}${child.name}`, { node: child, unitId });
       this.pickable.set(unitId, child);
-    });
-  }
-
-  private applyGlbMaterialPreset(root: THREE.Object3D, viewPreset: ViewPreset, xrayEnabled: boolean, xrayFacadeOpacity: number) {
-    const preset = VIEW_PRESET_MATERIAL[viewPreset];
-    const unitBoxNodes = new Set(Array.from(this.glbUnitBoxes.values()).map((e) => e.node));
-    root.traverse((child) => {
-      if (unitBoxNodes.has(child)) return;
-      if (GLASS_NODE_PATTERN.test(child.name)) return;
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      materials.forEach((mat) => {
-        const std = mat as THREE.MeshStandardMaterial;
-        if (preset.color != null) std.color?.setHex(preset.color);
-        if (typeof std.roughness === "number") std.roughness = preset.roughness;
-        if (typeof std.metalness === "number") std.metalness = preset.metalness;
-        // X-Ray: fades everything that isn't a unit box or glass down to a
-        // low, admin/buyer-adjustable opacity so units behind the facade
-        // read through it.
-        std.transparent = xrayEnabled;
-        std.opacity = xrayEnabled ? xrayFacadeOpacity : 1;
-        std.depthWrite = !xrayEnabled;
-        // Toggling `.transparent` changes the material's blend/compile
-        // state — unlike color/roughness/metalness, this needs an explicit
-        // recompile flag or three.js can keep rendering the old (opaque)
-        // blend mode.
-        std.needsUpdate = true;
-      });
     });
   }
 
@@ -561,8 +604,8 @@ export class RenderEngine {
   }
 
   /** Admin's Scene Explorer classification/material overrides — runs after
-   * applyGlbMaterialPreset/applyGlassPreset so it customizes specific
-   * nodes on top of their baseline treatment, not the other way round.
+   * applyGlassPreset so it customizes specific nodes on top of their
+   * baseline treatment, not the other way round.
    * Overrides are stored keyed by rzNodeId; resolving which live Object3D
    * that refers to is still name-based via a `name -> override` map built
    * from the fetched sceneManifest — same limitation UnitMeshLink already
@@ -624,6 +667,44 @@ export class RenderEngine {
   // --- Procedural (gradient) sky + real environment/reflection lighting,
   // shared by both content modes. A plain CanvasTexture is
   // backend-agnostic (WebGPU and WebGL2 render it identically). ---
+  /** Procedural lens-flare element textures — same "canvas gradient, no
+   * external asset dependency" technique `buildSkyTexture` already uses
+   * below, applied to a radial gradient instead of a linear one. "glow"
+   * is the bright core disc at the light's own screen position;
+   * "ring" is a soft, mostly-transparent halo used for the trailing
+   * secondary flare elements (LensflareMesh's own tinting via
+   * `LensflareElement`'s `color` param does the actual per-element
+   * color variation — these textures stay neutral white/gray). */
+  private buildLensflareTexture(kind: "glow" | "ring"): THREE.Texture {
+    const size = 256;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d")!;
+    const cx = size / 2;
+    const cy = size / 2;
+    if (kind === "glow") {
+      const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, size / 2);
+      gradient.addColorStop(0, "rgba(255,255,255,1)");
+      gradient.addColorStop(0.15, "rgba(255,248,230,0.9)");
+      gradient.addColorStop(0.4, "rgba(255,244,214,0.25)");
+      gradient.addColorStop(1, "rgba(255,244,214,0)");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+    } else {
+      const gradient = ctx.createRadialGradient(cx, cy, size * 0.26, cx, cy, size * 0.5);
+      gradient.addColorStop(0, "rgba(255,255,255,0)");
+      gradient.addColorStop(0.55, "rgba(255,255,255,0.55)");
+      gradient.addColorStop(0.75, "rgba(255,255,255,0.25)");
+      gradient.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }
+
   private buildSkyTexture(skyPreset: Project3DConfig["skyPreset"]): THREE.Texture {
     const stops = SKY_GRADIENTS[skyPreset];
     const canvas = document.createElement("canvas");
@@ -642,6 +723,33 @@ export class RenderEngine {
     return texture;
   }
 
+  /** Fog color when `config.fogMatchesSky` is on — the "seamless horizon"
+   * technique from three.js's webgl_geometry_terrain example (that demo
+   * matches its fog color to the sky/clear color so distant geometry
+   * fades into the backdrop instead of a visible fog-vs-sky seam).
+   * Resolved cheaply, without any GPU readback, from whatever's already
+   * driving `scene.background`:
+   * - non-"sky" backgroundPresets already resolve to one of two flat
+   *   THREE.Color literals (see rebuildEnvironment below) — reused
+   *   exactly here, so fog and background always match precisely.
+   * - the procedural gradient sky's own `horizon` stop (SKY_GRADIENTS,
+   *   the same data `buildSkyTexture` paints) is exactly the color a
+   *   distant, level view of that sky actually shows.
+   * - a loaded platform HDRI has no equivalently cheap single "horizon
+   *   color" to derive without an async pixel readback of the PMREM
+   *   target — adding that would make what's meant to be a cheap live
+   *   update async and comparatively expensive, so this case honestly
+   *   falls back to the authored `config.fogColor` instead of guessing.
+   */
+  private resolveFogColor(config: Project3DConfig): string {
+    if (!config.fogMatchesSky) return config.fogColor;
+    if (config.backgroundPreset !== "sky") {
+      return config.backgroundPreset === "studio_dark" ? "#141414" : "#f0efe9";
+    }
+    if (this.hdriTexture) return config.fogColor;
+    return SKY_GRADIENTS[config.skyPreset].horizon;
+  }
+
   private rebuildEnvironment(config: Project3DConfig) {
     const renderer = this.renderer;
     const scene = this.scene;
@@ -656,6 +764,17 @@ export class RenderEngine {
     const usingHdri = !!this.hdriTexture;
     const skyTexture = usingHdri ? this.hdriTexture! : this.buildSkyTexture(config.skyPreset);
     const renderTarget = pmrem.fromEquirectangular(skyTexture);
+    // Light probe capture — must happen before skyTexture is disposed
+    // below, since it consumes the exact same equirect texture PMREM
+    // just did (CubeRenderTarget.fromEquirectangularTexture is
+    // synchronous, confirmed against three's own source — no readback
+    // needed for this step, only for the SH generation kicked off after).
+    if (config.lightProbeEnabled && this.lightProbeCubeTarget) {
+      this.lightProbeCubeTarget.fromEquirectangularTexture(renderer, skyTexture);
+      void this.captureLightProbe();
+    } else if (this.lightProbe) {
+      this.lightProbe.intensity = 0;
+    }
     if (!usingHdri) skyTexture.dispose();
     this.envRenderTarget?.dispose();
     this.envRenderTarget = renderTarget;
@@ -669,6 +788,32 @@ export class RenderEngine {
     } else {
       scene.background = new THREE.Color(config.backgroundPreset === "studio_dark" ? 0x141414 : 0xf0efe9);
       scene.backgroundIntensity = 1;
+    }
+  }
+
+  /** Async spherical-harmonics readback for the light probe — kicked off
+   * fire-and-forget from rebuildEnvironment (which must stay synchronous;
+   * several of its callers, including this class's own mount()/
+   * applySunAndEnvironment(), aren't async). Token + mountToken-guarded
+   * so a slow-resolving capture from an already-superseded environment
+   * (rapid time-of-day dragging re-triggers rebuildEnvironment on every
+   * tick) or a since-disposed engine can never apply stale/orphaned SH
+   * data — same reasoning this class's other fire-and-forget async work
+   * (e.g. setHdri) already documents for mountToken. */
+  private async captureLightProbe() {
+    const renderer = this.renderer;
+    const cubeTarget = this.lightProbeCubeTarget;
+    const lightProbe = this.lightProbe;
+    if (!renderer || !cubeTarget || !lightProbe) return;
+    const token = ++this.lightProbeToken;
+    const mountTokenAtStart = this.mountToken;
+    try {
+      const generated = await LightProbeGenerator.fromCubeRenderTarget(renderer, cubeTarget);
+      if (token !== this.lightProbeToken || mountTokenAtStart !== this.mountToken) return;
+      lightProbe.sh.copy(generated.sh);
+      lightProbe.intensity = 1;
+    } catch (err) {
+      console.warn("3D Experience: light probe capture failed", err);
     }
   }
 
@@ -780,13 +925,7 @@ export class RenderEngine {
       // for now to get a correctly-rendering pipeline; revisit only if it's
       // visibly wrong once someone can actually look at it.
       // Real per-project overrides (full-configurator pass), ANDed with —
-      // not replacing — the tier's own flag. tier.ssr/tier.gtao are
-      // force-false on every QUALITY_TIERS entry right now (see that
-      // file's header comment — two unexplained real-GPU rendering
-      // failures in this exact chain), so these three toggles are
-      // currently inert regardless of what an admin sets; the wiring is
-      // real and correct for whenever the tier flags are safely
-      // re-enabled.
+      // not replacing — the tier's own flag.
       if (tier.ssr && this.config.ssrEnabled) {
         // SSRNode's own shader unconditionally does `float(this.metalnessNode)`
         // / `float(this.roughnessNode)` with no null guard — leaving these
@@ -803,6 +942,29 @@ export class RenderEngine {
       if (tier.gtao && this.config.gtaoEnabled) chain = chain.mul(ao(depth, normalTex, camera));
       if (tier.bloom) chain = chain.add(bloom(chain, 0.6, 0.4, 0.85));
 
+      // HDR safety clamp — added when SSR/GTAO were re-enabled (this
+      // chain previously shipped force-disabled platform-wide after two
+      // unexplained real-GPU failures: a black screen with a clean
+      // console after the 3 real SSR/GTAO node-wiring bugs above were
+      // fixed — root cause never found — then, on a later attempt, solid
+      // red, the classic symptom of a NaN/out-of-range HDR value hitting
+      // ACESFilmicToneMapping). This does NOT clamp to display range
+      // ([0,1]) — that would flatten real HDR highlights before ACES
+      // gets to tone-map them; three's own ACES TSL implementation
+      // already clamps its *output* to [0,1] itself (ToneMappingFunctions.js)
+      // and expects real unclamped HDR input to do that correctly. This
+      // bounds the chain to a large-but-finite ceiling instead, so a
+      // blown-up intermediate (Infinity, or a very large finite garbage
+      // value from a division/reflection edge case) can't reach
+      // tone-mapping unbounded. Directly addresses the *stated* theory
+      // for the red-screen failure; does not explain or guarantee a fix
+      // for the earlier, still-unexplained black-screen failure (which
+      // threw no error at all) — this has not been verified in a browser
+      // (none available in this environment), so treat this as a real,
+      // reasoned mitigation, not a confirmed fix.
+      const HDR_SAFE_MAX = 64;
+      chain = clamp(chain, 0, HDR_SAFE_MAX);
+
       const pipeline = new THREE.RenderPipeline(renderer);
       pipeline.outputNode = tier.antialias && this.config.antialiasEnabled ? smaa(chain) : chain;
       this.renderPipeline = pipeline;
@@ -814,7 +976,7 @@ export class RenderEngine {
 
   /** One-time scene setup per project/content-mode/rendering-mode — full
    * teardown+rebuild, called by the component whenever project.id,
-   * usingGlb, detailModel.glbUrl, config.renderingMode or
+   * usingGlb, any slot's glbUrl, config.renderingMode or
    * config.qualityPreset change. Cheaper config tweaks are applied
    * in-place by `applyLiveUpdate`/`applySunAndEnvironment` instead. */
   async mount(container: HTMLDivElement, params: MountParams) {
@@ -822,7 +984,8 @@ export class RenderEngine {
     this.container = container;
     this.setProject(params.project);
     this.config = params.config;
-    const { config, detailModel, usingGlb, project, viewPreset, xrayEnabled, xrayFacadeOpacity } = params;
+    const { config, detailModels, usingGlb, project } = params;
+    this.isEditorPreview = params.isEditorPreview;
 
     const renderer = new THREE.WebGPURenderer({
       antialias: true,
@@ -830,6 +993,12 @@ export class RenderEngine {
       // to WebGL2 automatically (WebGPURenderer's own built-in
       // `getFallback`); only "webgl2" forces the WebGL2 backend outright.
       forceWebGL: config.renderingMode === "webgl2",
+      // Off by default (matches WebGPURenderer's own default) — only
+      // requested when the stencil-derived Section cap technique is on,
+      // since it's the one thing in this renderer that needs it (see
+      // rebuildSectionCap's stencil branch). A renderer-construction-time
+      // flag, not a live toggle — changing it requires a fresh mount.
+      stencil: config.sectionCapStencilEnabled,
     });
     try {
       await renderer.init();
@@ -861,10 +1030,38 @@ export class RenderEngine {
 
     const scene = new THREE.Scene();
     this.scene = scene;
+
+    // Sections module — see this.clippingGroup's field doc comment. Every
+    // "clippable" object gets added to this group instead of `scene`
+    // directly, further below; sun/ambient/lights and section-editing
+    // chrome stay direct children of `scene`.
+    const clippingGroup = new THREE.ClippingGroup();
+    scene.add(clippingGroup);
+    this.clippingGroup = clippingGroup;
+    const sectionHelperGroup = new THREE.Group();
+    sectionHelperGroup.name = "RZ_SectionHelpers";
+    scene.add(sectionHelperGroup);
+    this.sectionHelperGroup = sectionHelperGroup;
+
     const envScene = new THREE.Scene();
     this.envScene = envScene;
     const pmrem = new THREE.PMREMGenerator(renderer);
     this.pmrem = pmrem;
+
+    // Light probe (webgl_lightprobes_sponza.html technique) — real
+    // spherical-harmonics irradiance, additive alongside the flat
+    // AmbientLight below, not a replacement for it. Capture itself
+    // happens in rebuildEnvironment() (needs the same equirect sky
+    // texture that method already builds for PMREM); this just
+    // allocates the probe + its tiny capture target once, up front.
+    // intensity starts at 0 — stays that way until a real capture
+    // resolves, so there's no one-frame flash of un-lit SH default data.
+    const lightProbeCubeTarget = new THREE.CubeRenderTarget(LIGHT_PROBE_CUBE_SIZE);
+    this.lightProbeCubeTarget = lightProbeCubeTarget;
+    const lightProbe = new THREE.LightProbe();
+    lightProbe.intensity = 0;
+    scene.add(lightProbe);
+    this.lightProbe = lightProbe;
 
     const isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
     const fov = isMobileViewport ? config.cameraFovMobile : config.cameraFovDesktop;
@@ -883,9 +1080,26 @@ export class RenderEngine {
     this.sun = sun;
     this.ambient = ambient;
 
+    // Lens flare (webgl_lensflares.html technique) — LensflareMesh, the
+    // WebGPU-native port shipped alongside the classic (WebGL-only)
+    // Lensflare in three.js 0.185.1; same addElement/light.add(lensflare)
+    // API. Attached to the sun exactly like the upstream example attaches
+    // to its light — light-type-agnostic (only reads its own
+    // this.matrixWorld, inherited from the parent light), so this works
+    // the same for a DirectionalLight as the example's PointLight.
+    // Procedural textures (buildLensflareTexture), no external asset
+    // dependency, same reasoning as buildSkyTexture's canvas gradients.
+    const lensflare = new LensflareMesh();
+    lensflare.addElement(new LensflareElement(this.buildLensflareTexture("glow"), 700, 0));
+    lensflare.addElement(new LensflareElement(this.buildLensflareTexture("ring"), 140, 0.35, new THREE.Color(0x8fb4ff)));
+    lensflare.addElement(new LensflareElement(this.buildLensflareTexture("ring"), 90, 0.6, new THREE.Color(0xffffff)));
+    lensflare.addElement(new LensflareElement(this.buildLensflareTexture("ring"), 60, 0.9, new THREE.Color(0xc9a6ff)));
+    lensflare.visible = config.lensflareEnabled;
+    sun.add(lensflare);
+    this.lensflare = lensflare;
+
     this.pickable = new Map();
     this.unitMeshes = new Map();
-    this.unitEdges = new Map();
     this.shells = [];
     this.glbUnitBoxes = new Map();
     this.unitMaterialCache = new Map();
@@ -895,63 +1109,83 @@ export class RenderEngine {
     let centerY = 1;
     let centerZ = 0;
 
-    if (usingGlb && detailModel) {
-      // --- GLB content ---
+    if (usingGlb) {
+      // --- GLB content — one root per enabled detail-model slot
+      // (Multiple Detail-Model Slots pass). Loaded in parallel; a single
+      // slot's GLB failing to load doesn't abort the others — that's the
+      // whole point of independent slots (fix/replace one without
+      // touching the other) — only if EVERY enabled slot fails does this
+      // fall back to procedural massing, same as the old single-model
+      // failure behavior. ---
       const dracoLoader = new DRACOLoader();
       dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
       this.dracoLoader = dracoLoader;
       const loader = new GLTFLoader();
       loader.setDRACOLoader(dracoLoader);
 
-      let gltf;
-      try {
-        gltf = await loader.loadAsync(detailModel.glbUrl);
-      } catch (err) {
-        // Failure recovery: a bad URL/network error/corrupt file used to
-        // dead-end in the same "no WebGL" error screen a genuine renderer
-        // failure shows — misleading, and worse than necessary since the
-        // procedural-massing fallback is one `if/else` branch away.
-        // Reporting it lets the caller flip `usingGlb` off and re-mount,
-        // naturally taking the `else` branch below this time.
-        console.warn("3D Experience: detail GLB failed to load, falling back to procedural massing", err);
+      const enabledModels = detailModels.filter((d) => d.model.enabled && d.model.glbUrl);
+      const loaded = await Promise.all(
+        enabledModels.map(async ({ slotId, model }) => {
+          try {
+            const gltf = await loader.loadAsync(model.glbUrl);
+            return { slotId, model, root: gltf.scene };
+          } catch (err) {
+            // Failure recovery: a bad URL/network error/corrupt file used
+            // to dead-end the whole mount in the same "no WebGL" error
+            // screen a genuine renderer failure shows — misleading, and
+            // worse than necessary. This slot is just skipped; the
+            // others (and the public/editor callers's own per-slot
+            // upload UI) are unaffected.
+            console.warn(`3D Experience: detail GLB failed to load for slot ${slotId}, skipping it`, err);
+            return null;
+          }
+        })
+      );
+      if (token !== this.mountToken) return;
+      const successful = loaded.filter((l): l is { slotId: string; model: ProjectDetailModel; root: THREE.Group } => l !== null);
+
+      if (successful.length === 0) {
         if (token === this.mountToken) this.callbacks.onGlbLoadFailed();
         return;
       }
-      if (token !== this.mountToken) return;
 
-      const root = gltf.scene;
-      this.applyDetailTransform(root, detailModel.scale, detailModel.rotationDeg, detailModel.altitudeOffset);
-      root.traverse((child) => {
-        const mesh = child as THREE.Mesh;
-        if (mesh.isMesh) {
-          mesh.castShadow = true;
-          mesh.receiveShadow = true;
-        }
-      });
-      scene.add(root);
-      this.glbRoot = root;
+      const unionBox = new THREE.Box3();
+      for (const { slotId, model, root } of successful) {
+        this.applyDetailTransform(root, model.scale, model.rotationDeg, model.altitudeOffset);
+        root.traverse((child) => {
+          const mesh = child as THREE.Mesh;
+          if (mesh.isMesh) {
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+          }
+        });
+        clippingGroup.add(root);
+        this.glbRoots.set(slotId, root);
 
-      this.applyDetailUnitLinks(root, detailModel.unitLinks as UnitMeshLink[]);
+        this.applyDetailUnitLinks(slotId, root, model.unitLinks as UnitMeshLink[]);
+        this.applyGlassPreset(root, config.glassPreset, config.environmentIntensity);
+        this.applyNodeOverrides(root, model);
 
-      this.applyGlbMaterialPreset(root, viewPreset, xrayEnabled, xrayFacadeOpacity);
-      this.applyGlassPreset(root, config.glassPreset, config.environmentIntensity);
-      this.applyNodeOverrides(root, detailModel);
+        unionBox.union(new THREE.Box3().setFromObject(root));
+      }
 
-      const box = new THREE.Box3().setFromObject(root);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
+      const size = unionBox.getSize(new THREE.Vector3());
+      const center = unionBox.getCenter(new THREE.Vector3());
       boundingRadius = Math.max(size.x, size.y, size.z) * 0.65 || 20;
       // A real uploaded GLB is very often authored off-origin (real-world
       // survey coordinates, arbitrary export origin, etc.) — using the
-      // bounding box's real center here (not a hardcoded (0, y, 0)) keeps
-      // the orbit pivot/shadow target locked to the actual building.
+      // union bounding box's real center here (not a hardcoded (0, y, 0))
+      // keeps the orbit pivot/shadow target locked to the actual
+      // building(s), across every loaded slot.
       centerX = center.x;
       centerY = center.y;
       centerZ = center.z;
 
       this.disposeGeometry = () => {
-        scene.remove(root);
-        disposeGlbObject3D(root);
+        for (const root of this.glbRoots.values()) {
+          clippingGroup.remove(root);
+          disposeGlbObject3D(root);
+        }
       };
     } else {
       // --- Procedural massing fallback ---
@@ -966,7 +1200,7 @@ export class RenderEngine {
       );
       ground.rotation.x = -Math.PI / 2;
       ground.receiveShadow = true;
-      scene.add(ground);
+      clippingGroup.add(ground);
       this.ground = ground;
 
       for (const b of layout.buildings) {
@@ -976,12 +1210,11 @@ export class RenderEngine {
         );
         shell.position.set(b.centerX, b.height / 2, b.z);
         shell.userData.isShell = true;
-        scene.add(shell);
+        clippingGroup.add(shell);
         this.shells.push(shell);
       }
 
       const geometry = new THREE.BoxGeometry(1, 1, 1);
-      const edgeGeometry = new THREE.EdgesGeometry(geometry);
       for (const unitBox of layout.units) {
         const material = new THREE.MeshStandardMaterial({
           // Initial seed color for the very first frame — refreshAppearance
@@ -989,7 +1222,7 @@ export class RenderEngine {
           // overwrites this via applyUnitAppearance/resolveUnitColors, but
           // seeding it correctly avoids a one-frame flash of the wrong
           // color on projects with custom status colors.
-          color: this.resolveUnitColors()[unitBox.unit.status],
+          color: this.resolveUnitColors()[unitBox.unit.status] ?? this.resolveUnitColors().available,
           roughness: 0.6,
           metalness: 0.05,
         });
@@ -999,24 +1232,14 @@ export class RenderEngine {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.userData.unitId = unitBox.unit.id;
-        scene.add(mesh);
+        clippingGroup.add(mesh);
         this.unitMeshes.set(unitBox.unit.id, mesh);
         this.pickable.set(unitBox.unit.id, mesh);
-
-        const edges = new THREE.LineSegments(
-          edgeGeometry,
-          new THREE.LineBasicMaterial({ color: 0x2a2a33, transparent: true, opacity: 0 })
-        );
-        edges.visible = false;
-        mesh.add(edges);
-        this.unitEdges.set(unitBox.unit.id, edges);
       }
 
       this.disposeGeometry = () => {
         geometry.dispose();
-        edgeGeometry.dispose();
         this.unitMeshes.forEach((mesh) => (mesh.material as THREE.Material).dispose());
-        this.unitEdges.forEach((edges) => (edges.material as THREE.Material).dispose());
         scene.traverse((obj) => {
           if (obj instanceof THREE.Mesh && obj.geometry !== geometry) obj.geometry.dispose();
           if (obj instanceof THREE.Mesh && obj.userData.isShell) {
@@ -1067,7 +1290,7 @@ export class RenderEngine {
     if (this.ground) this.ground.visible = config.groundEnabled;
     const showShells = project.status === "under_construction" && config.constructionStagesEnabled;
     this.shells.forEach((shell) => (shell.visible = showShells));
-    scene.fog = config.fogEnabled ? new THREE.FogExp2(config.fogColor, config.fogDensity) : null;
+    scene.fog = config.fogEnabled ? new THREE.FogExp2(this.resolveFogColor(config), config.fogDensity) : null;
 
     this.rebuildEnvironment(config);
     this.buildRenderPipeline(this.effectiveTier);
@@ -1102,6 +1325,10 @@ export class RenderEngine {
     };
 
     const handleMove = (e: PointerEvent) => {
+      // Sections module — suppress unit hover while drawing a section
+      // rectangle or dragging its gizmo, so the two interaction systems
+      // never fight over the same pointer events.
+      if (this.drawSection || this.sectionGizmo?.dragging) return;
       // Interaction toggles (full-configurator pass) — `viewerUI` is a
       // nullable Json? column and every pre-existing row predates these
       // keys, so a missing key defaults to `true` (today's hardcoded
@@ -1121,6 +1348,7 @@ export class RenderEngine {
       if (nextHoverId) this.callbacks.onPointerMove(e.clientX, e.clientY);
     };
     const handleClick = (e: PointerEvent) => {
+      if (this.drawSection || this.sectionGizmo?.dragging) return;
       if (this.config?.viewerUI.selectEnabled === false) return;
       const unitId = pickUnitId(e);
       if (!unitId) return;
@@ -1222,10 +1450,8 @@ export class RenderEngine {
       usingGlb,
       selectedUnitId: params.selectedUnitId,
       filters: params.filters,
-      viewPreset,
       constructionProgressPercent: params.constructionProgressPercent,
       showUnitBoxes: params.showUnitBoxes,
-      xrayEnabled,
     });
     await renderer.setAnimationLoop(() => {
       const now = performance.now();
@@ -1268,6 +1494,20 @@ export class RenderEngine {
     }
     this.resizeObserver?.disconnect();
     this.controls?.dispose();
+    // Sections module — draw-mode listeners, gizmo, cap material/geometry.
+    // `sectionHelperGroup`/`clippingGroup` themselves are children of
+    // `scene`, disposed of implicitly when `scene` is discarded below (no
+    // GPU resources of their own — plain Object3D/Group).
+    this.cancelDrawSection();
+    this.detachSectionGizmo();
+    this.sectionCapMaterial?.dispose();
+    this.sectionCapMaterial = null;
+    this.sectionCapMesh = null;
+    this.clearStencilMarking();
+    this.clippingGroup = null;
+    this.sectionHelperGroup = null;
+    this.liveSection = null;
+    this.activeSectionId = null;
     this.disposeGeometry?.();
     this.dracoLoader?.dispose();
     this.envRenderTarget?.dispose();
@@ -1277,6 +1517,16 @@ export class RenderEngine {
     this.hdriUrlLoaded = null;
     this.renderPipeline?.dispose();
     this.renderPipeline = null;
+    // LensflareMesh's own dispose() already disposes every element's
+    // texture (see LensflareMesh.js's own `this.dispose` — iterates
+    // `elements[i].texture.dispose()`) — no separate texture cleanup
+    // needed here.
+    this.lensflare?.dispose();
+    this.lensflare = null;
+    this.lightProbeCubeTarget?.dispose();
+    this.lightProbeCubeTarget = null;
+    this.lightProbe = null; // no GPU resource of its own beyond what scene teardown already frees
+    this.lightProbeToken++; // belt-and-suspenders alongside mountToken++ already invalidating in-flight work
     this.cameraTransition = null;
     this.unitMaterialCache.forEach((material) => material.dispose());
     this.unitMaterialCache = new Map();
@@ -1300,9 +1550,8 @@ export class RenderEngine {
     this.pmrem = null;
     this.envRenderTarget = null;
     this.controls = null;
-    this.glbRoot = null;
+    this.glbRoots.clear();
     this.unitMeshes.clear();
-    this.unitEdges.clear();
     this.glbUnitBoxes.clear();
     this.pickable.clear();
     this.resizeObserver = null;
@@ -1325,7 +1574,7 @@ export class RenderEngine {
   applyLiveUpdate(params: LiveUpdateParams) {
     this.setProject(params.project);
     this.config = params.config;
-    const { project, config, detailModel, usingGlb, viewPreset, xrayEnabled, xrayFacadeOpacity } = params;
+    const { project, config, detailModels, usingGlb } = params;
 
     if (this.ground) this.ground.visible = config.groundEnabled;
     const showShells = project.status === "under_construction" && config.constructionStagesEnabled;
@@ -1333,7 +1582,7 @@ export class RenderEngine {
     // scene.fog is a plain, stable three.js API — cheap to update live
     // (unlike the post-processing chain), no remount needed.
     if (this.scene) {
-      this.scene.fog = config.fogEnabled ? new THREE.FogExp2(config.fogColor, config.fogDensity) : null;
+      this.scene.fog = config.fogEnabled ? new THREE.FogExp2(this.resolveFogColor(config), config.fogDensity) : null;
     }
     if (this.controls) {
       const layout = usingGlb ? null : computeProjectLayout(project);
@@ -1349,16 +1598,33 @@ export class RenderEngine {
       this.camera.fov = nextIsMobile ? config.cameraFovMobile : config.cameraFovDesktop;
       this.camera.updateProjectionMatrix();
     }
-    if (this.glbRoot && detailModel) {
-      // Live-reflects Admin's scale/rotation/altitude sliders and Link
-      // Units edits without a full GLB reload.
-      this.applyDetailTransform(this.glbRoot, detailModel.scale, detailModel.rotationDeg, detailModel.altitudeOffset);
-      this.applyDetailUnitLinks(this.glbRoot, detailModel.unitLinks as UnitMeshLink[]);
-      this.applyGlassPreset(this.glbRoot, config.glassPreset, config.environmentIntensity);
-      this.applyGlbMaterialPreset(this.glbRoot, viewPreset, xrayEnabled, xrayFacadeOpacity);
-      this.applyNodeOverrides(this.glbRoot, detailModel);
+    // Live-reflects Admin's scale/rotation/altitude sliders and Link Units
+    // edits without a full GLB reload — one pass per already-loaded slot.
+    // A slot present in `detailModels` but not (yet) in `this.glbRoots`
+    // (e.g. just enabled, GLB not loaded until the next full mount()) is
+    // simply skipped here, same as the single-model version's implicit
+    // "only if a root is already loaded" gate.
+    for (const { slotId, model } of detailModels) {
+      const root = this.glbRoots.get(slotId);
+      if (!root) continue;
+      this.applyDetailTransform(root, model.scale, model.rotationDeg, model.altitudeOffset);
+      this.applyDetailUnitLinks(slotId, root, model.unitLinks as UnitMeshLink[]);
+      this.applyGlassPreset(root, config.glassPreset, config.environmentIntensity);
+      this.applyNodeOverrides(root, model);
     }
     if (this.renderer) this.renderer.toneMappingExposure = config.exposure;
+
+    // Sections module — re-applies the currently active section's
+    // clipping/cap from the freshest `config.sections` (e.g. a numeric
+    // field edit in `SectionsPanel`, or a "dragend" commit that just
+    // flowed through `draft`/`update`). A live in-progress gizmo drag
+    // updates the clip directly (see `onSectionGizmoChange`) rather than
+    // waiting for this React round-trip — this is the persisted-value
+    // catch-up path, not the real-time one.
+    if (this.activeSectionId) {
+      const section = config.sections.find((s) => s.id === this.activeSectionId) ?? null;
+      this.applyActiveClipping(section);
+    }
   }
 
   /** Real geographic sun + sky/environment — recomputed whenever the
@@ -1401,7 +1667,432 @@ export class RenderEngine {
     sun.color.setHex(sunColorForElevation(sunPos.elevationDeg));
     sun.intensity = (sunPos.isNight ? 0.1 : 1.2 + Math.max(0, sunPos.elevationDeg / 90) * 1.8) * intensityMultiplier;
     ambient.intensity = sunPos.isNight ? 0.08 : 0.15;
+    // Below-horizon sun shouldn't show a flare from a light source that
+    // isn't visibly up — same isNight signal sun.intensity already uses.
+    if (this.lensflare) this.lensflare.visible = config.lensflareEnabled && !sunPos.isNight;
 
     this.rebuildEnvironment(config);
+  }
+
+  // ---------------------------------------------------------------------
+  // Sections module (first-class Configurator module) — real manual
+  // clipping-plane authoring/runtime. Pure plane/cap/drag-to-rectangle
+  // math lives in ./sections.ts (unit-tested standalone, see
+  // scripts/test-sections.ts); everything below is the one place that
+  // actually touches the live scene, same division of responsibility the
+  // rest of this class already has (React never mutates Three.js objects
+  // directly — see the class doc comment).
+  // ---------------------------------------------------------------------
+
+  /** A freshly-drawn section's default cut height — roughly mid-building
+   * from whatever's actually loaded, so a new section starts somewhere
+   * useful instead of at y=0. */
+  private defaultSectionHeight(): number {
+    if (this.glbRoots.size > 0) {
+      const box = new THREE.Box3();
+      for (const root of this.glbRoots.values()) box.union(new THREE.Box3().setFromObject(root));
+      if (Number.isFinite(box.min.y) && Number.isFinite(box.max.y)) {
+        return THREE.MathUtils.lerp(box.min.y, box.max.y, 0.5);
+      }
+    }
+    return 3;
+  }
+
+  /** Resolves a pointer event to a world-space point — raycasts against
+   * whatever's actually loaded (GLB root, else the procedural ground)
+   * first, falling back to the mathematical y=0 ground plane so drawing
+   * still works before/without a model loaded. Same
+   * `pointerFromEvent`/`Raycaster` pattern `mount()`'s unit hover/click
+   * already sets up, reused here for section-drawing clicks instead of
+   * the `pickable` unit map. */
+  private raycastGround(e: PointerEvent): THREE.Vector3 | null {
+    const renderer = this.renderer;
+    const camera = this.camera;
+    if (!renderer || !camera) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const pointer = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(pointer, camera);
+    const targets: THREE.Object3D[] = [...this.glbRoots.values()];
+    if (this.ground) targets.push(this.ground);
+    const hits = targets.length > 0 ? raycaster.intersectObjects(targets, true) : [];
+    if (hits.length > 0) return hits[0].point.clone();
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const point = new THREE.Vector3();
+    return raycaster.ray.intersectPlane(groundPlane, point) ? point : null;
+  }
+
+  private updateDrawPreview(p1: THREE.Vector3, p2: THREE.Vector3) {
+    const helpers = this.sectionHelperGroup;
+    if (!helpers) return;
+    const y = p1.y;
+    const corners = [
+      new THREE.Vector3(p1.x, y, p1.z),
+      new THREE.Vector3(p2.x, y, p1.z),
+      new THREE.Vector3(p2.x, y, p2.z),
+      new THREE.Vector3(p1.x, y, p2.z),
+      new THREE.Vector3(p1.x, y, p1.z),
+    ];
+    const geometry = new THREE.BufferGeometry().setFromPoints(corners);
+    if (this.sectionDrawPreview) {
+      this.sectionDrawPreview.geometry.dispose();
+      this.sectionDrawPreview.geometry = geometry;
+    } else {
+      const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x6b55f5 }));
+      line.renderOrder = 20;
+      helpers.add(line);
+      this.sectionDrawPreview = line;
+    }
+  }
+
+  private clearDrawPreview() {
+    const line = this.sectionDrawPreview;
+    if (line && this.sectionHelperGroup) {
+      this.sectionHelperGroup.remove(line);
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    }
+    this.sectionDrawPreview = null;
+  }
+
+  /** Starts the "+ Draw Section" flow — the next two clicks in the
+   * viewport become the rectangle's opposite corners; `onComplete` fires
+   * once with a new, unsaved `Section` (id/name/scope/buildingName are
+   * editor-UI concerns supplied by the caller, not geometry — see
+   * `SectionsListRail.tsx`). The caller owns adding it to
+   * `draft.sections`/selecting it; this method only produces the value. */
+  beginDrawSection(
+    opts: { id: string; name: string; scope: Section["scope"]; buildingName?: string },
+    onComplete: (section: Section) => void
+  ) {
+    const renderer = this.renderer;
+    if (!renderer) return;
+    this.cancelDrawSection();
+    let firstPoint: THREE.Vector3 | null = null;
+
+    const onMove = (e: PointerEvent) => {
+      if (!firstPoint) return;
+      const p = this.raycastGround(e);
+      if (p) this.updateDrawPreview(firstPoint, p);
+    };
+    const onClick = (e: PointerEvent) => {
+      const p = this.raycastGround(e);
+      if (!p) return;
+      if (!firstPoint) {
+        firstPoint = p;
+        return;
+      }
+      const section = sectionFromDragPoints(firstPoint, p, {
+        id: opts.id,
+        name: opts.name,
+        heightM: this.defaultSectionHeight(),
+        scope: opts.scope,
+        buildingName: opts.buildingName,
+      });
+      this.cancelDrawSection();
+      onComplete(section);
+    };
+
+    renderer.domElement.addEventListener("pointermove", onMove);
+    renderer.domElement.addEventListener("click", onClick);
+    this.drawSection = { onMove, onClick };
+  }
+
+  cancelDrawSection() {
+    const renderer = this.renderer;
+    if (this.drawSection && renderer) {
+      renderer.domElement.removeEventListener("pointermove", this.drawSection.onMove);
+      renderer.domElement.removeEventListener("click", this.drawSection.onClick);
+    }
+    this.drawSection = null;
+    this.clearDrawPreview();
+  }
+
+  /** Rebuilds the active section's real clip (`clippingGroup.clippingPlanes`)
+   * and cap mesh — the single place both the admin editor (selecting/
+   * editing a section) and the public runtime (a visitor activating a
+   * floor) funnel through, so the cap and the clip can never disagree.
+   * `null` clears both. */
+  private applyActiveClipping(section: Section | null) {
+    if (this.clippingGroup) this.clippingGroup.clippingPlanes = section ? buildSectionPlanes(section) : [];
+    this.rebuildSectionCap(section);
+  }
+
+  /** Every real `THREE.Mesh` currently in `clippingGroup` — the actual
+   * clippable content (GLB roots and/or procedural ground/shells/unit
+   * boxes), traversed recursively since a GLB root is a nested hierarchy,
+   * not a flat list. This is the geometry the stencil cap technique marks
+   * against — deliberately NOT a synthetic proxy box, so the cap only
+   * lights up where real geometry was actually cut open, not the
+   * section's full authored rectangle (see rebuildSectionCap's stencil
+   * branch). */
+  private collectStencilableMeshes(): THREE.Mesh[] {
+    const meshes: THREE.Mesh[] = [];
+    this.clippingGroup?.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) meshes.push(obj as THREE.Mesh);
+    });
+    return meshes;
+  }
+
+  private clearStencilMarking() {
+    const helpers = this.sectionHelperGroup;
+    for (const mesh of this.stencilMarkMeshes) {
+      helpers?.remove(mesh);
+      (mesh.material as THREE.Material).dispose();
+    }
+    this.stencilMarkMeshes = [];
+  }
+
+  /** Real behavior, not just a color swap (see `Section.fillGapsEnabled`'s
+   * own doc comment for the full contract):
+   * - `fillGapsEnabled: true` — opaque, admin-picked `fillColor`, rendered
+   *   in both the editor and the public viewer.
+   * - `fillGapsEnabled: false` — a translucent (50%) neutral "clip plane
+   *   indicator" in the admin editor only; skipped entirely (no mesh at
+   *   all, not just alpha'd to invisible) in the public viewer, since
+   *   it's a pure editing aid a visitor has no use for.
+   *
+   * `config.sectionCapStencilEnabled` (real, experimental, off by
+   * default — webgl_clipping_stencil.html technique, requires
+   * `stencil: true` on the renderer, set once at mount()) swaps the
+   * cap's *silhouette source* only — every color/opacity/visibility rule
+   * above still applies unchanged. Technique, reconstructed from the
+   * actual upstream three.js example source (verified constant names/
+   * stencil op values against it, not guessed): for the section's own
+   * "top" plane (`buildSectionPlanes(section)[4]` — see that function's
+   * own doc comment for the fixed plane order), render every real
+   * clippable object's own back faces (incrementing the stencil buffer)
+   * then front faces (decrementing), each pass clipped by *only* that
+   * one top plane and with color/depth writes off — the standard
+   * increment/decrement parity trick, netting a nonzero stencil value
+   * exactly where solid geometry was actually cut open at that plane.
+   * The existing flat cap quad is then stencil-tested (`NotEqualStencilFunc`,
+   * ref 0) instead of drawn unconditionally, and clipped by every *other*
+   * section plane (bounding it to the footprint, exactly matching the
+   * upstream example's own `planes.filter(p => p !== plane)` pattern for
+   * its cap) — so it only shows within the stencil-marked, real-geometry
+   * silhouette, not the section's full authored rectangle. */
+  private rebuildSectionCap(section: Section | null) {
+    const helpers = this.sectionHelperGroup;
+    if (!helpers) return;
+    if (this.sectionCapMesh) {
+      helpers.remove(this.sectionCapMesh);
+      this.sectionCapMesh.geometry.dispose();
+      this.sectionCapMesh = null;
+    }
+    this.clearStencilMarking();
+    if (!section) return;
+    if (!section.fillGapsEnabled && !this.isEditorPreview) return;
+
+    const stencilMode = this.config.sectionCapStencilEnabled;
+    const geometry = buildSectionCapGeometry(section);
+    const color = section.fillGapsEnabled ? section.fillColor : SECTION_INDICATOR_COLOR;
+    const opacity = section.fillGapsEnabled ? 1 : 0.5;
+    if (!this.sectionCapMaterial) {
+      this.sectionCapMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide });
+    } else {
+      this.sectionCapMaterial.color.set(color);
+      this.sectionCapMaterial.opacity = opacity;
+    }
+    // A fully-opaque real fill should still occlude/sort like solid
+    // geometry; the translucent indicator disables depth-write (standard
+    // practice for see-through helpers, avoids z-fighting/occlusion
+    // artifacts against whatever it's overlapping).
+    this.sectionCapMaterial.depthWrite = section.fillGapsEnabled;
+
+    if (stencilMode) {
+      const planes = buildSectionPlanes(section);
+      const topPlane = planes[4];
+      const otherPlanes = [...planes.slice(0, 4), ...planes.slice(5)];
+      this.sectionCapMaterial.clippingPlanes = otherPlanes;
+      this.sectionCapMaterial.stencilWrite = true;
+      this.sectionCapMaterial.stencilRef = 0;
+      this.sectionCapMaterial.stencilFunc = THREE.NotEqualStencilFunc;
+      this.sectionCapMaterial.stencilFail = THREE.ReplaceStencilOp;
+      this.sectionCapMaterial.stencilZFail = THREE.ReplaceStencilOp;
+      this.sectionCapMaterial.stencilZPass = THREE.ReplaceStencilOp;
+
+      for (const source of this.collectStencilableMeshes()) {
+        const backMat = new THREE.MeshBasicMaterial({
+          side: THREE.BackSide,
+          colorWrite: false,
+          depthWrite: false,
+          depthTest: false,
+          clippingPlanes: [topPlane],
+          stencilWrite: true,
+          stencilFunc: THREE.AlwaysStencilFunc,
+          stencilFail: THREE.IncrementWrapStencilOp,
+          stencilZFail: THREE.IncrementWrapStencilOp,
+          stencilZPass: THREE.IncrementWrapStencilOp,
+        });
+        const frontMat = backMat.clone();
+        frontMat.side = THREE.FrontSide;
+        frontMat.stencilFail = THREE.DecrementWrapStencilOp;
+        frontMat.stencilZFail = THREE.DecrementWrapStencilOp;
+        frontMat.stencilZPass = THREE.DecrementWrapStencilOp;
+        const backMesh = new THREE.Mesh(source.geometry, backMat);
+        const frontMesh = new THREE.Mesh(source.geometry, frontMat);
+        // Shares source's world transform directly rather than
+        // re-parenting (source stays exactly where it is, inside
+        // clippingGroup) — sectionHelperGroup sits at identity at the
+        // scene root, so copying world-space matrixWorld straight into
+        // local .matrix (with matrixAutoUpdate off, so nothing overwrites
+        // it) reproduces the same placement.
+        backMesh.matrixAutoUpdate = false;
+        frontMesh.matrixAutoUpdate = false;
+        backMesh.matrix.copy(source.matrixWorld);
+        frontMesh.matrix.copy(source.matrixWorld);
+        backMesh.frustumCulled = false;
+        frontMesh.frustumCulled = false;
+        // Must render before the cap (renderOrder 10 below), so the
+        // stencil buffer is fully written before the cap reads it.
+        backMesh.renderOrder = 9;
+        frontMesh.renderOrder = 9;
+        helpers.add(backMesh, frontMesh);
+        this.stencilMarkMeshes.push(backMesh, frontMesh);
+      }
+    } else {
+      // Explicit reset — this.sectionCapMaterial is reused across
+      // rebuilds (see the color/opacity update above), so a project that
+      // had stencil mode on and then off must not keep stale stencil
+      // state from a previous rebuild.
+      this.sectionCapMaterial.clippingPlanes = null;
+      this.sectionCapMaterial.stencilWrite = false;
+    }
+
+    const mesh = new THREE.Mesh(geometry, this.sectionCapMaterial);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    // Draws after the clipped geometry (and, in stencil mode, after its
+    // own marking pair above) so it doesn't z-fight with whatever real
+    // geometry the cut happens to graze exactly at heightM.
+    mesh.renderOrder = 10;
+    helpers.add(mesh);
+    this.sectionCapMesh = mesh;
+  }
+
+  /** Activates a section by id (real clip + cap) or clears it (`null`) —
+   * the entry point both `SectionsListRail.tsx` (selecting a section to
+   * edit) and the public runtime (a visitor clicking a floor in the
+   * bottom-chrome Sections panel) call. Does not itself attach/detach the
+   * editing gizmo — those are orthogonal (browsing a clipped view vs.
+   * actively dragging its handles). */
+  activateSection(sectionId: string | null) {
+    this.activeSectionId = sectionId;
+    const section = sectionId ? this.config.sections.find((s) => s.id === sectionId) ?? null : null;
+    this.applyActiveClipping(section);
+  }
+
+  /** Reads the gizmo anchor's live transform back into a `Section`, keyed
+   * off whatever `attachSectionGizmo` last stored in `liveSection` (so
+   * every other field — name/scope/fillGapsEnabled/fillColor/floorId/etc.
+   * — survives untouched). */
+  private onSectionGizmoChange() {
+    const anchor = this.sectionGizmoAnchor;
+    const base = this.liveSection;
+    if (!anchor || !base) return;
+    const next: Section = {
+      ...base,
+      centerX: anchor.position.x,
+      centerZ: anchor.position.z,
+      heightM: anchor.position.y,
+      rotationDeg: THREE.MathUtils.radToDeg(anchor.rotation.y),
+      widthM: Math.max(0.5, anchor.scale.x),
+      depthM: Math.max(0.5, anchor.scale.z),
+    };
+    this.liveSection = next;
+    this.applyActiveClipping(next);
+    this.callbacks.onSectionDraftChange?.(next);
+  }
+
+  /** Switches the gizmo's mode (the Move/Rotate/Resize/Height toolbar
+   * buttons) — safe to call whether or not a gizmo is currently attached
+   * (no-op if not); also called internally by `attachSectionGizmo`. */
+  setSectionGizmoMode(mode: "move" | "rotate" | "resize" | "height") {
+    const gizmo = this.sectionGizmo;
+    if (!gizmo) return;
+    // Each of the 4 authoring modes is a real TransformControls mode +
+    // axis restriction (its own `showX`/`showY`/`showZ` toggles) —
+    // reusing three's own gizmo rather than 4 bespoke hand-built ones.
+    if (mode === "move") {
+      gizmo.setMode("translate");
+      gizmo.showX = true;
+      gizmo.showY = false;
+      gizmo.showZ = true;
+    } else if (mode === "height") {
+      gizmo.setMode("translate");
+      gizmo.showX = false;
+      gizmo.showY = true;
+      gizmo.showZ = false;
+    } else if (mode === "rotate") {
+      gizmo.setMode("rotate");
+      gizmo.showX = false;
+      gizmo.showY = true;
+      gizmo.showZ = false;
+    } else {
+      gizmo.setMode("scale");
+      gizmo.showX = true;
+      gizmo.showY = false;
+      gizmo.showZ = true;
+    }
+  }
+
+  /** Attaches the editing gizmo to `section` in the given mode — also
+   * activates it (live clip + cap) so the admin sees what they're
+   * editing. Reuses one lazily-created `TransformControls` instance
+   * across attach calls (just re-targets/re-modes it) rather than
+   * recreating per section/mode switch. */
+  attachSectionGizmo(section: Section, mode: "move" | "rotate" | "resize" | "height") {
+    const camera = this.camera;
+    const renderer = this.renderer;
+    const helpers = this.sectionHelperGroup;
+    if (!camera || !renderer || !helpers) return;
+
+    this.liveSection = { ...section };
+    this.activateSection(section.id);
+
+    if (!this.sectionGizmoAnchor) {
+      const anchor = new THREE.Object3D();
+      helpers.add(anchor);
+      this.sectionGizmoAnchor = anchor;
+    }
+    const anchor = this.sectionGizmoAnchor;
+    anchor.position.set(section.centerX, section.heightM, section.centerZ);
+    anchor.rotation.set(0, THREE.MathUtils.degToRad(section.rotationDeg), 0);
+    anchor.scale.set(section.widthM, 1, section.depthM);
+
+    if (!this.sectionGizmo) {
+      const gizmo = new TransformControls(camera, renderer.domElement);
+      gizmo.addEventListener("dragging-changed", (event: { value: unknown }) => {
+        if (this.controls) this.controls.enabled = !event.value;
+      });
+      gizmo.addEventListener("objectChange", () => this.onSectionGizmoChange());
+      helpers.add(gizmo.getHelper());
+      this.sectionGizmo = gizmo;
+    }
+    this.sectionGizmo.attach(anchor);
+    this.setSectionGizmoMode(mode);
+  }
+
+  detachSectionGizmo() {
+    const gizmo = this.sectionGizmo;
+    if (gizmo) {
+      gizmo.detach();
+      this.sectionHelperGroup?.remove(gizmo.getHelper());
+      gizmo.dispose();
+    }
+    this.sectionGizmo = null;
+    if (this.sectionGizmoAnchor && this.sectionHelperGroup) {
+      this.sectionHelperGroup.remove(this.sectionGizmoAnchor);
+    }
+    this.sectionGizmoAnchor = null;
+    this.liveSection = null;
+  }
+
+  getLiveSectionDraft(): Section | null {
+    return this.liveSection;
   }
 }

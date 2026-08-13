@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAuditEvent } from "@/lib/audit";
 
 const hiddenBuildingSchema = z.object({
   lng: z.number(),
@@ -37,7 +38,7 @@ export async function PATCH(
   }
 
   const version = await prisma.mapModelVersion.findUnique({ where: { id: versionId } });
-  if (!version || version.projectId !== projectId) {
+  if (!version || version.projectId !== projectId || version.deletedAt) {
     return NextResponse.json({ error: "Version not found." }, { status: 404 });
   }
   if (version.publicationStatus === "published") {
@@ -62,6 +63,12 @@ export async function PATCH(
   return NextResponse.json(updated);
 }
 
+/**
+ * Discards a draft — Super Admin control/audit pass: soft-delete only
+ * (`deletedAt`/`deletedBy`, Blob file left alone), no longer a real
+ * `prisma.delete()`. Restorable from the Recycle Bin; permanently gone
+ * (Postgres row + Blob object) only via a Super Admin hard-delete.
+ */
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ projectId: string; versionId: string }> }
@@ -71,7 +78,7 @@ export async function DELETE(
 
   const { projectId, versionId } = await params;
   const version = await prisma.mapModelVersion.findUnique({ where: { id: versionId } });
-  if (!version || version.projectId !== projectId) {
+  if (!version || version.projectId !== projectId || version.deletedAt) {
     return NextResponse.json({ error: "Version not found." }, { status: 404 });
   }
   if (version.publicationStatus === "published") {
@@ -80,6 +87,20 @@ export async function DELETE(
       { status: 409 }
     );
   }
-  await prisma.mapModelVersion.delete({ where: { id: versionId } });
+
+  const actor = gate.user?.email ?? gate.user?.name ?? "admin";
+  await prisma.mapModelVersion.update({
+    where: { id: versionId },
+    data: { deletedAt: new Date(), deletedBy: actor },
+  });
+  await logAuditEvent({
+    actor,
+    actorId: gate.user?.id,
+    action: "Map model soft-deleted",
+    entityType: "MapModelVersion",
+    entityId: versionId,
+    entityLabel: `v${version.version}`,
+    previousState: version,
+  });
   return NextResponse.json({ ok: true });
 }

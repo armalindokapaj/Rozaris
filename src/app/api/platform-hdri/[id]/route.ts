@@ -1,13 +1,18 @@
-import { del } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 
-/** Deletes a shared Platform HDRI — its Postgres row and its blob. Any
- * project currently referencing it via `Project3DConfig.hdriId` falls back
- * to its procedural `skyPreset` gradient automatically (the FK is
- * `onDelete: SetNull` in prisma/schema.prisma), not left dangling. */
+/**
+ * Soft-deletes a shared Platform HDRI — Super Admin control/audit pass, no
+ * longer a real `prisma.delete()` + blob removal. Deliberately does NOT
+ * null out `Project3DConfig.hdriId` on projects currently using it (unlike
+ * the old hard-delete, which relied on the FK's `onDelete: SetNull`) — the
+ * row still physically exists, just hidden from the picker/library below,
+ * so those projects keep rendering with it until either a restore or an
+ * actual Super Admin hard-delete (which is when `onDelete: SetNull` fires
+ * for real and they fall back to their procedural `skyPreset`).
+ */
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -17,22 +22,24 @@ export async function DELETE(
 
   const { id } = await params;
   const hdri = await prisma.platformHdri.findUnique({ where: { id } });
-  if (!hdri) {
+  if (!hdri || hdri.deletedAt) {
     return NextResponse.json({ error: "HDRI not found." }, { status: 404 });
   }
 
-  await del(hdri.url).catch((err) => {
-    console.error("Platform HDRI: blob delete failed (continuing)", hdri.url, err);
-  });
-  await prisma.platformHdri.delete({ where: { id } });
-
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
+  await prisma.platformHdri.update({
+    where: { id },
+    data: { deletedAt: new Date(), deletedBy: actor },
+  });
+
   await logAuditEvent({
     actor,
-    action: "Platform HDRI deleted",
+    actorId: gate.user?.id,
+    action: "Platform HDRI soft-deleted",
     entityType: "PlatformHdri",
     entityId: id,
     entityLabel: hdri.name,
+    previousState: hdri,
   });
 
   return NextResponse.json({ ok: true });

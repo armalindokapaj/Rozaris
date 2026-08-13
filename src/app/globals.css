@@ -251,6 +251,24 @@ body {
   background-color: transparent;
 }
 
+/* Scoped dark sidebar theme — the Admin console's own left nav only
+   (src/app/admin/page.tsx), not a site-wide dark mode. Unlike
+   `.rz-editor-dark` above, this doesn't redefine `--color-neutral-*`: the
+   sidebar is small, bespoke markup written directly against these tokens,
+   not a set of shared components already leaning on neutral-* utilities
+   that need to "flip" — so these are just new named colors, scoped so nothing
+   else on the page is affected. */
+.rz-admin-sidebar {
+  --sidebar-bg: #12132a;
+  --sidebar-bg-hover: #1c1d3d;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-text: #b6b6d1;
+  --sidebar-text-muted: #6b6b8c;
+  --sidebar-text-active: #ffffff;
+  --sidebar-heading: #ffffff;
+  background: var(--sidebar-bg);
+}
+
 /* Scrollbars: slim, unobtrusive */
 .scroll-thin::-webkit-scrollbar {
   width: 6px;

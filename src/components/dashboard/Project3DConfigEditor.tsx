@@ -8,11 +8,12 @@ import { extractUnitNodeNames } from "@/lib/glbUnitNodes";
 import { calcSunriseSunset } from "@/lib/sunPosition";
 import { pickDefaultQualityTier } from "@/lib/viewerPresets";
 import { useProject3DEditorState } from "@/hooks/useProject3DEditorState";
+import { useProjectUnits } from "@/hooks/useProjectUnits";
 import { useAutosave, type AutosaveStatus } from "@/hooks/useAutosave";
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import { EditorShell } from "./project3d/EditorShell";
 import type { DetailVersionRow } from "./project3d/types";
-import type { PlatformHdri, Project, Project3DConfig } from "@/lib/types";
+import type { DetailModelSlot, PlatformHdri, Project, Project3DConfig, ProjectDetailModel } from "@/lib/types";
 
 const MAX_FILE_BYTES = 60 * 1024 * 1024; // keep in sync with api/blob/upload's maximumSizeInBytes
 
@@ -20,6 +21,31 @@ function formatBytes(bytes: number) {
   if (bytes <= 0) return "0 KB";
   const mb = bytes / (1024 * 1024);
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/** A non-focused slot's real, currently-saved placement — no live-edit
+ * overlay (the admin isn't actively dragging that slot's sliders right
+ * now), just what the server already has. The focused slot's own preview
+ * instead comes from `useProject3DEditorState`'s `previewDetailModel`
+ * (live in-progress edits included) — see `previewDetailModels` below. */
+function detailModelFromVersion(version: DetailVersionRow): ProjectDetailModel {
+  return {
+    glbUrl: version.publicAssetUrl,
+    fileName: version.fileName,
+    fileSize: version.fileSize,
+    scale: version.scale,
+    rotationDeg: version.rotationDeg,
+    altitudeOffset: version.altitudeOffset,
+    enabled: true,
+    updatedAt: version.createdAt,
+    unitLinks: version.unitLinks.map((l) => ({ meshName: l.meshName, unitId: l.unitId })),
+    sceneManifest: version.sceneManifest ?? [],
+    nodeOverrides: version.nodeOverrides ?? [],
+    triangleCount: version.triangleCount,
+    meshCount: version.meshCount,
+    materialCount: version.materialCount,
+    textureCount: version.textureCount,
+  };
 }
 
 /**
@@ -30,10 +56,23 @@ function formatBytes(bytes: number) {
  * - Rendering/Quality/Lighting&Sun/Glass/Camera ("3D Experience Phase 1")
  *   — real, Postgres-backed (`/api/project-3d-config/[projectId]`),
  *   replacing the old Zustand-only, 100%-dead `Project3DConfig` table.
- * - The Detailed GLB itself (PRD_Admin_3D_Project_Experience) — unchanged
- *   by this pass, still the real versioned pipeline
- *   (src/app/api/detail-models/[projectId]/versions/**) with server-side
- *   validation, draft/publish/rollback and carried unit mappings.
+ * - The Detailed GLB(s) (PRD_Admin_3D_Project_Experience, extended by the
+ *   Multiple Detail-Model Slots pass) — still the real versioned pipeline
+ *   (src/app/api/detail-models/[projectId]/slots/**) with server-side
+ *   validation, draft/publish/rollback and carried unit mappings, now
+ *   parameterized per named slot ("Building", "Surroundings", ...).
+ *
+ * Multiple Detail-Model Slots pass — the admin edits ONE slot's
+ * scale/rotation/altitude/unit-links/scene-overrides/version-history at a
+ * time (`activeSlotId`, a tab strip in `EditorShell.tsx`'s Model tab),
+ * exactly the same live-editable/undoable state `useProject3DEditorState`
+ * already provided for the old single-model world — switching slots just
+ * re-hydrates that same hook from a different slot's data
+ * (`hydrateFocusedFrom`). The 3D viewport still renders every enabled
+ * slot simultaneously (`previewDetailModels`, plural) — non-focused
+ * slots show their real last-saved placement (`detailModelFromVersion`),
+ * not a live-edit overlay, since nothing is actively being dragged for
+ * them right now.
  *
  * This component itself now only owns data-fetching/mutation state and
  * orchestration — the actual layout/JSX lives in `./project3d/EditorShell`
@@ -59,12 +98,29 @@ export function Project3DConfigEditor({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const { t, locale } = useT();
 
-  // --- Detailed GLB (versioned) — `versions`/`activeVersion` declared up
-  // here (rather than down by the rest of the detail-model state, where
-  // they used to live) so `useProject3DEditorState` can be called before
-  // the config-load effect and `handleDeleteHdri` below reference the
-  // `draft`/`update` it returns.
-  const [versions, setVersions] = useState<DetailVersionRow[]>([]);
+  // Units read-migration (Configurator scope) — real, live Postgres rows
+  // instead of the static mockData/Zustand snapshot `project` arrives
+  // with. Falls back to `project.units` while the fetch is in flight
+  // (useProjectUnits's `units` field is `null` for exactly that gap —
+  // see the hook's own doc comment). This is the one point every
+  // Units-consuming surface below (UnitsPanel, BuildingNavRail, the live
+  // preview viewport, and the unit-mesh-link reconciliation right below)
+  // is redirected through — none of them need their own changes.
+  // Read-only here: the Configurator has no unit-editing UI of its own
+  // (adding/editing/deleting units happens exclusively through
+  // ProjectUnitsEditor.tsx, a separate admin-dashboard surface — this
+  // hook's mutate functions are that file's, not used here).
+  const { units: liveUnits } = useProjectUnits(project.id);
+  const effectiveProject = useMemo<Project>(
+    () => ({ ...project, units: liveUnits ?? project.units }),
+    [project, liveUnits]
+  );
+
+  // --- Detail-model slots (Multiple Detail-Model Slots pass) ---
+  const [slots, setSlots] = useState<DetailModelSlot[]>([]);
+  const [activeSlotId, setActiveSlotId] = useState<string | null>(null);
+  const [versionsBySlot, setVersionsBySlot] = useState<Record<string, DetailVersionRow[]>>({});
+  const versions = activeSlotId ? versionsBySlot[activeSlotId] ?? [] : [];
   const activeVersion = versions[0] ?? null;
   // Phase 2 Milestone B: draft/scale/rotationDeg/altitudeOffset/
   // linkSelections/nodeOverrides/selectedNodeRzId/sceneManifest (plus the
@@ -74,7 +130,9 @@ export function Project3DConfigEditor({
   // only — see useProject3DEditorState.ts for why selectedNodeRzId/
   // sceneManifest stay out of it). `hydrate()` is the non-undoable escape
   // hatch used for anything syncing FROM the server below (initial load,
-  // `refresh()`, the row echoed back after a save) — never a user edit.
+  // `refreshActiveSlot()`, the row echoed back after a save) — never a
+  // user edit. Multiple Detail-Model Slots pass: this hook's `activeVersion`
+  // input is always the currently-*focused* slot's — see `hydrateFocusedFrom`.
   const {
     draft,
     update,
@@ -186,6 +244,7 @@ export function Project3DConfigEditor({
               ...row,
               cameraPresets: row.cameraPresets ?? [],
               viewerUI: row.viewerUI ?? defaultProject3DConfig.viewerUI,
+              sections: row.sections ?? [],
             }
           : defaultProject3DConfig;
         // Silent — this is the initial load, not a user edit; must never
@@ -229,26 +288,31 @@ export function Project3DConfigEditor({
     }
   }
 
-  async function refresh() {
-    const res = await fetch(`/api/detail-models/${project.id}/versions`);
-    const rows: DetailVersionRow[] = res.ok ? await res.json() : [];
-    setVersions(rows);
-    const active = rows[0] ?? null;
+  /** Re-hydrates the focused editable fields (scale/rotation/altitude/
+   * unit-links/scene-overrides/detected-nodes) from a specific version —
+   * the shared step both the initial multi-slot load and every slot
+   * switch/refresh need. `null` (a freshly-created, still-empty slot)
+   * resets to a blank slate rather than leaving the *previous* slot's
+   * values on screen. */
+  function hydrateFocusedFrom(active: DetailVersionRow | null) {
     if (active) {
       const selections: Record<string, string> = {};
       const carried = new Set<string>();
       // A link whose `unitId` no longer matches any current
-      // `project.units` entry means that unit was deleted (Zustand
-      // deletion has no way to reach back into this version's saved
-      // UnitMeshLinkV2 row — the two are separate systems). Rather than
-      // seed a "matched" selection the <select> below has no matching
-      // <option> for (a confusing blank row that still counts toward
-      // matchedCount), drop it here so it renders as unlinked/"needs
-      // review" like any other unresolved mesh — the next Save Draft then
-      // naturally prunes it from the DB, since the links route always
-      // writes a full replacement set from whatever's in this state.
+      // `effectiveProject.units` entry means that unit was deleted.
+      // `effectiveProject.units` is real, live Postgres data as of the
+      // Units read-migration (Configurator scope) — this check used to
+      // compare against a mockData/Zustand snapshot that a real Postgres-
+      // side deletion (via ProjectUnitsEditor.tsx) couldn't reach; now it
+      // catches real deletions too, for free. Rather than seed a
+      // "matched" selection the <select> below has no matching <option>
+      // for (a confusing blank row that still counts toward matchedCount),
+      // drop it here so it renders as unlinked/"needs review" like any
+      // other unresolved mesh — the next Save Draft then naturally prunes
+      // it from the DB, since the links route always writes a full
+      // replacement set from whatever's in this state.
       active.unitLinks.forEach((link) => {
-        if (!project.units.some((u) => u.id === link.unitId)) return;
+        if (!effectiveProject.units.some((u) => u.id === link.unitId)) return;
         selections[link.meshName] = link.unitId;
         if (link.mappingStatus === "carried") carried.add(link.meshName);
       });
@@ -267,18 +331,128 @@ export function Project3DConfigEditor({
       setSceneManifest(active.sceneManifest ?? []);
       setSelectedNodeRzId(null);
       if (active.publicAssetUrl) void detectNodes(active.publicAssetUrl);
+    } else {
+      hydrate({ scale: 1, rotationDeg: 0, altitudeOffset: 0, linkSelections: {}, nodeOverrides: {} });
+      setCarriedMeshNames(new Set());
+      setSceneManifest([]);
+      setSelectedNodeRzId(null);
+      setDetectedNodes(null);
     }
+  }
+
+  /** Refetches just the focused slot's version history — every mutation
+   * handler below calls this after its own write, same role the old
+   * single-model `refresh()` played. */
+  async function refreshActiveSlot(): Promise<DetailVersionRow[]> {
+    if (!activeSlotId) return [];
+    const res = await fetch(`/api/detail-models/${project.id}/slots/${activeSlotId}/versions`);
+    const rows: DetailVersionRow[] = res.ok ? await res.json() : [];
+    setVersionsBySlot((prev) => ({ ...prev, [activeSlotId]: rows }));
+    hydrateFocusedFrom(rows[0] ?? null);
     return rows;
+  }
+
+  function handleSelectSlot(slotId: string) {
+    if (slotId === activeSlotId) return;
+    setActiveSlotId(slotId);
+    hydrateFocusedFrom(versionsBySlot[slotId]?.[0] ?? null);
+  }
+
+  async function handleAddSlot(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    try {
+      const res = await fetch(`/api/detail-models/${project.id}/slots`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const slot: DetailModelSlot = await res.json();
+      setSlots((prev) => [...prev, slot]);
+      setVersionsBySlot((prev) => ({ ...prev, [slot.id]: [] }));
+      setActiveSlotId(slot.id);
+      hydrateFocusedFrom(null);
+    } catch (err) {
+      console.error("3D Experience: add slot failed", err);
+      setDetailError(t("admin.slotAddFailed"));
+    }
+  }
+
+  async function handleRenameSlot(slotId: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    try {
+      const res = await fetch(`/api/detail-models/${project.id}/slots/${slotId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const updated: DetailModelSlot = await res.json();
+      setSlots((prev) => prev.map((s) => (s.id === slotId ? updated : s)));
+    } catch (err) {
+      console.error("3D Experience: rename slot failed", err);
+      setDetailError(t("admin.slotRenameFailed"));
+    }
+  }
+
+  async function handleDeleteSlot(slotId: string) {
+    if (slots.length <= 1) return; // matches the server-side "keep at least one" rule
+    const slot = slots.find((s) => s.id === slotId);
+    if (!slot) return;
+    if (!window.confirm(t("admin.slotDeleteConfirm", { name: slot.name }))) return;
+    try {
+      const res = await fetch(`/api/detail-models/${project.id}/slots/${slotId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      const remaining = slots.filter((s) => s.id !== slotId);
+      setSlots(remaining);
+      setVersionsBySlot((prev) => {
+        const next = { ...prev };
+        delete next[slotId];
+        return next;
+      });
+      if (activeSlotId === slotId && remaining[0]) {
+        setActiveSlotId(remaining[0].id);
+        hydrateFocusedFrom(versionsBySlot[remaining[0].id]?.[0] ?? null);
+      }
+    } catch (err) {
+      console.error("3D Experience: delete slot failed", err);
+      setDetailError(t("admin.slotDeleteFailed"));
+    }
   }
 
   useEffect(() => {
     let cancelled = false;
-    // Initial version-history load, guarded by `cancelled` like every other
-    // fetch effect in this app (see e.g. useProjectDetailModel.ts).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    refresh().finally(() => {
-      if (!cancelled) setDetailLoaded(true);
-    });
+    // Initial multi-slot load: every project already has at least one
+    // real slot (scripts/migrate-detail-model-slots.ts backfilled
+    // "Building" for any project that had a detail model before this
+    // existed) — fetch the slot list, then every slot's own version
+    // history in parallel (needed so the viewport can render every
+    // non-focused slot's real current placement immediately, not just
+    // the focused one — see `previewDetailModels` below).
+    fetch(`/api/detail-models/${project.id}/slots`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(async (rows: DetailModelSlot[]) => {
+        if (cancelled) return;
+        setSlots(rows);
+        const firstSlotId = rows[0]?.id ?? null;
+        setActiveSlotId(firstSlotId);
+        const entries = await Promise.all(
+          rows.map(async (slot) => {
+            const vres = await fetch(`/api/detail-models/${project.id}/slots/${slot.id}/versions`);
+            const versionRows: DetailVersionRow[] = vres.ok ? await vres.json() : [];
+            return [slot.id, versionRows] as const;
+          })
+        );
+        if (cancelled) return;
+        const bySlot = Object.fromEntries(entries);
+        setVersionsBySlot(bySlot);
+        if (firstSlotId) hydrateFocusedFrom(bySlot[firstSlotId]?.[0] ?? null);
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -289,6 +463,7 @@ export function Project3DConfigEditor({
   const canEditDetail = isDraftActive;
 
   async function handleDetailFile(file: File) {
+    if (!activeSlotId) return;
     setDetailError(null);
     if (!file.name.toLowerCase().endsWith(".glb")) {
       setDetailError(t("admin.detailModelInvalidFile"));
@@ -304,7 +479,7 @@ export function Project3DConfigEditor({
     setUploadProgress(0);
     setDetectedNodes(null);
     try {
-      const blob = await upload(`project-detail-models/${project.id}-${file.name}`, file, {
+      const blob = await upload(`project-detail-models/${project.id}-${activeSlotId}-${file.name}`, file, {
         access: "public",
         handleUploadUrl: "/api/blob/upload",
         onUploadProgress: (p) => setUploadProgress(p.percentage),
@@ -312,13 +487,13 @@ export function Project3DConfigEditor({
         // same reason (detail models routinely run even larger).
         multipart: true,
       });
-      const res = await fetch(`/api/detail-models/${project.id}/versions`, {
+      const res = await fetch(`/api/detail-models/${project.id}/slots/${activeSlotId}/versions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ glbUrl: blob.url, fileName: file.name, fileSize: file.size, scale, rotationDeg, altitudeOffset }),
       });
       if (!res.ok) throw new Error(await res.text());
-      await refresh();
+      await refreshActiveSlot();
     } catch (err) {
       // "Not authorized" is what /api/blob/upload throws when the real
       // Auth.js admin session (separate from the Zustand "signed in as
@@ -364,7 +539,7 @@ export function Project3DConfigEditor({
         URL.revokeObjectURL(localPreviewUrlRef.current);
         localPreviewUrlRef.current = null;
       }
-      await refresh();
+      await refreshActiveSlot();
       setDetectedNodes(null);
     } catch {
       setDetailError(t("admin.detailModelDeleteFailed"));
@@ -383,7 +558,7 @@ export function Project3DConfigEditor({
         method: "POST",
       });
       if (!res.ok) throw new Error(await res.text());
-      await refresh();
+      await refreshActiveSlot();
       setDetailFlash(t("admin.detailModelRemoved"));
       setTimeout(() => setDetailFlash(null), 2500);
     } catch {
@@ -412,7 +587,7 @@ export function Project3DConfigEditor({
         URL.revokeObjectURL(localPreviewUrlRef.current);
         localPreviewUrlRef.current = null;
       }
-      await refresh();
+      await refreshActiveSlot();
       setDetectedNodes(null);
       setDetailFlash(t("admin.detailModelDeleted"));
       setTimeout(() => setDetailFlash(null), 2500);
@@ -433,7 +608,7 @@ export function Project3DConfigEditor({
     try {
       const res = await fetch(`/api/detail-models/${project.id}/versions/${version.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error(await res.text());
-      await refresh();
+      await refreshActiveSlot();
       setDetailFlash(t("admin.versionDeleted"));
       setTimeout(() => setDetailFlash(null), 2500);
     } catch {
@@ -474,10 +649,13 @@ export function Project3DConfigEditor({
   // snapshot object below only needs to exist to give useAutosave
   // something whose *reference* changes exactly when a tracked field
   // actually does (same reasoning as useUndoRedo's snapshot) — its
-  // contents aren't separately read by the save callback itself.
+  // contents aren't separately read by the save callback itself. Keyed
+  // implicitly by `activeSlotId` through `handleSaveDetailModel`'s own
+  // closure over `activeVersion` — switching slots naturally starts
+  // autosaving the newly-focused slot instead.
   const detailSnapshot = useMemo(
-    () => ({ scale, rotationDeg, altitudeOffset, linkSelections, nodeOverrides }),
-    [scale, rotationDeg, altitudeOffset, linkSelections, nodeOverrides]
+    () => ({ activeSlotId, scale, rotationDeg, altitudeOffset, linkSelections, nodeOverrides }),
+    [activeSlotId, scale, rotationDeg, altitudeOffset, linkSelections, nodeOverrides]
   );
   const detailAutosave = useAutosave(detailSnapshot, () => handleSaveDetailModel(), {
     enabled: canEditDetail && detailLoaded && !!activeVersion,
@@ -489,7 +667,7 @@ export function Project3DConfigEditor({
     setDetailError(null);
     try {
       await handleSaveDetailModel();
-      await refresh();
+      await refreshActiveSlot();
       setDetailFlash(t("admin.mapModelSaved"));
       setTimeout(() => setDetailFlash(null), 2500);
     } catch {
@@ -509,7 +687,7 @@ export function Project3DConfigEditor({
         method: "POST",
       });
       if (!res.ok) throw new Error(await res.text());
-      await refresh();
+      await refreshActiveSlot();
       setDetailFlash(t("admin.versionPublished"));
       setTimeout(() => setDetailFlash(null), 2500);
     } catch {
@@ -527,7 +705,7 @@ export function Project3DConfigEditor({
         method: "POST",
       });
       if (!res.ok) throw new Error(await res.text());
-      await refresh();
+      await refreshActiveSlot();
       setDetailFlash(t("admin.versionRolledBack"));
       setTimeout(() => setDetailFlash(null), 2500);
     } catch {
@@ -593,6 +771,22 @@ export function Project3DConfigEditor({
   // there, not independently reclassifiable.
   const linkedMeshNames = new Set(Object.entries(linkSelections).filter(([, unitId]) => unitId).map(([name]) => name));
 
+  // Multiple Detail-Model Slots pass — every enabled slot renders in the
+  // viewport simultaneously: the focused one via the hook's own live
+  // in-progress `previewDetailModel`, every other one from its own
+  // already-fetched latest version (no local edit overlay — see this
+  // file's own doc comment). Slots with no version yet are skipped, same
+  // as the old single-model `null` case.
+  const previewDetailModels = useMemo(() => {
+    return slots.flatMap((slot) => {
+      if (slot.id === activeSlotId) {
+        return previewDetailModel ? [{ slotId: slot.id, model: previewDetailModel }] : [];
+      }
+      const version = versionsBySlot[slot.id]?.[0];
+      return version ? [{ slotId: slot.id, model: detailModelFromVersion(version) }] : [];
+    });
+  }, [slots, activeSlotId, previewDetailModel, versionsBySlot]);
+
   // Milestone D — one combined status pill for both autosave instances:
   // "error" wins if either failed, then "saving" if either is in flight,
   // then "saved" once both are settled-and-clean. Never derived from
@@ -617,7 +811,7 @@ export function Project3DConfigEditor({
 
   return (
     <EditorShell
-      project={project}
+      project={effectiveProject}
       onClose={onClose}
       t={t}
       locale={locale}
@@ -641,7 +835,13 @@ export function Project3DConfigEditor({
       autosaveLastSavedAt={autosaveLastSavedAt}
       onAutosaveRetry={retryAutosave}
       viewerRef={viewerRef}
-      previewDetailModel={previewDetailModel}
+      previewDetailModels={previewDetailModels}
+      slots={slots}
+      activeSlotId={activeSlotId}
+      onSelectSlot={handleSelectSlot}
+      onAddSlot={handleAddSlot}
+      onRenameSlot={handleRenameSlot}
+      onDeleteSlot={handleDeleteSlot}
       platformHdris={platformHdris}
       hdriBusy={hdriBusy}
       hdriError={hdriError}

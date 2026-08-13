@@ -68,8 +68,17 @@ async function main() {
   let detailSkipped = 0;
   let linksMigrated = 0;
   for (const row of legacyDetailModels) {
+    // Multiple Detail-Model Slots pass — DetailModelVersion.slotId is a
+    // required FK now (unique key is [slotId, version], not
+    // [projectId, version] anymore), so this legacy-migration path needs
+    // a real slot to attach to too. Find-or-create the project's default
+    // "Building" slot, same as scripts/migrate-detail-model-slots.ts does
+    // for already-versioned rows.
+    let slot = await prisma.detailModelSlot.findFirst({ where: { projectId: row.projectId } });
+    if (!slot) slot = await prisma.detailModelSlot.create({ data: { projectId: row.projectId, name: "Building", order: 0 } });
+
     const existing = await prisma.detailModelVersion.findUnique({
-      where: { projectId_version: { projectId: row.projectId, version: 1 } },
+      where: { slotId_version: { slotId: slot.id, version: 1 } },
     });
     if (existing) {
       detailSkipped++;
@@ -78,6 +87,7 @@ async function main() {
     const version = await prisma.detailModelVersion.create({
       data: {
         projectId: row.projectId,
+        slotId: slot.id,
         version: 1,
         sourceAssetUrl: row.glbUrl,
         publicAssetUrl: row.glbUrl,
