@@ -5,9 +5,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
-import { clamp, metalness, mrt, normalView, output, pass, roughness } from "three/tsl";
-import { ao } from "three/examples/jsm/tsl/display/GTAONode.js";
-import { ssr } from "three/examples/jsm/tsl/display/SSRNode.js";
+import { pass } from "three/tsl";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
 import { smaa } from "three/examples/jsm/tsl/display/SMAANode.js";
 import { LensflareMesh, LensflareElement } from "three/examples/jsm/objects/LensflareMesh.js";
@@ -181,6 +179,15 @@ export class RenderEngine {
   private controls: OrbitControls | null = null;
   private ground: THREE.Mesh | null = null;
   private sun: THREE.DirectionalLight | null = null;
+  /** The scene's bounding-box center, computed once per mount() — `sun.target`
+   * is pointed here once and never moves again, so `applySunAndEnvironment`
+   * needs the same point to offset `sun.position` by; otherwise the sun's
+   * actual direction (position - target) only matches the intended
+   * elevation/azimuth when the scene happens to sit near the world origin. */
+  private sceneCenter: THREE.Vector3 | null = null;
+  /** Debounces the expensive PMREM/light-probe rebuild inside
+   * `applySunAndEnvironment` — see `scheduleEnvironmentRebuild`. */
+  private environmentRebuildTimer: ReturnType<typeof setTimeout> | null = null;
   private ambient: THREE.AmbientLight | null = null;
   private lensflare: LensflareMesh | null = null;
   private lightProbe: THREE.LightProbe | null = null;
@@ -866,13 +873,29 @@ export class RenderEngine {
 
   /** Builds (or rebuilds) the TSL post-processing pipeline for the given
    * quality tier. Uses `RenderPipeline` (three.js's current, non-deprecated
-   * pipeline/output-node manager) over a single MRT-enabled scene pass
-   * (color + depth + normal — GTAO/SSR both need the normal buffer, so
-   * it's requested unconditionally rather than conditionally per tier).
-   * Wrapped in try/catch: a construction failure degrades to "no
-   * post-processing" (renderPipeline stays null, the render loop falls
-   * back to a plain renderer.render(scene, camera)) rather than breaking
-   * the viewer outright. */
+   * pipeline/output-node manager) over a plain scene pass. Wrapped in
+   * try/catch: a construction failure degrades to "no post-processing"
+   * (renderPipeline stays null, the render loop falls back to a plain
+   * renderer.render(scene, camera)) rather than breaking the viewer
+   * outright.
+   *
+   * SSR/GTAO removed (user request, 2026-08-13, after they were
+   * implicated as a likely contributor to a real Sections-panel
+   * instability report — see the "rozaris-3d-sections-audit-fix" and
+   * "rozaris-3d-ssr-gtao-reenable" memories for the full history: this
+   * exact chain caused two separate, never-fully-explained real-GPU
+   * failures earlier this session — a black viewer, then solid red —
+   * before being re-enabled with a targeted-but-unconfirmed mitigation.
+   * Rather than keep chasing an unverifiable-without-a-browser crash
+   * class, the effects themselves (and the MRT normal/metalness/roughness
+   * buffers + HDR clamp that only existed to support them) are gone
+   * outright — not just toggled off. `ssrEnabled`/`gtaoEnabled` are gone
+   * from `Project3DConfig`/the API schema/the DB entirely (see the
+   * migration), and `tier.ssr`/`tier.gtao` are gone from
+   * `QualityTierSettings` — no dead, do-nothing toggle left behind
+   * anywhere. The real geographic sun, ambient light and PMREM sky
+   * environment/reflections were never implicated in either failure and
+   * are completely untouched by this. */
   private buildRenderPipeline(tier: QualityTierSettings) {
     this.renderPipeline?.dispose();
     this.renderPipeline = null;
@@ -882,88 +905,10 @@ export class RenderEngine {
     if (!renderer || !scene || !camera) return;
     try {
       const scenePass = pass(scene, camera);
-      // metalness/roughness channels are only needed for SSR — always
-      // requesting them costs one more MRT attachment even on tiers where
-      // ssr is off, but keeping setMRT's shape identical across tiers
-      // avoids a pipeline rebuild edge case when a runtime adaptive
-      // downgrade flips `tier.ssr` without a full remount.
-      scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
       const color = scenePass.getTextureNode("output");
-      const depth = scenePass.getTextureNode("depth");
-      const normal = scenePass.getTextureNode("normal");
 
-      // AO darkens ambient-occluded areas of the base color first, SSR
-      // then blends screen-space reflections into that (so a reflection's
-      // own content isn't additionally darkened by the *reflecting*
-      // surface's local AO), Bloom adds a glow from bright regions on top
-      // of the combined result, SMAA anti-aliases last — applied
-      // separately below since @types/three's SMAANode doesn't unify with
-      // this chain's Node<"vec4"> typing.
       let chain: THREE.Node<"vec4"> = color;
-      // NOT `normal.xyz` here, on purpose: both GTAONode and SSRNode call
-      // `this.normalNode.sample(uv).rgb` internally (ray-marching needs to
-      // re-sample the normal buffer at arbitrary UVs, not just the current
-      // pixel) — `.sample()` only exists on the raw TextureNode. Swizzling
-      // to `.xyz` first (done in an earlier pass to satisfy this call's
-      // `Node<"vec3">` typing) returns a SwizzleNode with no `.sample()`,
-      // which threw `this.normalNode.sample is not a function` on every
-      // frame — the actual cause of the still-black viewer after the
-      // metalness/roughness fix. The type cast below is the honest fix:
-      // @types/three's declared `Node<"vec3">` param doesn't capture that
-      // these two effects specifically require the unswizzled TextureNode.
-      const normalTex = normal as unknown as THREE.Node<"vec3">;
-      // SSR run BEFORE GTAO now (was AO-then-SSR) — a third instance of the
-      // same constraint as the normal-buffer fix above: SSRNode also does
-      // `this.colorNode.sample(uv)` internally, which requires the raw
-      // scene-pass color TextureNode, not an already-composited chain
-      // (`chain.mul(aoResult)` is a MathNode with no `.sample()`). Feeding
-      // it the post-AO chain threw `this.colorNode.sample is not a
-      // function`, the third and final cause of the black viewer. Trade-off
-      // versus the original AO-first ordering: a reflection's own pixels
-      // are now also darkened by the reflecting surface's local AO term,
-      // which the original comment specifically wanted to avoid — accepted
-      // for now to get a correctly-rendering pipeline; revisit only if it's
-      // visibly wrong once someone can actually look at it.
-      // Real per-project overrides (full-configurator pass), ANDed with —
-      // not replacing — the tier's own flag.
-      if (tier.ssr && this.config.ssrEnabled) {
-        // SSRNode's own shader unconditionally does `float(this.metalnessNode)`
-        // / `float(this.roughnessNode)` with no null guard — leaving these
-        // options unset (their own JSDoc default) throws
-        // "Cannot read properties of null (reading 'isNode')" on every
-        // frame once SSR is enabled, which is what was producing a fully
-        // black viewer. Real per-pixel values via the MRT channels above,
-        // same "no explicit sample() needed" auto-UV binding depth/normal
-        // already rely on (per SSRNode's own comment on this).
-        const metalnessTex = scenePass.getTextureNode("metalness").x;
-        const roughnessTex = scenePass.getTextureNode("roughness").x;
-        chain = ssr(color, depth, normalTex, { camera, metalnessNode: metalnessTex, roughnessNode: roughnessTex });
-      }
-      if (tier.gtao && this.config.gtaoEnabled) chain = chain.mul(ao(depth, normalTex, camera));
       if (tier.bloom) chain = chain.add(bloom(chain, 0.6, 0.4, 0.85));
-
-      // HDR safety clamp — added when SSR/GTAO were re-enabled (this
-      // chain previously shipped force-disabled platform-wide after two
-      // unexplained real-GPU failures: a black screen with a clean
-      // console after the 3 real SSR/GTAO node-wiring bugs above were
-      // fixed — root cause never found — then, on a later attempt, solid
-      // red, the classic symptom of a NaN/out-of-range HDR value hitting
-      // ACESFilmicToneMapping). This does NOT clamp to display range
-      // ([0,1]) — that would flatten real HDR highlights before ACES
-      // gets to tone-map them; three's own ACES TSL implementation
-      // already clamps its *output* to [0,1] itself (ToneMappingFunctions.js)
-      // and expects real unclamped HDR input to do that correctly. This
-      // bounds the chain to a large-but-finite ceiling instead, so a
-      // blown-up intermediate (Infinity, or a very large finite garbage
-      // value from a division/reflection edge case) can't reach
-      // tone-mapping unbounded. Directly addresses the *stated* theory
-      // for the red-screen failure; does not explain or guarantee a fix
-      // for the earlier, still-unexplained black-screen failure (which
-      // threw no error at all) — this has not been verified in a browser
-      // (none available in this environment), so treat this as a real,
-      // reasoned mitigation, not a confirmed fix.
-      const HDR_SAFE_MAX = 64;
-      chain = clamp(chain, 0, HDR_SAFE_MAX);
 
       const pipeline = new THREE.RenderPipeline(renderer);
       pipeline.outputNode = tier.antialias && this.config.antialiasEnabled ? smaa(chain) : chain;
@@ -1286,6 +1231,7 @@ export class RenderEngine {
     sun.shadow.camera.bottom = -shadowSpan;
     sun.shadow.camera.updateProjectionMatrix();
     sun.target.position.copy(target);
+    this.sceneCenter = target.clone();
 
     if (this.ground) this.ground.visible = config.groundEnabled;
     const showShells = project.status === "under_construction" && config.constructionStagesEnabled;
@@ -1484,6 +1430,10 @@ export class RenderEngine {
 
   dispose() {
     this.mountToken++; // invalidates any in-flight mount()/setHdri() continuations
+    if (this.environmentRebuildTimer != null) {
+      clearTimeout(this.environmentRebuildTimer);
+      this.environmentRebuildTimer = null;
+    }
     const renderer = this.renderer;
     const container = this.container;
     if (renderer) {
@@ -1645,13 +1595,26 @@ export class RenderEngine {
     // own result already flows through — only the position itself is
     // sourced differently. "geographic" (default) is byte-for-byte the
     // same behavior as before this feature existed.
+    // Sun & Time restructure — `simulationDate` ("YYYY-MM-DD") lets an
+    // admin pin the geographic sun to a specific calendar date (a solar
+    // study for "21 June", say) instead of always tracking today's real
+    // date. `null`/unset (the default) is byte-for-byte the same
+    // `new Date()` behavior as before this field existed. Parsed at
+    // UTC midnight — only the month/day feeds the seasonal declination
+    // (see sunPosition.ts's dayOfYearUTC), the time-of-day component is
+    // irrelevant here since `effectiveTimeOfDay` supplies the clock time
+    // separately. An invalid/unparsable string falls back to "today"
+    // rather than feeding calcSunPosition a NaN date.
+    const simulationDate = config.simulationDate ? new Date(`${config.simulationDate}T00:00:00Z`) : null;
+    const effectiveDate = simulationDate && !Number.isNaN(simulationDate.getTime()) ? simulationDate : new Date();
+
     const sunPos =
       config.sunMode === "manual"
         ? { elevationDeg: config.sunElevationDeg, azimuthDeg: config.sunAzimuthDeg, isNight: config.sunElevationDeg <= 0 }
         : calcSunPosition({
             lat: project.coords.lat,
             lng: project.coords.lng,
-            date: new Date(),
+            date: effectiveDate,
             timeOfDay: effectiveTimeOfDay,
             northRotationDeg: config.northRotationDeg,
           });
@@ -1663,7 +1626,22 @@ export class RenderEngine {
     // every existing project's geographic-mode behavior is unchanged until
     // an admin actually touches the slider.
     const intensityMultiplier = config.sunIntensity;
-    sun.position.set(dir.x * distance, Math.max(dir.y, 0.05) * distance, dir.z * distance);
+    // Offset by the scene's actual center (same point `sun.target` was
+    // pointed at, once, in mount()) — real bug fix found during the Sun &
+    // Time restructure. `sun.position` used to be set in raw world space
+    // with no such offset, so the light's true direction (position -
+    // target) only matched the intended elevation/azimuth when the scene
+    // happened to sit near the world origin; any building whose bounding-
+    // box center was offset from (0,0,0) was getting a subtly wrong sun
+    // angle. Falls back to the origin if called before a mount (shouldn't
+    // happen in practice — `sun`/`ambient` are both null until mount()
+    // sets them, guarded by the early return above).
+    const center = this.sceneCenter ?? new THREE.Vector3();
+    sun.position.set(
+      center.x + dir.x * distance,
+      center.y + Math.max(dir.y, 0.05) * distance,
+      center.z + dir.z * distance
+    );
     sun.color.setHex(sunColorForElevation(sunPos.elevationDeg));
     sun.intensity = (sunPos.isNight ? 0.1 : 1.2 + Math.max(0, sunPos.elevationDeg / 90) * 1.8) * intensityMultiplier;
     ambient.intensity = sunPos.isNight ? 0.08 : 0.15;
@@ -1671,7 +1649,33 @@ export class RenderEngine {
     // isn't visibly up — same isNight signal sun.intensity already uses.
     if (this.lensflare) this.lensflare.visible = config.lensflareEnabled && !sunPos.isNight;
 
-    this.rebuildEnvironment(config);
+    // Everything above is cheap (a few scalar/vector writes) and applies
+    // synchronously on every call, so a live-drag time/date scrubber
+    // tracks the pointer smoothly. `rebuildEnvironment` below is the
+    // expensive part (PMREM.fromEquirectangular + an optional light-probe
+    // cube capture) — debounced so a drag doesn't thrash the GPU on every
+    // tick, see scheduleEnvironmentRebuild.
+    this.scheduleEnvironmentRebuild(config);
+  }
+
+  /** Debounces `rebuildEnvironment` (PMREM + light-probe rebuild) behind
+   * ~150ms of idle after the last call — `applySunAndEnvironment`'s own
+   * React effect re-runs on every time-of-day slider tick, and before this
+   * existed each tick triggered a full synchronous PMREM regeneration.
+   * Mirrors EditorShell.tsx's `syncSectionGizmo` debounce idiom.
+   * `mountTokenAtStart` guards against the timer outliving a
+   * dispose()/remount and firing `rebuildEnvironment` against a torn-down
+   * scene (same pattern `captureLightProbe` already uses). Mount-time and
+   * `setHdri`'s own `rebuildEnvironment` calls stay direct/synchronous —
+   * only this hot, per-tick path is debounced. */
+  private scheduleEnvironmentRebuild(config: Project3DConfig) {
+    if (this.environmentRebuildTimer != null) clearTimeout(this.environmentRebuildTimer);
+    const mountTokenAtStart = this.mountToken;
+    this.environmentRebuildTimer = setTimeout(() => {
+      this.environmentRebuildTimer = null;
+      if (mountTokenAtStart !== this.mountToken) return;
+      this.rebuildEnvironment(config);
+    }, 150);
   }
 
   // ---------------------------------------------------------------------
@@ -2044,7 +2048,20 @@ export class RenderEngine {
    * activates it (live clip + cap) so the admin sees what they're
    * editing. Reuses one lazily-created `TransformControls` instance
    * across attach calls (just re-targets/re-modes it) rather than
-   * recreating per section/mode switch. */
+   * recreating per section/mode switch.
+   *
+   * Real bug fixed here: this used to call `this.activateSection(section.id)`,
+   * which re-derives the section from `this.config.sections.find(...)` —
+   * `this.config` only gets refreshed by `applyLiveUpdate()`, which the
+   * admin editor's per-field edits don't trigger (Sections aren't in that
+   * effect's dependency list — cheap, local React state otherwise). So a
+   * just-drawn section (never yet in `this.config.sections`) or a section
+   * mid-edit from the panel would silently activate a *stale* — or, for a
+   * brand-new section, nonexistent — snapshot instead of what's actually
+   * being edited, meaning the live clip/cap the admin sees could lag
+   * behind or briefly vanish. Now applies the clip/cap directly from the
+   * `section` argument, which is always the fresh, authoritative value the
+   * caller (EditorShell.tsx) just computed — no re-lookup needed. */
   attachSectionGizmo(section: Section, mode: "move" | "rotate" | "resize" | "height") {
     const camera = this.camera;
     const renderer = this.renderer;
@@ -2052,7 +2069,8 @@ export class RenderEngine {
     if (!camera || !renderer || !helpers) return;
 
     this.liveSection = { ...section };
-    this.activateSection(section.id);
+    this.activeSectionId = section.id;
+    this.applyActiveClipping(section);
 
     if (!this.sectionGizmoAnchor) {
       const anchor = new THREE.Object3D();

@@ -86,6 +86,11 @@ const patchSchema = z.object({
   northRotationDeg: z.number().min(-360).max(360).optional(),
   defaultTimeOfDay: z.number().min(0).max(24).optional(),
   allowUserTimeChange: z.boolean().optional(),
+  simulationDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a YYYY-MM-DD date")
+    .nullable()
+    .optional(),
   cameraFovDesktop: z.number().min(10).max(120).optional(),
   cameraFovMobile: z.number().min(10).max(120).optional(),
   cameraPresets: z.array(cameraPresetSchema).optional(),
@@ -108,8 +113,6 @@ const patchSchema = z.object({
   unitColorSold: hexColorSchema.optional(),
   unitColorSelected: hexColorSchema.optional(),
   shadowsEnabled: z.boolean().optional(),
-  ssrEnabled: z.boolean().optional(),
-  gtaoEnabled: z.boolean().optional(),
   antialiasEnabled: z.boolean().optional(),
   sections: z.array(sectionSchema).optional(),
 });

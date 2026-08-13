@@ -63,6 +63,7 @@ export function buildExperienceDocument(
       northRotationDeg: config.northRotationDeg,
       defaultTimeOfDay: config.defaultTimeOfDay,
       allowUserTimeChange: config.allowUserTimeChange,
+      simulationDate: config.simulationDate,
     },
     camera: {
       presets: config.cameraPresets as CameraPreset[],

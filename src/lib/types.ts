@@ -252,6 +252,13 @@ export interface Project3DConfig {
    * at — see src/lib/sunPosition.ts for why UTC, not local civil time. */
   defaultTimeOfDay: number;
   allowUserTimeChange: boolean;
+  /** "YYYY-MM-DD", or `null` — Sun & Time restructure. `null` means the
+   * geographic sun uses the real current calendar date (unchanged
+   * default behavior); set means it's simulating that specific date
+   * instead (e.g. a solar study for "21 June"). Feeds `calcSunPosition`/
+   * `calcSunriseSunset`'s `date` param — see RenderEngine.ts's
+   * `applySunAndEnvironment`. */
+  simulationDate: string | null;
   cameraFovDesktop: number;
   cameraFovMobile: number;
 
@@ -328,13 +335,15 @@ export interface Project3DConfig {
 
   /** Real per-project overrides for the post-processing chain — ANDed with
    * QUALITY_TIERS' own tier-level flags in RenderEngine.ts's
-   * buildRenderPipeline, not a replacement for them. ssrEnabled/gtaoEnabled
-   * are currently inert (every tier's ssr/gtao is force-false platform-wide
-   * — see viewerPresets.ts's QUALITY_TIERS comment) but real and
-   * schema-backed, ready for whenever that's safely re-enabled. */
+   * buildRenderPipeline, not a replacement for them.
+   *
+   * `ssrEnabled`/`gtaoEnabled` (screen-space reflections/ambient
+   * occlusion) used to live here — removed entirely (schema, API, UI,
+   * render pipeline) 2026-08-13 at the user's explicit request after
+   * being implicated in a real render-instability report; see
+   * viewerPresets.ts's QUALITY_TIERS header comment for the full history.
+   * Not just disabled — genuinely gone, no dead toggle left behind. */
   shadowsEnabled: boolean;
-  ssrEnabled: boolean;
-  gtaoEnabled: boolean;
   antialiasEnabled: boolean;
 
   /** Manual clipping-plane sections (Sections module) — admin-authored,
@@ -652,6 +661,7 @@ export interface ExperienceDocument {
     northRotationDeg: number;
     defaultTimeOfDay: number;
     allowUserTimeChange: boolean;
+    simulationDate: string | null;
   };
   camera: {
     presets: CameraPreset[];

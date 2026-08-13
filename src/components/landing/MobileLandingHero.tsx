@@ -83,7 +83,7 @@ function FieldDropdown({
         <ChevronDown className={cn("h-4 w-4 shrink-0 text-neutral-400 transition-transform duration-150", open && "rotate-180")} />
       </button>
       {open && (
-        <div className="absolute left-0 right-0 z-30 mt-1.5 max-h-60 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-[var(--shadow-2)]">
+        <div className="absolute left-0 right-0 z-30 mt-1.5 max-h-60 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-[var(--shadow-2)] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {options.map((opt) => (
             <button
               key={opt.value || "_any"}
@@ -107,10 +107,11 @@ function FieldDropdown({
 }
 
 /**
- * Phone-only front page (< lg). No photo hero, no fixed bottom app nav,
- * heading animates the same word cycle as desktop, the wallpaper texture
- * backs the whole page below the header, and tools are a single
- * navbar-style bar split into 3 equal segments rather than cards.
+ * Phone-only front page (< lg). No photo hero, no fixed 5-item app nav
+ * (that was removed outright — this is a *different* bottom bar: just the
+ * 3 tools, pinned below the scrollable search area), heading animates the
+ * same word cycle as desktop, and the wallpaper texture backs the whole
+ * page below the header — search area and tools bar both float on it.
  * Desktop (`lg:` and up) keeps rendering LandingHero's own markup.
  */
 export function MobileLandingHero({
@@ -159,127 +160,144 @@ export function MobileLandingHero({
       </div>
 
       {/* Whole page below the header — one continuous wallpaper-textured
-          background. Scrolls only if a given phone is short enough to
-          need it; the header above never moves. */}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-5" style={WALLPAPER_STYLE}>
-        <h1 className="text-2xl font-extrabold leading-[1.15] text-neutral-900">
-          Find <TypewriterWord words={CYCLE_WORDS} className="text-brand-600" />
-          <br />
-          that fits your life.
-        </h1>
-        <p className="mt-1.5 text-[13px] leading-snug text-neutral-600">
-          Discover thousands of properties across Albania. Buy, rent, or explore new developments with confidence.
-        </p>
+          background, from right under the header down to the very bottom
+          of the screen (behind both the scrollable search area and the
+          tools bar pinned below it). */}
+      <div className="relative flex min-h-0 flex-1 flex-col" style={WALLPAPER_STYLE}>
+        {/* Scrollable search area. Scrolls only if a given phone is short
+            enough to need it (it doesn't on any tested size); the header
+            above and tools bar below never move. Scrollbar hidden — a
+            classic (non-overlay) browser scrollbar reserves gutter width
+            for `overflow-y-auto` even with nothing to scroll, which read
+            as a permanent empty strip on the right. Scrolling itself
+            still works if content ever does overflow — only the visible
+            track is suppressed. */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-3 pt-5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <h1 className="text-2xl font-extrabold leading-[1.15] text-neutral-900">
+            Find <TypewriterWord words={CYCLE_WORDS} className="text-brand-600" />
+            <br />
+            that fits your life.
+          </h1>
+          <p className="mt-1.5 text-[13px] leading-snug text-neutral-600">
+            Discover thousands of properties across Albania. Buy, rent, or explore new developments with confidence.
+          </p>
 
-        <div className="mt-3.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.1)]">
-          <div className="grid grid-cols-3">
-            {MODES.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => onSelectMode(item.id)}
-                  className={cn(
-                    "flex h-11 flex-col items-center justify-center gap-0.5 px-1 text-center text-[10px] font-extrabold uppercase leading-tight tracking-[0.02em] transition-colors duration-150 ease-[var(--ease-rz)]",
-                    item.id === mode ? "bg-brand-600 text-white" : "bg-white text-neutral-500"
-                  )}
-                >
-                  <Icon className="h-3.5 w-3.5 shrink-0" />
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
+          <div className="mt-3.5 overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.1)]">
+            <div className="grid grid-cols-3">
+              {MODES.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onSelectMode(item.id)}
+                    className={cn(
+                      "flex h-11 flex-col items-center justify-center gap-0.5 px-1 text-center text-[10px] font-extrabold uppercase leading-tight tracking-[0.02em] transition-colors duration-150 ease-[var(--ease-rz)]",
+                      item.id === mode ? "bg-brand-600 text-white" : "bg-white text-neutral-500"
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5 shrink-0" />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
 
-          <div className="flex flex-col gap-2 p-3">
-            <label className="flex h-11 items-center gap-2 rounded-xl border border-neutral-200 px-3">
-              <MapPin className="h-4 w-4 shrink-0 text-neutral-400" />
-              <input
-                value={filters.location}
-                onChange={(event) => setFilters({ location: event.target.value })}
-                placeholder={t("filters.locationPlaceholder")}
-                className="h-full w-full min-w-0 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
-              />
-              <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
-            </label>
-
-            <div className="grid grid-cols-[1.3fr_1fr] gap-2">
+            <div className="flex flex-col gap-2 p-3">
               <label className="flex h-11 items-center gap-2 rounded-xl border border-neutral-200 px-3">
-                <Wallet className="h-4 w-4 shrink-0 text-neutral-400" />
+                <MapPin className="h-4 w-4 shrink-0 text-neutral-400" />
                 <input
-                  type="number"
-                  inputMode="numeric"
-                  value={filters.priceMax ?? ""}
-                  onChange={(event) => setFilters({ priceMax: event.target.value ? Number(event.target.value) : null })}
-                  placeholder="Budget max"
+                  value={filters.location}
+                  onChange={(event) => setFilters({ location: event.target.value })}
+                  placeholder={t("filters.locationPlaceholder")}
                   className="h-full w-full min-w-0 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
                 />
+                <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
               </label>
-              <FieldDropdown
-                label="€ Any"
-                value={filters.priceMin != null ? String(filters.priceMin) : ""}
-                onSelect={(v) => setFilters({ priceMin: v ? Number(v) : null })}
-                options={[
-                  { value: "", label: "€ Any" },
-                  ...PRICE_MIN_STEPS.map((step) => ({ value: String(step), label: `${formatPrice(step, "EUR", { compact: true })}+` })),
-                ]}
-              />
-            </div>
 
-            <div className="grid grid-cols-[1.3fr_1fr] gap-2">
-              <FieldDropdown
-                label="Property type or rooms"
-                value={selectedType}
-                onSelect={(v) => setFilters({ propertyTypes: v ? [v as PropertyType] : [] })}
-                options={[
-                  { value: "", label: "Property type or rooms" },
-                  ...PROPERTY_TYPES.map((pt) => ({ value: pt, label: propertyLabels[pt] })),
-                ]}
-              />
-              <FieldDropdown
-                label="Any"
-                value={filters.bedrooms != null ? String(filters.bedrooms) : ""}
-                onSelect={(v) => setFilters({ bedrooms: v ? Number(v) : null })}
-                options={[
-                  { value: "", label: "Any" },
-                  { value: "1", label: "1+ bedroom" },
-                  { value: "2", label: "2+ bedrooms" },
-                  { value: "3", label: "3+ bedrooms" },
-                  { value: "4", label: "4+ bedrooms" },
-                ]}
-              />
-            </div>
+              <div className="grid grid-cols-[1.3fr_1fr] gap-2">
+                <label className="flex h-11 items-center gap-2 rounded-xl border border-neutral-200 px-3">
+                  <Wallet className="h-4 w-4 shrink-0 text-neutral-400" />
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={filters.priceMax ?? ""}
+                    onChange={(event) => setFilters({ priceMax: event.target.value ? Number(event.target.value) : null })}
+                    placeholder="Budget max"
+                    className="h-full w-full min-w-0 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+                  />
+                </label>
+                <FieldDropdown
+                  label="€ Any"
+                  value={filters.priceMin != null ? String(filters.priceMin) : ""}
+                  onSelect={(v) => setFilters({ priceMin: v ? Number(v) : null })}
+                  options={[
+                    { value: "", label: "€ Any" },
+                    ...PRICE_MIN_STEPS.map((step) => ({ value: String(step), label: `${formatPrice(step, "EUR", { compact: true })}+` })),
+                  ]}
+                />
+              </div>
 
-            <button
-              onClick={onSearch}
-              className="mt-0.5 flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-accent text-sm font-extrabold uppercase tracking-[0.08em] text-neutral-900 transition-colors duration-150 ease-[var(--ease-rz)] active:bg-accent-600"
-            >
-              View properties
-              <ArrowRight className="h-4 w-4" />
-            </button>
+              <div className="grid grid-cols-[1.3fr_1fr] gap-2">
+                <FieldDropdown
+                  label="Property type or rooms"
+                  value={selectedType}
+                  onSelect={(v) => setFilters({ propertyTypes: v ? [v as PropertyType] : [] })}
+                  options={[
+                    { value: "", label: "Property type or rooms" },
+                    ...PROPERTY_TYPES.map((pt) => ({ value: pt, label: propertyLabels[pt] })),
+                  ]}
+                />
+                <FieldDropdown
+                  label="Any"
+                  value={filters.bedrooms != null ? String(filters.bedrooms) : ""}
+                  onSelect={(v) => setFilters({ bedrooms: v ? Number(v) : null })}
+                  options={[
+                    { value: "", label: "Any" },
+                    { value: "1", label: "1+ bedroom" },
+                    { value: "2", label: "2+ bedrooms" },
+                    { value: "3", label: "3+ bedrooms" },
+                    { value: "4", label: "4+ bedrooms" },
+                  ]}
+                />
+              </div>
+
+              <button
+                onClick={onSearch}
+                className="mt-0.5 flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-accent text-sm font-extrabold uppercase tracking-[0.08em] text-neutral-900 transition-colors duration-150 ease-[var(--ease-rz)] active:bg-accent-600"
+              >
+                View properties
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Tools — one bar, divided into 3 equal segments (navbar-style),
-            not separate cards. Reuses desktop's `tools` content (icon +
-            title; the description doesn't fit a segment this narrow). */}
-        <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_4px_16px_rgba(17,24,39,0.06)]">
-          <div className="grid grid-cols-3 divide-x divide-neutral-100">
-            {tools.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="flex flex-col items-center gap-1.5 px-2 py-4 text-center transition-colors duration-150 active:bg-neutral-50"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-50 to-brand-100 text-brand-600 ring-1 ring-inset ring-brand-100">
-                    <Icon className="h-4 w-4" />
-                  </span>
-                  <span className="line-clamp-2 text-[11px] font-bold leading-tight text-neutral-900">{item.title}</span>
-                </Link>
-              );
-            })}
+        {/* Tools bar — pinned to the bottom of the screen (not inline
+            right after the search card, which left a large dead gap
+            above it once the descriptions were dropped), one bar divided
+            into 3 equal segments. Still floats on the same wallpaper
+            texture as the search area above it. Reuses desktop's `tools`
+            content (icon + title only — description doesn't fit a
+            segment this narrow). */}
+        <div className="shrink-0 px-5 pb-[max(0.9rem,env(safe-area-inset-bottom))] pt-2">
+          <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_4px_16px_rgba(17,24,39,0.06)]">
+            <div className="grid grid-cols-3 divide-x divide-neutral-100">
+              {tools.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="flex flex-col items-center gap-1.5 px-2 py-4 text-center transition-colors duration-150 active:bg-neutral-50"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-50 to-brand-100 text-brand-600 ring-1 ring-inset ring-brand-100">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="line-clamp-2 text-[11px] font-bold leading-tight text-neutral-900">{item.title}</span>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signOut as nextAuthSignOut } from "next-auth/react";
 import {
@@ -28,6 +28,10 @@ import {
   Gem,
   ChevronDown,
   LogOut,
+  MoreVertical,
+  Eye,
+  EyeOff,
+  Archive,
   type LucideIcon,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
@@ -634,6 +638,11 @@ function StatusLine({
   );
 }
 
+interface ProjectStatus {
+  approvalStatus: "pending" | "active" | "archived";
+  deletedAt: string | null;
+}
+
 function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
   const { t } = useT();
   const router = useRouter();
@@ -649,6 +658,14 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
   // same as a seeded mockData.ts project.
   const [mapModels, setMapModels] = useState<Record<string, VersionSummary>>({});
   const [detailModels, setDetailModels] = useState<Record<string, VersionSummary>>({});
+  // Live visibility state (Active / Hidden-archived / in the Recycle Bin) —
+  // real `Project.approvalStatus`/`deletedAt`, fetched the same per-project
+  // way as mapModels/detailModels above (mockData.ts + Zustand carry
+  // neither field, see the new GET on publication/route.ts). `statusReload`
+  // is bumped by the visibility menu after a mutation to refetch without a
+  // full page reload.
+  const [projectStatus, setProjectStatus] = useState<Record<string, ProjectStatus>>({});
+  const [statusReload, setStatusReload] = useState(0);
 
   const allProjects = [...projects, ...customProjects];
   const projectIds = allProjects.map((p) => p.id).join(",");
@@ -682,6 +699,28 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectIds]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      allProjects.map((p) =>
+        fetch(`/api/admin/projects/${p.id}/publication`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((status: ProjectStatus | null) => [p.id, status] as const)
+      )
+    ).then((rows) => {
+      if (cancelled) return;
+      const next: Record<string, ProjectStatus> = {};
+      rows.forEach(([id, status]) => {
+        if (status) next[id] = status;
+      });
+      setProjectStatus(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectIds, statusReload]);
 
   const title = focus === "map" ? t("admin.tabMapControl") : t("admin.tab3DExperience");
   const subtitle = focus === "map" ? t("admin.mapControlTabSubtitle") : t("admin.viewer3DTabSubtitle");
@@ -719,6 +758,7 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
         {allProjects.map((p) => {
           const detailModel = detailModels[p.id];
           const mapModel = mapModels[p.id];
+          const status = projectStatus[p.id];
 
           return (
             <div
@@ -727,11 +767,20 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
             >
               <div className="relative aspect-[16/9] w-full shrink-0">
                 <PlaceholderImage seed={p.slug} kind="hero" className="h-full w-full" />
+                <ProjectVisibilityMenu
+                  project={p}
+                  status={status}
+                  onChanged={() => setStatusReload((n) => n + 1)}
+                  t={t}
+                />
               </div>
 
               <div className="flex flex-1 flex-col gap-3 p-4">
                 <div className="min-w-0">
-                  <p className="truncate font-serif text-base text-neutral-900">{p.name}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate font-serif text-base text-neutral-900">{p.name}</p>
+                    <ProjectStatusBadge status={status} t={t} />
+                  </div>
                   <p className="truncate text-xs text-neutral-500">
                     {p.developer.name} · {p.city}
                   </p>
@@ -760,10 +809,15 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
                       {t("admin.configure3DMapControl")}
                     </button>
                   )}
+                  {/* Same size/shape as the Configure button above (was a
+                      small text-only link) — user-requested, see the
+                      "rozaris-mvp-admin-project-pipe" memory's visibility-
+                      controls note. */}
                   <button
                     onClick={() => setEditingUnits(p)}
-                    className="text-center text-[11px] font-medium text-neutral-500 hover:text-neutral-800 hover:underline"
+                    className="flex items-center justify-center gap-1.5 rounded-control border border-neutral-300 bg-white py-2.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
                   >
+                    <Boxes className="h-3.5 w-3.5" />
                     {t("admin.manageUnits")}
                   </button>
                 </div>
@@ -785,6 +839,210 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
 
       {editingUnits && (
         <ProjectUnitsEditor project={editingUnits} onClose={() => setEditingUnits(null)} />
+      )}
+    </div>
+  );
+}
+
+/** Small colored pill next to a project's name reflecting its real
+ * `approvalStatus`/`deletedAt` (Project3DGrid fetches this live — mockData
+ * + Zustand carry neither). `undefined` (still loading) renders nothing
+ * rather than a misleading default. */
+function ProjectStatusBadge({ status, t }: { status: ProjectStatus | undefined; t: ReturnType<typeof useT>["t"] }) {
+  if (!status) return null;
+  if (status.deletedAt) {
+    return (
+      <span className="shrink-0 rounded-full bg-danger/10 px-1.5 py-0.5 text-[10px] font-semibold text-danger">
+        {t("admin.projectStatusDeleted")}
+      </span>
+    );
+  }
+  if (status.approvalStatus === "archived") {
+    return (
+      <span className="shrink-0 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-500">
+        {t("admin.projectStatusHidden")}
+      </span>
+    );
+  }
+  if (status.approvalStatus === "pending") {
+    return (
+      <span className="shrink-0 rounded-full bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+        {t("admin.projectStatusPending")}
+      </span>
+    );
+  }
+  return (
+    <span className="shrink-0 rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-semibold text-success">
+      {t("admin.projectStatusActive")}
+    </span>
+  );
+}
+
+/**
+ * Per-card visibility/lifecycle menu — user-requested addition alongside
+ * the Units & Model button restyle. Backs onto two already-real routes,
+ * nothing new added to the schema:
+ *  - `PATCH /api/admin/projects/[id]/publication` (`approvalStatus`
+ *    active ⇄ archived — pre-existing "force unpublish/republish", just
+ *    never had a UI on this page before).
+ *  - `POST /api/admin/recycle-bin/soft-delete` (real Recycle Bin, already
+ *    used by Super Admin — sets `deletedAt`, recoverable, not a hard
+ *    delete).
+ * The schema only has ONE "hidden but not deleted" state (`archived`) —
+ * "Hide (client stopped paying)" and "Store / archive" both transition to
+ * it; they're kept as two separate menu items (matching what was asked
+ * for) but only differ in the default reason text prefilled into the
+ * prompt, which is real and lands in the audit log either way. If a
+ * genuinely distinct third state is wanted later, that needs a schema
+ * change — flagged here rather than faked.
+ */
+function ProjectVisibilityMenu({
+  project,
+  status,
+  onChanged,
+  t,
+}: {
+  project: Project;
+  status: ProjectStatus | undefined;
+  onChanged: () => void;
+  t: ReturnType<typeof useT>["t"];
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  async function readError(res: Response): Promise<string> {
+    const body = await res.json().catch(() => null);
+    return typeof body?.error === "string" ? body.error : t("admin.projectVisibilityActionFailed");
+  }
+
+  async function setApproval(next: "active" | "archived", reason?: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/projects/${project.id}/publication`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvalStatus: next, reason }),
+      });
+      if (!res.ok) throw new Error(await readError(res));
+      onChanged();
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("admin.projectVisibilityActionFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleHide() {
+    const reason = window.prompt(t("admin.projectHideReasonPrompt"), t("admin.projectHideReasonDefault"));
+    if (reason === null) return;
+    if (!reason.trim()) {
+      setError(t("admin.projectReasonRequired"));
+      return;
+    }
+    void setApproval("archived", reason.trim());
+  }
+
+  function handleStore() {
+    const reason = window.prompt(t("admin.projectStoreReasonPrompt"), t("admin.projectStoreReasonDefault"));
+    if (reason === null) return;
+    if (!reason.trim()) {
+      setError(t("admin.projectReasonRequired"));
+      return;
+    }
+    void setApproval("archived", reason.trim());
+  }
+
+  async function handleDelete() {
+    if (!window.confirm(t("admin.projectDeleteConfirm", { name: project.name }))) return;
+    const reason = window.prompt(t("admin.projectDeleteReasonPrompt"), "");
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/recycle-bin/soft-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entityType: "project", entityId: project.id, reason: reason?.trim() || undefined }),
+      });
+      if (!res.ok) throw new Error(await readError(res));
+      onChanged();
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("admin.projectVisibilityActionFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const deleted = !!status?.deletedAt;
+  const isActive = status?.approvalStatus === "active";
+  const isArchived = status?.approvalStatus === "archived";
+
+  return (
+    <div ref={menuRef} className="absolute right-2 top-2 z-10">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        disabled={!status}
+        className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-neutral-600 shadow-sm backdrop-blur-sm hover:bg-white disabled:opacity-0"
+        aria-label={t("admin.projectVisibilityMenu")}
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1 w-56 rounded-control border border-neutral-200 bg-white p-1 text-xs shadow-lg">
+          {deleted ? (
+            <p className="px-2 py-2 text-neutral-500">{t("admin.projectInRecycleBinNote")}</p>
+          ) : (
+            <>
+              <button
+                disabled={busy || isActive}
+                onClick={() => void setApproval("active")}
+                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                {t("admin.projectMakeVisible")}
+              </button>
+              <button
+                disabled={busy || isArchived}
+                onClick={handleHide}
+                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+              >
+                <EyeOff className="h-3.5 w-3.5" />
+                {t("admin.projectHide")}
+              </button>
+              <button
+                disabled={busy || isArchived}
+                onClick={handleStore}
+                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+              >
+                <Archive className="h-3.5 w-3.5" />
+                {t("admin.projectStore")}
+              </button>
+              <div className="my-1 border-t border-neutral-100" />
+              <button
+                disabled={busy}
+                onClick={() => void handleDelete()}
+                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left font-medium text-danger hover:bg-danger/5 disabled:opacity-40"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {t("admin.projectDelete")}
+              </button>
+            </>
+          )}
+          {error && <p className="border-t border-neutral-100 px-2 py-1.5 text-danger">{error}</p>}
+        </div>
       )}
     </div>
   );

@@ -107,20 +107,17 @@ export function EffectsPanel({
       </section>
 
       {/* --- Performance (full-configurator pass). Shadows/Antialiasing
-          are real, working toggles. Reflections(SSR)/AO(GTAO) are real
-          too, re-enabled on desktop quality tiers after a hardening pass
-          (an HDR-safety clamp — see viewerPresets.ts's QUALITY_TIERS
-          header comment for the full history: two unexplained real-GPU
-          rendering failures in this exact chain, disabled by default for
-          a while, since re-enabled with real, if unverified-in-a-browser,
-          mitigation). RenderEngine.ts's buildRenderPipeline ANDs this
-          toggle with the tier's own flag — mobile tiers keep both off
-          regardless, `balanced` gets AO only, `ultra_desktop`/
-          `high_desktop` get both — so this toggle's real effect depends
-          on the project's Quality Preset, not just this switch. SSGI is
-          intentionally not exposed at all — already permanently `false`
-          project-wide, deferred (needs a temporal denoiser, judged too
-          risky to wire blind). --- */}
+          are real, working toggles. Reflections(SSR)/AO(GTAO) used to be
+          here too — removed entirely (2026-08-13, user request), not just
+          hidden: that TSL chain caused two unexplained real-GPU rendering
+          failures earlier this session and was implicated in a later
+          real Sections-panel instability report, so it, its schema
+          fields, and its MRT/HDR-clamp scaffolding were all taken out of
+          RenderEngine.ts rather than kept as a dead toggle — see
+          viewerPresets.ts's QUALITY_TIERS header comment for the full
+          history. SSGI is intentionally not exposed at all — already
+          permanently `false` project-wide, deferred (needs a temporal
+          denoiser, judged too risky to wire blind). --- */}
       <section className="border-t border-neutral-100 pt-4">
         <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
           {t("admin.scenePerformanceTitle")}
@@ -131,22 +128,6 @@ export function EffectsPanel({
             checked={draft.shadowsEnabled}
             onChange={(v) => update({ shadowsEnabled: v }, { commit: true })}
           />
-          <div>
-            <ToggleField
-              label={t("admin.performanceReflections")}
-              checked={draft.ssrEnabled}
-              onChange={(v) => update({ ssrEnabled: v }, { commit: true })}
-            />
-            <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceReflectionsNote")}</p>
-          </div>
-          <div>
-            <ToggleField
-              label={t("admin.performanceAO")}
-              checked={draft.gtaoEnabled}
-              onChange={(v) => update({ gtaoEnabled: v }, { commit: true })}
-            />
-            <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceAONote")}</p>
-          </div>
           <ToggleField
             label={t("admin.performanceAntialiasing")}
             checked={draft.antialiasEnabled}

@@ -288,8 +288,8 @@ const PROJECT_3D_CONFIG_RESTORABLE_FIELDS = [
   "cameraFovDesktop", "cameraFovMobile", "hdriId", "sunMode",
   "sunAzimuthDeg", "sunElevationDeg", "sunIntensity", "fogEnabled",
   "fogColor", "fogDensity", "fogMatchesSky", "lensflareEnabled", "lightProbeEnabled", "sectionCapStencilEnabled", "unitColorAvailable", "unitColorReserved",
-  "unitColorSold", "unitColorSelected", "shadowsEnabled", "ssrEnabled",
-  "gtaoEnabled", "antialiasEnabled", "cameraPresets", "exposure",
+  "unitColorSold", "unitColorSelected", "shadowsEnabled",
+  "antialiasEnabled", "cameraPresets", "exposure",
   "viewerUI", "sections",
 ];
 

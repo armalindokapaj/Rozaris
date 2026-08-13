@@ -87,54 +87,60 @@ export function LandingHero() {
         <main className="relative z-10 min-h-dvh">
           <Header />
 
-          {/* Single centered column, not a 2-col grid with an empty second
-              cell — that empty half read as a layout bug ("empty space on
-              the right") rather than intentional breathing room once the
-              page was actually looked at on a real desktop screen. */}
-          <section className="mx-auto max-w-2xl px-5 py-10 sm:px-8 lg:px-12 lg:py-16">
-            <span className="inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-brand-100 bg-white px-4 py-1.5 text-sm font-semibold text-brand-700 shadow-[0_2px_10px_rgba(17,24,39,0.06)]">
-              <Sparkles className="h-4 w-4 text-accent" />
-              Your next chapter starts here
-            </span>
+          <section className="mx-auto grid max-w-[88rem] grid-cols-1 items-center gap-10 px-5 py-8 sm:px-8 lg:grid-cols-2 lg:gap-14 lg:px-12 lg:py-12">
+            <div>
+              <span className="inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-brand-100 bg-white px-4 py-1.5 text-sm font-semibold text-brand-700 shadow-[0_2px_10px_rgba(17,24,39,0.06)]">
+                <Sparkles className="h-4 w-4 text-accent" />
+                Your next chapter starts here
+              </span>
 
-            {/* Two fixed rows on purpose: the animated word's width changes
-                as it types/backspaces, and letting "that fits your life"
-                share a line with it meant that line's wrap point shifted
-                underneath it constantly. A hard break keeps row two static
-                regardless of what row one is doing. */}
-            <h1 className="mt-4 text-4xl font-extrabold leading-[1.15] tracking-tight text-neutral-900 sm:text-5xl lg:text-[3.2rem]">
-              Find <TypewriterWord words={CYCLE_WORDS} className="text-brand-600" />
-              <br />
-              that fits your life.
-            </h1>
+              {/* Two fixed rows on purpose: the animated word's width changes
+                  as it types/backspaces, and letting "that fits your life"
+                  share a line with it meant that line's wrap point shifted
+                  underneath it constantly. A hard break keeps row two static
+                  regardless of what row one is doing. */}
+              <h1 className="mt-4 text-4xl font-extrabold leading-[1.15] tracking-tight text-neutral-900 sm:text-5xl lg:text-[3.2rem]">
+                Find <TypewriterWord words={CYCLE_WORDS} className="text-brand-600" />
+                <br />
+                that fits your life.
+              </h1>
 
-            <p className="mt-3 max-w-md text-lg leading-relaxed text-neutral-600">
-              Discover thousands of properties across Albania. Buy, rent, or explore new developments with confidence.
-            </p>
+              <p className="mt-3 max-w-md text-lg leading-relaxed text-neutral-600">
+                Discover thousands of properties across Albania. Buy, rent, or explore new developments with confidence.
+              </p>
 
-            <div className="mt-5 max-w-lg border border-neutral-200 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-              <div className="grid grid-cols-3">
-                {MODES.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => selectMode(item.id)}
-                      className={cn(
-                        "flex min-h-14 items-center justify-center gap-2 border-b-2 px-2 text-center text-xs font-extrabold uppercase leading-tight tracking-[0.04em] transition-all duration-150 ease-[var(--ease-rz)]",
-                        item.id === mode
-                          ? "border-brand-600 bg-brand-600 text-white"
-                          : "border-transparent bg-white text-neutral-500 hover:bg-neutral-50 hover:text-brand-700"
-                      )}
-                    >
-                      <Icon className="h-4 w-4 shrink-0" />
-                      {item.label}
-                    </button>
-                  );
-                })}
+              <div className="mt-5 max-w-lg border border-neutral-200 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
+                <div className="grid grid-cols-3">
+                  {MODES.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => selectMode(item.id)}
+                        className={cn(
+                          "flex min-h-14 items-center justify-center gap-2 border-b-2 px-2 text-center text-xs font-extrabold uppercase leading-tight tracking-[0.04em] transition-all duration-150 ease-[var(--ease-rz)]",
+                          item.id === mode
+                            ? "border-brand-600 bg-brand-600 text-white"
+                            : "border-transparent bg-white text-neutral-500 hover:bg-neutral-50 hover:text-brand-700"
+                        )}
+                      >
+                        <Icon className="h-4 w-4 shrink-0" />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <LandingSearchCard onSubmit={search} />
               </div>
-              <LandingSearchCard onSubmit={search} />
             </div>
+
+            {/* Right column is intentionally empty — the wallpaper itself is
+                a fixed full-page backdrop (see HeroWallpaper below the
+                header), so this column just reserves the split without
+                re-boxing it into a panel. Hidden below lg since there's
+                nothing to show there and the space is better spent on the
+                search card at narrower widths. */}
+            <div aria-hidden="true" className="hidden lg:block" />
           </section>
 
           <section className="mx-auto max-w-[88rem] px-5 pb-8 sm:px-8 lg:px-12 lg:pb-12">

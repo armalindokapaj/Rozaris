@@ -69,6 +69,12 @@ const sq: Dictionary = {
     profile: "Profili",
     language: "Gjuha",
     currency: "Monedha",
+    // English-only per user instruction (see rozaris-locale-english-only
+    // memory) — plain copies of the en.ts value, not translated, just
+    // satisfying Dictionary's type shape until told to translate.
+    tagline: "Discover better places",
+    addPropertyProject: "Add Property / Project",
+    myAccount: "My Account",
   },
   compare: {
     removeFromCompare: "Hiq {title} nga krahasimi",
@@ -848,6 +854,10 @@ const sq: Dictionary = {
     inventoryFloorFilterActive: "Duke shfaqur {building} · {floor}",
     inventoryNoUnits: "Ende pa njësi.",
     sectionsListTitle: "Seksionet",
+    // NOT TRANSLATED — placeholder English, see the "rozaris-locale-english-only" directive.
+    sectionSave: "Save",
+    sectionSaving: "Saving…",
+    sectionSaved: "Saved",
     sectionsDrawButton: "Vizato Seksion",
     sectionsDrawCancel: "Anulo vizatimin",
     sectionsEmpty: "Ende pa seksione — vizato një për të filluar.",
@@ -907,14 +917,19 @@ const sq: Dictionary = {
     scenePerformanceOverviewLoading: "Duke matur…",
     scenePerformanceTitle: "Performanca",
     performanceShadows: "Hijet",
-    performanceReflections: "Reflektimet (SSR)",
-    performanceAO: "Errësimi ambiental (AO)",
     performanceAntialiasing: "Antialiasing",
-    performanceReflectionsNote: "Real në cilësinë Ultra/High Desktop; niveli Balanced nuk i përfshin reflektimet, dhe pajisjet mobile e mbajnë të fikur pavarësisht këtij çelësi, për të ruajtur performancën.",
-    performanceAONote: "Real në cilësinë Ultra/High Desktop dhe Balanced; pajisjet mobile e mbajnë të fikur pavarësisht këtij çelësi, për të ruajtur performancën.",
     performanceSectionCapStencil: "Kapak seksioni me stencil",
     performanceSectionCapStencilNote: "Eksperimentale. E kufizon kapakun e seksionit me siluetën reale të prerjes në vend të drejtkëndëshit të plotë. Kërkon rihapjen e shikuesit për të hyrë në fuqi.",
     sceneLightingTitle: "Ndriçimi & Dielli",
+    // English placeholders, not real Albanian — user asked to hold off on
+    // Albanian translation work for now (see the en.ts-only convention
+    // this file otherwise follows); these just keep `sq` structurally
+    // complete against `Dictionary` so tsc/build stay clean.
+    lightingSubTabSunTime: "Sun & Time",
+    lightingSubTabSky: "Sky",
+    lightingSubTabEnvironment: "Environment",
+    lightingSubTabEffects: "Effects",
+    lightingSubTabExposure: "Exposure",
     sceneEnvironmentTitle: "Mjedisi",
     sceneSkyPreset: "Qielli",
     sceneSkyClearDay: "Ditë e kthjellët",
@@ -954,6 +969,11 @@ const sq: Dictionary = {
     sunIntensity: "Intensiteti i diellit",
     sunLensflare: "Efekt lente (lens flare)",
     sceneSunTimes: "Lindja e diellit {sunrise} · Perëndimi {sunset}",
+    // English placeholders — see the note above sceneEnvironmentTitle.
+    sunSimulationDate: "Simulation date",
+    sunSimulationDateLive: "Live",
+    sunSimulationDateReset: "Reset to live",
+    sunSimulationDateNote: "Pins the geographic sun to a specific date (e.g. a solar study for June 21st) instead of tracking today's real date.",
     sceneGlassTitle: "Xhami",
     sceneGlassPreset: "Paracaktimi i xhamit",
     sceneGlassPerformance: "Xham Performance",
@@ -1114,6 +1134,29 @@ const sq: Dictionary = {
     unitCode: "Kodi i njësisë",
     addUnit: "Shto njësi",
     manageUnits: "Njësitë & modeli",
+
+    // NOT TRANSLATED — placeholder English text only, to satisfy sq.ts's
+    // required key parity with en.ts without doing translation work, per
+    // the "rozaris-locale-english-only" directive (new keys go in en.ts
+    // only until told otherwise). Real Albanian text still needed here.
+    projectStatusActive: "Active",
+    projectStatusHidden: "Hidden",
+    projectStatusPending: "Pending",
+    projectStatusDeleted: "In Recycle Bin",
+    projectVisibilityMenu: "Visibility & lifecycle",
+    projectMakeVisible: "Make visible",
+    projectHide: "Hide (client not paying)",
+    projectStore: "Store (archive, keep hidden)",
+    projectDelete: "Delete",
+    projectHideReasonPrompt: "Why is this project being hidden?",
+    projectHideReasonDefault: "Client stopped paying",
+    projectStoreReasonPrompt: "Why is this project being stored?",
+    projectStoreReasonDefault: "Stored by admin — not deleted",
+    projectDeleteReasonPrompt: "Reason for deleting (optional, goes to the audit log):",
+    projectDeleteConfirm: "Delete \"{name}\"? It moves to the Recycle Bin and can be restored by a Super Admin — it isn't gone forever.",
+    projectReasonRequired: "A reason is required.",
+    projectInRecycleBinNote: "In the Recycle Bin — restore it from Super Admin to change its visibility again.",
+    projectVisibilityActionFailed: "That didn't work — please try again.",
 
     saveDraft: "Ruaj skicën",
     publish: "Publiko",

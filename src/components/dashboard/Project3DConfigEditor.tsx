@@ -755,7 +755,13 @@ export function Project3DConfigEditor({
   }
 
   const suggestedTier = pickDefaultQualityTier();
-  const sunTimes = calcSunriseSunset(project.coords.lat, project.coords.lng, new Date());
+  // Sun & Time restructure — matches RenderEngine.ts's applySunAndEnvironment
+  // date resolution exactly, so the displayed sunrise/sunset always tracks
+  // whatever date is actually being simulated (real "today" when
+  // `simulationDate` is unset, same as before this field existed).
+  const parsedSimulationDate = draft.simulationDate ? new Date(`${draft.simulationDate}T00:00:00Z`) : null;
+  const sunTimesDate = parsedSimulationDate && !Number.isNaN(parsedSimulationDate.getTime()) ? parsedSimulationDate : new Date();
+  const sunTimes = calcSunriseSunset(project.coords.lat, project.coords.lng, sunTimesDate);
   const hasDetailModel = !!activeVersion;
   // Counted against `detectedNodes` (this GLB's actual nodes), not the
   // wider `linkSelections` map, which can still carry stale entries for

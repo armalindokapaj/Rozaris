@@ -528,6 +528,13 @@ model Project3DConfig {
   northRotationDeg     Float   @default(0)
   defaultTimeOfDay     Float   @default(14)
   allowUserTimeChange  Boolean @default(true)
+  /// "YYYY-MM-DD", or null — Sun & Time restructure. Null means "use the
+  /// real current calendar date" (unchanged behavior, `calcSunPosition`
+  /// is fed `new Date()` exactly as before). Set means the admin is
+  /// simulating a specific date (e.g. "21 June" for a solar study) — feeds
+  /// the same `calcSunPosition`/`calcSunriseSunset` calls instead. No
+  /// default so every existing project stays on "live" until touched.
+  simulationDate       String?
   cameraFovDesktop     Int     @default(38)
   cameraFovMobile      Int     @default(48)
 
@@ -590,15 +597,14 @@ model Project3DConfig {
   unitColorSold      String @default("#ef4444")
   unitColorSelected  String @default("#6b55f5")
 
-  /// shadowsEnabled is real and functional. ssrEnabled/gtaoEnabled/
-  /// antialiasEnabled are real and schema-backed but currently inert for
-  /// ssr/gtao — every QUALITY_TIERS tier force-disables those two
-  /// underlying effects platform-wide (two unexplained real-GPU rendering
-  /// failures), so RenderEngine.ts ANDs this column with the tier's own
-  /// flag rather than trusting it alone.
+  /// shadowsEnabled/antialiasEnabled are real and functional. ssrEnabled/
+  /// gtaoEnabled (screen-space reflections/ambient occlusion) used to be
+  /// columns here — dropped entirely 2026-08-13 at the user's explicit
+  /// request, after that TSL chain caused two unexplained real-GPU
+  /// rendering failures and was implicated in a later real Sections-panel
+  /// instability report. See viewerPresets.ts's QUALITY_TIERS header
+  /// comment for the full history.
   shadowsEnabled   Boolean @default(true)
-  ssrEnabled       Boolean @default(true)
-  gtaoEnabled      Boolean @default(true)
   antialiasEnabled Boolean @default(true)
 
   // Render/visual quality pass — real TSL post-processing, camera

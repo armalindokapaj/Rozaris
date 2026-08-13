@@ -261,11 +261,13 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       };
       // Geometry/renderer only depend on which content is loaded — config
       // tweaks that don't require a full rebuild are applied in-place by
-      // the effects below instead. shadowsEnabled/ssrEnabled/gtaoEnabled/
-      // antialiasEnabled (full-configurator pass) need a full pipeline
-      // rebuild same as qualityPreset/renderingMode already did — no new
-      // "cheap update" plumbing added, just riding the same remount this
-      // effect already does for those two.
+      // the effects below instead. shadowsEnabled/antialiasEnabled
+      // (full-configurator pass) need a full pipeline rebuild same as
+      // qualityPreset/renderingMode already did — no new "cheap update"
+      // plumbing added, just riding the same remount this effect already
+      // does for those two. ssrEnabled/gtaoEnabled removed entirely
+      // (2026-08-13) — see viewerPresets.ts's QUALITY_TIERS header
+      // comment.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
       project.id,
@@ -275,8 +277,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       config.renderingMode,
       config.qualityPreset,
       config.shadowsEnabled,
-      config.ssrEnabled,
-      config.gtaoEnabled,
       config.antialiasEnabled,
       // stencil: true on the renderer only takes effect at construction —
       // same "needs a full remount" reasoning as the flags above.
@@ -313,6 +313,15 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       // (Project3DConfigEditor.tsx/ArchVizClient.tsx rebuild this array
       // fresh whenever any slot's placement/links/overrides change).
       detailModels,
+      // Sections module — keeps `RenderEngine.this.config.sections` from
+      // going stale for the *public* runtime's `activateSection(id)` path
+      // (a visitor picking a floor). The admin editor's own live-editing
+      // path (attachSectionGizmo) no longer depends on this at all — it
+      // applies the section it's given directly — but this still matters
+      // so a newly-added/edited section is selectable without an
+      // unrelated field also changing first. Same reference-equality
+      // reasoning as `detailModels` above (a fresh array every edit).
+      config.sections,
     ]);
 
     // --- Real geographic sun + sky/environment — recomputed whenever the

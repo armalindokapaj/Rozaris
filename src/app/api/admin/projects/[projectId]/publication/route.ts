@@ -11,6 +11,31 @@ const bodySchema = z.object({
 });
 
 /**
+ * Read-only companion to PATCH below — the admin "3D Platform" project
+ * grid (src/app/admin/page.tsx's `Project3DGrid`) needs each card's live
+ * visibility state (Active / Hidden / Recycle Bin) to render a status
+ * badge and enable/disable the right menu actions; `Project3DGrid`'s own
+ * `allProjects` comes from mockData.ts + Zustand, neither of which carries
+ * `approvalStatus`/`deletedAt` (DB-only fields), so this can't be read
+ * client-side without a real fetch.
+ */
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ projectId: string }> }
+) {
+  const gate = await requireAdmin();
+  if (gate instanceof NextResponse) return gate;
+
+  const { projectId } = await params;
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { approvalStatus: true, deletedAt: true },
+  });
+  if (!project) return NextResponse.json({ error: "Project not found." }, { status: 404 });
+  return NextResponse.json(project);
+}
+
+/**
  * "Force unpublish/republish" for Project — `approvalStatus` already had
  * `archived` in the schema, just never driven by an admin route (only
  * `pending`/`active` were ever written, at creation time). `archived`

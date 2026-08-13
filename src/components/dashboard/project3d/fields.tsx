@@ -114,6 +114,55 @@ export function ColorField({
   );
 }
 
+/** "YYYY-MM-DD", or `null` for "live" (tracks the real current date) —
+ * Sun & Time restructure. Mirrors ColorField's `undefined`-means-unset
+ * convention: `null` renders the input empty and shows a "Live" chip
+ * instead of a "Clear" button, since there's always a well-defined
+ * fallback (today) rather than an ambiguous unset state. */
+export function DateField({
+  label,
+  value,
+  onChange,
+  liveLabel = "Live",
+  resetLabel = "Reset to live",
+}: {
+  label: string;
+  value: string | null;
+  onChange: (v: string | null) => void;
+  /** Both pre-translated by the caller, like `label` — this file stays
+   * translation-agnostic (see the header doc comment), these just default
+   * to plain English for callers that don't have a `t` handy. */
+  liveLabel?: string;
+  resetLabel?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 flex items-center justify-between text-xs font-medium text-neutral-500">
+        {label}
+        {value === null ? (
+          <span className="rounded-pill bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-600">
+            {liveLabel}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400 hover:text-neutral-700"
+          >
+            {resetLabel}
+          </button>
+        )}
+      </span>
+      <input
+        type="date"
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+      />
+    </label>
+  );
+}
+
 export function SliderField({
   label,
   value,

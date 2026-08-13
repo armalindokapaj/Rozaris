@@ -34,39 +34,34 @@ export const TIME_PRESETS: [string, number][] = [
 // ---------------------------------------------------------------------------
 // "3D Experience Phase 1" — quality/glass/sky tiers for the standalone
 // WebGPU/WebGL2 viewer (ProceduralProjectViewer.tsx). Render/visual
-// quality pass adds the real TSL post-processing flags below (bloom/gtao/
-// ssr/antialias) — `ssgi` is left in the shape but always `false`,
-// documenting a deferred slot rather than silently omitting it: SSGI needs
-// the same MRT normal buffer as GTAO/SSR but is materially more expensive
-// and, per its own node design, expects a temporal/spatial denoiser
-// downstream — the highest-risk effect to wire blind, so it stays off.
+// quality pass adds the real TSL post-processing flags below (bloom/
+// antialias) — `ssgi` is left in the shape but always `false`, documenting
+// a deferred slot rather than silently omitting it: SSGI expects a
+// temporal/spatial denoiser downstream — the highest-risk effect to wire
+// blind, so it stays off.
 //
-// `gtao`/`ssr` were force-disabled platform-wide on every tier from
-// 2026-08-13 through this same day — that TSL chain (RenderEngine.ts
-// `buildRenderPipeline`) was the confirmed source of two separate,
-// still-unexplained visual failures on real GPUs: a fully black viewer
-// (three real SSRNode/GTAONode crashes were found and fixed, but the
-// screen stayed black with a clean console afterward — root cause never
-// found), then solid red, a classic symptom of NaN/out-of-range HDR
-// values hitting `ACESFilmicToneMapping`. Re-enabled the same day on
-// desktop-oriented tiers after adding a real, targeted mitigation for
-// the *stated* red-screen theory (an HDR-safety clamp right before
-// tone-mapping — see `buildRenderPipeline`'s own comment on exactly what
-// it does and doesn't guarantee); the earlier black-screen failure's
-// root cause was still never found, so this remains a reasoned
-// mitigation, not a confirmed fix, and — same caveat as everything else
-// 3D this session — has not been opened in a real browser. `mobile_high`/
-// `mobile_low` keep both off regardless: screen-space reflections/AO are
-// a poor fit for that tier's performance budget independent of the crash
-// history. `balanced` gets AO only, not the pricier SSR. `bloom` stays
-// off everywhere — no per-project toggle exists for it at all (unlike
-// gtao/ssr, never schema-backed), so it was never part of this pass.
+// `gtao`/`ssr` (screen-space AO/reflections) existed on this file earlier
+// the same day, force-disabled platform-wide, then re-enabled on
+// desktop-oriented tiers with a targeted HDR-safety-clamp mitigation —
+// see [[rozaris-3d-ssr-gtao-reenable]]/[[rozaris-3d-ssr-gtao-removal]] for
+// that history. **Removed outright, not just disabled, on 2026-08-13**
+// (explicit user request), after being implicated as a likely contributor
+// to a real, live Sections-panel instability report — that TSL chain
+// (RenderEngine.ts `buildRenderPipeline`, pre-removal) was the confirmed
+// source of two separate, still-unexplained real-GPU failures (a black
+// viewer, then solid red) even after 3 real node-wiring bugs in it were
+// found and fixed; rather than keep chasing an unverifiable-without-a-
+// browser crash class, the effects, their MRT normal/metalness/roughness
+// buffers, and the HDR clamp that only existed to support them are all
+// gone from `RenderEngine.ts` too — no dead, do-nothing toggle left
+// anywhere (`Project3DConfig.ssrEnabled`/`gtaoEnabled` are gone from the
+// schema/DB entirely, see the migration). `bloom` stays off everywhere —
+// no per-project toggle exists for it at all, untouched by this removal.
 // The real geographic sun, ambient light and PMREM sky environment/
-// reflections (`rebuildEnvironment`/`applySunAndEnvironment`, untouched
-// throughout) are what deliver the realistic sky dome and were never
-// implicated in either failure. `antialias` (SMAA, a separate, much
-// simpler effect applied to the plain scene-pass color) is unaffected,
-// left as-is per tier.
+// reflections (`rebuildEnvironment`/`applySunAndEnvironment`) are what
+// deliver the realistic sky dome and were never implicated in either
+// failure, also untouched. `antialias` (SMAA, a separate, much simpler
+// effect applied to the plain scene-pass color) is unaffected too.
 // ---------------------------------------------------------------------------
 
 export interface QualityTierSettings {
@@ -74,8 +69,6 @@ export interface QualityTierSettings {
   dprCap: number;
   shadowMapSize: number;
   bloom: boolean;
-  gtao: boolean;
-  ssr: boolean;
   /** SMAA anti-aliasing (not FXAA — see the Render/visual quality plan's
    * "explicitly deferred" note on why FXAA's required pre-tone-mapped
    * input ordering was skipped rather than guessed at). */
@@ -90,8 +83,6 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     dprCap: 2,
     shadowMapSize: 4096,
     bloom: false,
-    gtao: true,
-    ssr: true,
     antialias: true,
     ssgi: false,
   },
@@ -100,8 +91,6 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     dprCap: 2,
     shadowMapSize: 2048,
     bloom: false,
-    gtao: true,
-    ssr: true,
     antialias: true,
     ssgi: false,
   },
@@ -110,8 +99,6 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     dprCap: 1.5,
     shadowMapSize: 1536,
     bloom: false,
-    gtao: true,
-    ssr: false,
     antialias: true,
     ssgi: false,
   },
@@ -120,8 +107,6 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     dprCap: 1.25,
     shadowMapSize: 1024,
     bloom: false,
-    gtao: false,
-    ssr: false,
     antialias: false,
     ssgi: false,
   },
@@ -130,8 +115,6 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     dprCap: 1,
     shadowMapSize: 512,
     bloom: false,
-    gtao: false,
-    ssr: false,
     antialias: false,
     ssgi: false,
   },
@@ -141,10 +124,8 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
  * frame time is too high — most expensive/least noticeable first. Render
  * scale isn't in this list: it's the last-resort step, applied directly
  * (not via a boolean flag) once every effect here is already off. */
-export const ADAPTIVE_DOWNGRADE_ORDER: (keyof Pick<QualityTierSettings, "ssr" | "bloom" | "gtao" | "antialias">)[] = [
-  "ssr",
+export const ADAPTIVE_DOWNGRADE_ORDER: (keyof Pick<QualityTierSettings, "bloom" | "antialias">)[] = [
   "bloom",
-  "gtao",
   "antialias",
 ];
 

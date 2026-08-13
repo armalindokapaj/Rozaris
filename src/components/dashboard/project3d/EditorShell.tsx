@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ThreeProjectViewer } from "@/components/project/ThreeProjectViewer";
 import type { SectionGizmoMode, ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import type {
@@ -26,6 +26,7 @@ import { BuildingNavRail } from "./BuildingNavRail";
 import { SceneTreeRail } from "./SceneTreeRail";
 import { SectionsListRail } from "./SectionsListRail";
 import { SlotTabStrip } from "./SlotTabStrip";
+import { SunTimeOverlay } from "./SunTimeOverlay";
 import { EditorStatusBar } from "./EditorStatusBar";
 import { ModelPanel } from "./panels/ModelPanel";
 import { MaterialsPanel } from "./panels/MaterialsPanel";
@@ -292,6 +293,48 @@ export function EditorShell({
   const selectedSection = sections.find((s) => s.id === selectedSectionId) ?? null;
   const displaySection = liveSectionOverride ?? selectedSection;
 
+  // Real bug audit (user report: "every option in Sections breaks the
+  // panel, nothing works") — two fixes live here:
+  //  1. `attachSectionGizmo` used to be called synchronously, unguarded,
+  //     on every single field edit (every keystroke in Name, every tick
+  //     of a slider drag). Each call rebuilds the live clip planes + cap
+  //     mesh — real WebGPU resource churn, dozens of times a second
+  //     during a drag. `syncSectionGizmo` below debounces that down to a
+  //     few calls a second instead of one per tick.
+  //  2. Whatever the render engine does with that call is unverifiable in
+  //     this environment (no browser tool here — same standing caveat as
+  //     the rest of this session's rendering work). If it throws, an
+  //     uncaught exception from inside a React onChange handler takes the
+  //     whole panel down with it — the exact "nothing works" symptom
+  //     reported. Wrapping it in try/catch means a render-engine failure
+  //     can no longer do that: editing/saving stays usable even if the
+  //     live 3D preview hiccups.
+  const sectionGizmoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (sectionGizmoSyncTimerRef.current != null) clearTimeout(sectionGizmoSyncTimerRef.current);
+    },
+    []
+  );
+  function syncSectionGizmo(section: Section, mode: SectionGizmoMode, opts?: { debounce?: boolean }) {
+    if (sectionGizmoSyncTimerRef.current != null) {
+      clearTimeout(sectionGizmoSyncTimerRef.current);
+      sectionGizmoSyncTimerRef.current = null;
+    }
+    const run = () => {
+      try {
+        viewerRef.current?.attachSectionGizmo(section, mode);
+      } catch (err) {
+        console.error("Sections: failed to sync the live gizmo/clip preview (edit itself is unaffected)", err);
+      }
+    };
+    if (opts?.debounce) {
+      sectionGizmoSyncTimerRef.current = setTimeout(run, 100);
+    } else {
+      run();
+    }
+  }
+
   // Leaving the Sections tab always returns the viewer to its normal,
   // unclipped state — browsing Materials/Lighting/etc. shouldn't leave a
   // stale cut applied. Also covers the very first render (activeMode
@@ -299,9 +342,13 @@ export function EditorShell({
   // nothing is attached yet.
   useEffect(() => {
     if (activeMode !== "sections") {
-      viewerRef.current?.cancelDrawSection();
-      viewerRef.current?.detachSectionGizmo();
-      viewerRef.current?.activateSection(null);
+      try {
+        viewerRef.current?.cancelDrawSection();
+        viewerRef.current?.detachSectionGizmo();
+        viewerRef.current?.activateSection(null);
+      } catch (err) {
+        console.error("Sections: failed to clear the live preview on tab switch", err);
+      }
       // Synchronizing React's "which section is selected" state with the
       // tab switch above (an external-ish concern — it also drives the
       // imperative viewer calls right above) — same justified case as the
@@ -318,7 +365,7 @@ export function EditorShell({
     setSelectedSectionId(id);
     setLiveSectionOverride(null);
     const section = sections.find((s) => s.id === id);
-    if (section) viewerRef.current?.attachSectionGizmo(section, gizmoMode);
+    if (section) syncSectionGizmo(section, gizmoMode);
   }
 
   function handleDrawSection() {
@@ -341,23 +388,37 @@ export function EditorShell({
         setDrawingSection(false);
         setSelectedSectionId(section.id);
         setGizmoMode("move");
-        viewerRef.current?.attachSectionGizmo(section, "move");
+        syncSectionGizmo(section, "move");
       }
     );
   }
 
   function handleGizmoModeChange(mode: SectionGizmoMode) {
     setGizmoMode(mode);
-    viewerRef.current?.setSectionGizmoMode(mode);
+    try {
+      viewerRef.current?.setSectionGizmoMode(mode);
+    } catch (err) {
+      console.error("Sections: failed to switch the gizmo mode", err);
+    }
   }
 
-  function handleUpdateSection(partial: Partial<Section>) {
+  // `opts` (real fix, not previously exposed here) — mirrors every other
+  // panel's convention (see useProject3DEditorState.ts's own doc comment):
+  // a slider drag or fast typing should pass `{ commit: false }` so
+  // useUndoRedo coalesces the burst into one undo step instead of one per
+  // tick; a discrete control (toggle/select/color/blur-commit text)
+  // passes `{ commit: true }`. Defaults to `commit: true` so existing
+  // callers (handleSetSectionCamera below) that don't pass opts keep
+  // behaving exactly as before.
+  function handleUpdateSection(partial: Partial<Section>, opts?: SetOpts) {
     if (!selectedSectionId) return;
     const next = sections.map((s) => (s.id === selectedSectionId ? { ...s, ...partial } : s));
-    update({ sections: next }, { commit: true });
+    update({ sections: next }, opts ?? { commit: true });
     setLiveSectionOverride(null);
     const updated = next.find((s) => s.id === selectedSectionId);
-    if (updated) viewerRef.current?.attachSectionGizmo(updated, gizmoMode);
+    // Debounced — this is the hot path (every keystroke/slider tick), see
+    // syncSectionGizmo's own doc comment above for why.
+    if (updated) syncSectionGizmo(updated, gizmoMode, { debounce: true });
   }
 
   function handleDuplicateSection(section: Section) {
@@ -365,11 +426,19 @@ export function EditorShell({
     update({ sections: [...sections, copy] }, { commit: true });
     setSelectedSectionId(copy.id);
     setLiveSectionOverride(null);
-    viewerRef.current?.attachSectionGizmo(copy, gizmoMode);
+    syncSectionGizmo(copy, gizmoMode);
   }
 
   function handleRenameSection(id: string, name: string) {
     update({ sections: sections.map((s) => (s.id === id ? { ...s, name } : s)) }, { commit: true });
+    // The rail's own rename doesn't otherwise touch the viewer — but if
+    // the renamed section is the one currently attached, keep its live
+    // preview's `liveSection.name` in sync too (harmless no-op cost-wise,
+    // avoids a stale name if the admin reopens the panel mid-edit).
+    if (id === selectedSectionId) {
+      const updated = sections.find((s) => s.id === id);
+      if (updated) syncSectionGizmo({ ...updated, name }, gizmoMode, { debounce: true });
+    }
   }
 
   function handleToggleHiddenSection(id: string) {
@@ -381,8 +450,12 @@ export function EditorShell({
     if (selectedSectionId === id) {
       setSelectedSectionId(null);
       setLiveSectionOverride(null);
-      viewerRef.current?.detachSectionGizmo();
-      viewerRef.current?.activateSection(null);
+      try {
+        viewerRef.current?.detachSectionGizmo();
+        viewerRef.current?.activateSection(null);
+      } catch (err) {
+        console.error("Sections: failed to clear the live gizmo/clip preview after delete", err);
+      }
     }
   }
 
@@ -390,7 +463,7 @@ export function EditorShell({
     if (!selectedSectionId) return;
     const state = viewerRef.current?.getCameraState();
     if (!state) return;
-    handleUpdateSection({ cameraPreset: state });
+    handleUpdateSection({ cameraPreset: state }, { commit: true });
     setCameraSavedFlash(true);
     setTimeout(() => setCameraSavedFlash(false), 2000);
   }
@@ -473,6 +546,12 @@ export function EditorShell({
                 if (section.id === selectedSectionId) setLiveSectionOverride(section);
               }}
             />
+            {/* Live Sun & Time scrubber — Lighting-tab-only, see
+                SunTimeOverlay.tsx's own doc comment for why it's scoped
+                here rather than a global header shortcut. */}
+            {activeMode === "lighting" && (
+              <SunTimeOverlay draft={draft} update={update} sunTimes={sunTimes} t={t} />
+            )}
           </div>
         </div>
 
@@ -577,6 +656,10 @@ export function EditorShell({
                   floorGroups={floorGroups}
                   onSetCamera={handleSetSectionCamera}
                   cameraSaved={cameraSavedFlash}
+                  onSave={onSaveScene}
+                  saveBusy={configBusy}
+                  savedFlash={savedFlash}
+                  saveError={configError}
                   t={t}
                 />
               ) : (

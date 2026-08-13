@@ -193,6 +193,39 @@ export default function NewAdminProjectPage() {
   const [detailDone, setDetailDone] = useState(false);
   const [unitsFile, setUnitsFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  // The slot this project's one detail GLB lives in. Lazily created on
+  // first upload — see the `ensureDetailSlotId` comment below for why this
+  // can't just be a project-creation-time step.
+  const [detailSlotId, setDetailSlotId] = useState<string | null>(null);
+
+  // Real bug fixed here (found live, see "rozaris-mvp-admin-project-pipe"
+  // memory): this page used to POST straight to
+  // `/api/detail-models/${project.id}/versions`, a route that no longer
+  // exists — the Multiple Detail-Model Slots pass moved version creation
+  // under `.../slots/[slotId]/versions` and this page's own hardcoded
+  // upload call was never updated to match, so every upload 404'd on a
+  // plain Next.js HTML 404 page. `readErrorMessage` can't find `.error` in
+  // an HTML body, so it silently fell back to the generic
+  // "Upload failed — please try again." with no detail — exactly what was
+  // reported. A brand-new project has zero slots (no auto-creation on
+  // project create, unlike old backfilled projects — see
+  // `slots/route.ts`'s own doc comment), so a slot has to be created here
+  // before the first version can be uploaded into it.
+  async function ensureDetailSlotId(): Promise<string> {
+    if (detailSlotId) return detailSlotId;
+    if (!project) throw new Error("No project yet.");
+    const res = await fetch(`/api/detail-models/${project.id}/slots`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Building" }),
+    });
+    if (!res.ok) {
+      throw new Error(await readErrorMessage(res, t("admin.detailModelUploadFailed")));
+    }
+    const slot: { id: string } = await res.json();
+    setDetailSlotId(slot.id);
+    return slot.id;
+  }
 
   async function handleDetailUpload(file: File) {
     if (!project) return;
@@ -209,6 +242,7 @@ export default function NewAdminProjectPage() {
     setDetailBusy(true);
     setUploadProgress(0);
     try {
+      const slotId = await ensureDetailSlotId();
       // Same mechanics as Project3DConfigEditor.tsx's handleDetailFile —
       // direct client upload to Vercel Blob, then a real versioned-model
       // API call. Duplicated rather than shared: this page is a temporary
@@ -220,7 +254,7 @@ export default function NewAdminProjectPage() {
         onUploadProgress: (p) => setUploadProgress(p.percentage),
         multipart: true,
       });
-      const res = await fetch(`/api/detail-models/${project.id}/versions`, {
+      const res = await fetch(`/api/detail-models/${project.id}/slots/${slotId}/versions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ glbUrl: blob.url, fileName: file.name, fileSize: file.size }),
