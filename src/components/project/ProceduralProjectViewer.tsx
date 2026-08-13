@@ -60,6 +60,10 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       showChrome = true,
       onBarOpenChange,
       showPerfStats = false,
+      onPerfStats,
+      viewPreset: viewPresetProp,
+      onViewPresetChange,
+      xrayEnabled: xrayEnabledProp,
     },
     ref
   ) {
@@ -86,7 +90,16 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
     const [minArea, setMinArea] = useState<number | null>(null);
     const [panel, setPanel] = useState<"search" | "time" | "viewPreset" | "xray" | "cameraPresets" | null>(null);
     const [timeOfDay, setTimeOfDay] = useState(() => config.defaultTimeOfDay);
-    const [viewPreset, setViewPreset] = useState<ViewPreset>("realistic");
+    // Controlled/uncontrolled hybrid (dark-theme configurator restyle) —
+    // the Admin editor's new viewport toolbar drives these externally
+    // (via viewPresetProp/onViewPresetChange) since showChrome={false}
+    // there means the internal bottom-menu switcher that used to be the
+    // only way to change this is hidden. Every public-viewer call site
+    // passes neither prop, so `internalViewPreset` (this component's
+    // original, unchanged behavior) is what's actually used there.
+    const [internalViewPreset, setInternalViewPreset] = useState<ViewPreset>("realistic");
+    const viewPreset = viewPresetProp ?? internalViewPreset;
+    const setViewPreset = onViewPresetChange ?? setInternalViewPreset;
     const [xrayFacadeOpacity, setXrayFacadeOpacity] = useState(XRAY_DEFAULT_FACADE_OPACITY);
     const [hoveredUnit, setHoveredUnit] = useState<Unit | null>(null);
     // Performance inspector (Publish/runtime hardening pass) — admin-only,
@@ -101,7 +114,11 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
     // procedural massing fallback's already-see-through construction
     // shells — and, same "gated by which panel is open" pattern as
     // showUnitBoxes above, is only active while its own panel is open.
-    const xrayEnabled = usingGlb && panel === "xray";
+    // `xrayEnabledProp` (controlled mode, dark-theme configurator restyle)
+    // overrides this derivation entirely when supplied — the Admin
+    // editor's viewport toolbar drives it directly since `panel` never
+    // becomes "xray" there (the bottom menu that sets it is hidden).
+    const xrayEnabled = xrayEnabledProp ?? (usingGlb && panel === "xray");
     const { t } = useT();
     const priceFmt = usePriceFormat();
 
@@ -172,7 +189,15 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
         }
       },
       onSelectUnit,
-      onPerfStats: setPerfStats,
+      onPerfStats: (stats) => {
+        setPerfStats(stats);
+        // Dark-theme configurator restyle — mirrors the same stats to a
+        // caller-supplied prop (EditorShell's right-rail "Performance
+        // Overview" card) in addition to this component's own state,
+        // which still drives the built-in floating overlay below (now
+        // suppressed when a caller opts into rendering its own).
+        onPerfStats?.(stats);
+      },
     };
     const engineRef = useRef<RenderEngine | null>(null);
     if (!engineRef.current) {
@@ -637,7 +662,10 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
           </div>
         )}
 
-        {showPerfStats && perfStats && (
+        {/* Suppressed when a caller renders its own copy (see onPerfStats
+            prop above) — EditorShell's right-rail Performance Overview
+            card, avoiding a duplicate on-canvas overlay. */}
+        {showPerfStats && !onPerfStats && perfStats && (
           <div className="glass-panel-dark pointer-events-none absolute left-3 top-3 z-20 space-y-0.5 rounded-control px-3 py-2 font-mono text-[10px] leading-relaxed text-white/80">
             <p>FPS {perfStats.fps}</p>
             <p>

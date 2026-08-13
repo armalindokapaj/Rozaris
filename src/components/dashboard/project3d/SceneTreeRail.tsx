@@ -13,10 +13,11 @@ const MATERIAL_PRESET_OPTIONS: MaterialPresetId[] = Object.keys(MATERIAL_PRESETS
  * Persistent scene-tree + contextual node inspector — moved verbatim from
  * Project3DConfigEditor.tsx's "Scene Explorer" block (1360-1464), which
  * used to be nested at the bottom of one long scroll and only ever
- * visible there. Now shown alongside whichever mode panel is active on
- * the Model/Materials/Units tabs (see modes.ts's MODES_WITH_SCENE_RAIL) —
- * same tree component (`SceneExplorerTree`, unchanged), same inspector
- * logic, just persistently positioned instead of buried.
+ * visible there. As of the 2026-08-13 3-column layout pass, always shown
+ * in `EditorShell.tsx`'s persistent left panel (alongside Units linking)
+ * rather than conditionally per active right-panel tab — same tree
+ * component (`SceneExplorerTree`, unchanged), same inspector logic, just
+ * persistently positioned instead of buried.
  */
 export function SceneTreeRail({
   sceneManifest,

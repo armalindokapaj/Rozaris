@@ -29,6 +29,16 @@ interface LoadedModel {
  * queried ground height moved by more than this. */
 const ELEVATION_EPSILON_M = 0.05;
 
+/** The X tip-onto-its-side rotation (see `applyTransform`'s doc comment) is
+ * always the same fixed 90°, unlike Y (heading) which varies per entry —
+ * computed once at module load and reused (read-only, never mutated) rather
+ * than reallocated on every `applyTransform` call. That call runs from
+ * `render()`'s per-frame terrain self-heal check, so it can fire
+ * continuously while the camera is panning across varying elevation —
+ * shaving allocations off it measurably cuts GC pressure during exactly the
+ * "moving the map" window admins/visitors reported as laggish. */
+const ROTATION_X = new THREE.Matrix4().makeRotationX(Math.PI / 2);
+
 /**
  * mapbox-gl custom layer that renders each project's uploaded GLB as a real
  * georeferenced 3D object at its lng/lat, sharing the map's own WebGL
@@ -61,6 +71,10 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
   private map: mapboxgl.Map | null = null;
   private onPick: (projectId: string) => void;
   private onLoadError?: (projectId: string, error: unknown, glbUrl: string) => void;
+  // Reused across every applyTransform() call instead of allocating fresh
+  // Matrix4/Vector3 instances each time — see ROTATION_X's comment above.
+  private scratchRotationY = new THREE.Matrix4();
+  private scratchScale = new THREE.Vector3();
 
   constructor(opts: {
     onPick: (projectId: string) => void;
@@ -126,7 +140,7 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
     if (existing && existing.entry.glbUrl === entry.glbUrl) {
       // Same file — just a placement (scale/rotation/altitude) change.
       existing.entry = entry;
-      this.applyTransform(existing, this.queryGroundElevation(entry));
+      this.applyTransform(existing, this.queryGroundElevation(entry, existing.lastGroundElevation));
       return;
     }
     // New project, or Admin replaced the file — (re)load the geometry.
@@ -163,11 +177,41 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
           // layer from drawing off-screen, so per-mesh culling here is
           // both redundant and actively wrong — disable it.
           child.frustumCulled = false;
+
+          // Force every material double-sided — this is what actually
+          // explains "doesn't load all faces" / "removes a lot of faces"
+          // for a single-mesh file like this one: per-object frustum
+          // culling (above) only ever drops a whole mesh at once, but this
+          // symptom is *partial*, sub-mesh face loss, which is what
+          // GPU backface culling does when a triangle's winding comes out
+          // reversed. Two independent sources of reversed winding stack
+          // here: (1) whatever inconsistency already exists in the
+          // uploaded file itself — Admin-sourced GLBs are arbitrary,
+          // frequently-mirrored assets (duplicated/mirrored parts are a
+          // very common export pattern) with no guarantee every triangle
+          // was wound the same way to begin with, and (2) the Y-up→Z-up
+          // conversion `applyTransform` performs via a negative Y scale
+          // (unavoidable — see its doc comment) flips every triangle's
+          // apparent winding uniformly, which only makes an
+          // already-inconsistent file's culling behavior worse. The
+          // Project 3D Experience viewer (RenderEngine.ts) never needs
+          // this because it renders in a plain Three.js Y-up scene with no
+          // such flip — this mapbox integration is the one place that
+          // risk actually exists, so it's the one place a blanket
+          // `DoubleSide` earns its (here negligible — this file is one
+          // ~1,700-triangle mesh) extra fragment cost.
+          const mesh = child as THREE.Mesh;
+          if (mesh.isMesh && mesh.material) {
+            const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            materials.forEach((mat) => {
+              mat.side = THREE.DoubleSide;
+            });
+          }
         });
         this.scene.add(root);
         const loaded: LoadedModel = { root, entry, lastGroundElevation: 0 };
         this.loaded.set(entry.projectId, loaded);
-        this.applyTransform(loaded, this.queryGroundElevation(entry));
+        this.applyTransform(loaded, this.queryGroundElevation(entry, 0));
         this.map?.triggerRepaint();
       },
       undefined,
@@ -180,15 +224,31 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
 
   /**
    * Real ground height (meters, mean-sea-level basis) at the model's
-   * lng/lat, per the map's own 3D terrain — `null`/`undefined` (terrain
-   * disabled, or the relevant DEM tile hasn't loaded yet) collapses to 0.
-   * `exaggerated: true` (the default) matches whatever exaggeration curve
-   * the style applies, so this returns the same height the surrounding
-   * basemap (buildings, roads) is actually rendered at, not the raw
-   * unexaggerated DEM value.
+   * lng/lat, per the map's own 3D terrain. `exaggerated: true` (the
+   * default) matches whatever exaggeration curve the style applies, so
+   * this returns the same height the surrounding basemap (buildings,
+   * roads) is actually rendered at, not the raw unexaggerated DEM value —
+   * this style's imported "Mapbox Standard" fragment defines one that
+   * ramps 0→1 between zoom 6–7, holds 1 through zoom 12, then ramps back
+   * down to 0 by zoom 13.7 (Standard deliberately flattens terrain once
+   * you're zoomed in close), so this legitimately returns a different
+   * number as the camera zooms through that range, not just when lng/lat
+   * changes.
+   *
+   * `queryTerrainElevation` itself returns `null` whenever the DEM tile
+   * covering this point isn't currently loaded/rendered — routine while
+   * the camera is actively panning to a new area, since the query is a
+   * synchronous point-sample against whatever's already resident, not a
+   * fetch. Collapsing that to a hardcoded 0 (sea level) used to be exactly
+   * "doesn't stick to the ground when the camera moves": every brief gap
+   * in DEM coverage snapped the model down to sea-level altitude and back
+   * up once the real tile arrived, a real pop on every pan/zoom rather
+   * than a one-time settle. Falling back to the model's own last-known
+   * height instead means a momentary miss just holds the model where it
+   * already correctly was until a real sample supersedes it.
    */
-  private queryGroundElevation(entry: MapModelEntry): number {
-    return this.map?.queryTerrainElevation({ lng: entry.lng, lat: entry.lat }) ?? 0;
+  private queryGroundElevation(entry: MapModelEntry, fallback: number): number {
+    return this.map?.queryTerrainElevation({ lng: entry.lng, lat: entry.lat }) ?? fallback;
   }
 
   /**
@@ -240,22 +300,22 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
     const metersToMercator = mercator.meterInMercatorCoordinateUnits();
     const s = metersToMercator * entry.scale;
 
-    const rotationX = new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(1, 0, 0), Math.PI / 2);
-    const rotationY = new THREE.Matrix4().makeRotationAxis(
-      new THREE.Vector3(0, 1, 0),
-      THREE.MathUtils.degToRad(entry.rotationDeg)
-    );
-    const rotationZ = new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(0, 0, 1), 0);
+    // Heading is the only rotation that varies per entry — X is a shared
+    // constant (ROTATION_X above) and the old Z term was always a fixed 0°
+    // (an identity matrix multiplied in on every call for no effect), so
+    // it's dropped rather than recomputed.
+    this.scratchRotationY.makeRotationY(THREE.MathUtils.degToRad(entry.rotationDeg));
 
     const altitude = groundElevation + entry.altitudeOffset;
-    const m = new THREE.Matrix4()
+    // Written straight into root.matrix (matrixAutoUpdate is false, so
+    // nothing else touches it) instead of building a separate Matrix4 and
+    // copying it over — one fewer allocation on a call that can run every
+    // frame while the camera is moving (see ROTATION_X's comment).
+    root.matrix
       .makeTranslation(mercator.x, mercator.y, mercator.z + altitude * metersToMercator)
-      .scale(new THREE.Vector3(s, -s, s))
-      .multiply(rotationX)
-      .multiply(rotationY)
-      .multiply(rotationZ);
-
-    root.matrix.copy(m);
+      .scale(this.scratchScale.set(s, -s, s))
+      .multiply(ROTATION_X)
+      .multiply(this.scratchRotationY);
   }
 
   private handleClick = (e: MouseEvent) => {
@@ -297,7 +357,7 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
     // only rebuilding the model's matrix when it actually moved is what
     // keeps this from adding needless per-frame cost.
     for (const loaded of this.loaded.values()) {
-      const ground = this.queryGroundElevation(loaded.entry);
+      const ground = this.queryGroundElevation(loaded.entry, loaded.lastGroundElevation);
       if (Math.abs(ground - loaded.lastGroundElevation) > ELEVATION_EPSILON_M) {
         this.applyTransform(loaded, ground);
       }

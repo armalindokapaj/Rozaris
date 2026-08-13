@@ -1,5 +1,6 @@
 "use client";
 
+import { forwardRef } from "react";
 import { X, ArrowRight } from "lucide-react";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
@@ -12,22 +13,20 @@ import type { Listing } from "@/lib/types";
  * *which specific unit* is selected, rather than just the project overview
  * (ProjectPopupCard) or a generic "N listings here" aggregate
  * (BuildingPopupCard, which is for unrelated listings sharing a building).
+ *
+ * `forwardRef`'d for the same reason as ProjectPopupCard — see its comment.
  */
-export function UnitPopupCard({
-  listing,
-  onClose,
-  onViewUnit,
-  style,
-}: {
+export const UnitPopupCard = forwardRef<HTMLDivElement, {
   listing: Listing;
   onClose: () => void;
   onViewUnit: () => void;
   style?: React.CSSProperties;
-}) {
+}>(function UnitPopupCard({ listing, onClose, onViewUnit, style }, ref) {
   const priceFmt = usePriceFormat();
   const { t } = useT();
   return (
     <div
+      ref={ref}
       className="absolute z-40 w-64 -translate-x-1/2 -translate-y-[calc(100%+16px)] overflow-hidden rounded-card border border-neutral-200 bg-white p-4 shadow-[var(--shadow-2)]"
       style={style}
       role="dialog"
@@ -58,4 +57,4 @@ export function UnitPopupCard({
       </button>
     </div>
   );
-}
+});

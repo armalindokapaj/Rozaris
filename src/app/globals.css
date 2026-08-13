@@ -207,6 +207,50 @@ body {
   border: 1px solid color-mix(in srgb, white 12%, transparent);
 }
 
+/* Scoped dark theme — the 3D Experience Configurator only
+   (src/components/dashboard/project3d/EditorShell.tsx's root wrapper),
+   not a site-wide dark mode. Every existing panel already styles itself
+   with the neutral, background and foreground Tailwind tokens defined in
+   :root above; Tailwind v4 emits a var() reference to the underlying
+   custom property at the utility level rather than inlining a literal
+   value, so redefining those same custom properties under this scope is
+   enough to flip every existing neutral/text/border utility class already
+   used throughout the panels — no component file needed to change its
+   className for the bulk of the surface. Declared unlayered (like
+   `.glass-panel-dark` above), not inside `@layer components`, so it wins
+   the cascade over same-specificity Tailwind utility classes (e.g. a
+   literal `bg-white` on a couple of raw `<select>` elements) — same
+   reasoning as that block's own comment. */
+.rz-editor-dark {
+  --background: #131317;
+  --foreground: #f5f5f7;
+  --color-neutral-0: #1c1c22; /* was white — now the base dark panel surface */
+  --color-neutral-50: #131317; /* was canvas bg — darkest, page-level bg */
+  --color-neutral-100: #232329; /* was surface subtle — hover rows, inputs */
+  --color-neutral-200: #34343d; /* was border */
+  --color-neutral-300: #45454f; /* was border strong */
+  --color-neutral-400: #5c5c68;
+  --color-neutral-500: #9494a0; /* was text muted */
+  --color-neutral-600: #b4b4bd; /* was text secondary */
+  --color-neutral-700: #cfcfd6;
+  --color-neutral-800: #e4e4e8;
+  --color-neutral-900: #f5f5f7; /* was text primary — now near-white */
+  background: var(--background);
+  color: var(--foreground);
+}
+.rz-editor-dark input,
+.rz-editor-dark select,
+.rz-editor-dark textarea {
+  background-color: var(--color-neutral-100);
+  color: var(--color-neutral-900);
+  border-color: var(--color-neutral-300);
+}
+.rz-editor-dark input[type="color"],
+.rz-editor-dark input[type="checkbox"],
+.rz-editor-dark input[type="range"] {
+  background-color: transparent;
+}
+
 /* Scrollbars: slim, unobtrusive */
 .scroll-thin::-webkit-scrollbar {
   width: 6px;

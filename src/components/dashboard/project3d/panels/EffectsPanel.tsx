@@ -22,6 +22,7 @@ export function EffectsPanel({
   suggestedTier,
   advancedOpen,
   setAdvancedOpen,
+  perfStats,
   t,
 }: {
   draft: Project3DConfig;
@@ -29,6 +30,13 @@ export function EffectsPanel({
   suggestedTier: Project3DConfig["qualityPreset"];
   advancedOpen: boolean;
   setAdvancedOpen: (v: boolean | ((prev: boolean) => boolean)) => void;
+  /** The same 4 real fields the viewport's perf overlay tracks (fps/
+   * drawCalls/triangles/dpr — RenderEngine.ts's samplePerfStats), mirrored
+   * up by EditorShell via ProceduralProjectViewer's new `onPerfStats` prop
+   * (dark-theme configurator restyle) so they can render here instead of
+   * only as a floating canvas overlay. `null` until the viewer's first
+   * sample (~30 frames after mount). */
+  perfStats: { fps: number; drawCalls: number; triangles: number; dpr: number } | null;
   t: Translate;
 }) {
   return (
@@ -58,6 +66,46 @@ export function EffectsPanel({
             {t("admin.sceneQualitySuggested", { tier: t(`admin.sceneQuality_${suggestedTier}`) })}
           </p>
         </div>
+      </section>
+
+      {/* --- Performance Overview (dark-theme configurator restyle) — the
+          4 real stats already tracked by RenderEngine.ts's
+          samplePerfStats, now shown here instead of only as a floating
+          canvas-corner overlay. No Frame Time/GPU Memory/Textures cards:
+          not real data this app tracks today, not fabricated to match the
+          reference mockup's fuller grid. --- */}
+      <section className="border-t border-neutral-100 pt-4">
+        <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
+          {t("admin.scenePerformanceOverviewTitle")}
+        </h3>
+        {perfStats ? (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-control border border-neutral-100 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-neutral-500">FPS</p>
+              <p className="font-numeric text-lg font-bold text-neutral-900">{perfStats.fps}</p>
+            </div>
+            <div className="rounded-control border border-neutral-100 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-neutral-500">DPR</p>
+              <p className="font-numeric text-lg font-bold text-neutral-900">{perfStats.dpr.toFixed(2)}×</p>
+            </div>
+            <div className="rounded-control border border-neutral-100 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-neutral-500">
+                {t("admin.perfDrawCalls")}
+              </p>
+              <p className="font-numeric text-lg font-bold text-neutral-900">{perfStats.drawCalls}</p>
+            </div>
+            <div className="rounded-control border border-neutral-100 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-neutral-500">
+                {t("admin.perfTriangles")}
+              </p>
+              <p className="font-numeric text-lg font-bold text-neutral-900">
+                {perfStats.triangles.toLocaleString()}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-[11px] text-neutral-400">{t("admin.scenePerformanceOverviewLoading")}</p>
+        )}
       </section>
 
       {/* --- Performance (full-configurator pass). Shadows/Antialiasing

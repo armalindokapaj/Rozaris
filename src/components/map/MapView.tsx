@@ -105,6 +105,7 @@ export function MapView({
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const modelLayerRef = useRef<ProjectModelLayer | null>(null);
   const buildingHiderRef = useRef<BuildingHider | null>(null);
+  const popupCardRef = useRef<HTMLDivElement>(null);
 
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const [ready, setReady] = useState(false);
@@ -513,6 +514,16 @@ export function MapView({
   const activeCoords =
     activeProject?.coords ?? activeBuildingListing?.coords ?? activeProjectUnit?.coords ?? null;
 
+  // mapbox fires `move` on every single rendered frame during a drag/
+  // rotate/zoom — up to 60/sec. Funneling every one of those through
+  // `setPopupPos` forced a full React re-render at that same rate for as
+  // long as any popup stayed open, which is a large part of what made the
+  // map "laggish, not responsive while moving" (independent of whatever
+  // else — a 3D model, markers — happened to be on screen at the time).
+  // Only the very first position (needed to mount the popup at the right
+  // spot at all) goes through React state; every subsequent `move` writes
+  // straight to the already-mounted card's `style.left/top` via
+  // `popupCardRef`, bypassing React entirely for the high-frequency part.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !activeCoords) {
@@ -521,7 +532,13 @@ export function MapView({
     }
     const update = () => {
       const p = map.project([activeCoords.lng, activeCoords.lat]);
-      setPopupPos({ x: p.x, y: p.y });
+      const card = popupCardRef.current;
+      if (card) {
+        card.style.left = `${p.x}px`;
+        card.style.top = `${p.y}px`;
+      } else {
+        setPopupPos({ x: p.x, y: p.y });
+      }
     };
     update();
     map.on("move", update);
@@ -580,6 +597,7 @@ export function MapView({
           </div>
           {activeProject && popupPos && (
             <ProjectPopupCard
+              ref={popupCardRef}
               project={activeProject}
               style={{ left: popupPos.x, top: popupPos.y }}
               onClose={() => selectProject(null)}
@@ -587,6 +605,7 @@ export function MapView({
           )}
           {activeBuildingListing && popupPos && (
             <BuildingPopupCard
+              ref={popupCardRef}
               listing={activeBuildingListing}
               siblingCount={activeBuildingListing.buildingListingCount ?? 1}
               style={{ left: popupPos.x, top: popupPos.y }}
@@ -598,6 +617,7 @@ export function MapView({
           )}
           {activeProjectUnit && popupPos && (
             <UnitPopupCard
+              ref={popupCardRef}
               listing={activeProjectUnit}
               style={{ left: popupPos.x, top: popupPos.y }}
               onClose={() => selectListing(null)}

@@ -14,11 +14,13 @@ import type {
   SceneManifestNode,
 } from "@/lib/types";
 import type { AutosaveStatus } from "@/hooks/useAutosave";
-import { EDITOR_MODES, MODES_WITH_SCENE_RAIL, type EditorMode } from "./modes";
+import type { ViewPreset } from "@/lib/viewerPresets";
+import { EDITOR_MODES, type EditorMode } from "./modes";
 import type { SetOpts, Translate } from "./editorTypes";
 import type { DetailVersionRow } from "./types";
 import { ModeTabBar } from "./ModeTabBar";
 import { SceneTreeRail } from "./SceneTreeRail";
+import { ViewportToolbar } from "./ViewportToolbar";
 import { ModelPanel } from "./panels/ModelPanel";
 import { MaterialsPanel } from "./panels/MaterialsPanel";
 import { LightingPanel } from "./panels/LightingPanel";
@@ -28,19 +30,22 @@ import { EffectsPanel } from "./panels/EffectsPanel";
 import { ViewerPanel } from "./panels/ViewerPanel";
 
 /**
- * Phase 2 editor shell — replaces Project3DConfigEditor.tsx's old single
- * scrolling `<div>` (was ~950 lines of inline JSX) with the master PRD's
- * viewport-first 7-mode layout: a persistent `<ThreeProjectViewer>`, a
- * mode-tab bar, the active mode's panel, and a persistent scene-tree rail
- * on the 3 modes where node selection is meaningful. Reset/Save Scene
- * stay global chrome (not per-tab) since one save persists fields spread
- * across every tab at once — same as the original single Save button.
+ * Editor shell — replaces Project3DConfigEditor.tsx's old single scrolling
+ * `<div>` (was ~950 lines of inline JSX). As of the 2026-08-13 3-column
+ * layout pass, a fixed 25/50/25 split: a persistent left panel (Scene
+ * Explorer + Units linking — always visible, not gated by tab selection),
+ * the `<ThreeProjectViewer>` in the middle, and the remaining 6 option
+ * tabs (Model/Materials/Lighting/Camera/Render/Viewer — "Units" moved out
+ * to the left panel, see modes.ts) on the right. Reset/Save Scene stay
+ * global chrome in the right panel (not per-tab) since one save persists
+ * fields spread across several tabs at once — same as the original single
+ * Save button.
  *
- * Milestone A of the Phase 2 plan: pure extraction, driven by the same
- * flat state Project3DConfigEditor.tsx already owned — no context, no
- * undo/redo, no autosave yet (those are Milestones B-D). Every prop below
- * is exactly what the original inline JSX read/wrote, just named instead
- * of closed-over.
+ * Originally built (Milestone A of the Phase 2 plan) as a pure extraction
+ * driven by the same flat state Project3DConfigEditor.tsx already owned —
+ * every prop below is exactly what the original inline JSX read/wrote,
+ * just named instead of closed-over; undo/redo and autosave were added in
+ * later milestones, the 3-column relayout and dark theme later still.
  */
 export function EditorShell({
   project,
@@ -205,10 +210,70 @@ export function EditorShell({
   linkedMeshNames: Set<string>;
 }) {
   const [activeMode, setActiveMode] = useState<EditorMode>("model");
+  // Viewport toolbar state (dark-theme configurator restyle) — drives
+  // ProceduralProjectViewer's new controlled-mode props; see that
+  // component's viewPreset/xrayEnabled prop doc comments for why this
+  // lives here instead of the viewer's own (hidden, showChrome={false})
+  // internal state.
+  const [viewPreset, setViewPreset] = useState<ViewPreset>("realistic");
+  const [xrayEnabled, setXrayEnabled] = useState(false);
+  const [perfStats, setPerfStats] = useState<{ fps: number; drawCalls: number; triangles: number; dpr: number } | null>(
+    null
+  );
+  const usingGlb = !!(previewDetailModel?.enabled && previewDetailModel?.glbUrl);
+  const hasSceneTree = hasDetailModel && sceneManifest.length > 0;
 
   return (
+    // 3-column 25/50/25 layout (2026-08-13): Scene Explorer + Units linking
+    // (left) / viewport (middle) / option tabs (right). `order-*` keeps the
+    // viewport first on a stacked mobile layout (unchanged from before this
+    // pass) while `lg:order-*` restores true left/middle/right on desktop.
     <div className="flex h-full min-h-0 w-full flex-col lg:flex-row">
-      <div className="h-64 shrink-0 bg-neutral-900 lg:h-full lg:flex-1">
+      {/* LEFT 25% — Scene Explorer + Units linking, always visible (not a
+          tab anymore — see modes.ts's EDITOR_MODES comment for why). */}
+      <div className="rz-editor-dark order-2 flex min-h-0 w-full flex-col border-b border-neutral-200 lg:order-1 lg:h-full lg:w-1/4 lg:shrink-0 lg:border-b-0 lg:border-r">
+        <div className="shrink-0 border-b border-neutral-100 px-5 py-4">
+          <h2 className="text-base font-bold text-neutral-900">{t("admin.editorSceneUnitsTitle")}</h2>
+          <p className="text-xs text-neutral-500">{t("admin.editorSceneUnitsSubtitle")}</p>
+        </div>
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scroll-thin p-5">
+          {hasSceneTree && (
+            <SceneTreeRail
+              sceneManifest={sceneManifest}
+              selectedNodeRzId={selectedNodeRzId}
+              setSelectedNodeRzId={setSelectedNodeRzId}
+              nodeOverrides={nodeOverrides}
+              setNodeOverrides={setNodeOverrides}
+              linkedMeshNames={linkedMeshNames}
+              canEditDetail={canEditDetail}
+              t={t}
+            />
+          )}
+          <div className={hasSceneTree ? "border-t border-neutral-100 pt-5" : undefined}>
+            <UnitsPanel
+              units={project.units}
+              detectedNodes={detectedNodes}
+              nodesLoading={nodesLoading}
+              matchedCount={matchedCount}
+              needsReviewCount={needsReviewCount}
+              visibleNodes={visibleNodes}
+              showOnlyNeedsReview={showOnlyNeedsReview}
+              setShowOnlyNeedsReview={setShowOnlyNeedsReview}
+              canEditDetail={canEditDetail}
+              linkSelections={linkSelections}
+              setLinkSelections={setLinkSelections}
+              carriedMeshNames={carriedMeshNames}
+              setCarriedMeshNames={setCarriedMeshNames}
+              draft={draft}
+              update={update}
+              t={t}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* MIDDLE 50% — viewport */}
+      <div className="relative order-1 h-64 shrink-0 bg-neutral-900 lg:order-2 lg:h-full lg:w-1/2">
         <ThreeProjectViewer
           ref={viewerRef}
           project={project}
@@ -217,10 +282,23 @@ export function EditorShell({
           hdriUrl={platformHdris.find((h) => h.id === draft.hdriId)?.url ?? null}
           showChrome={false}
           showPerfStats
+          onPerfStats={setPerfStats}
+          viewPreset={viewPreset}
+          onViewPresetChange={setViewPreset}
+          xrayEnabled={xrayEnabled}
+        />
+        <ViewportToolbar
+          viewPreset={viewPreset}
+          onViewPresetChange={setViewPreset}
+          xrayEnabled={xrayEnabled}
+          onXrayChange={setXrayEnabled}
+          xrayAvailable={usingGlb}
+          t={t}
         />
       </div>
 
-      <div className="flex min-h-0 w-full flex-1 flex-col border-t border-neutral-100 lg:h-full lg:max-w-md lg:border-l lg:border-t-0">
+      {/* RIGHT 25% — option tabs (Model/Materials/Lighting/Camera/Render/Viewer) */}
+      <div className="rz-editor-dark order-3 flex min-h-0 w-full flex-col border-t border-neutral-200 lg:h-full lg:w-1/4 lg:shrink-0 lg:border-l lg:border-t-0">
         <div className="flex shrink-0 items-center gap-3 border-b border-neutral-100 px-5 py-4">
           <button
             onClick={onClose}
@@ -362,26 +440,6 @@ export function EditorShell({
               t={t}
             />
           )}
-          {activeMode === "units" && (
-            <UnitsPanel
-              units={project.units}
-              detectedNodes={detectedNodes}
-              nodesLoading={nodesLoading}
-              matchedCount={matchedCount}
-              needsReviewCount={needsReviewCount}
-              visibleNodes={visibleNodes}
-              showOnlyNeedsReview={showOnlyNeedsReview}
-              setShowOnlyNeedsReview={setShowOnlyNeedsReview}
-              canEditDetail={canEditDetail}
-              linkSelections={linkSelections}
-              setLinkSelections={setLinkSelections}
-              carriedMeshNames={carriedMeshNames}
-              setCarriedMeshNames={setCarriedMeshNames}
-              draft={draft}
-              update={update}
-              t={t}
-            />
-          )}
           {activeMode === "effects" && (
             <EffectsPanel
               draft={draft}
@@ -389,25 +447,11 @@ export function EditorShell({
               suggestedTier={suggestedTier}
               advancedOpen={advancedOpen}
               setAdvancedOpen={setAdvancedOpen}
+              perfStats={perfStats}
               t={t}
             />
           )}
           {activeMode === "viewer" && <ViewerPanel draft={draft} update={update} t={t} />}
-
-          {MODES_WITH_SCENE_RAIL.has(activeMode) && hasDetailModel && sceneManifest.length > 0 && (
-            <div className="border-t border-neutral-100 pt-5">
-              <SceneTreeRail
-                sceneManifest={sceneManifest}
-                selectedNodeRzId={selectedNodeRzId}
-                setSelectedNodeRzId={setSelectedNodeRzId}
-                nodeOverrides={nodeOverrides}
-                setNodeOverrides={setNodeOverrides}
-                linkedMeshNames={linkedMeshNames}
-                canEditDetail={canEditDetail}
-                t={t}
-              />
-            </div>
-          )}
         </div>
 
         {/* Global chrome: Reset/Save Scene act on the whole `draft` object,
@@ -428,7 +472,7 @@ export function EditorShell({
             <button
               onClick={onSaveScene}
               disabled={configBusy || !configLoaded}
-              className="flex-1 rounded-control bg-neutral-900 py-2 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-40"
+              className="flex-1 rounded-control bg-brand-500 py-2 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
             >
               {t("admin.viewer3DSave")}
             </button>

@@ -1,28 +1,26 @@
 "use client";
 
+import { forwardRef } from "react";
 import { X } from "lucide-react";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import type { Listing } from "@/lib/types";
 
-/** MAP-016: a building with multiple independent listings shows an aggregate popup. */
-export function BuildingPopupCard({
-  listing,
-  siblingCount,
-  onClose,
-  onViewListing,
-  style,
-}: {
+/** MAP-016: a building with multiple independent listings shows an aggregate
+ * popup. `forwardRef`'d for the same reason as ProjectPopupCard — see its
+ * comment. */
+export const BuildingPopupCard = forwardRef<HTMLDivElement, {
   listing: Listing;
   siblingCount: number;
   onClose: () => void;
   onViewListing: () => void;
   style?: React.CSSProperties;
-}) {
+}>(function BuildingPopupCard({ listing, siblingCount, onClose, onViewListing, style }, ref) {
   const priceFmt = usePriceFormat();
   const { t } = useT();
   return (
     <div
+      ref={ref}
       className="absolute z-40 w-64 -translate-x-1/2 -translate-y-[calc(100%+16px)] overflow-hidden rounded-card border border-neutral-200 bg-white p-4 shadow-[var(--shadow-2)]"
       style={style}
       role="dialog"
@@ -52,4 +50,4 @@ export function BuildingPopupCard({
       </button>
     </div>
   );
-}
+});

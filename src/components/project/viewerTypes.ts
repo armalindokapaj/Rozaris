@@ -1,4 +1,5 @@
 import type { Project, Project3DConfig, ProjectDetailModel, Unit } from "@/lib/types";
+import type { ViewPreset } from "@/lib/viewerPresets";
 
 /** Shared imperative handle + props contract between ThreeProjectViewer.tsx
  * (a thin re-export) and ProceduralProjectViewer.tsx (the real engine) —
@@ -56,4 +57,28 @@ export interface ThreeProjectViewerProps {
    * concerns): off by default, Project3DConfigEditor's preview turns it
    * on. */
   showPerfStats?: boolean;
+  /** Mirrors the same 4 fields the built-in perf overlay already shows
+   * (fps/drawCalls/triangles/dpr) — when supplied, the caller is
+   * rendering its own perf display, so the internal floating overlay is
+   * suppressed to avoid showing it twice. Added for the dark-theme
+   * configurator restyle's right-rail "Performance Overview" card; the
+   * underlying tracking (RenderEngine.ts's samplePerfStats) is unchanged,
+   * this only adds a second place the same numbers can be read from. */
+  onPerfStats?: (stats: { fps: number; drawCalls: number; triangles: number; dpr: number } | null) => void;
+  /** Controlled-mode override for the realistic/conceptual/sketch view
+   * switcher — normally 100% internal state, only reachable via the
+   * bottom chrome menu that the Admin editor keeps hidden
+   * (`showChrome={false}`). Supplying both props lets a caller (the
+   * Configurator's new viewport toolbar) drive it externally instead;
+   * omit both to keep the existing uncontrolled/internal behavior (every
+   * public-viewer usage, unchanged). */
+  viewPreset?: ViewPreset;
+  onViewPresetChange?: (preset: ViewPreset) => void;
+  /** Same controlled-mode pattern for X-Ray — normally derived from which
+   * bottom-menu panel is open (`panel === "xray"`), which never happens
+   * when `showChrome={false}`. Supplying `xrayEnabled` overrides that
+   * derivation entirely; the caller (EditorShell's own toolbar) owns the
+   * boolean itself, so there's no matching `onXrayChange` — nothing
+   * internal ever needs to set it back. */
+  xrayEnabled?: boolean;
 }

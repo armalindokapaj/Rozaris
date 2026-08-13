@@ -140,11 +140,18 @@ export function CameraPanel({
         {draft.cameraPresets.length === 0 ? (
           <p className="mb-2.5 text-[11px] text-neutral-400">{t("admin.sceneCameraPresetsEmpty")}</p>
         ) : (
-          <div className="mb-2.5 space-y-1.5">
+          // Restyled (dark-theme configurator pass) from a vertical list to
+          // a horizontal scrollable chip strip, matching the reference
+          // mockup's camera-view strip — label-only, no thumbnails:
+          // CameraPreset has no image field and no capture step exists
+          // (declined scope, see the "rozaris-3d-configurator-redesign"
+          // memory), so this stays the same numeric position/target/fov
+          // data as before, just presented as chips instead of rows.
+          <div className="mb-2.5 flex gap-1.5 overflow-x-auto scroll-thin">
             {draft.cameraPresets.map((preset) => (
               <div
                 key={preset.id}
-                className="flex items-center justify-between gap-2 rounded-control border border-neutral-100 px-3 py-2 text-xs"
+                className="flex shrink-0 items-center gap-1.5 rounded-pill border border-neutral-200 py-1.5 pl-3 pr-1.5 text-xs"
               >
                 <span className="font-semibold text-neutral-800">{preset.label}</span>
                 <button

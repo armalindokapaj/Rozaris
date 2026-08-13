@@ -236,6 +236,54 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
     }
   }
 
+  /**
+   * "Edit" — opens a new draft on the *same already-uploaded file* so
+   * Admin can adjust placement (scale/rotation/altitude/position/hidden
+   * buildings) without re-uploading anything. A published `MapModelVersion`
+   * is immutable server-side (PATCH .../versions/[id] 409s on one — see
+   * that route's comment), so "editing" always means opening a fresh draft
+   * version first; this just does that automatically by POSTing the
+   * published version's own `glbUrl` back to the versions endpoint (which
+   * re-validates the existing Blob file — no new upload — and creates the
+   * next version number as a draft), instead of making Admin click
+   * "Replace" and pick a file again just to change a slider.
+   */
+  async function handleEdit() {
+    if (isDraftActive || !activeVersion) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/map-models/${project.id}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          glbUrl: activeVersion.publicAssetUrl,
+          fileName: activeVersion.fileName,
+          fileSize: activeVersion.fileSize,
+          scale,
+          rotationDeg,
+          altitudeOffset,
+          longitude,
+          latitude,
+          hideBaseBuilding,
+          hiddenBuildings,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await refresh();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      console.error("3D Map Control: edit (open draft from existing file) failed", err);
+      setError(
+        message.includes("Not authorized") || message.includes("authoriz")
+          ? t("admin.sessionExpiredNote")
+          : t("admin.mapModelEditFailed")
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSaveDraft() {
     if (!isDraftActive || !activeVersion) return;
     setBusy(true);
@@ -421,6 +469,15 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
                       <p className="text-xs text-neutral-500">{formatBytes(activeVersion!.fileSize)}</p>
                     </div>
                     <div className="flex shrink-0 gap-1.5">
+                      {!canEdit && activeVersion!.publicationStatus === "published" && (
+                        <button
+                          onClick={handleEdit}
+                          disabled={busy}
+                          className="rounded-control bg-brand-500 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
+                        >
+                          {t("admin.mapModelEdit")}
+                        </button>
+                      )}
                       <button
                         onClick={() => fileInputRef.current?.click()}
                         disabled={busy}
