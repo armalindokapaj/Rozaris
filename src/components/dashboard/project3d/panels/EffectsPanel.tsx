@@ -2,9 +2,9 @@
 
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { GLASS_TIERS, QUALITY_TIERS } from "@/lib/viewerPresets";
+import { GLASS_TIERS, LUT_PRESETS, QUALITY_TIERS } from "@/lib/viewerPresets";
 import type { Project3DConfig } from "@/lib/types";
-import { SelectField, SliderField, ToggleField } from "../fields";
+import { ColorField, SelectField, SliderField, TextField, ToggleField } from "../fields";
 import type { SetOpts, Translate } from "../editorTypes";
 
 /**
@@ -153,70 +153,169 @@ export function EffectsPanel({
             />
             <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceSectionCapStencilNote")}</p>
           </div>
-          {/* webgpu_camera_logarithmicdepthbuffer.html parity — a real
-              WebGPURenderer construction-time flag (needs a fresh mount,
-              same category as Section Cap Stencil's own `stencil: true`). */}
-          <div>
-            <ToggleField
-              label={t("admin.performanceLogarithmicDepth")}
-              checked={draft.logarithmicDepthEnabled}
-              onChange={(v) => update({ logarithmicDepthEnabled: v }, { commit: true })}
-            />
-            <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceLogarithmicDepthNote")}</p>
-          </div>
         </div>
       </section>
 
-      {/* --- Bloom (webgl_postprocessing_unreal_bloom.html parity) — the
-          exact same `Project3DConfig.bloomEnabled/Strength/Radius/Threshold`
-          fields LightingPanel's Effects sub-tab already controls, surfaced
-          here too so it's reachable from the standalone Effects tab, not a
-          second independent copy of the setting. `bloom()` (BloomNode.js,
-          RenderEngine.ts's buildRenderPipeline) is three.js's own
-          WebGPU/TSL-native reimplementation of the classic
-          `UnrealBloomPass` — same luminosity-highpass + separable-Gaussian-
-          blur-pyramid technique, just node-graph-based instead of a
-          postprocessing Pass. --- */}
+      {/* --- Environment — real PMREM reflection-strength control, moved
+          here from the old Lighting tab's "Sky" sub-tab (removed entirely
+          2026-08-14, see modes.ts's own doc comment) since it isn't part
+          of the Sky/Water/Bloom/Clouds "Ocean" tab's own reference-demo
+          GUI. --- */}
       <section className="border-t border-neutral-100 pt-4">
         <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
-          {t("admin.sceneBloomEnabled")}
+          {t("admin.sceneEnvironmentTitle")}
         </h3>
-        <div className="space-y-3">
-          <ToggleField
-            label={t("admin.sceneBloomEnabled")}
-            checked={draft.bloomEnabled}
-            onChange={(v) => update({ bloomEnabled: v }, { commit: true })}
-          />
-          {draft.bloomEnabled && (
-            <>
-              <SliderField
-                label={t("admin.sceneBloomStrength")}
-                min={0}
-                max={3}
-                step={0.01}
-                value={draft.bloomStrength}
-                onChange={(v) => update({ bloomStrength: v })}
+        <SliderField
+          label={t("admin.sceneEnvironmentIntensity")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={draft.environmentIntensity}
+          onChange={(v) => update({ environmentIntensity: v })}
+          suffix="×"
+        />
+      </section>
+
+      {/* --- Ground Platform — moved here from the old Lighting tab's
+          "Environment" sub-tab (removed entirely 2026-08-14), unchanged
+          otherwise: real ground mesh/color + a separate radial "ground
+          fog" fade around world origin. --- */}
+      <section className="border-t border-neutral-100 pt-4">
+        <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
+          {t("admin.sceneGroundTitle")}
+        </h3>
+        <ToggleField
+          label={t("admin.viewer3DGround")}
+          checked={draft.groundEnabled}
+          onChange={(v) => update({ groundEnabled: v }, { commit: true })}
+        />
+        {draft.groundEnabled && (
+          <div className="mt-3 space-y-3">
+            <SelectField
+              label={t("admin.sceneGroundStyle")}
+              value={draft.groundStyle}
+              onChange={(v) => update({ groundStyle: v as Project3DConfig["groundStyle"] }, { commit: true })}
+              options={[
+                ["disc", t("admin.sceneGroundStyleDisc")],
+                ["infinite", t("admin.sceneGroundStyleInfinite")],
+              ]}
+            />
+            <p className="text-[11px] text-neutral-400">{t("admin.sceneGroundStyleNote")}</p>
+            <ColorField
+              label={t("admin.sceneGroundColor")}
+              value={draft.groundColor}
+              onChange={(v) => update({ groundColor: v }, { commit: true })}
+            />
+            <div className="rounded-control border border-neutral-100 p-2.5">
+              <ToggleField
+                label={t("admin.sceneGroundFogEnabled")}
+                checked={draft.groundFogEnabled}
+                onChange={(v) => update({ groundFogEnabled: v }, { commit: true })}
               />
-              <SliderField
-                label={t("admin.sceneBloomRadius")}
-                min={0}
-                max={1}
-                step={0.01}
-                value={draft.bloomRadius}
-                onChange={(v) => update({ bloomRadius: v })}
+              {draft.groundFogEnabled && (
+                <div className="mt-3 space-y-1.5">
+                  <TextField
+                    label={t("admin.sceneGroundFogRadius")}
+                    value={String(draft.groundFogRadius)}
+                    onChange={(v) => {
+                      const n = Number(v);
+                      if (Number.isFinite(n) && n > 0) update({ groundFogRadius: n });
+                    }}
+                    placeholder="300"
+                  />
+                  <p className="text-[11px] text-neutral-400">{t("admin.sceneGroundFogNote")}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* --- Fog — moved here from the old Lighting tab's "Environment"
+          sub-tab (removed entirely 2026-08-14), unchanged otherwise: real
+          camera-relative THREE.FogExp2. --- */}
+      <section className="border-t border-neutral-100 pt-4">
+        <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
+          {t("admin.sceneFogEnabled")}
+        </h3>
+        <ToggleField
+          label={t("admin.sceneFogEnabled")}
+          checked={draft.fogEnabled}
+          onChange={(v) => update({ fogEnabled: v }, { commit: true })}
+        />
+        {draft.fogEnabled && (
+          <div className="mt-3 space-y-3">
+            <ToggleField
+              label={t("admin.sceneFogMatchesSky")}
+              checked={draft.fogMatchesSky}
+              onChange={(v) => update({ fogMatchesSky: v }, { commit: true })}
+            />
+            {draft.fogMatchesSky ? (
+              <p className="text-[11px] text-neutral-400">{t("admin.sceneFogMatchesSkyNote")}</p>
+            ) : (
+              <ColorField
+                label={t("admin.sceneFogColor")}
+                value={draft.fogColor}
+                onChange={(v) => update({ fogColor: v }, { commit: true })}
               />
-              <SliderField
-                label={t("admin.sceneBloomThreshold")}
-                min={0}
-                max={1}
-                step={0.01}
-                value={draft.bloomThreshold}
-                onChange={(v) => update({ bloomThreshold: v })}
-              />
-              <p className="text-[11px] text-neutral-400">{t("admin.sceneBloomNote")}</p>
-            </>
-          )}
-        </div>
+            )}
+            <SliderField
+              label={t("admin.sceneFogDensity")}
+              min={0}
+              max={0.05}
+              step={0.001}
+              value={draft.fogDensity}
+              onChange={(v) => update({ fogDensity: v })}
+            />
+          </div>
+        )}
+      </section>
+
+      {/* --- Bloom (webgl_postprocessing_unreal_bloom.html parity) — the
+          exact same `Project3DConfig.bloomEnabled/Strength/Radius` fields
+          the Sky/Water/Bloom/Clouds "Ocean" tab's own Bloom group
+          controls, surfaced there instead now (2026-08-14) — no longer
+          duplicated here, matching the reference demo's own single Bloom
+          GUI folder. `threshold` was a real per-project slider here too
+          until this pass; fixed back to `webgl_shaders_ocean.html`'s own
+          hardcoded default (see BLOOM_THRESHOLD_DEFAULT in
+          RenderEngine.ts). --- */}
+
+      {/* --- 3D LUT color grading (webgl_postprocessing_3dlut.html parity)
+          — every option the reference demo's own GUI exposes: enabled, a
+          9-way preset dropdown, intensity. Moved here from the old
+          Lighting tab's "Effects" sub-tab (removed entirely 2026-08-14) —
+          not part of the Sky/Water/Bloom/Clouds "Ocean" tab's own
+          reference-demo GUI, but explicitly kept and expanded to the full
+          preset list per user request. --- */}
+      <section className="border-t border-neutral-100 pt-4">
+        <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
+          {t("admin.sceneLutEnabled")}
+        </h3>
+        <ToggleField
+          label={t("admin.sceneLutEnabled")}
+          checked={draft.lutEnabled}
+          onChange={(v) => update({ lutEnabled: v }, { commit: true })}
+        />
+        {draft.lutEnabled && (
+          <div className="mt-3 space-y-3">
+            <SelectField
+              label={t("admin.sceneLutPreset")}
+              value={draft.lutPreset}
+              onChange={(v) => update({ lutPreset: v }, { commit: true })}
+              options={LUT_PRESETS.map((p) => [p.id, p.label] as [string, string])}
+            />
+            <SliderField
+              label={t("admin.sceneLutIntensity")}
+              min={0}
+              max={1}
+              step={0.01}
+              value={draft.lutIntensity}
+              onChange={(v) => update({ lutIntensity: v })}
+            />
+            <p className="text-[11px] text-neutral-400">{t("admin.sceneLutNote")}</p>
+          </div>
+        )}
       </section>
 
       {/* --- Advanced Settings — read-only: every number below comes from

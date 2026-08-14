@@ -3,8 +3,6 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
-import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
-import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import {
   pass,
   positionWorld,
@@ -12,9 +10,6 @@ import {
   smoothstep,
   mix,
   uniform,
-  mrt,
-  output,
-  velocity,
   texture3D,
   uv,
   vec3,
@@ -23,14 +18,13 @@ import {
   mx_fractal_noise_float,
 } from "three/tsl";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
-import { motionBlur } from "three/examples/jsm/tsl/display/MotionBlur.js";
 import { lut3D } from "three/examples/jsm/tsl/display/Lut3DNode.js";
 import { dof } from "three/examples/jsm/tsl/display/DepthOfFieldNode.js";
 import { LUTCubeLoader } from "three/examples/jsm/loaders/LUTCubeLoader.js";
+import { LUT3dlLoader } from "three/examples/jsm/loaders/LUT3dlLoader.js";
+import { LUTImageLoader } from "three/examples/jsm/loaders/LUTImageLoader.js";
 import { smaa } from "three/examples/jsm/tsl/display/SMAANode.js";
-import { LensflareMesh, LensflareElement } from "three/examples/jsm/objects/LensflareMesh.js";
-import { LightProbeGenerator } from "three/examples/jsm/lights/LightProbeGenerator.js";
-// Sky/Water/Bloom/Clouds pass — WebGPU-native counterparts of
+// Sky/Water/Bloom/Clouds "Ocean" tab — WebGPU-native counterparts of
 // webgl_shaders_ocean.html's classic `Sky`/`Water` (those two are
 // WebGLRenderer-only, per their own source doc comments; `SkyMesh`/
 // `WaterMesh` are the TSL/NodeMaterial ports for this app's
@@ -39,7 +33,6 @@ import { LightProbeGenerator } from "three/examples/jsm/lights/LightProbeGenerat
 // cloud object exists in either version.
 import { SkyMesh } from "three/examples/jsm/objects/SkyMesh.js";
 import { WaterMesh } from "three/examples/jsm/objects/WaterMesh.js";
-import { buildVolumetricCloudMaterial, buildVolumetricCloudNoiseTexture } from "./volumetricCloud";
 import { buildCausticsUnitEmissiveNode, loadCausticsTexture, type CausticsUnitUniforms } from "./caustics";
 // webgl_shadowmap_viewer.html parity — the WebGPU-native port
 // (ShadowMapViewerGPU.js), not the classic WebGLRenderer-only
@@ -48,9 +41,10 @@ import { ShadowMapViewer } from "three/examples/jsm/utils/ShadowMapViewerGPU.js"
 import { computeProjectLayout, type UnitBox } from "@/lib/threeBuilding";
 import { DRACO_DECODER_PATH } from "@/lib/gltfDecoder";
 import { applyUnitBoxMaterial, disposeGlbObject3D } from "@/lib/glbUnitNodes";
-import { calcSunPosition, sunColorForElevation, sunDirectionVector } from "@/lib/sunPosition";
+import { sunColorForElevation, sunDirectionVector } from "@/lib/sunPosition";
 import {
   ADAPTIVE_DOWNGRADE_ORDER,
+  FOG_SKY_HORIZON_COLOR,
   GLASS_NODE_PATTERN,
   GLASS_TIERS,
   GROUND_INFINITE_SIZE,
@@ -59,8 +53,6 @@ import {
   QUALITY_TIERS,
   SELECTED_COLOR,
   SKY_DOME_SCALE,
-  SKY_GRADIENTS,
-  SKY_PHYSICAL_PARAMS,
   UNIT_BOX_COLOR,
   UNIT_BOX_OPACITY,
   UNIT_BOX_SELECTED_OPACITY,
@@ -86,11 +78,12 @@ interface GlbUnitBoxEntry {
 
 const UNIT_NODE_PATTERN = /^Unit_/i;
 const MOBILE_VIEWPORT_BREAKPOINT = 768; // matches Tailwind's `md` — used for FOV/quality only, not a full UA probe
-// Light probe (webgl_lightprobes_sponza.html technique) cube capture size
-// — this only feeds 9 spherical-harmonics coefficients, not visible
-// reflections (the existing PMREM environment already handles those), so
-// a tiny cube keeps the async pixel-readback cost negligible.
-const LIGHT_PROBE_CUBE_SIZE = 16;
+/** Sky/Water/Bloom/Clouds "Ocean" tab's Bloom group — strength/radius are
+ * real per-project sliders, threshold isn't (matches
+ * webgl_shaders_ocean.html's own Bloom GUI folder exactly, which only
+ * exposes those two). Was previously a per-project `bloomThreshold`
+ * field; fixed back to the same 0.85 the demo hardcodes. */
+const BLOOM_THRESHOLD_DEFAULT = 0.85;
 
 export interface RenderEngineCallbacks {
   /** i18n — only used for the WebGPU-unavailable message. */
@@ -175,9 +168,7 @@ export interface LiveUpdateParams {
 }
 
 export interface SunEnvironmentParams {
-  project: Project;
   config: Project3DConfig;
-  effectiveTimeOfDay: number;
 }
 
 export interface RefreshAppearanceParams {
@@ -222,8 +213,6 @@ export class RenderEngine {
   private envScene: THREE.Scene | null = null;
   private pmrem: InstanceType<typeof THREE.PMREMGenerator> | null = null;
   private envRenderTarget: { texture: THREE.Texture; dispose: () => void } | null = null;
-  private hdriTexture: THREE.Texture | null = null;
-  private hdriUrlLoaded: string | null = null;
   private camera: THREE.PerspectiveCamera | null = null;
   private controls: OrbitControls | null = null;
   private ground: THREE.Mesh | null = null;
@@ -283,14 +272,11 @@ export class RenderEngine {
    * headless software-rasterizer fallback) against a live project before
    * and after this fix. */
   private sunDistance = 200;
-  // --- Sky/Water/Bloom/Clouds pass ---
-  /** The physical sky dome — replaces the old CanvasTexture gradient
-   * (`buildSkyTexture`) as the actual "sky" backgroundPreset's visible
-   * backdrop, live in the scene like webgl_shaders_ocean.html's `sky`
-   * (not painted onto `scene.background`). Built once per mount() (same
-   * lifecycle as `lensflare`/`lightProbe`); hidden (not removed — cheaper
-   * to toggle) whenever an HDRI is active or backgroundPreset isn't
-   * "sky". `null` only before the first mount()/after dispose(). */
+  // --- Sky/Water/Bloom/Clouds "Ocean" tab ---
+  /** The physical sky dome — the scene's only backdrop now (live in the
+   * scene like webgl_shaders_ocean.html's `sky`, not painted onto
+   * `scene.background`). Built once per mount(); `null` only before the
+   * first mount()/after dispose(). */
   private skyMesh: SkyMesh | null = null;
   /** Last real sun *direction* (unit vector, world space) computed by
    * `applySunAndEnvironment` — `sun.position` itself is an absolute point
@@ -304,23 +290,6 @@ export class RenderEngine {
    * already does, rather than always paying for an unused texture
    * load/reflection render target. */
   private waterMesh: WaterMesh | null = null;
-  /** Volumetric raymarched cloud (webgl_volume_cloud.html parity,
-   * volumetricCloud.ts) — a real box mesh + NodeMaterial, only constructed
-   * when `config.volumetricCloudEnabled` (per-project opt-in, most
-   * projects have none — same "needs a fresh mount to toggle" reasoning
-   * as `waterEnabled`). `volumetricCloudUniforms` are the 4 real live
-   * `UniformNode`s the reference demo's own GUI exposes (threshold/
-   * opacity/range/steps) — `applyLiveUpdate` drags those without a
-   * rebuild; `volumetricCloudNoiseTexture` is the real CPU-generated 3D
-   * Perlin texture, disposed alongside the mesh. */
-  private volumetricCloudMesh: THREE.Mesh | null = null;
-  private volumetricCloudUniforms: ReturnType<typeof buildVolumetricCloudMaterial>["uniforms"] | null = null;
-  private volumetricCloudNoiseTexture: THREE.Data3DTexture | null = null;
-  /** Bumped every frame the cloud is visible — feeds its material's
-   * `frame` uniform, the same per-frame dither-seed increment the
-   * reference demo's own `animate()` bumps every render (see the render
-   * loop below). */
-  private volumetricCloudFrame = 0;
   /** The bloom node itself (not just a boolean) — `strength`/`radius` are
    * real `UniformNode<float>`s on this instance (confirmed against
    * BloomNode.js's own source), so `applyLiveUpdate` can drag those live
@@ -328,30 +297,23 @@ export class RenderEngine {
    * `bloomEnabled` itself (which structurally adds/removes the node from
    * the chain) needs a fresh mount, same as `antialiasEnabled`. */
   private bloomNode: ReturnType<typeof bloom> | null = null;
-  /** Live `UniformNode<float>` multiplying the raw MRT velocity vector fed
-   * into the `motionBlur()` node — see buildRenderPipeline's doc comment
-   * for why this must be a plain uniform (unlike `bloomNode`, `motionBlur`
-   * is a stateless `Fn`, not a class instance with its own uniforms to
-   * reuse). `applyLiveUpdate` drags this live; `motionBlurEnabled` itself
-   * (which structurally adds/removes MRT + the node from the chain) needs
-   * a fresh mount, same as `bloomEnabled`/`antialiasEnabled`. */
-  private motionBlurAmount: ReturnType<typeof uniform> | null = null;
-  /** The currently-loaded LUT's real `Data3DTexture` (`LUTCubeLoader`'s
-   * own parsed result) — `null` until `loadLut` resolves. `lutPresetLoaded`
-   * tracks which preset id it corresponds to, same "only reload on a real
-   * change" guard `hdriUrlLoaded` already uses for HDRI. `lutIntensity` is
-   * a real live `UniformNode<float>` (`Lut3DNode`'s own `intensityNode`),
-   * draggable via `applyLiveUpdate` with no rebuild; `lutEnabled`/
-   * `lutPreset` themselves need a fresh mount (structural + a real async
-   * texture load), same category as `bloomEnabled`. */
+  /** The currently-loaded LUT's real `Data3DTexture` (whichever of
+   * `LUTCubeLoader`/`LUT3dlLoader`/`LUTImageLoader` its preset's `format`
+   * dispatches to — see `LUT_PRESETS`/`loadLut`) — `null` until `loadLut`
+   * resolves. `lutPresetLoaded` tracks which preset id it corresponds to,
+   * so a redundant reload is skipped. `lutIntensity` is a real live
+   * `UniformNode<float>` (`Lut3DNode`'s own `intensityNode`), draggable
+   * via `applyLiveUpdate` with no rebuild; `lutEnabled`/`lutPreset`
+   * themselves need a fresh mount (structural + a real async texture
+   * load), same category as `bloomEnabled`. */
   private lutTexture: THREE.Data3DTexture | null = null;
   private lutPresetLoaded: string | null = null;
   private lutIntensity: ReturnType<typeof uniform> | null = null;
   /** Depth of field (`webgl_postprocessing_dof2.html` parity) — 3 real
    * live `UniformNode<float>`s (`DepthOfFieldNode`'s own constructor just
    * stores whatever node it's given, unlike `BloomNode`'s auto-uniform-
-   * wrapping, so these are created explicitly here, same idea as
-   * `motionBlurAmount`). `dofFocusDistance` is the odd one out: recomputed
+   * wrapping, so these are created explicitly here). `dofFocusDistance`
+   * is the odd one out: recomputed
    * every frame in the render loop (`camera.position.distanceTo(controls.target)`,
    * real auto-focus) rather than dragged from a config field —
    * `dofFocalLength`/`dofBokehScale` are the two that `applyLiveUpdate`
@@ -373,18 +335,10 @@ export class RenderEngine {
   private revealThreshold: ReturnType<typeof uniform> | null = null;
   private revealActive = false;
   private revealStartTime = 0;
-  /** Debounces the expensive PMREM/light-probe rebuild inside
-   * `applySunAndEnvironment` — see `scheduleEnvironmentRebuild`. */
+  /** Debounces the expensive PMREM rebuild inside `applySunAndEnvironment`
+   * — see `scheduleEnvironmentRebuild`. */
   private environmentRebuildTimer: ReturnType<typeof setTimeout> | null = null;
   private ambient: THREE.AmbientLight | null = null;
-  private lensflare: LensflareMesh | null = null;
-  private lightProbe: THREE.LightProbe | null = null;
-  private lightProbeCubeTarget: THREE.CubeRenderTarget | null = null;
-  /** Guards the async LightProbeGenerator readback against a slow-
-   * resolving, since-superseded capture (rebuildEnvironment can fire
-   * many times per mount — every time-of-day tick re-runs it) applying
-   * stale SH data out of order, or applying after dispose(). */
-  private lightProbeToken = 0;
 
   private renderPipeline: InstanceType<typeof THREE.RenderPipeline> | null = null;
   private effectiveTier: QualityTierSettings;
@@ -595,11 +549,7 @@ export class RenderEngine {
   }
 
   /** North Sign — rotates the camera to a canonical heading (theta=0)
-   * around the current target. For the procedural fallback this scene has
-   * no real geographic orientation; for a loaded GLB it's an
-   * approximation too (true alignment would need to also account for
-   * `config.northRotationDeg` against the *camera*, not just the sun —
-   * known Phase 1 simplification). */
+   * around the current target. */
   resetToNorth() {
     const controls = this.controls;
     const camera = this.camera;
@@ -647,37 +597,13 @@ export class RenderEngine {
     return renderer.domElement.toDataURL("image/png");
   }
 
-  /** "Render this" — the public Project Viewer's one-shot photorealistic
-   * path-traced screenshot. Real, gated to desktop-oriented quality tiers
-   * (path tracing is genuinely GPU/CPU-heavy) — caller (the viewer
-   * component) is responsible for checking `tier.pathTracer` before ever
-   * showing the button, this method itself just refuses to run without
-   * that check too, defense in depth. See pathTraceScreenshot.ts's own
-   * doc comment for the full material-compatibility scope this
-   * implements. `durationMs` defaults to the literal "10 seconds" this
-   * feature was asked for. */
-  async renderPathTraceScreenshot(durationMs = 10000): Promise<string | null> {
-    const scene = this.scene;
-    const camera = this.camera;
-    const container = this.container;
-    if (!scene || !camera || !container) return null;
-    const { renderPathTraceScreenshot: run } = await import("./pathTraceScreenshot");
-    const width = Math.min(1600, container.clientWidth || 1600);
-    const height = Math.min(900, container.clientHeight || 900);
-    return run({
-      scene,
-      camera,
-      ground: this.ground,
-      groundColor: this.groundColorUniform?.value ?? null,
-      sun: this.sun,
-      ambient: this.ambient,
-      envTexture: this.envRenderTarget?.texture ?? null,
-      exposure: this.config.exposure,
-      width,
-      height,
-      durationMs,
-    });
-  }
+  // "Render this" (webgl_renderer_pathtracer.html parity, `renderPathTraceScreenshot`)
+  // — removed entirely 2026-08-14 at the user's explicit request ("remove
+  // this from my platform everywhere"). Was a one-shot photorealistic
+  // path-traced screenshot built on the `three-gpu-pathtracer` npm
+  // dependency (also removed, see package.json) — the isolated
+  // pathTraceScreenshot.ts module this delegated to is deleted, not left
+  // dead.
 
   /** Toggles the real shadow-map debug HUD (see its own field doc comment
    * above for the full lifecycle/positioning-scope caveat). Cheap either
@@ -994,90 +920,19 @@ export class RenderEngine {
     });
   }
 
-  // --- Procedural (gradient) sky + real environment/reflection lighting,
-  // shared by both content modes. A plain CanvasTexture is
-  // backend-agnostic (WebGPU and WebGL2 render it identically). ---
-  /** Procedural lens-flare element textures — same "canvas gradient, no
-   * external asset dependency" technique `buildSkyTexture` already uses
-   * below, applied to a radial gradient instead of a linear one. "glow"
-   * is the bright core disc at the light's own screen position;
-   * "ring" is a soft, mostly-transparent halo used for the trailing
-   * secondary flare elements (LensflareMesh's own tinting via
-   * `LensflareElement`'s `color` param does the actual per-element
-   * color variation — these textures stay neutral white/gray). */
-  private buildLensflareTexture(kind: "glow" | "ring"): THREE.Texture {
-    const size = 256;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d")!;
-    const cx = size / 2;
-    const cy = size / 2;
-    if (kind === "glow") {
-      const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, size / 2);
-      gradient.addColorStop(0, "rgba(255,255,255,1)");
-      gradient.addColorStop(0.15, "rgba(255,248,230,0.9)");
-      gradient.addColorStop(0.4, "rgba(255,244,214,0.25)");
-      gradient.addColorStop(1, "rgba(255,244,214,0)");
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, size, size);
-    } else {
-      const gradient = ctx.createRadialGradient(cx, cy, size * 0.26, cx, cy, size * 0.5);
-      gradient.addColorStop(0, "rgba(255,255,255,0)");
-      gradient.addColorStop(0.55, "rgba(255,255,255,0.55)");
-      gradient.addColorStop(0.75, "rgba(255,255,255,0.25)");
-      gradient.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, size, size);
-    }
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    return texture;
-  }
-
-  private buildSkyTexture(skyPreset: Project3DConfig["skyPreset"]): THREE.Texture {
-    const stops = SKY_GRADIENTS[skyPreset];
-    const canvas = document.createElement("canvas");
-    canvas.width = 2;
-    canvas.height = 256;
-    const ctx = canvas.getContext("2d")!;
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, stops.top);
-    gradient.addColorStop(0.55, stops.horizon);
-    gradient.addColorStop(1, stops.ground);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.mapping = THREE.EquirectangularReflectionMapping;
-    texture.colorSpace = THREE.SRGBColorSpace;
-    return texture;
-  }
-
   /** Fog color when `config.fogMatchesSky` is on — the "seamless horizon"
    * technique from three.js's webgl_geometry_terrain example (that demo
    * matches its fog color to the sky/clear color so distant geometry
-   * fades into the backdrop instead of a visible fog-vs-sky seam).
-   * Resolved cheaply, without any GPU readback, from whatever's already
-   * driving `scene.background`:
-   * - non-"sky" backgroundPresets already resolve to one of two flat
-   *   THREE.Color literals (see rebuildEnvironment below) — reused
-   *   exactly here, so fog and background always match precisely.
-   * - the procedural gradient sky's own `horizon` stop (SKY_GRADIENTS,
-   *   the same data `buildSkyTexture` paints) is exactly the color a
-   *   distant, level view of that sky actually shows.
-   * - a loaded platform HDRI has no equivalently cheap single "horizon
-   *   color" to derive without an async pixel readback of the PMREM
-   *   target — adding that would make what's meant to be a cheap live
-   *   update async and comparatively expensive, so this case honestly
-   *   falls back to the authored `config.fogColor` instead of guessing.
-   */
+   * fades into the backdrop instead of a visible fog-vs-sky seam). The
+   * physical `SkyMesh` (the scene's only backdrop now — see the
+   * Sky/Water/Bloom/Clouds "Ocean" tab's own doc comments) has no cheap
+   * single "horizon color" to derive from its continuous elevation/
+   * azimuth-driven atmosphere without an expensive GPU readback, so this
+   * is one fixed, honest approximation (`FOG_SKY_HORIZON_COLOR`) rather
+   * than a per-project-accurate one. */
   private resolveFogColor(config: Project3DConfig): string {
     if (!config.fogMatchesSky) return config.fogColor;
-    if (config.backgroundPreset !== "sky") {
-      return config.backgroundPreset === "studio_dark" ? "#141414" : "#f0efe9";
-    }
-    if (this.hdriTexture) return config.fogColor;
-    return SKY_GRADIENTS[config.skyPreset].horizon;
+    return FOG_SKY_HORIZON_COLOR;
   }
 
   /** Ground Platform's real "ground fog" (Sky/Water/Bloom/Clouds follow-up)
@@ -1120,182 +975,77 @@ export class RenderEngine {
     return material;
   }
 
-  /** Sky/Water/Bloom/Clouds pass — the procedural (non-HDRI) branch used
-   * to feed a flat gradient `CanvasTexture` through
-   * `pmrem.fromEquirectangular`; it now captures the real physical sky
-   * dome (`this.skyMesh`) via `pmrem.fromScene`, the same "temporarily
-   * move the mesh into an offscreen capture scene, then back into the
-   * visible one" trick webgl_shaders_ocean.html's own `updateSun()` uses
-   * (that single mesh instance is also the visible backdrop when
-   * `backgroundPreset` is "sky", so it can't just live permanently in a
-   * separate scene). HDRI mode is untouched — same `fromEquirectangular`
-   * path as before, `skyMesh` simply stays hidden. */
+  /** Sky/Water/Bloom/Clouds "Ocean" tab — captures the real physical sky
+   * dome (`this.skyMesh`, the scene's only backdrop now) via
+   * `pmrem.fromScene`, the same "temporarily move the mesh into an
+   * offscreen capture scene, then back into the visible one" trick
+   * webgl_shaders_ocean.html's own `updateSun()` uses (that single mesh
+   * instance is also the visible backdrop, so it can't just live
+   * permanently in a separate scene). `size: 128` (PMREMGenerator's own
+   * default is 256) cuts the shaded-pixel count ~4x — a PMREM target only
+   * feeds blurry indirect lighting/reflections, not a sharp visible
+   * image, so this is not a visually meaningful quality loss; real perf
+   * fix from the original "Lighting tab doesn't work" report, when this
+   * replaced a free flat-gradient-texture PMREM capture with a real
+   * shaded one. */
   private rebuildEnvironment(config: Project3DConfig) {
-    const renderer = this.renderer;
     const scene = this.scene;
     const envScene = this.envScene;
     const pmrem = this.pmrem;
     const skyMesh = this.skyMesh;
-    if (!renderer || !scene || !envScene || !pmrem || !skyMesh) return;
-    const usingHdri = !!this.hdriTexture;
+    if (!scene || !envScene || !pmrem || !skyMesh) return;
 
-    let renderTarget: ReturnType<typeof pmrem.fromEquirectangular>;
-    if (usingHdri) {
-      renderTarget = pmrem.fromEquirectangular(this.hdriTexture!);
-    } else {
-      // Env/reflection lighting always comes from the sky PMREM regardless
-      // of backgroundPreset (same rule this method already followed for
-      // the old gradient texture) — visibility of the dome itself as the
-      // literal backdrop is decided separately, below. `far` is passed
-      // defensively past `SKY_DOME_SCALE` (default is only 100, per
-      // PMREMGenerator's own source) — SkyMesh's vertex shader pins its
-      // own clip-space depth to the far plane either way (the standard
-      // "always render behind everything" skybox trick), so in practice
-      // this mostly guards against a future change to that shader, not a
-      // failure observed today.
-      //
-      // Real perf fix ("Lighting tab doesn't work" report): unlike the old
-      // `fromEquirectangular(flatGradientTexture)` this replaced (free —
-      // no shading, just resampling a 2×256 texture), `fromScene` actually
-      // renders the sky dome's real atmospheric-scattering shader into 6
-      // cube faces. Confirmed live (Playwright + in-engine instrumentation)
-      // that this landed squarely on the editor's existing "config loads
-      // in 2-3 progressive stages, each triggers a full remount" pattern —
-      // previously cheap regardless of how many times it fired, now
-      // genuinely expensive each time. `size: 128` (PMREMGenerator's own
-      // default is 256) cuts the shaded-pixel count ~4x; a PMREM target
-      // only feeds blurry indirect lighting/reflections, not a sharp
-      // visible image, so this is not a visually meaningful quality loss.
-      skyMesh.visible = true;
-      scene.remove(skyMesh);
-      envScene.add(skyMesh);
-      renderTarget = pmrem.fromScene(envScene, 0, 0.1, SKY_DOME_SCALE * 1.5, { size: 128 });
-      envScene.remove(skyMesh);
-      scene.add(skyMesh);
+    // Standalone "Sky" tab's off switch (Rozaris-specific — the reference
+    // demo has no such toggle, its Sky is always the scene). No physical
+    // dome to capture a PMREM of, so fall back to one flat neutral color
+    // for both background and (via PMREMGenerator.fromScene on a bare
+    // color scene, the cheapest possible capture) ambient environment
+    // lighting — everything still lit, just no directional sky gradient.
+    if (!config.skyEnabled) {
+      skyMesh.visible = false;
+      const fallbackColor = new THREE.Color(FOG_SKY_HORIZON_COLOR);
+      const prevBackground = envScene.background;
+      envScene.background = fallbackColor;
+      const renderTarget = pmrem.fromScene(envScene, 0, 0.1, SKY_DOME_SCALE * 1.5, { size: 16 });
+      envScene.background = prevBackground;
+
+      this.envRenderTarget?.dispose();
+      this.envRenderTarget = renderTarget;
+      scene.environment = renderTarget.texture;
+      scene.environmentIntensity = config.environmentIntensity;
+      scene.background = fallbackColor;
+      scene.backgroundIntensity = config.environmentIntensity;
+      return;
     }
 
-    // Light-probe SH capture (optional, off by default) stays on the cheap
-    // equirect-texture path (`fromEquirectangularTexture`) rather than a
-    // second real render of `skyMesh` — an approximate indirect-light
-    // source is enough for a probe nobody has opted into yet; the gradient
-    // this reuses (`buildSkyTexture`) is a reasonable stand-in for the
-    // physical sky's general mood (same preset, same time of day) even
-    // though it won't reflect clouds or `SKY_PHYSICAL_PARAMS` exactly.
-    const lightProbeSource = usingHdri ? this.hdriTexture! : this.buildSkyTexture(config.skyPreset);
-    if (config.lightProbeEnabled && this.lightProbeCubeTarget) {
-      this.lightProbeCubeTarget.fromEquirectangularTexture(renderer, lightProbeSource);
-      void this.captureLightProbe();
-    } else if (this.lightProbe) {
-      this.lightProbe.intensity = 0;
-    }
-    if (!usingHdri) lightProbeSource.dispose();
+    skyMesh.visible = true;
+    scene.remove(skyMesh);
+    envScene.add(skyMesh);
+    const renderTarget = pmrem.fromScene(envScene, 0, 0.1, SKY_DOME_SCALE * 1.5, { size: 128 });
+    envScene.remove(skyMesh);
+    scene.add(skyMesh);
 
     this.envRenderTarget?.dispose();
     this.envRenderTarget = renderTarget;
     scene.environment = renderTarget.texture;
     scene.environmentIntensity = config.environmentIntensity;
-    // webgl_watch.html parity — real `Scene.backgroundBlurriness`. Only
-    // visibly does anything when `scene.background` below ends up as a
-    // texture (Platform HDRI active); harmless no-op against a flat
-    // THREE.Color background otherwise, so it's always safe to set here
-    // rather than branching on `usingHdri` separately.
-    scene.backgroundBlurriness = config.backgroundBlurriness;
-
-    if (config.backgroundPreset === "sky") {
-      // The HDRI still paints scene.background as an equirect texture
-      // (unchanged behavior); the physical sky dome paints itself
-      // directly as real geometry instead, so background stays unset —
-      // the renderer draws `skyMesh` (visible below) rather than a flat
-      // equirect of it.
-      scene.background = usingHdri ? renderTarget.texture : null;
-      scene.backgroundIntensity = config.environmentIntensity;
-      skyMesh.visible = !usingHdri;
-    } else {
-      scene.background = new THREE.Color(config.backgroundPreset === "studio_dark" ? 0x141414 : 0xf0efe9);
-      scene.backgroundIntensity = 1;
-      skyMesh.visible = false;
-    }
+    // The physical sky dome paints itself directly as real geometry, so
+    // background stays unset — the renderer draws `skyMesh` itself
+    // rather than a flat equirect of it.
+    scene.background = null;
+    scene.backgroundIntensity = config.environmentIntensity;
+    skyMesh.visible = true;
   }
 
-  /** Async spherical-harmonics readback for the light probe — kicked off
-   * fire-and-forget from rebuildEnvironment (which must stay synchronous;
-   * several of its callers, including this class's own mount()/
-   * applySunAndEnvironment(), aren't async). Token + mountToken-guarded
-   * so a slow-resolving capture from an already-superseded environment
-   * (rapid time-of-day dragging re-triggers rebuildEnvironment on every
-   * tick) or a since-disposed engine can never apply stale/orphaned SH
-   * data — same reasoning this class's other fire-and-forget async work
-   * (e.g. setHdri) already documents for mountToken. */
-  private async captureLightProbe() {
-    const renderer = this.renderer;
-    const cubeTarget = this.lightProbeCubeTarget;
-    const lightProbe = this.lightProbe;
-    if (!renderer || !cubeTarget || !lightProbe) return;
-    const token = ++this.lightProbeToken;
-    const mountTokenAtStart = this.mountToken;
-    try {
-      const generated = await LightProbeGenerator.fromCubeRenderTarget(renderer, cubeTarget);
-      if (token !== this.lightProbeToken || mountTokenAtStart !== this.mountToken) return;
-      lightProbe.sh.copy(generated.sh);
-      lightProbe.intensity = 1;
-    } catch (err) {
-      console.warn("3D Experience: light probe capture failed", err);
-    }
-  }
-
-  /** Platform HDRI loading (Task 2 — Track A) — separate from
-   * rebuildEnvironment above because parsing a .hdr/.exr file is
-   * inherently async, unlike the procedural gradient. Loads once per
-   * distinct `hdriUrl`, then triggers a synchronous rebuild; `null` (no
-   * HDRI selected, or it failed to load) falls back to the procedural sky
-   * gradient. Caller (the component's HDRI effect) is responsible for only
-   * calling this when `ready` and for not calling it again for the same
-   * URL — mirrors the original effect's own guard logic exactly. */
-  async setHdri(hdriUrl: string | null, config: Project3DConfig) {
-    if (!hdriUrl) {
-      if (this.hdriTexture) {
-        this.hdriTexture.dispose();
-        this.hdriTexture = null;
-        this.hdriUrlLoaded = null;
-        this.rebuildEnvironment(config);
-      }
-      return;
-    }
-    if (this.hdriUrlLoaded === hdriUrl && this.hdriTexture) return;
-    const token = this.mountToken;
-    const isExr = hdriUrl.toLowerCase().endsWith(".exr");
-    const loader = isExr ? new EXRLoader() : new RGBELoader();
-    await new Promise<void>((resolve) => {
-      loader.load(
-        hdriUrl,
-        (texture) => {
-          if (token !== this.mountToken) return resolve();
-          texture.mapping = THREE.EquirectangularReflectionMapping;
-          this.hdriTexture?.dispose();
-          this.hdriTexture = texture;
-          this.hdriUrlLoaded = hdriUrl;
-          this.rebuildEnvironment(config);
-          resolve();
-        },
-        undefined,
-        (err) => {
-          if (token !== this.mountToken) return resolve();
-          console.warn("3D Experience: Platform HDRI failed to load, falling back to procedural sky", err);
-          this.hdriTexture = null;
-          this.hdriUrlLoaded = null;
-          this.rebuildEnvironment(config);
-          resolve();
-        }
-      );
-    });
-  }
-
-  /** Loads the real vendored `.cube` LUT file for `presetId` (see
-   * `LUT_PRESETS`), same "only reload on a real change" / "awaited inside
-   * mount() before buildRenderPipeline" shape as `setHdri` above. Failure
-   * (bad/missing preset id, fetch error) degrades to "no LUT" rather than
-   * breaking the mount — mirrors `setHdri`'s own fallback-to-procedural
-   * behavior on HDRI load failure. */
+  /** Loads the real vendored LUT file for `presetId` (see `LUT_PRESETS`),
+   * dispatching to whichever of `LUTCubeLoader`/`LUT3dlLoader`/
+   * `LUTImageLoader` its `format` names — every option
+   * webgl_postprocessing_3dlut.html's own reference GUI exposes, same
+   * extension-based branch its own source uses. All three loaders share
+   * the same `{size, texture3D}` result shape. "Only reload on a real
+   * change" shape same as the rest of this class's async loaders (e.g.
+   * `loadCausticsTexture`). Failure (bad/missing preset id, fetch error)
+   * degrades to "no LUT" rather than breaking the mount. */
   private async loadLut(presetId: string) {
     if (this.lutPresetLoaded === presetId && this.lutTexture) return;
     const preset = LUT_PRESETS.find((p) => p.id === presetId);
@@ -1305,7 +1055,7 @@ export class RenderEngine {
       return;
     }
     const token = this.mountToken;
-    const loader = new LUTCubeLoader();
+    const loader = preset.format === "cube" ? new LUTCubeLoader() : preset.format === "3dl" ? new LUT3dlLoader() : new LUTImageLoader();
     await new Promise<void>((resolve) => {
       loader.load(
         `/luts/${preset.file}`,
@@ -1353,34 +1103,12 @@ export class RenderEngine {
    * environment/reflections were never implicated in either failure and
    * are completely untouched by this.
    *
-   * Bloom (Sky/Water/Bloom/Clouds pass) — was a hardcoded-always-off TSL
-   * node before this; now a real per-project toggle
-   * (`config.bloomEnabled`), ANDed with `tier.bloom` exactly like
-   * `antialiasEnabled` already is against `tier.antialias`. Threshold was
-   * fixed at 0.85 (webgl_shaders_ocean.html's own Bloom GUI default) until
-   * the webgl_watch.html pass added a real `bloomThreshold` slider.
-   *
-   * Motion blur (`webgpu_postprocessing_motion_blur.html` parity) — real
-   * per-object velocity, not a fake screen-space smear: `scenePass.setMRT`
-   * adds a second `velocity` render target (three.js's own `VelocityNode`,
-   * which tracks each object's previous-frame model/view/projection
-   * matrices) alongside the existing `output` color target, then
-   * `motionBlur(color, vel)` samples `color` at 16 taps along that
-   * per-pixel velocity vector. Must run directly on `color` — confirmed by
-   * reading the installed `MotionBlur.js` source: it's a plain `Fn` that
-   * calls `inputNode.sample(uv)` internally, which only exists on a real
-   * `TextureNode` (`TextureNode.js`'s own `sample()` method), not on an
-   * arbitrary composited expression like `color.add(bloomNode)`. That's
-   * why this runs *before* bloom is folded into `chain` (bloom's own
-   * `BloomNode` is a full render-target-backed node that accepts any
-   * `Node<vec4>` as input, so it's fine receiving the already-blurred
-   * chain) — the base scene gets motion-blurred, bloom's glow is added on
-   * top of that. Gated behind `tier.motionBlur && config.motionBlurEnabled`,
-   * same AND-gate pattern as bloom/antialiasing. Only set up when enabled:
-   * `setMRT` isn't called at all otherwise, so disabled projects pay
-   * nothing extra (matches `scenePass.getTextureNode("output")` already
-   * working with no MRT configured — confirmed in `PassNode.js`, "output"
-   * is the default named slot regardless).
+   * Bloom (Sky/Water/Bloom/Clouds "Ocean" tab) — a real per-project
+   * toggle (`config.bloomEnabled`), ANDed with `tier.bloom` exactly like
+   * `antialiasEnabled` already is against `tier.antialias`. Threshold is
+   * fixed at 0.85 (`BLOOM_THRESHOLD_DEFAULT`, webgl_shaders_ocean.html's
+   * own Bloom GUI default — it doesn't expose threshold either, only
+   * strength/radius).
    *
    * Depth of field (`webgl_postprocessing_dof2.html` parity) — real bokeh
    * blur from `scenePass.getViewZNode()` (works unmodified, no MRT/setMRT
@@ -1396,7 +1124,6 @@ export class RenderEngine {
     this.renderPipeline?.dispose();
     this.renderPipeline = null;
     this.bloomNode = null;
-    this.motionBlurAmount = null;
     this.lutIntensity = null;
     this.dofFocusDistance = null;
     this.dofFocalLength = null;
@@ -1410,20 +1137,12 @@ export class RenderEngine {
       const color = scenePass.getTextureNode("output");
 
       let chain: THREE.Node<"vec4"> = color;
-      if (tier.motionBlur && this.config.motionBlurEnabled) {
-        scenePass.setMRT(mrt({ output, velocity }));
-        const blurAmount = uniform(this.config.motionBlurAmount);
-        this.motionBlurAmount = blurAmount;
-        const vel = scenePass.getTextureNode("velocity").mul(blurAmount);
-        chain = motionBlur(color, vel);
-      }
       if (tier.bloom && this.config.bloomEnabled) {
-        // webgl_watch.html parity — threshold used to be hardcoded 0.85;
-        // now a real per-project slider. Confirmed against BloomNode.js's
-        // own source (same file the strength/radius doc comment above
-        // cites): `threshold` is a real UniformNode<float> too, so
-        // applyLiveUpdate can drag it live just like strength/radius.
-        const bloomNode = bloom(chain, this.config.bloomStrength, this.config.bloomRadius, this.config.bloomThreshold);
+        // Sky/Water/Bloom/Clouds "Ocean" tab — strength/radius only,
+        // matching webgl_shaders_ocean.html's own Bloom GUI folder
+        // exactly; threshold isn't exposed there either, so it stays
+        // fixed at the same value the demo hardcodes.
+        const bloomNode = bloom(chain, this.config.bloomStrength, this.config.bloomRadius, BLOOM_THRESHOLD_DEFAULT);
         this.bloomNode = bloomNode;
         chain = chain.add(bloomNode);
       }
@@ -1503,7 +1222,6 @@ export class RenderEngine {
       console.error("3D Experience: post-processing pipeline failed, falling back to direct render", err);
       this.renderPipeline = null;
       this.bloomNode = null;
-      this.motionBlurAmount = null;
       this.lutIntensity = null;
       this.dofFocusDistance = null;
       this.dofFocalLength = null;
@@ -1593,21 +1311,6 @@ export class RenderEngine {
     const pmrem = new THREE.PMREMGenerator(renderer);
     this.pmrem = pmrem;
 
-    // Light probe (webgl_lightprobes_sponza.html technique) — real
-    // spherical-harmonics irradiance, additive alongside the flat
-    // AmbientLight below, not a replacement for it. Capture itself
-    // happens in rebuildEnvironment() (needs the same equirect sky
-    // texture that method already builds for PMREM); this just
-    // allocates the probe + its tiny capture target once, up front.
-    // intensity starts at 0 — stays that way until a real capture
-    // resolves, so there's no one-frame flash of un-lit SH default data.
-    const lightProbeCubeTarget = new THREE.CubeRenderTarget(LIGHT_PROBE_CUBE_SIZE);
-    this.lightProbeCubeTarget = lightProbeCubeTarget;
-    const lightProbe = new THREE.LightProbe();
-    lightProbe.intensity = 0;
-    scene.add(lightProbe);
-    this.lightProbe = lightProbe;
-
     const isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
     const fov = isMobileViewport ? config.cameraFovMobile : config.cameraFovDesktop;
     const camera = new THREE.PerspectiveCamera(fov, container.clientWidth / Math.max(1, container.clientHeight), 0.1, 2000);
@@ -1632,29 +1335,10 @@ export class RenderEngine {
     this.sun = sun;
     this.ambient = ambient;
 
-    // Lens flare (webgl_lensflares.html technique) — LensflareMesh, the
-    // WebGPU-native port shipped alongside the classic (WebGL-only)
-    // Lensflare in three.js 0.185.1; same addElement/light.add(lensflare)
-    // API. Attached to the sun exactly like the upstream example attaches
-    // to its light — light-type-agnostic (only reads its own
-    // this.matrixWorld, inherited from the parent light), so this works
-    // the same for a DirectionalLight as the example's PointLight.
-    // Procedural textures (buildLensflareTexture), no external asset
-    // dependency, same reasoning as buildSkyTexture's canvas gradients.
-    const lensflare = new LensflareMesh();
-    lensflare.addElement(new LensflareElement(this.buildLensflareTexture("glow"), 700, 0));
-    lensflare.addElement(new LensflareElement(this.buildLensflareTexture("ring"), 140, 0.35, new THREE.Color(0x8fb4ff)));
-    lensflare.addElement(new LensflareElement(this.buildLensflareTexture("ring"), 90, 0.6, new THREE.Color(0xffffff)));
-    lensflare.addElement(new LensflareElement(this.buildLensflareTexture("ring"), 60, 0.9, new THREE.Color(0xc9a6ff)));
-    lensflare.visible = config.lensflareEnabled;
-    sun.add(lensflare);
-    this.lensflare = lensflare;
-
-    // Physical sky dome (Sky/Water/Bloom/Clouds pass) — built once per
-    // mount like lensflare/lightProbe above; visibility (only the actual
-    // backdrop when backgroundPreset is "sky" and no HDRI is active) and
-    // its turbidity/rayleigh/mie/cloud/sunPosition uniforms are handled by
-    // rebuildEnvironment/applySunAndEnvironment, not here.
+    // Physical sky dome (Sky/Water/Bloom/Clouds "Ocean" tab) — the
+    // scene's only backdrop; its turbidity/rayleigh/mie/cloud/sunPosition
+    // uniforms are handled by rebuildEnvironment/applySunAndEnvironment,
+    // not here.
     const skyMesh = new SkyMesh();
     skyMesh.scale.setScalar(SKY_DOME_SCALE);
     scene.add(skyMesh);
@@ -1938,41 +1622,14 @@ export class RenderEngine {
       this.ground = null;
     }
 
-    // Volumetric raymarched cloud (webgl_volume_cloud.html parity) — real
-    // box mesh + raymarching NodeMaterial, sized/positioned off the same
-    // `boundingRadius`/`sceneCenter` the sky/water/ground already use
-    // (the reference demo's own 1×1×1 box would be invisible at this
-    // app's real building scale). Floats above the scene like an actual
-    // cloud layer rather than enclosing it.
-    this.volumetricCloudMesh?.geometry.dispose();
-    (this.volumetricCloudMesh?.material as THREE.Material | undefined)?.dispose();
-    this.volumetricCloudNoiseTexture?.dispose();
-    this.volumetricCloudMesh = null;
-    this.volumetricCloudUniforms = null;
-    this.volumetricCloudNoiseTexture = null;
-    if (tier.volumetricCloud && config.volumetricCloudEnabled) {
-      const cloudSize = boundingRadius * 2.2;
-      const noiseTexture = buildVolumetricCloudNoiseTexture();
-      const { material, uniforms } = buildVolumetricCloudMaterial(noiseTexture);
-      const cloudMesh = new THREE.Mesh(new THREE.BoxGeometry(cloudSize, cloudSize, cloudSize), material);
-      cloudMesh.position.set(this.sceneCenter?.x ?? 0, boundingRadius * 1.3, this.sceneCenter?.z ?? 0);
-      scene.add(cloudMesh);
-      this.volumetricCloudMesh = cloudMesh;
-      this.volumetricCloudUniforms = uniforms;
-      this.volumetricCloudNoiseTexture = noiseTexture;
-      uniforms.threshold.value = config.volumetricCloudThreshold;
-      uniforms.opacity.value = config.volumetricCloudOpacity;
-      uniforms.range.value = config.volumetricCloudRange;
-      uniforms.steps.value = config.volumetricCloudSteps;
-    }
-
     scene.fog = config.fogEnabled ? new THREE.FogExp2(this.resolveFogColor(config), config.fogDensity) : null;
 
     this.rebuildEnvironment(config);
     // 3D LUT — real async texture load, awaited before buildRenderPipeline
     // reads `this.lutTexture` below (both `lutEnabled` and `lutPreset` are
     // mount deps — see ProceduralProjectViewer.tsx — so this only ever
-    // runs on a fresh mount, same as `setHdri`'s own token-guard pattern).
+    // runs on a fresh mount; same mountToken guard pattern as this
+    // class's other async loaders.
     if (config.lutEnabled) {
       await this.loadLut(config.lutPreset);
     } else {
@@ -2191,14 +1848,6 @@ export class RenderEngine {
           this.buildRenderPipeline(this.effectiveTier);
         }
       }
-      // Volumetric cloud dither-seed — bumped every frame, same as the
-      // reference demo's own animate() loop, so the per-fragment random
-      // offset (see volumetricCloud.ts's fragmentNode) changes frame to
-      // frame instead of producing a static dither pattern.
-      if (this.volumetricCloudUniforms) {
-        this.volumetricCloudFrame += 1;
-        this.volumetricCloudUniforms.frame.value = this.volumetricCloudFrame;
-      }
       if (this.renderPipeline) this.renderPipeline.render();
       else renderer.render(scene, camera);
       // Shadow-map debug HUD — drawn as an overlay after the main render
@@ -2230,7 +1879,7 @@ export class RenderEngine {
   }
 
   dispose() {
-    this.mountToken++; // invalidates any in-flight mount()/setHdri() continuations
+    this.mountToken++; // invalidates any in-flight mount() continuations
     if (this.environmentRebuildTimer != null) {
       clearTimeout(this.environmentRebuildTimer);
       this.environmentRebuildTimer = null;
@@ -2269,24 +1918,16 @@ export class RenderEngine {
     this.dracoLoader?.dispose();
     this.envRenderTarget?.dispose();
     this.pmrem?.dispose();
-    this.hdriTexture?.dispose();
-    this.hdriTexture = null;
-    this.hdriUrlLoaded = null;
     this.renderPipeline?.dispose();
     this.renderPipeline = null;
-    // Sky/Water/Bloom/Clouds pass — bloomNode owns its own internal blur/
-    // composite render targets (see BloomNode.js's own dispose()); holding
-    // a direct reference here disposes them explicitly rather than relying
-    // on renderPipeline's teardown to reach into the node graph.
+    // Sky/Water/Bloom/Clouds "Ocean" tab — bloomNode owns its own internal
+    // blur/composite render targets (see BloomNode.js's own dispose());
+    // holding a direct reference here disposes them explicitly rather than
+    // relying on renderPipeline's teardown to reach into the node graph.
     this.bloomNode?.dispose();
     this.bloomNode = null;
-    // Motion blur — plain UniformNode, no GPU resources of its own to
-    // dispose (unlike bloomNode's internal render targets above); the
-    // MRT velocity render target itself is owned/disposed by renderPipeline.
-    this.motionBlurAmount = null;
     // 3D LUT — the real Data3DTexture holds actual GPU-uploadable pixel
-    // data, unlike the plain uniforms above, so it gets an explicit
-    // dispose() same as hdriTexture above it.
+    // data, so it gets an explicit dispose().
     this.lutTexture?.dispose();
     this.lutTexture = null;
     this.lutPresetLoaded = null;
@@ -2312,22 +1953,14 @@ export class RenderEngine {
       (this.waterMesh.material as THREE.Material).dispose();
       this.waterMesh = null;
     }
-    if (this.volumetricCloudMesh) {
-      this.volumetricCloudMesh.geometry.dispose();
-      (this.volumetricCloudMesh.material as THREE.Material).dispose();
-      this.volumetricCloudMesh = null;
-    }
-    this.volumetricCloudNoiseTexture?.dispose();
-    this.volumetricCloudNoiseTexture = null;
-    this.volumetricCloudUniforms = null;
     // Shadow-map debug HUD — no owned GPU resources (see its own field
     // doc comment), just drop the reference.
     this.shadowMapViewer = null;
     this.shadowMapViewerEnabled = false;
     // Unit-status caustics — the real texture holds actual GPU-uploadable
-    // pixel data, disposed explicitly same as hdriTexture/lutTexture
-    // above; per-unit materials/their emissiveNode graphs are disposed
-    // along with the rest of unitMeshes elsewhere in this method already.
+    // pixel data, disposed explicitly same as lutTexture above; per-unit
+    // materials/their emissiveNode graphs are disposed along with the
+    // rest of unitMeshes elsewhere in this method already.
     this.causticsTexture?.dispose();
     this.causticsTexture = null;
     this.causticsScaleUniform = null;
@@ -2348,16 +1981,6 @@ export class RenderEngine {
     this.groundFogColorUniform = null;
     this.groundFogRadiusUniform = null;
     this.groundFogStrengthUniform = null;
-    // LensflareMesh's own dispose() already disposes every element's
-    // texture (see LensflareMesh.js's own `this.dispose` — iterates
-    // `elements[i].texture.dispose()`) — no separate texture cleanup
-    // needed here.
-    this.lensflare?.dispose();
-    this.lensflare = null;
-    this.lightProbeCubeTarget?.dispose();
-    this.lightProbeCubeTarget = null;
-    this.lightProbe = null; // no GPU resource of its own beyond what scene teardown already frees
-    this.lightProbeToken++; // belt-and-suspenders alongside mountToken++ already invalidating in-flight work
     this.cameraTransition = null;
     this.unitMaterialCache.forEach((material) => material.dispose());
     this.unitMaterialCache = new Map();
@@ -2457,23 +2080,6 @@ export class RenderEngine {
     if (this.bloomNode) {
       this.bloomNode.strength.value = config.bloomStrength;
       this.bloomNode.radius.value = config.bloomRadius;
-      this.bloomNode.threshold.value = config.bloomThreshold;
-    }
-    // Volumetric raymarched cloud — 4 real live UniformNode<float>s (the
-    // exact reference demo's own GUI params); volumetricCloudEnabled
-    // itself still needs a fresh mount (structural — the mesh/material
-    // don't exist at all otherwise).
-    if (this.volumetricCloudUniforms) {
-      this.volumetricCloudUniforms.threshold.value = config.volumetricCloudThreshold;
-      this.volumetricCloudUniforms.opacity.value = config.volumetricCloudOpacity;
-      this.volumetricCloudUniforms.range.value = config.volumetricCloudRange;
-      this.volumetricCloudUniforms.steps.value = config.volumetricCloudSteps;
-    }
-    // Motion blur amount — a real live UniformNode multiplying the MRT
-    // velocity vector, same pattern as bloom's strength/radius above;
-    // motionBlurEnabled itself still needs a fresh mount (structural).
-    if (this.motionBlurAmount) {
-      this.motionBlurAmount.value = config.motionBlurAmount;
     }
     // 3D LUT intensity — real live UniformNode; `lutEnabled`/`lutPreset`
     // still need a fresh mount (structural + async texture load).
@@ -2523,13 +2129,14 @@ export class RenderEngine {
     }
   }
 
-  /** Real geographic sun + sky/environment — recomputed whenever the
-   * effective time-of-day, sky preset, environment intensity, north
-   * rotation or manual-sun fields change. */
+  /** Sky/Water/Bloom/Clouds "Ocean" tab — sun position (direct
+   * elevation/azimuth, matching webgl_shaders_ocean.html's own GUI
+   * exactly, no geographic date/time simulation) + the physical sky dome/
+   * water it feeds. Recomputed whenever the sun/environment-intensity
+   * fields change. */
   applySunAndEnvironment(params: SunEnvironmentParams) {
-    this.setProject(params.project);
     this.config = params.config;
-    const { project, config, effectiveTimeOfDay } = params;
+    const { config } = params;
     const sun = this.sun;
     const ambient = this.ambient;
     const scene = this.scene;
@@ -2539,35 +2146,11 @@ export class RenderEngine {
     // needed, safe to set on every call same as the sun direction below.
     sun.shadow.radius = config.shadowSoftness;
 
-    // Manual sun (Task 2 — Track A): admin sets azimuth/elevation directly
-    // instead of it being derived from date/time/lat/lng. Reuses the same
-    // sunDirectionVector/sunColorForElevation pure functions calcSunPosition's
-    // own result already flows through — only the position itself is
-    // sourced differently. "geographic" (default) is byte-for-byte the
-    // same behavior as before this feature existed.
-    // Sun & Time restructure — `simulationDate` ("YYYY-MM-DD") lets an
-    // admin pin the geographic sun to a specific calendar date (a solar
-    // study for "21 June", say) instead of always tracking today's real
-    // date. `null`/unset (the default) is byte-for-byte the same
-    // `new Date()` behavior as before this field existed. Parsed at
-    // UTC midnight — only the month/day feeds the seasonal declination
-    // (see sunPosition.ts's dayOfYearUTC), the time-of-day component is
-    // irrelevant here since `effectiveTimeOfDay` supplies the clock time
-    // separately. An invalid/unparsable string falls back to "today"
-    // rather than feeding calcSunPosition a NaN date.
-    const simulationDate = config.simulationDate ? new Date(`${config.simulationDate}T00:00:00Z`) : null;
-    const effectiveDate = simulationDate && !Number.isNaN(simulationDate.getTime()) ? simulationDate : new Date();
-
-    const sunPos =
-      config.sunMode === "manual"
-        ? { elevationDeg: config.sunElevationDeg, azimuthDeg: config.sunAzimuthDeg, isNight: config.sunElevationDeg <= 0 }
-        : calcSunPosition({
-            lat: project.coords.lat,
-            lng: project.coords.lng,
-            date: effectiveDate,
-            timeOfDay: effectiveTimeOfDay,
-            northRotationDeg: config.northRotationDeg,
-          });
+    const sunPos = {
+      elevationDeg: config.sunElevationDeg,
+      azimuthDeg: config.sunAzimuthDeg,
+      isNight: config.sunElevationDeg <= 0,
+    };
     const dir = sunDirectionVector(sunPos);
     // Real bug fix — must be the exact same distance `sun.shadow.camera`'s
     // near/far were bracketed around in mount() (see `sunDistance`'s own
@@ -2575,22 +2158,15 @@ export class RenderEngine {
     // not an independent hardcoded value that can silently drift out of
     // sync with it again.
     const distance = this.sunDistance;
-    // Used to only apply under "manual" sun mode (geographic mode ignored
-    // it entirely) — now applies either way so the Lighting tab's Sun
-    // Intensity slider is meaningful regardless of mode. Defaults to 1, so
-    // every existing project's geographic-mode behavior is unchanged until
-    // an admin actually touches the slider.
-    const intensityMultiplier = config.sunIntensity;
     // Offset by the scene's actual center (same point `sun.target` was
-    // pointed at, once, in mount()) — real bug fix found during the Sun &
-    // Time restructure. `sun.position` used to be set in raw world space
-    // with no such offset, so the light's true direction (position -
-    // target) only matched the intended elevation/azimuth when the scene
-    // happened to sit near the world origin; any building whose bounding-
-    // box center was offset from (0,0,0) was getting a subtly wrong sun
-    // angle. Falls back to the origin if called before a mount (shouldn't
-    // happen in practice — `sun`/`ambient` are both null until mount()
-    // sets them, guarded by the early return above).
+    // pointed at, once, in mount()) — `sun.position` set in raw world
+    // space with no such offset would only match the intended elevation/
+    // azimuth when the scene happened to sit near the world origin; any
+    // building whose bounding-box center was offset from (0,0,0) would
+    // get a subtly wrong sun angle. Falls back to the origin if called
+    // before a mount (shouldn't happen in practice — `sun`/`ambient` are
+    // both null until mount() sets them, guarded by the early return
+    // above).
     const center = this.sceneCenter ?? new THREE.Vector3();
     sun.position.set(
       center.x + dir.x * distance,
@@ -2598,14 +2174,11 @@ export class RenderEngine {
       center.z + dir.z * distance
     );
     sun.color.setHex(sunColorForElevation(sunPos.elevationDeg));
-    sun.intensity = (sunPos.isNight ? 0.1 : 1.2 + Math.max(0, sunPos.elevationDeg / 90) * 1.8) * intensityMultiplier;
+    sun.intensity = sunPos.isNight ? 0.1 : 1.2 + Math.max(0, sunPos.elevationDeg / 90) * 1.8;
     ambient.intensity = sunPos.isNight ? 0.08 : 0.15;
-    // Below-horizon sun shouldn't show a flare from a light source that
-    // isn't visibly up — same isNight signal sun.intensity already uses.
-    if (this.lensflare) this.lensflare.visible = config.lensflareEnabled && !sunPos.isNight;
 
-    // Sky/Water/Bloom/Clouds pass — feeds the same real sun direction into
-    // the physical sky dome and water plane, exactly like
+    // Sky/Water/Bloom/Clouds "Ocean" tab — feeds the same real sun
+    // direction into the physical sky dome and water plane, exactly like
     // webgl_shaders_ocean.html's own `updateSun()` feeds one `sun` Vector3
     // into both `sky`/`water`. Kept raw/unclamped (unlike `sun.position`'s
     // `Math.max(dir.y, 0.05)` above, a practical floor so the *light*
@@ -2615,12 +2188,22 @@ export class RenderEngine {
     // this method; only the PMREM capture below is debounced.
     this.sunDirection.set(dir.x, dir.y, dir.z);
     if (this.skyMesh) {
-      const physical = SKY_PHYSICAL_PARAMS[config.skyPreset];
-      this.skyMesh.turbidity.value = physical.turbidity;
-      this.skyMesh.rayleigh.value = physical.rayleigh;
-      this.skyMesh.mieCoefficient.value = physical.mieCoefficient;
-      this.skyMesh.mieDirectionalG.value = physical.mieDirectionalG;
+      // Standalone "Sky" tab (webgl_shaders_sky.html parity) — real
+      // per-project params, replacing the old fixed SKY_PHYSICAL_PARAMS
+      // constant (kept only as that tuple's former-default reference,
+      // see viewerPresets.ts). Written every call regardless of
+      // `skyEnabled` — cheap uniform writes on a mesh that may just be
+      // hidden below, no need to gate them individually.
+      this.skyMesh.turbidity.value = config.skyTurbidity;
+      this.skyMesh.rayleigh.value = config.skyRayleigh;
+      this.skyMesh.mieCoefficient.value = config.skyMieCoefficient;
+      this.skyMesh.mieDirectionalG.value = config.skyMieDirectionalG;
       this.skyMesh.sunPosition.value.copy(this.sunDirection);
+      // Immediate visibility toggle for a live "off" switch — the
+      // expensive PMREM-of-sky-vs-flat-fallback swap happens in the
+      // debounced rebuildEnvironment below, but hiding/showing the mesh
+      // itself is a free scalar write, no reason to wait on it.
+      this.skyMesh.visible = config.skyEnabled;
       // Clouds (webgl_shaders_ocean.html's "Clouds" folder — really just 3
       // more uniforms on the sky shader, see SkyMesh's own field docs).
       // Off by default: coverage/density forced to 0 rather than leaving
@@ -2637,23 +2220,22 @@ export class RenderEngine {
     }
 
     // Everything above is cheap (a few scalar/vector writes) and applies
-    // synchronously on every call, so a live-drag time/date scrubber
-    // tracks the pointer smoothly. `rebuildEnvironment` below is the
-    // expensive part (PMREM.fromEquirectangular + an optional light-probe
-    // cube capture) — debounced so a drag doesn't thrash the GPU on every
-    // tick, see scheduleEnvironmentRebuild.
+    // synchronously on every call, so a live-drag sun elevation/azimuth
+    // slider tracks the pointer smoothly. `rebuildEnvironment` below is
+    // the expensive part (a real shaded PMREM capture of the sky dome) —
+    // debounced so a drag doesn't thrash the GPU on every tick, see
+    // scheduleEnvironmentRebuild.
     this.scheduleEnvironmentRebuild(config);
   }
 
-  /** Debounces `rebuildEnvironment` (PMREM + light-probe rebuild) behind
+  /** Debounces `rebuildEnvironment` (the real shaded PMREM capture) behind
    * ~150ms of idle after the last call — `applySunAndEnvironment`'s own
-   * React effect re-runs on every time-of-day slider tick, and before this
-   * existed each tick triggered a full synchronous PMREM regeneration.
-   * Mirrors EditorShell.tsx's `syncSectionGizmo` debounce idiom.
-   * `mountTokenAtStart` guards against the timer outliving a
+   * React effect re-runs on every sun elevation/azimuth slider tick, and
+   * before this existed each tick triggered a full synchronous PMREM
+   * regeneration. Mirrors EditorShell.tsx's `syncSectionGizmo` debounce
+   * idiom. `mountTokenAtStart` guards against the timer outliving a
    * dispose()/remount and firing `rebuildEnvironment` against a torn-down
-   * scene (same pattern `captureLightProbe` already uses). Mount-time and
-   * `setHdri`'s own `rebuildEnvironment` calls stay direct/synchronous —
+   * scene. Mount-time `rebuildEnvironment` calls stay direct/synchronous —
    * only this hot, per-tick path is debounced. */
   private scheduleEnvironmentRebuild(config: Project3DConfig) {
     if (this.environmentRebuildTimer != null) clearTimeout(this.environmentRebuildTimer);

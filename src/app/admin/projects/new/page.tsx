@@ -7,6 +7,7 @@ import { CheckCircle2, ShieldCheck, UploadCloud } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
+import { useStoreHydrated } from "@/hooks/useStoreHydrated";
 import { CITY_CENTER, DEMO_PUBLISHER, stageTemplate } from "@/lib/mockData";
 import type { Project } from "@/lib/types";
 
@@ -65,11 +66,17 @@ export default function NewAdminProjectPage() {
   const addProject = useAppStore((s) => s.addProject);
   const { t } = useT();
 
+  // Same real bug fix as /admin/3d-experience/[projectId]/page.tsx — see
+  // useStoreHydrated's own doc comment for the full "fresh load bounces
+  // back to /admin" root cause.
+  const hydrated = useStoreHydrated();
+
   useEffect(() => {
     // Same console-wide gate every other direct-URL admin route applies —
     // see the identical effect in /admin/3d-experience/[projectId]/page.tsx.
+    if (!hydrated) return;
     if (!auth.signedIn) router.replace("/admin");
-  }, [auth.signedIn, router]);
+  }, [hydrated, auth.signedIn, router]);
 
   // The real Auth.js session (checked by every write route this page calls)
   // is separate from the `auth.signedIn` Zustand mock above and can go
@@ -279,6 +286,7 @@ export default function NewAdminProjectPage() {
     }
   }
 
+  if (!hydrated) return null;
   if (!auth.signedIn) return null;
 
   return (

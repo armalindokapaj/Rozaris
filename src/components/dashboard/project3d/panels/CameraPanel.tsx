@@ -236,6 +236,24 @@ export function CameraPanel({
         </div>
         <p className="mt-1.5 text-[11px] text-neutral-400">{t("admin.sceneCameraPresetNote")}</p>
       </section>
+
+      {/* --- Logarithmic depth buffer (webgpu_camera_logarithmicdepthbuffer.html
+          parity) — moved here from the standalone Effects tab (2026-08-14,
+          user request: "relocate this") since it's fundamentally about the
+          camera's own depth precision at distance, not a generic
+          rendering/quality toggle. Real `WebGPURenderer` construction-time
+          flag, needs a fresh mount to take effect. --- */}
+      <section className="border-t border-neutral-100 pt-5">
+        <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
+          {t("admin.scenePerformanceTitle")}
+        </h3>
+        <ToggleField
+          label={t("admin.performanceLogarithmicDepth")}
+          checked={draft.logarithmicDepthEnabled}
+          onChange={(v) => update({ logarithmicDepthEnabled: v }, { commit: true })}
+        />
+        <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceLogarithmicDepthNote")}</p>
+      </section>
     </div>
   );
 }

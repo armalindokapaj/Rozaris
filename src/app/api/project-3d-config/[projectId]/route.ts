@@ -21,7 +21,6 @@ const cameraPresetSchema = z.object({
 const viewerUISchema = z.object({
   home: z.boolean(),
   unitSearch: z.boolean(),
-  timeOfDay: z.boolean(),
   // Interaction toggles (full-configurator pass) — optional since existing
   // rows predate these keys; client-side default is `true` (see
   // ViewerUIToggles in src/lib/types.ts).
@@ -68,8 +67,6 @@ const sectionSchema = z.object({
  * this is live-editable scalar config, not an immutable asset upload).
  */
 const patchSchema = z.object({
-  lightingPreset: z.enum(["daylight", "overcast", "evening"]).optional(),
-  backgroundPreset: z.enum(["sky", "studio_light", "studio_dark"]).optional(),
   groundEnabled: z.boolean().optional(),
   groundStyle: z.enum(["disc", "infinite"]).optional(),
   groundColor: hexColorSchema.optional(),
@@ -85,32 +82,31 @@ const patchSchema = z.object({
   renderingMode: z.enum(["auto", "webgpu", "webgl2"]).optional(),
   qualityPreset: z.enum(["ultra_desktop", "high_desktop", "balanced", "mobile_high", "mobile_low"]).optional(),
   glassPreset: z.enum(["performance", "standard", "premium"]).optional(),
-  skyPreset: z.enum(["clear_day", "soft_day", "overcast", "golden_hour", "evening"]).optional(),
   environmentIntensity: z.number().min(0).max(4).optional(),
-  northRotationDeg: z.number().min(-360).max(360).optional(),
-  defaultTimeOfDay: z.number().min(0).max(24).optional(),
-  allowUserTimeChange: z.boolean().optional(),
-  simulationDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a YYYY-MM-DD date")
-    .nullable()
-    .optional(),
   cameraFovDesktop: z.number().min(10).max(120).optional(),
   cameraFovMobile: z.number().min(10).max(120).optional(),
   cameraPresets: z.array(cameraPresetSchema).optional(),
   exposure: z.number().min(0).max(4).optional(),
   viewerUI: viewerUISchema.optional(),
-  hdriId: z.string().nullable().optional(),
-  sunMode: z.enum(["geographic", "manual"]).optional(),
+  // Sky/Water/Bloom/Clouds "Ocean" tab — direct sun elevation/azimuth,
+  // the only sun model now (the old geographic-sun/HDRI/lensflare/
+  // light-probe/motion-blur system was removed entirely 2026-08-14, see
+  // Project3DConfig's own doc comment in src/lib/types.ts).
   sunAzimuthDeg: z.number().min(0).max(360).optional(),
   sunElevationDeg: z.number().min(-90).max(90).optional(),
-  sunIntensity: z.number().min(0).max(4).optional(),
+  // Standalone "Sky" tab (webgl_shaders_sky.html parity) — ranges mirror
+  // the reference demo's own GUI sliders exactly (turbidity 0-20,
+  // rayleigh/mieDirectionalG 0-4/0-1, mieCoefficient 0-0.1). `skyEnabled`
+  // is a Rozaris-specific addition, the demo has no off switch.
+  skyEnabled: z.boolean().optional(),
+  skyTurbidity: z.number().min(0).max(20).optional(),
+  skyRayleigh: z.number().min(0).max(4).optional(),
+  skyMieCoefficient: z.number().min(0).max(0.1).optional(),
+  skyMieDirectionalG: z.number().min(0).max(1).optional(),
   fogEnabled: z.boolean().optional(),
   fogColor: hexColorSchema.optional(),
   fogDensity: z.number().min(0).max(0.1).optional(),
   fogMatchesSky: z.boolean().optional(),
-  lensflareEnabled: z.boolean().optional(),
-  lightProbeEnabled: z.boolean().optional(),
   sectionCapStencilEnabled: z.boolean().optional(),
   unitColorAvailable: hexColorSchema.optional(),
   unitColorReserved: hexColorSchema.optional(),
@@ -126,10 +122,12 @@ const patchSchema = z.object({
   shadowsEnabled: z.boolean().optional(),
   antialiasEnabled: z.boolean().optional(),
   sections: z.array(sectionSchema).optional(),
-  // Sky/Water/Bloom/Clouds pass — ranges mirror webgl_shaders_ocean.html's
-  // own GUI folders exactly (Bloom strength 0-3/radius 0-1, Water
-  // distortionScale 0-8/size 0.1-10, Clouds coverage/density/elevation
-  // 0-1 each).
+  // Sky/Water/Bloom/Clouds "Ocean" tab — ranges mirror
+  // webgl_shaders_ocean.html's own GUI folders exactly (Bloom strength
+  // 0-3/radius 0-1, Water distortionScale 0-8/size 0.1-10, Clouds
+  // coverage/density/elevation 0-1 each). `bloomThreshold`/
+  // `volumetricCloud*` removed entirely 2026-08-14 — see
+  // Project3DConfig's own doc comment.
   bloomEnabled: z.boolean().optional(),
   bloomStrength: z.number().min(0).max(3).optional(),
   bloomRadius: z.number().min(0).max(1).optional(),
@@ -140,27 +138,14 @@ const patchSchema = z.object({
   cloudCoverage: z.number().min(0).max(1).optional(),
   cloudDensity: z.number().min(0).max(1).optional(),
   cloudElevation: z.number().min(0).max(1).optional(),
-  // Motion blur (webgpu_postprocessing_motion_blur.html parity) — range
-  // mirrors the reference demo's own "blur amount" GUI slider (0-3).
-  motionBlurEnabled: z.boolean().optional(),
-  motionBlurAmount: z.number().min(0).max(3).optional(),
-  // Real-look additions (webgl_watch.html parity).
-  bloomThreshold: z.number().min(0).max(1).optional(),
-  backgroundBlurriness: z.number().min(0).max(1).optional(),
   shadowSoftness: z.number().min(0).max(10).optional(),
   // 3D LUT (webgl_postprocessing_3dlut.html parity) — lutPreset is
-  // validated against the real vendored preset list, not a free string.
+  // validated against the real vendored preset list (all 9 of the
+  // reference demo's own presets), not a free string.
   lutEnabled: z.boolean().optional(),
   lutPreset: z.enum(LUT_PRESET_IDS).optional(),
   lutIntensity: z.number().min(0).max(1).optional(),
   logarithmicDepthEnabled: z.boolean().optional(),
-  // Volumetric raymarched cloud (webgl_volume_cloud.html parity) — ranges
-  // mirror the reference demo's own GUI exactly.
-  volumetricCloudEnabled: z.boolean().optional(),
-  volumetricCloudThreshold: z.number().min(0).max(1).optional(),
-  volumetricCloudOpacity: z.number().min(0).max(1).optional(),
-  volumetricCloudRange: z.number().min(0).max(1).optional(),
-  volumetricCloudSteps: z.number().min(0).max(200).optional(),
   loadingRevealEnabled: z.boolean().optional(),
   // Depth of field (webgl_postprocessing_dof2.html parity).
   depthOfFieldEnabled: z.boolean().optional(),

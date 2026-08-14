@@ -3,14 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Camera, Expand, Minimize, ScanEye, Sparkles, SquareStack } from "lucide-react";
+import { Camera, Expand, Minimize, ScanEye, SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useProjectConstruction } from "@/hooks/useProjectConstruction";
 import { useProject3DConfig } from "@/hooks/useProject3DConfig";
 import { useProjectDetailModel } from "@/hooks/useProjectDetailModel";
-import { usePlatformHdris } from "@/hooks/usePlatformHdris";
 import { useT } from "@/lib/i18n/useT";
-import { QUALITY_TIERS } from "@/lib/viewerPresets";
 import { ThreeProjectViewer, type ThreeProjectViewerHandle } from "@/components/project/ThreeProjectViewer";
 import { ConstructionTimelineStrip } from "@/components/project/ConstructionTimelineStrip";
 import { UnitDiscoveryPanel } from "@/components/project/UnitDiscoveryPanel";
@@ -22,15 +20,15 @@ export function ArchVizClient({ project }: { project: Project }) {
   const mainRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<ThreeProjectViewerHandle>(null);
   const [unitPanelOpen, setUnitPanelOpen] = useState(false);
-  // Whether the viewer's own bottom panel (Unit Search / Time of Day) is
-  // expanded — used to declutter the header's construction-progress pill
-  // while one is open, not to gate a CTA anymore (that button is gone).
+  // Whether the viewer's own bottom panel (Unit Search) is expanded —
+  // used to declutter the header's construction-progress pill while one
+  // is open, not to gate a CTA anymore (that button is gone).
   const [viewerPanelOpen, setViewerPanelOpen] = useState(false);
   // Availability/unit-box colors/legend and the popup below are only
   // meant to be visible while "Unit Search" is the active bottom-menu
-  // panel — clicking Home or Time of the Day (or just closing Unit
-  // Search) clears the selection along with them, rather than leaving a
-  // stale popup up for a unit no longer visibly selectable in the scene.
+  // panel — clicking Home (or just closing Unit Search) clears the
+  // selection along with them, rather than leaving a stale popup up for a
+  // unit no longer visibly selectable in the scene.
   const [unitSearchActive, setUnitSearchActive] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   // The 3D click flow always lands on the small UnitPreviewCard first;
@@ -39,12 +37,6 @@ export function ArchVizClient({ project }: { project: Project }) {
   const [fullDetailOpen, setFullDetailOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [screenshotFlash, setScreenshotFlash] = useState(false);
-  // "Render this" (webgl_renderer_pathtracer.html parity) — real,
-  // separate photorealistic render, distinct from the plain screenshot
-  // above. `pathTraceSecondsLeft` drives the countdown shown while it
-  // runs; both null/0 means "not running."
-  const [pathTraceSecondsLeft, setPathTraceSecondsLeft] = useState<number | null>(null);
-  const [pathTraceFlash, setPathTraceFlash] = useState(false);
   // Shadow-map debug HUD (webgl_shadowmap_viewer.html parity) — a real
   // dev/debug tool, not something a real visitor should stumble onto, so
   // the toggle button itself only renders behind a `?debugShadowMap=1`
@@ -59,8 +51,6 @@ export function ArchVizClient({ project }: { project: Project }) {
   const construction = useProjectConstruction(project);
   const viewerConfig = useProject3DConfig(project.id);
   const detailModels = useProjectDetailModel(project.id);
-  const platformHdris = usePlatformHdris();
-  const hdriUrl = platformHdris.find((h) => h.id === viewerConfig.hdriId)?.url ?? null;
   const { t } = useT();
 
   // Fullscreen targets this whole page wrapper — not ThreeProjectViewer's
@@ -101,31 +91,6 @@ export function ArchVizClient({ project }: { project: Project }) {
     setTimeout(() => setScreenshotFlash(false), 2500);
   }
 
-  const PATH_TRACE_DURATION_MS = 10000;
-
-  async function handleRenderPathTrace() {
-    if (pathTraceSecondsLeft != null) return; // already running, ignore a second click
-    const totalSeconds = Math.round(PATH_TRACE_DURATION_MS / 1000);
-    setPathTraceSecondsLeft(totalSeconds);
-    const countdown = setInterval(() => {
-      setPathTraceSecondsLeft((s) => (s == null ? null : Math.max(0, s - 1)));
-    }, 1000);
-    try {
-      const dataUrl = await viewerRef.current?.renderPathTraceScreenshot(PATH_TRACE_DURATION_MS);
-      if (dataUrl) {
-        const a = document.createElement("a");
-        a.href = dataUrl;
-        a.download = `${project.slug}-rozaris-pathtrace.png`;
-        a.click();
-        setPathTraceFlash(true);
-        setTimeout(() => setPathTraceFlash(false), 2500);
-      }
-    } finally {
-      clearInterval(countdown);
-      setPathTraceSecondsLeft(null);
-    }
-  }
-
   return (
     <div id="main-content" ref={mainRef} className="relative h-dvh w-full overflow-hidden bg-neutral-900">
       <header className="absolute inset-x-0 top-0 z-30 flex items-stretch justify-between gap-2 p-3 sm:p-4">
@@ -156,22 +121,6 @@ export function ArchVizClient({ project }: { project: Project }) {
           >
             <Camera className="h-4 w-4" />
           </button>
-          {/* "Render this" (webgl_renderer_pathtracer.html parity) — real
-              photorealistic path-traced render, gated to desktop-oriented
-              quality tiers (genuinely GPU/CPU-heavy, see viewerPresets.ts's
-              QUALITY_TIERS.pathTracer doc comment). Not shown at all on
-              lower tiers rather than shown-but-disabled — matches this
-              app's own "no dead controls" convention. */}
-          {QUALITY_TIERS[viewerConfig.qualityPreset].pathTracer && (
-            <button
-              onClick={handleRenderPathTrace}
-              disabled={pathTraceSecondsLeft != null}
-              aria-label={t("project.pathTraceRender")}
-              className="glass-panel-dark flex shrink-0 items-center justify-center rounded-panel px-3.5 text-white disabled:opacity-60 sm:px-4"
-            >
-              <Sparkles className={pathTraceSecondsLeft != null ? "h-4 w-4 animate-pulse" : "h-4 w-4"} />
-            </button>
-          )}
           {/* Shadow-map debug HUD (webgl_shadowmap_viewer.html parity) —
               hidden unless ?debugShadowMap=1 is in the URL, see the
               shadowMapDebugAvailable state's own comment above. */}
@@ -214,23 +163,11 @@ export function ArchVizClient({ project }: { project: Project }) {
         </div>
       )}
 
-      {pathTraceSecondsLeft != null && (
-        <div className="glass-panel-dark pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-pill px-4 py-2 text-xs font-semibold text-white sm:top-20">
-          {t("project.pathTraceRendering", { seconds: pathTraceSecondsLeft })}
-        </div>
-      )}
-      {pathTraceFlash && (
-        <div className="glass-panel-dark pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-pill px-4 py-2 text-xs font-semibold text-white sm:top-20">
-          {t("project.pathTraceSaved")}
-        </div>
-      )}
-
       <ThreeProjectViewer
         ref={viewerRef}
         project={project}
         config={viewerConfig}
         detailModels={detailModels}
-        hdriUrl={hdriUrl}
         className="relative h-full w-full"
         selectedUnitId={selectedUnit?.id ?? null}
         onSelectUnit={(u) => {

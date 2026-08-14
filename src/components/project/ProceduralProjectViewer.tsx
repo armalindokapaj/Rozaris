@@ -5,7 +5,8 @@ import { Bath, BedDouble, Box, Camera, Home, Ruler, Scissors, Search, Sun, X } f
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
-import { TIME_PRESETS, UNIT_BOX_COLOR } from "@/lib/viewerPresets";
+import { SUN_HOUR_MAX, SUN_HOUR_MIN, SUN_PRESET_HOURS, UNIT_BOX_COLOR } from "@/lib/viewerPresets";
+import { sunPositionForHour } from "@/lib/sunPosition";
 import { RenderEngine, type AvailabilityFilter, type RenderEngineCallbacks, type UnitFilters } from "@/lib/render-engine/RenderEngine";
 import { DarkSelect, MenuIconButton, StatusLegend, formatHour } from "./ViewerChrome";
 import type { Unit } from "@/lib/types";
@@ -56,7 +57,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       project,
       config,
       detailModels,
-      hdriUrl = null,
       className,
       selectedUnitId = null,
       onSelectUnit,
@@ -110,13 +110,23 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
     const [bedroomFilter, setBedroomFilter] = useState<number | null>(null);
     const [bathroomFilter, setBathroomFilter] = useState<number | null>(null);
     const [minArea, setMinArea] = useState<number | null>(null);
-    const [panel, setPanel] = useState<"search" | "time" | "cameraPresets" | "sections" | null>(null);
+    const [panel, setPanel] = useState<"search" | "cameraPresets" | "sections" | "sun" | null>(null);
     // Sections module — which section a visitor has activated (real clip
     // + cap via RenderEngine.activateSection), if any. Runtime-only UI
     // state, not persisted (mirrors `panel`'s own "not part of config"
     // nature).
     const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
-    const [timeOfDay, setTimeOfDay] = useState(() => config.defaultTimeOfDay);
+    // "Sun Orientation" bottom-menu control (re-added 2026-08-14, then
+    // reworked same day into a 6am-8pm slider + dropdown of the same 5
+    // presets) — the hour a visitor has dragged/picked, if any. Runtime-
+    // only client override, same "not persisted" nature as
+    // `activeSectionId`/`panel` above — never written back to the admin's
+    // own authored `sunElevationDeg`/`sunAzimuthDeg`. `null` = the
+    // project's own authored sun (the default, untouched state); the
+    // slider itself still needs *some* handle position to render at
+    // before that first touch, so JSX below displays `sunHour ?? 12`
+    // (noon) without that alone counting as an active override.
+    const [sunHour, setSunHour] = useState<number | null>(null);
     const [hoveredUnit, setHoveredUnit] = useState<Unit | null>(null);
     // Performance inspector (Publish/runtime hardening pass) — admin-only,
     // gated by showPerfStats not showChrome (see viewerTypes.ts).
@@ -237,7 +247,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
     useImperativeHandle(ref, () => ({
       resetView: resetCamera,
       captureScreenshot: () => engineRef.current?.captureScreenshot() ?? null,
-      renderPathTraceScreenshot: (durationMs) => engineRef.current?.renderPathTraceScreenshot(durationMs) ?? Promise.resolve(null),
       getCameraState: () => engineRef.current?.getCameraState() ?? null,
       beginDrawSection: (opts, onComplete) => engineRef.current?.beginDrawSection(opts, onComplete),
       cancelDrawSection: () => engineRef.current?.cancelDrawSection(),
@@ -293,18 +302,13 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       // stencil: true on the renderer only takes effect at construction —
       // same "needs a full remount" reasoning as the flags above.
       config.sectionCapStencilEnabled,
-      // Sky/Water/Bloom/Clouds pass — both structurally add/remove a real
-      // object or pipeline node rather than just tweaking a number on an
-      // already-existing one, same "needs a full remount" reasoning as
-      // the flags above (their own strength/radius/distortionScale/size
+      // Sky/Water/Bloom/Clouds "Ocean" tab — both structurally add/remove
+      // a real object or pipeline node rather than just tweaking a number
+      // on an already-existing one, same "needs a full remount" reasoning
+      // as the flags above (their own strength/radius/distortionScale/size
       // sliders are cheap live updates instead, see the effect below).
       config.waterEnabled,
       config.bloomEnabled,
-      // Motion blur — structurally adds a real MRT velocity render target
-      // + the motionBlur() node to the chain, same "needs a full remount"
-      // reasoning as bloomEnabled right above; its own `motionBlurAmount`
-      // slider is a cheap live update instead, see the effect below.
-      config.motionBlurEnabled,
       // 3D LUT — both need a fresh mount: `lutEnabled` structurally adds
       // the lut3D() node, `lutPreset` triggers a real async texture
       // (re)load (loadLut) before the pipeline is rebuilt; its own
@@ -320,12 +324,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       // see below (focusDistance itself is real-time auto-focus, owned
       // entirely by RenderEngine's render loop — no React wiring at all).
       config.depthOfFieldEnabled,
-      // Volumetric raymarched cloud — structurally adds a real mesh +
-      // NodeMaterial + 3D noise texture, same "needs a full remount"
-      // reasoning as waterEnabled/bloomEnabled; its own threshold/
-      // opacity/range/steps sliders are cheap live updates instead, see
-      // below.
-      config.volumetricCloudEnabled,
       // Loading-screen reveal — read once at mount time (armed before the
       // very first frame, see RenderEngine.ts's mount() doc comment), so
       // toggling it only takes effect on the next remount, same category
@@ -342,13 +340,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       // groundColor/groundFog* stay cheap live updates below instead.
       config.groundStyle,
     ]);
-
-    // --- Platform HDRI loading (Task 2 — Track A) ---
-    useEffect(() => {
-      if (!ready) return;
-      engineRef.current?.setHdri(hdriUrl, config);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [ready, hdriUrl]);
 
     // --- Shadow-map debug HUD (webgl_shadowmap_viewer.html parity) —
     // cheap either way, see RenderEngine.ts's own setShadowMapViewerEnabled
@@ -389,27 +380,17 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       // unrelated field also changing first. Same reference-equality
       // reasoning as `detailModels` above (a fresh array every edit).
       config.sections,
-      // Sky/Water/Bloom/Clouds pass — real UniformNode<float>s on the
-      // already-constructed waterMesh/bloomNode, no remount needed.
+      // Sky/Water/Bloom/Clouds "Ocean" tab — real UniformNode<float>s on
+      // the already-constructed waterMesh/bloomNode, no remount needed.
       config.waterDistortionScale,
       config.waterSize,
       config.bloomStrength,
       config.bloomRadius,
-      // webgl_watch.html parity — real live UniformNode<float> on the
-      // already-constructed bloomNode, no remount needed.
-      config.bloomThreshold,
-      // Motion blur — real live UniformNode<float>, no remount needed.
-      config.motionBlurAmount,
       // 3D LUT intensity — real live UniformNode<float>, no remount needed.
       config.lutIntensity,
       // Depth of field — real live UniformNode<float>s, no remount needed.
       config.depthOfFieldFocalLength,
       config.depthOfFieldBokehScale,
-      // Volumetric cloud — real live UniformNode<float>s, no remount needed.
-      config.volumetricCloudThreshold,
-      config.volumetricCloudOpacity,
-      config.volumetricCloudRange,
-      config.volumetricCloudSteps,
       // Unit-status caustics — real shared live UniformNode<float>s
       // (scale/speed); per-unit color/intensity are updated by the
       // refreshAppearance effect below instead (status-driven).
@@ -425,38 +406,48 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       config.groundFogRadius,
     ]);
 
-    // --- Real geographic sun + sky/environment — recomputed whenever the
-    // effective time-of-day, sky preset, environment intensity or north
-    // rotation change. Runs for both the public viewer (live `timeOfDay`
-    // state, seeded from config.defaultTimeOfDay) and the Admin preview
-    // (showChrome=false locks it to config.defaultTimeOfDay since there's
-    // no bottom-bar slider to move it there). ---
-    const effectiveTimeOfDay = showChrome ? timeOfDay : config.defaultTimeOfDay;
+    // "Sun Orientation" bottom-menu control — the slider/dropdown hour's
+    // elevation/azimuth, applied as a client-only override on top of the
+    // admin's own authored sun (config.sunElevationDeg/sunAzimuthDeg).
+    // `null` (untouched) means "use the project's own sun" — see
+    // sunHour's own doc comment above.
+    const sunOverride = sunHour != null ? sunPositionForHour(sunHour, SUN_HOUR_MIN, SUN_HOUR_MAX) : null;
+
+    // --- Sky/Water/Bloom/Clouds "Ocean" tab + standalone "Sky" tab — real
+    // sun elevation/azimuth + sky/environment, recomputed whenever those
+    // or environment intensity change. ---
     useEffect(() => {
       if (!ready) return;
-      engineRef.current?.applySunAndEnvironment({ project, config, effectiveTimeOfDay });
+      const effectiveConfig = sunOverride
+        ? { ...config, sunElevationDeg: sunOverride.elevationDeg, sunAzimuthDeg: sunOverride.azimuthDeg }
+        : config;
+      engineRef.current?.applySunAndEnvironment({ config: effectiveConfig });
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
       ready,
-      effectiveTimeOfDay,
-      config.skyPreset,
-      config.backgroundPreset,
       config.environmentIntensity,
-      // webgl_watch.html parity — both set unconditionally inside
-      // applySunAndEnvironment/rebuildEnvironment on every call, same
-      // "cheap scalar, no separate wiring" reasoning as environmentIntensity.
-      config.backgroundBlurriness,
+      // webgl_watch.html parity — set unconditionally inside
+      // applySunAndEnvironment on every call, same "cheap scalar, no
+      // separate wiring" reasoning as environmentIntensity.
       config.shadowSoftness,
-      config.northRotationDeg,
-      config.sunMode,
       config.sunAzimuthDeg,
       config.sunElevationDeg,
-      config.sunIntensity,
-      project.coords.lat,
-      project.coords.lng,
-      // Sky/Water/Bloom/Clouds pass — clouds are 3 more uniforms on the
-      // same physical sky dome this effect already updates on every tick
-      // (see RenderEngine.ts's applySunAndEnvironment).
+      // "Sun Orientation" bottom-menu override — re-run whenever a
+      // visitor drags the slider (or clears it), same as the two fields
+      // above. A plain number|null, not an object — safe/cheap dep.
+      sunHour,
+      // Standalone "Sky" tab (webgl_shaders_sky.html parity) — real bug
+      // fix: these were added to RenderEngine.ts's applySunAndEnvironment/
+      // rebuildEnvironment but never added here, so a live admin-preview
+      // edit to any of them silently did nothing until a full remount.
+      config.skyEnabled,
+      config.skyTurbidity,
+      config.skyRayleigh,
+      config.skyMieCoefficient,
+      config.skyMieDirectionalG,
+      // Clouds are 3 more uniforms on the same physical sky dome this
+      // effect already updates on every tick (see RenderEngine.ts's
+      // applySunAndEnvironment).
       config.cloudsEnabled,
       config.cloudCoverage,
       config.cloudDensity,
@@ -550,8 +541,16 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
                     onClick={() => setPanel("search")}
                   />
                 )}
-                {config.viewerUI.timeOfDay && (
-                  <MenuIconButton icon={Sun} label={t("project.timeOfDay")} onClick={() => setPanel("time")} />
+                {/* "Sun Orientation" — re-added 2026-08-14 in its old bottom-
+                    menu position (between Unit Search and Camera Presets):
+                    a 6am-8pm slider plus a dropdown of the same 5 presets —
+                    see sunPositionForHour's own doc comment (sunPosition.ts). */}
+                {(config.viewerUI.sunPresetEnabled ?? true) && (
+                  <MenuIconButton
+                    icon={Sun}
+                    label={t("project.sunOrientation")}
+                    onClick={() => setPanel("sun")}
+                  />
                 )}
                 {config.cameraPresets.length > 0 && (
                   <MenuIconButton
@@ -641,49 +640,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
               </div>
             )}
 
-            {panel === "time" && (
-              <div className="glass-panel-dark relative flex w-full flex-wrap items-center gap-6 rounded-panel px-5 py-4 pr-11 sm:w-auto sm:flex-nowrap">
-                <div className="flex items-center gap-3">
-                  <p className="font-serif text-2xl text-white">{formatHour(timeOfDay)}</p>
-                  {config.allowUserTimeChange && (
-                    <DarkSelect
-                      label={t("project.preset")}
-                      value=""
-                      onChange={(v) => setTimeOfDay(Number(v))}
-                      options={[
-                        ["", t("project.preset")],
-                        ...TIME_PRESETS.map(([key, hour]): [string, string] => [String(hour), t(key)]),
-                      ]}
-                    />
-                  )}
-                </div>
-
-                <div className="min-w-[10rem] flex-1">
-                  <div className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                    <span>{t("project.timeOfDay")}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={6}
-                    max={22}
-                    step={0.5}
-                    value={timeOfDay}
-                    disabled={!config.allowUserTimeChange}
-                    onChange={(e) => setTimeOfDay(Number(e.target.value))}
-                    className="h-6 w-full accent-white disabled:opacity-40"
-                  />
-                </div>
-
-                <button
-                  onClick={() => setPanel(null)}
-                  aria-label={t("common.close")}
-                  className="absolute right-2.5 top-2.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/60 hover:bg-white/10 hover:text-white"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-
             {panel === "sections" && (
               <div className="glass-panel-dark relative flex w-full flex-wrap items-center gap-2 rounded-panel px-4 py-3.5 pr-11 sm:w-auto sm:flex-nowrap">
                 {visibleSections.map((section) => (
@@ -712,6 +668,46 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
                     {section.name}
                   </button>
                 ))}
+
+                <button
+                  onClick={() => setPanel(null)}
+                  aria-label={t("common.close")}
+                  className="absolute right-2.5 top-2.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/60 hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {panel === "sun" && (
+              <div className="glass-panel-dark relative flex w-full flex-wrap items-center gap-6 rounded-panel px-5 py-4 pr-11 sm:w-auto sm:flex-nowrap">
+                <div className="flex items-center gap-3">
+                  <p className="font-serif text-2xl text-white">{formatHour(sunHour ?? 12)}</p>
+                  <DarkSelect
+                    label={t("project.preset")}
+                    value=""
+                    onChange={(v) => setSunHour(Number(v))}
+                    options={[
+                      ["", t("project.preset")],
+                      ...SUN_PRESET_HOURS.map((preset): [string, string] => [String(preset.hour), t(preset.key)]),
+                    ]}
+                  />
+                </div>
+
+                <div className="min-w-[10rem] flex-1">
+                  <div className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/50">
+                    <span>{t("project.sunOrientation")}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={SUN_HOUR_MIN}
+                    max={SUN_HOUR_MAX}
+                    step={0.5}
+                    value={sunHour ?? 12}
+                    onChange={(e) => setSunHour(Number(e.target.value))}
+                    className="h-6 w-full accent-white"
+                  />
+                </div>
 
                 <button
                   onClick={() => setPanel(null)}

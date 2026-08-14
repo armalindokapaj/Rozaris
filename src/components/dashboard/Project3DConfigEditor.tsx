@@ -5,7 +5,6 @@ import { upload } from "@vercel/blob/client";
 import { defaultProject3DConfig } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { extractUnitNodeNames } from "@/lib/glbUnitNodes";
-import { calcSunriseSunset } from "@/lib/sunPosition";
 import { pickDefaultQualityTier } from "@/lib/viewerPresets";
 import { useProject3DEditorState } from "@/hooks/useProject3DEditorState";
 import { useProjectUnits } from "@/hooks/useProjectUnits";
@@ -14,7 +13,7 @@ import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import { EditorShell } from "./project3d/EditorShell";
 import type { DetailVersionRow } from "./project3d/types";
-import type { DetailModelSlot, PlatformHdri, Project, Project3DConfig, ProjectDetailModel } from "@/lib/types";
+import type { DetailModelSlot, Project, Project3DConfig, ProjectDetailModel } from "@/lib/types";
 
 const MAX_FILE_BYTES = 60 * 1024 * 1024; // keep in sync with api/blob/upload's maximumSizeInBytes
 
@@ -193,79 +192,6 @@ export function Project3DConfigEditor({
     setSceneManifest,
     previewDetailModel,
   } = useProject3DEditorState(activeVersion);
-
-  // --- Platform HDRI library (Task 2 — Track A) — fetched/managed here
-  // (not via the read-only usePlatformHdris hook the public viewer uses)
-  // since this is the one surface that also uploads/deletes library
-  // entries and needs to refresh the list after doing so.
-  const [platformHdris, setPlatformHdris] = useState<PlatformHdri[]>([]);
-  const [hdriBusy, setHdriBusy] = useState(false);
-  const [hdriError, setHdriError] = useState<string | null>(null);
-  const hdriFileInputRef = useRef<HTMLInputElement>(null);
-
-  async function refreshHdris() {
-    const res = await fetch("/api/platform-hdri");
-    if (res.ok) setPlatformHdris(await res.json());
-  }
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    refreshHdris();
-  }, []);
-
-  async function handleHdriUpload(file: File) {
-    setHdriError(null);
-    const lower = file.name.toLowerCase();
-    if (!lower.endsWith(".hdr") && !lower.endsWith(".exr")) {
-      setHdriError(t("admin.hdriInvalidFile"));
-      return;
-    }
-    setHdriBusy(true);
-    try {
-      const blob = await upload(`platform-hdri/${Date.now()}-${file.name}`, file, {
-        access: "public",
-        handleUploadUrl: "/api/blob/upload",
-        multipart: true,
-      });
-      const res = await fetchWithSessionRetry(
-        "/api/platform-hdri",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: file.name.replace(/\.(hdr|exr)$/i, ""), url: blob.url }),
-        },
-        establishAdminSession
-      );
-      if (!res.ok) throw new Error(await res.text());
-      await refreshHdris();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "";
-      console.error("Platform HDRI: upload failed", err);
-      setHdriError(
-        message.includes("Not authorized") || message.includes("authoriz")
-          ? t("admin.sessionExpiredNote")
-          : t("admin.hdriUploadFailed")
-      );
-    } finally {
-      setHdriBusy(false);
-    }
-  }
-
-  async function handleDeleteHdri(hdri: PlatformHdri) {
-    if (!window.confirm(t("admin.hdriDeleteConfirm", { name: hdri.name }))) return;
-    setHdriBusy(true);
-    setHdriError(null);
-    try {
-      const res = await fetchWithSessionRetry(`/api/platform-hdri/${hdri.id}`, { method: "DELETE" }, establishAdminSession);
-      if (!res.ok) throw new Error(await res.text());
-      if (draft.hdriId === hdri.id) update({ hdriId: null }, { commit: true });
-      await refreshHdris();
-    } catch {
-      setHdriError(t("admin.hdriDeleteFailed"));
-    } finally {
-      setHdriBusy(false);
-    }
-  }
 
   useEffect(() => {
     let cancelled = false;
@@ -845,13 +771,6 @@ export function Project3DConfigEditor({
   }
 
   const suggestedTier = pickDefaultQualityTier();
-  // Sun & Time restructure — matches RenderEngine.ts's applySunAndEnvironment
-  // date resolution exactly, so the displayed sunrise/sunset always tracks
-  // whatever date is actually being simulated (real "today" when
-  // `simulationDate` is unset, same as before this field existed).
-  const parsedSimulationDate = draft.simulationDate ? new Date(`${draft.simulationDate}T00:00:00Z`) : null;
-  const sunTimesDate = parsedSimulationDate && !Number.isNaN(parsedSimulationDate.getTime()) ? parsedSimulationDate : new Date();
-  const sunTimes = calcSunriseSunset(project.coords.lat, project.coords.lng, sunTimesDate);
   const hasDetailModel = !!activeVersion;
   // Counted against `detectedNodes` (this GLB's actual nodes), not the
   // wider `linkSelections` map, which can still carry stale entries for
@@ -938,13 +857,6 @@ export function Project3DConfigEditor({
       onAddSlot={handleAddSlot}
       onRenameSlot={handleRenameSlot}
       onDeleteSlot={handleDeleteSlot}
-      platformHdris={platformHdris}
-      hdriBusy={hdriBusy}
-      hdriError={hdriError}
-      hdriFileInputRef={hdriFileInputRef}
-      onHdriUpload={handleHdriUpload}
-      onDeleteHdri={handleDeleteHdri}
-      sunTimes={sunTimes}
       newPresetLabel={newPresetLabel}
       setNewPresetLabel={setNewPresetLabel}
       fileInputRef={fileInputRef}

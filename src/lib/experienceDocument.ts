@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma";
 import type { PrismaClient } from "@/generated/prisma";
 import type { CameraPreset, ExperienceDocument, NodeOverride, Project3DConfig, Section, UnitMeshLink, ViewerUIToggles } from "./types";
 
-const DEFAULT_VIEWER_UI: ViewerUIToggles = { home: true, unitSearch: true, timeOfDay: true };
+const DEFAULT_VIEWER_UI: ViewerUIToggles = { home: true, unitSearch: true };
 
 /** The subset of a `DetailModelVersion` row `buildExperienceDocument` needs
  * — deliberately narrow (not the whole Prisma row) so callers can pass
@@ -50,20 +50,11 @@ export function buildExperienceDocument(
       overrides: version.nodeOverrides,
     },
     environment: {
-      skyPreset: config.skyPreset,
-      backgroundPreset: config.backgroundPreset,
       environmentIntensity: config.environmentIntensity,
-      hdriId: config.hdriId,
     },
     lighting: {
-      sunMode: config.sunMode,
       sunAzimuthDeg: config.sunAzimuthDeg,
       sunElevationDeg: config.sunElevationDeg,
-      sunIntensity: config.sunIntensity,
-      northRotationDeg: config.northRotationDeg,
-      defaultTimeOfDay: config.defaultTimeOfDay,
-      allowUserTimeChange: config.allowUserTimeChange,
-      simulationDate: config.simulationDate,
     },
     camera: {
       presets: config.cameraPresets as CameraPreset[],

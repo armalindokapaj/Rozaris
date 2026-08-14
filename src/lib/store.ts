@@ -47,8 +47,6 @@ export const DEFAULT_EUR_TO_ALL_RATE = 97;
  * project's auto-computed bounding radius (lib/threeBuilding.ts), so they
  * stay sensible whether a project is one small building or a large complex. */
 export const defaultProject3DConfig: Project3DConfig = {
-  lightingPreset: "daylight",
-  backgroundPreset: "sky",
   groundEnabled: true,
   groundStyle: "disc",
   groundColor: "#d8d6e6",
@@ -64,28 +62,29 @@ export const defaultProject3DConfig: Project3DConfig = {
   renderingMode: "auto",
   qualityPreset: "high_desktop",
   glassPreset: "standard",
-  skyPreset: "clear_day",
   environmentIntensity: 1,
-  northRotationDeg: 0,
-  defaultTimeOfDay: 14,
-  allowUserTimeChange: true,
-  simulationDate: null,
   cameraFovDesktop: 38,
   cameraFovMobile: 48,
   cameraPresets: [],
   exposure: 1,
-  viewerUI: { home: true, unitSearch: true, timeOfDay: true },
-  hdriId: null,
-  sunMode: "geographic",
+  viewerUI: { home: true, unitSearch: true },
+  // Sky/Water/Bloom/Clouds "Ocean" tab — the geographic-sun/HDRI system
+  // this replaced (see Project3DConfig's own doc comment) is gone; sun
+  // azimuth/elevation are now the only sun model, defaults unchanged.
   sunAzimuthDeg: 180,
   sunElevationDeg: 45,
-  sunIntensity: 1,
+  // Standalone "Sky" tab (webgl_shaders_sky.html parity) — defaults match
+  // the prior fixed SKY_PHYSICAL_PARAMS constant exactly, so no existing
+  // project's rendered sky changes.
+  skyEnabled: true,
+  skyTurbidity: 4,
+  skyRayleigh: 2.4,
+  skyMieCoefficient: 0.004,
+  skyMieDirectionalG: 0.78,
   fogEnabled: false,
   fogColor: "#c9d6e0",
   fogDensity: 0.015,
   fogMatchesSky: false,
-  lensflareEnabled: false,
-  lightProbeEnabled: false,
   sectionCapStencilEnabled: false,
   // Sky/Water/Bloom/Clouds pass — all off by default (bloom/water/clouds),
   // param defaults mirror webgl_shaders_ocean.html's own GUI defaults
@@ -102,14 +101,8 @@ export const defaultProject3DConfig: Project3DConfig = {
   cloudCoverage: 0.4,
   cloudDensity: 0.5,
   cloudElevation: 0.5,
-  // Motion blur — off by default; amount 1 mirrors
-  // webgpu_postprocessing_motion_blur.html's own default GUI value.
-  motionBlurEnabled: false,
-  motionBlurAmount: 1,
-  // Real-look additions (webgl_watch.html) — defaults match the engine's
-  // own previous hardcoded/unset behavior exactly.
-  bloomThreshold: 0.85,
-  backgroundBlurriness: 0,
+  // webgl_watch.html — default matches the engine's own previous
+  // hardcoded/unset behavior exactly.
   shadowSoftness: 0,
   // 3D LUT — off by default.
   lutEnabled: false,
@@ -121,13 +114,6 @@ export const defaultProject3DConfig: Project3DConfig = {
   depthOfFieldFocalLength: 10,
   depthOfFieldBokehScale: 1,
   logarithmicDepthEnabled: false,
-  // Volumetric raymarched cloud — off by default; defaults match the
-  // reference demo's own GUI defaults exactly.
-  volumetricCloudEnabled: false,
-  volumetricCloudThreshold: 0.25,
-  volumetricCloudOpacity: 0.25,
-  volumetricCloudRange: 0.1,
-  volumetricCloudSteps: 100,
   // Loading-screen reveal — on by default, see types.ts's own field doc
   // comment for why.
   loadingRevealEnabled: true,

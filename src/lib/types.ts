@@ -190,23 +190,16 @@ export interface Project {
 /** PRD_3D_Project_Viewer §17: controlled lighting presets — Admin picks
  * one rather than authoring an unrestricted Three.js scene, for
  * consistency across projects and predictable performance. */
-export type LightingPreset = "daylight" | "overcast" | "evening";
-
-/** PRD_3D_Project_Viewer §15: approved background presets for the viewer's
- * scene — a plain color/gradient stand-in for an environment/IBL preset. */
-export type BackgroundPreset = "sky" | "studio_light" | "studio_dark";
-
 /** PRD_3D_Project_Viewer §11/§15/§16/§21: the persisted "3D Experience"
  * configuration for one project — Admin's Scene/Camera/Lighting/
  * Construction settings, versioned as draft vs. published (§28) rather
  * than edited live in production. Camera distances are stored as
  * multipliers of the procedural building's auto-computed bounding radius
  * (see lib/threeBuilding.ts) since that radius varies per project. */
-/** "3D Experience Phase 1" — see src/lib/sunPosition.ts, viewerPresets.ts. */
+/** "3D Experience Phase 1" — see src/lib/viewerPresets.ts. */
 export type RenderingMode = "auto" | "webgpu" | "webgl2";
 export type QualityPreset = "ultra_desktop" | "high_desktop" | "balanced" | "mobile_high" | "mobile_low";
 export type GlassPreset = "performance" | "standard" | "premium";
-export type SkyPreset = "clear_day" | "soft_day" | "overcast" | "golden_hour" | "evening";
 /** Non-glass architectural material presets (Editor UX & Scene Structure
  * pass) — glass already has its own dedicated GlassPreset/GLASS_TIERS
  * system above, kept separate rather than folded in here. */
@@ -221,8 +214,6 @@ export type MaterialPresetId =
   | "ceramic";
 
 export interface Project3DConfig {
-  lightingPreset: LightingPreset;
-  backgroundPreset: BackgroundPreset;
   groundEnabled: boolean;
   /** "disc" (default, unchanged behavior) is the original procedural-mode-
    * only ground — sized off the computed layout, never available for a
@@ -272,30 +263,18 @@ export interface Project3DConfig {
   renderingMode: RenderingMode;
   qualityPreset: QualityPreset;
   glassPreset: GlassPreset;
-  skyPreset: SkyPreset;
   environmentIntensity: number;
-  /** Degrees — rotates the real sun's computed azimuth to match a GLB that
-   * wasn't authored north-aligned. */
-  northRotationDeg: number;
-  /** UTC decimal hour (0-24) the public viewer's Time-of-Day slider starts
-   * at — see src/lib/sunPosition.ts for why UTC, not local civil time. */
-  defaultTimeOfDay: number;
-  allowUserTimeChange: boolean;
-  /** "YYYY-MM-DD", or `null` — Sun & Time restructure. `null` means the
-   * geographic sun uses the real current calendar date (unchanged
-   * default behavior); set means it's simulating that specific date
-   * instead (e.g. a solar study for "21 June"). Feeds `calcSunPosition`/
-   * `calcSunriseSunset`'s `date` param — see RenderEngine.ts's
-   * `applySunAndEnvironment`. */
-  simulationDate: string | null;
   cameraFovDesktop: number;
   cameraFovMobile: number;
 
   /** Admin-saved camera framings — clicking one in the public viewer
    * smoothly transitions the live camera to it (not a snap). */
   cameraPresets: CameraPreset[];
-  /** Tone-mapping exposure multiplier — renderer.toneMapping itself is
-   * fixed to ACESFilmic, not made per-project configurable this pass. */
+  /** Tone-mapping exposure multiplier (renderer.toneMappingExposure) —
+   * also the Sky/Water/Bloom/Clouds "Ocean" tab's Sky "exposure" slider,
+   * matching webgl_shaders_ocean.html's own GUI exactly. renderer.
+   * toneMapping itself is fixed to ACESFilmic, not made per-project
+   * configurable. */
   exposure: number;
 
   /** Which of the always-on bottom-menu controls show publicly — Xray/
@@ -303,23 +282,33 @@ export interface Project3DConfig {
    * real state (a loaded GLB / at least one saved preset). */
   viewerUI: ViewerUIToggles;
 
-  /** `null` = no HDRI, use `skyPreset`'s procedural gradient (unchanged
-   * default behavior). Otherwise the environment/reflections come from
-   * this shared library entry's `.hdr`/`.exr` instead. */
-  hdriId: string | null;
-  /** "geographic" (default) computes the sun from real lat/lng/date/time
-   * via src/lib/sunPosition.ts, unchanged; "manual" uses the three fields
-   * below directly instead. */
-  sunMode: "geographic" | "manual";
-  /** Degrees, 0-360 — compass direction the sun comes from. Manual mode only. */
+  /** Sky/Water/Bloom/Clouds "Ocean" tab (webgl_shaders_ocean.html parity)
+   * — direct sun elevation/azimuth feeding the physical SkyMesh, matching
+   * the reference demo's own GUI exactly. The whole geographic-sun/HDRI/
+   * lensflare/light-probe/motion-blur system this project had grown
+   * around it (sunMode, sunIntensity, northRotationDeg, defaultTimeOfDay,
+   * allowUserTimeChange, simulationDate, hdriId, lensflareEnabled,
+   * lightProbeEnabled, motionBlurEnabled/Amount, skyPreset,
+   * backgroundPreset, backgroundBlurriness) was removed entirely
+   * 2026-08-14 at the user's explicit request — this is now the only sun
+   * model, and the physical sky dome is the only backdrop. */
   sunAzimuthDeg: number;
-  /** Degrees, -90 to 90 — angle above the horizon. Manual mode only. */
   sunElevationDeg: number;
-  /** Multiplier on the sun's base intensity — applies under both sun modes
-   * (geographic mode used to ignore this entirely; fixed so the slider is
-   * meaningful regardless of mode). Defaults to 1, so every project's
-   * behavior is unchanged until an admin touches the slider. */
-  sunIntensity: number;
+
+  /** Standalone "Sky" tab (webgl_shaders_sky.html parity, added after the
+   * Ocean tab above) — the reference demo's own elevation/azimuth/
+   * exposure controls are the shared fields above, reused rather than
+   * duplicated; these 4 are its remaining GUI params (turbidity/rayleigh/
+   * mieCoefficient/mieDirectionalG), previously one fixed constant
+   * (viewerPresets.ts's SKY_PHYSICAL_PARAMS) applied to every project, now
+   * real per-project fields. `skyEnabled` is a Rozaris-specific addition
+   * (the demo itself has no off switch) — false falls back to a flat
+   * neutral background/environment instead of the physical dome. */
+  skyEnabled: boolean;
+  skyTurbidity: number;
+  skyRayleigh: number;
+  skyMieCoefficient: number;
+  skyMieDirectionalG: number;
 
   /** Exponential fog (THREE.FogExp2) — off by default, so every existing
    * project renders unchanged until an admin enables it. */
@@ -328,20 +317,11 @@ export interface Project3DConfig {
   /** THREE.FogExp2's density factor — small values (0-0.05ish) are the
    * useful range; higher gets opaque very quickly at typical scene scale. */
   fogDensity: number;
-  /** When true, fog color is derived live from the resolved sky/background
-   * color instead of `fogColor` above — the "seamless horizon" technique
-   * from three.js's webgl_geometry_terrain example. Off by default: zero
+  /** When true, fog color is derived live from the resolved sky color
+   * instead of `fogColor` above — the "seamless horizon" technique from
+   * three.js's webgl_geometry_terrain example. Off by default: zero
    * behavior change for any existing project until an admin enables it. */
   fogMatchesSky: boolean;
-  /** Real lens flare attached to the sun (webgl_lensflares.html
-   * technique, via three.js's WebGPU-native LensflareMesh port). Off by
-   * default. */
-  lensflareEnabled: boolean;
-  /** Real spherical-harmonics light probe (webgl_lightprobes_sponza.html
-   * technique) — direction-dependent indirect lighting captured from the
-   * live sky/HDRI environment, supplementing the flat AmbientLight. Off
-   * by default — the extra cube-capture cost only happens when enabled. */
-  lightProbeEnabled: boolean;
   /** Real stencil-buffer-derived Section cap silhouette
    * (webgl_clipping_stencil.html technique) instead of the default
    * flat-quad cap — see RenderEngine.ts's rebuildSectionCap. Requires a
@@ -355,8 +335,9 @@ export interface Project3DConfig {
    * buildRenderPipeline (same pattern `antialiasEnabled` already uses
    * against `tier.antialias`). Off by default: zero behavior change for
    * any existing project. Params mirror webgl_shaders_ocean.html's Bloom
-   * GUI folder exactly (`strength`/`radius`); `threshold` isn't exposed
-   * there either, so it stays fixed at the same 0.85 the demo hardcodes. */
+   * GUI folder exactly (`strength`/`radius`) — the Sky/Water/Bloom/Clouds
+   * "Ocean" tab's Bloom group. `threshold` isn't exposed there either, so
+   * it stays fixed at the same 0.85 the demo hardcodes. */
   bloomEnabled: boolean;
   bloomStrength: number;
   bloomRadius: number;
@@ -376,53 +357,35 @@ export interface Project3DConfig {
   /** Procedural clouds baked into the physical sky dome's own shader
    * (`SkyMesh.cloudCoverage`/`cloudDensity`/`cloudElevation` — not a
    * separate mesh/system, same as webgl_shaders_ocean.html's "Clouds" GUI
-   * folder, which is really just 3 more uniforms on its `Sky` object).
-   * Off by default so the physical-sky rollout (replacing the old
-   * gradient texture) doesn't also silently add clouds on top for every
-   * existing project in the same pass. */
+   * folder, which is really just 3 more uniforms on its `Sky` object) —
+   * the Sky/Water/Bloom/Clouds "Ocean" tab's Clouds group. A different,
+   * second cloud implementation (real 3D-texture raymarching,
+   * `webgl_volume_cloud.html` parity) used to live alongside this one on
+   * its own tab — removed entirely 2026-08-14 (out of scope for this
+   * demo's own Clouds panel). Off by default so the physical-sky rollout
+   * (replacing the old gradient texture) doesn't also silently add clouds
+   * on top for every existing project in the same pass. */
   cloudsEnabled: boolean;
   cloudCoverage: number;
   cloudDensity: number;
   cloudElevation: number;
 
-  /** Real per-object motion blur (`webgpu_postprocessing_motion_blur.html`
-   * parity) — a real `VelocityNode` MRT'd off the scene pass, fed into the
-   * TSL `motionBlur()` node, ANDed with `QUALITY_TIERS[qualityPreset].motionBlur`
-   * (same pattern `antialiasEnabled`/`bloomEnabled` already use). Off by
-   * default: zero behavior change for any existing project.
-   * `motionBlurAmount` mirrors the reference demo's own "blur amount" GUI
-   * slider (0-3, default 1) — a live `UniformNode<float>` multiplying the
-   * raw velocity vector, not a sample count (the node's own `numSamples`
-   * stays its default of 16, unexposed here, same as the demo). See
-   * RenderEngine.ts's buildRenderPipeline doc comment for why this effect
-   * must run directly on the scene pass's raw output texture, before
-   * bloom. */
-  motionBlurEnabled: boolean;
-  motionBlurAmount: number;
-
-  /** Real-look additions from `webgl_watch.html` — `bloomThreshold` was
-   * previously hardcoded to 0.85 inside RenderEngine.ts's
-   * buildRenderPipeline, now a real per-project slider (only meaningful
-   * when `bloomEnabled`). `backgroundBlurriness` maps directly onto
-   * `THREE.Scene.backgroundBlurriness` (blurs the visible sky/HDRI
-   * backdrop while leaving reflections sharp) — only visible when a
-   * Platform HDRI is active, since the procedural sky dome fills the same
-   * role differently. `shadowSoftness` maps onto the sun
+  /** `webgl_watch.html` parity — maps onto the sun
    * `DirectionalLight.shadow.radius` (PCF soft-shadow-edge blur, in shadow
    * map texels) — 0 matches today's hard-edged default exactly. */
-  bloomThreshold: number;
-  backgroundBlurriness: number;
   shadowSoftness: number;
 
   /** Real 3D LUT color grading (`webgl_postprocessing_3dlut.html` parity)
-   * — TSL `lut3D()` node (already installed, WebGPU-compatible) sampling a
-   * real vendored `.cube` LUT file loaded via `LUTCubeLoader` (see
-   * RenderEngine.ts's buildRenderPipeline/loadLut). `lutPreset` is a free
-   * string key into a fixed, real vendored preset list (`LUT_PRESETS` in
-   * viewerPresets.ts) — same "string, not a DB enum" precedent as
-   * `skyPreset`. Applied last in the post-processing chain (after bloom
-   * and antialiasing), matching the reference demo's own OutputPass ->
-   * LUTPass ordering. Off by default: zero behavior change for any
+   * — every option the reference demo's own GUI exposes: `enabled`, a
+   * 9-way `lut` dropdown (all 9 of the demo's own vendored presets — 5
+   * real `.CUBE` files via `LUTCubeLoader`, 1 real `.3dl` file via
+   * `LUT3dlLoader`, 3 real image-strip LUTs via `LUTImageLoader` — see
+   * viewerPresets.ts's `LUT_PRESETS` and RenderEngine.ts's `loadLut` for
+   * the loader-per-format dispatch, and `public/luts/` for the vendored
+   * assets), and `intensity`. `lutPreset` is a free string key into that
+   * list, not a DB enum. Applied last in the post-processing chain (after
+   * bloom and antialiasing), matching the reference demo's own OutputPass
+   * -> LUTPass ordering. Off by default: zero behavior change for any
    * existing project. */
   lutEnabled: boolean;
   lutPreset: string;
@@ -447,19 +410,6 @@ export interface Project3DConfig {
    * needs a fresh mount to take effect. Off by default: zero behavior
    * change for any existing project. */
   logarithmicDepthEnabled: boolean;
-
-  /** Volumetric raymarched cloud (`webgl_volume_cloud.html` parity) — a
-   * real, second/different cloud implementation kept deliberately
-   * alongside the existing procedural sky-dome clouds
-   * (`cloudsEnabled`/`cloudCoverage`/etc. above), not replacing them, per
-   * explicit user request. Params mirror the reference demo's own GUI
-   * exactly. See RenderEngine.ts/volumetricCloud.ts. Off by default: zero
-   * behavior change for any existing project. */
-  volumetricCloudEnabled: boolean;
-  volumetricCloudThreshold: number;
-  volumetricCloudOpacity: number;
-  volumetricCloudRange: number;
-  volumetricCloudSteps: number;
 
   /** Loading-screen reveal (`webgl_postprocessing_transition.html`
    * technique, RenderEngine.ts's `revealActive`/`buildRenderPipeline`) —
@@ -520,21 +470,13 @@ export interface Project3DConfig {
   updatedAt: string;
 }
 
-/** A shared, platform-wide HDRI environment map — uploaded once, selectable
- * across every project via `Project3DConfig.hdriId`. See PlatformHdri in
- * prisma/schema.prisma. */
-export interface PlatformHdri {
-  id: string;
-  name: string;
-  url: string;
-  thumbnailUrl: string | null;
-  createdAt: string;
-}
+// `PlatformHdri` (a shared, platform-wide HDRI environment map) removed
+// entirely 2026-08-14 along with `Project3DConfig.hdriId` — see
+// prisma/schema.prisma's own removal note.
 
 export interface ViewerUIToggles {
   home: boolean;
   unitSearch: boolean;
-  timeOfDay: boolean;
   /** Interaction toggles (added alongside the full-configurator pass) —
    * optional since `viewerUI` is a nullable Json? column and every
    * pre-existing row predates these keys; every read site defaults a
@@ -549,6 +491,13 @@ export interface ViewerUIToggles {
    * above. Hidden regardless once `Project3DConfig.sections` is empty,
    * same as the Camera Presets menu button already does. */
   sectionsEnabled?: boolean;
+  /** Public "Sun Orientation" bottom-menu button — 5 fixed-preset sun
+   * elevation/azimuth override (`SUN_POSITION_PRESETS`, viewerPresets.ts),
+   * re-added 2026-08-14 after the old continuous Time of Day scrubber was
+   * removed the same day. Same optional/defaults-true pattern as the
+   * toggles above. Purely a client-side visitor preference — never
+   * written back to `sunAzimuthDeg`/`sunElevationDeg` above. */
+  sunPresetEnabled?: boolean;
 }
 
 export interface CameraPreset {
@@ -825,20 +774,14 @@ export interface ExperienceDocument {
     overrides: NodeOverride[];
   };
   environment: {
-    skyPreset: SkyPreset;
-    backgroundPreset: BackgroundPreset;
     environmentIntensity: number;
-    hdriId: string | null;
   };
+  /** Sky/Water/Bloom/Clouds "Ocean" tab (webgl_shaders_ocean.html parity)
+   * — see Project3DConfig's own doc comment for the fields removed
+   * alongside the old geographic-sun/HDRI system this replaced. */
   lighting: {
-    sunMode: "geographic" | "manual";
     sunAzimuthDeg: number;
     sunElevationDeg: number;
-    sunIntensity: number;
-    northRotationDeg: number;
-    defaultTimeOfDay: number;
-    allowUserTimeChange: boolean;
-    simulationDate: string | null;
   };
   camera: {
     presets: CameraPreset[];

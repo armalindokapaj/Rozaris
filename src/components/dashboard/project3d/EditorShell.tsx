@@ -7,7 +7,6 @@ import type {
   DetailModelSlot,
   Locale,
   NodeOverride,
-  PlatformHdri,
   Project,
   Project3DConfig,
   ProjectDetailModel,
@@ -25,11 +24,11 @@ import { BuildingNavRail } from "./BuildingNavRail";
 import { SceneTreeRail } from "./SceneTreeRail";
 import { SectionsListRail } from "./SectionsListRail";
 import { SlotTabStrip } from "./SlotTabStrip";
-import { SunTimeOverlay } from "./SunTimeOverlay";
 import { EditorStatusBar } from "./EditorStatusBar";
 import { ModelPanel } from "./panels/ModelPanel";
 import { MaterialsPanel } from "./panels/MaterialsPanel";
-import { LightingPanel } from "./panels/LightingPanel";
+import { OceanPanel } from "./panels/OceanPanel";
+import { SkyPanel } from "./panels/SkyPanel";
 import { CameraPanel } from "./panels/CameraPanel";
 import { UnitsPanel } from "./panels/UnitsPanel";
 import { SectionsPanel } from "./panels/SectionsPanel";
@@ -105,13 +104,6 @@ export function EditorShell({
   onAddSlot,
   onRenameSlot,
   onDeleteSlot,
-  platformHdris,
-  hdriBusy,
-  hdriError,
-  hdriFileInputRef,
-  onHdriUpload,
-  onDeleteHdri,
-  sunTimes,
   newPresetLabel,
   setNewPresetLabel,
   fileInputRef,
@@ -189,13 +181,6 @@ export function EditorShell({
   onAddSlot: (name: string) => void;
   onRenameSlot: (id: string, name: string) => void;
   onDeleteSlot: (id: string) => void;
-  platformHdris: PlatformHdri[];
-  hdriBusy: boolean;
-  hdriError: string | null;
-  hdriFileInputRef: RefObject<HTMLInputElement | null>;
-  onHdriUpload: (file: File) => void;
-  onDeleteHdri: (hdri: PlatformHdri) => void;
-  sunTimes: { sunriseHourUTC: number; sunsetHourUTC: number } | null;
   newPresetLabel: string;
   setNewPresetLabel: (v: string) => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -556,7 +541,6 @@ export function EditorShell({
               project={project}
               config={draft}
               detailModels={previewDetailModels}
-              hdriUrl={platformHdris.find((h) => h.id === draft.hdriId)?.url ?? null}
               showChrome={false}
               showPerfStats
               onPerfStats={setPerfStats}
@@ -565,12 +549,6 @@ export function EditorShell({
               }}
               onSectionDraftCommit={handleSectionDraftCommit}
             />
-            {/* Live Sun & Time scrubber — Lighting-tab-only, see
-                SunTimeOverlay.tsx's own doc comment for why it's scoped
-                here rather than a global header shortcut. */}
-            {activeMode === "lighting" && (
-              <SunTimeOverlay draft={draft} update={update} sunTimes={sunTimes} t={t} />
-            )}
           </div>
         </div>
 
@@ -641,17 +619,11 @@ export function EditorShell({
                 </div>
               </div>
             )}
-            {activeMode === "lighting" && (
-              <LightingPanel
+            {activeMode === "sky" && <SkyPanel draft={draft} update={update} t={t} />}
+            {activeMode === "ocean" && (
+              <OceanPanel
                 draft={draft}
                 update={update}
-                platformHdris={platformHdris}
-                hdriBusy={hdriBusy}
-                hdriError={hdriError}
-                hdriFileInputRef={hdriFileInputRef}
-                onHdriUpload={onHdriUpload}
-                onDeleteHdri={onDeleteHdri}
-                sunTimes={sunTimes}
                 t={t}
               />
             )}

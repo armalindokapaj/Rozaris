@@ -25,18 +25,6 @@ export async function POST(request: Request): Promise<NextResponse> {
       onBeforeGenerateToken: async (pathname) => {
         const session = await auth();
         if (session?.user?.role !== "admin") throw new Error("Not authorized");
-        // Platform HDRI uploads (PlatformHdriManager) share this same token
-        // route but are .hdr/.exr images, not GLBs — browsers don't have a
-        // built-in MIME type for either extension, so accept the generic
-        // fallback alongside the (rarely actually sent) real ones.
-        if (pathname.startsWith("platform-hdri/")) {
-          return {
-            allowedContentTypes: ["image/vnd.radiance", "image/x-exr", "application/octet-stream"],
-            maximumSizeInBytes: 60 * 1024 * 1024,
-            addRandomSuffix: true,
-            tokenPayload: JSON.stringify({ pathname }),
-          };
-        }
         return {
           allowedContentTypes: ["model/gltf-binary", "application/octet-stream"],
           maximumSizeInBytes: 60 * 1024 * 1024, // keep in sync with MapModelEditor's client-side check

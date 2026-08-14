@@ -1,4 +1,4 @@
-import type { GlassPreset, MaterialPresetId, QualityPreset, SkyPreset, Unit } from "@/lib/types";
+import type { GlassPreset, MaterialPresetId, QualityPreset, Unit } from "@/lib/types";
 
 /** The procedural viewer's status colors — design-token based (success/
  * warning/sold). Left as-is; the new GLB unit-box feature uses its own
@@ -43,12 +43,35 @@ export const WATER_PLANE_SIZE = 1600;
  * accidentally coupled if either is retuned later. */
 export const GROUND_INFINITE_SIZE = 1600;
 
-export const TIME_PRESETS: [string, number][] = [
-  ["project.presetMorning", 8],
-  ["project.presetMidday", 12],
-  ["project.presetAfternoon", 15],
-  ["project.presetEvening", 18.5],
-  ["project.presetNight", 21],
+/** Public-viewer "Sun Orientation" bottom-menu control (2026-08-14, re-add
+ * of the removed Time of Day scrubber — see its own doc comment history in
+ * `Project3DConfig`/`sunPosition.ts`). That old control drove a real
+ * geographic solar-position calculator from an "hour" input; that whole
+ * calculator was removed along with it, so this isn't a revival of the
+ * same mechanism — `sunPositionForHour` (sunPosition.ts) is a new, simple,
+ * non-geographic east-to-west arc instead. Bounds match the second pass
+ * of this feature (user: "move the time from 6am to 8pm"), narrower than
+ * the old scrubber's 6-22 range. A client-only override on top of
+ * whatever the admin authored on the Sky tab — never written back to
+ * `Project3DConfig`, purely a visitor display preference, same as the old
+ * scrubber's `timeOfDay` was never persisted either. */
+export const SUN_HOUR_MIN = 6;
+export const SUN_HOUR_MAX = 20;
+
+/** Dropdown presets (2nd pass: user asked for the 5 presets in a dropdown
+ * alongside the slider, not as their own button row). Reuses the existing
+ * `project.presetMorning/presetMidday/presetAfternoon/presetEvening/
+ * presetNight` label keys (already translated) — the old `TIME_PRESETS`
+ * array they used to key off had its own "Night" anchor at 21:00, outside
+ * this pass's 6-20 slider bounds, so it's pulled in to 20:00 (the
+ * slider's own late edge — reads as dusk, not literal darkness, but keeps
+ * every preset reachable on the slider). */
+export const SUN_PRESET_HOURS: { key: string; hour: number }[] = [
+  { key: "project.presetMorning", hour: 8 },
+  { key: "project.presetMidday", hour: 12 },
+  { key: "project.presetAfternoon", hour: 15 },
+  { key: "project.presetEvening", hour: 18 },
+  { key: "project.presetNight", hour: 20 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -105,14 +128,6 @@ export interface QualityTierSettings {
   antialias: boolean;
   /** Always false this pass — see file header comment. */
   ssgi: boolean;
-  /** Motion blur (`webgpu_postprocessing_motion_blur.html` parity) — an
-   * upper bound per tier, ANDed with the real per-project
-   * `Project3DConfig.motionBlurEnabled` toggle in RenderEngine.ts's
-   * buildRenderPipeline, same pattern `bloom`/`antialias` already use.
-   * Real per-object cost: a `VelocityNode` is evaluated per vertex per
-   * mesh (MRT'd off the main scene pass) plus a 16-tap blur node, so it
-   * stays off on mobile tiers like the other post-processing flags here. */
-  motionBlur: boolean;
   /** 3D LUT color grading (`webgl_postprocessing_3dlut.html` parity) — a
    * single extra `texture3D` sample per pixel via TSL's `lut3D()` node,
    * cheap relative to bloom/motion blur, but still gated per-tier for the
@@ -122,21 +137,6 @@ export interface QualityTierSettings {
    * `dof()` node, a real bokeh blur sampled from the scene's `viewZ`
    * (depth) buffer. Off on mobile tiers, same reasoning as the others. */
   depthOfField: boolean;
-  /** "Render this" one-shot path-traced screenshot
-   * (`webgl_renderer_pathtracer.html` parity, `three-gpu-pathtracer`) —
-   * genuinely GPU/CPU-heavy (10s of continuous accumulated sampling), so
-   * this gates whether the button is even shown at all (see
-   * ArchVizClient.tsx), not just an upper bound on an always-visible
-   * control like the others in this interface. Desktop-oriented tiers
-   * only. */
-  pathTracer: boolean;
-  /** Volumetric raymarched cloud (`webgl_volume_cloud.html` parity) —
-   * real per-pixel raymarching (up to 200 steps, admin-configurable) of a
-   * real 3D noise texture, meaningfully more expensive per-pixel than the
-   * procedural sky-dome clouds, so it stays off on mobile tiers like the
-   * other post-processing/effect flags here even though its own admin
-   * `volumetricCloudSteps` slider can already lighten the real cost. */
-  volumetricCloud: boolean;
   /** Unit-status caustics (`webgpu_caustics.html` parity, adapted) — a
    * real per-unit animated texture sample + emissive-node upgrade, cheap
    * per-unit but scales with unit count, so it stays off on mobile tiers
@@ -152,11 +152,8 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     bloom: true,
     antialias: true,
     ssgi: false,
-    motionBlur: true,
     lut: true,
     depthOfField: true,
-    pathTracer: true,
-    volumetricCloud: true,
     caustics: true,
   },
   high_desktop: {
@@ -166,11 +163,8 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     bloom: true,
     antialias: true,
     ssgi: false,
-    motionBlur: true,
     lut: true,
     depthOfField: true,
-    pathTracer: true,
-    volumetricCloud: true,
     caustics: true,
   },
   balanced: {
@@ -180,11 +174,8 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     bloom: true,
     antialias: true,
     ssgi: false,
-    motionBlur: false,
     lut: true,
     depthOfField: false,
-    pathTracer: false,
-    volumetricCloud: true,
     caustics: true,
   },
   mobile_high: {
@@ -194,11 +185,8 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     bloom: false,
     antialias: false,
     ssgi: false,
-    motionBlur: false,
     lut: false,
     depthOfField: false,
-    pathTracer: false,
-    volumetricCloud: false,
     caustics: false,
   },
   mobile_low: {
@@ -208,32 +196,34 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     bloom: false,
     antialias: false,
     ssgi: false,
-    motionBlur: false,
     lut: false,
     depthOfField: false,
-    pathTracer: false,
-    volumetricCloud: false,
     caustics: false,
   },
 };
 
-/** Real vendored `.cube` LUT files (`webgl_postprocessing_3dlut.html`'s own
- * reference assets — same "vendor the demo's real asset" precedent as
- * Water's waternormals.jpg) — see `public/luts/`. Label is shown in the
- * admin preset dropdown; `file` is the vendored filename `loadLut`
- * (RenderEngine.ts) fetches through `LUTCubeLoader`. The preset *names*
- * ("Bourbon 64" etc.) are each file's own title from its source — not its
- * real grid resolution; checked all 4 vendored files directly, every one
- * is actually `LUT_3D_SIZE 32`. `loadLut` reads the loader's own reported
- * `.size` at runtime rather than trusting a hardcoded number here, so this
- * type intentionally carries no `size` field to avoid a second, driftable
- * copy of that fact. */
+/** Real vendored LUT files — every option `webgl_postprocessing_3dlut.html`'s
+ * own reference GUI exposes (its `lutMap`), same "vendor the demo's real
+ * asset" precedent as Water's waternormals.jpg — see `public/luts/`. Label
+ * is shown in the admin preset dropdown; `file` is the vendored filename,
+ * `format` picks which loader `loadLut` (RenderEngine.ts) dispatches to,
+ * matching the reference demo's own extension-based branch exactly:
+ * `"cube"` → `LUTCubeLoader`, `"3dl"` → `LUT3dlLoader`, `"image"` → a real
+ * LUT-strip PNG via `LUTImageLoader`. The 5 `.CUBE` files are each
+ * `LUT_3D_SIZE 32`; `loadLut` reads the loader's own reported `.size` at
+ * runtime rather than trusting a hardcoded number here either way, so this
+ * type intentionally carries no `size` field. */
 export const LUT_PRESETS = [
-  { id: "bourbon64", label: "Bourbon 64", file: "Bourbon 64.CUBE" },
-  { id: "chemical168", label: "Chemical 168", file: "Chemical 168.CUBE" },
-  { id: "clayton33", label: "Clayton 33", file: "Clayton 33.CUBE" },
-  { id: "cubicle99", label: "Cubicle 99", file: "Cubicle 99.CUBE" },
-] as const;
+  { id: "bourbon64", label: "Bourbon 64", file: "Bourbon 64.CUBE", format: "cube" },
+  { id: "chemical168", label: "Chemical 168", file: "Chemical 168.CUBE", format: "cube" },
+  { id: "clayton33", label: "Clayton 33", file: "Clayton 33.CUBE", format: "cube" },
+  { id: "cubicle99", label: "Cubicle 99", file: "Cubicle 99.CUBE", format: "cube" },
+  { id: "remy24", label: "Remy 24", file: "Remy 24.CUBE", format: "cube" },
+  { id: "presetproCinematic", label: "Presetpro Cinematic", file: "Presetpro-Cinematic.3dl", format: "3dl" },
+  { id: "neutral", label: "Neutral", file: "NeutralLUT.png", format: "image" },
+  { id: "blackAndWhite", label: "Black & White", file: "B&WLUT.png", format: "image" },
+  { id: "night", label: "Night", file: "NightLUT.png", format: "image" },
+] as const satisfies readonly { id: string; label: string; file: string; format: "cube" | "3dl" | "image" }[];
 
 export const LUT_PRESET_IDS = LUT_PRESETS.map((p) => p.id) as [string, ...string[]];
 
@@ -243,10 +233,9 @@ export const LUT_PRESET_IDS = LUT_PRESETS.map((p) => p.id) as [string, ...string
  * (not via a boolean flag) once every effect here is already off. */
 export const ADAPTIVE_DOWNGRADE_ORDER: (keyof Pick<
   QualityTierSettings,
-  "bloom" | "antialias" | "motionBlur" | "lut" | "depthOfField"
+  "bloom" | "antialias" | "lut" | "depthOfField"
 >)[] = [
   "depthOfField",
-  "motionBlur",
   "bloom",
   "antialias",
 ];
@@ -328,53 +317,21 @@ export const MATERIAL_PRESETS: Record<MaterialPresetId, MaterialPresetSettings> 
   ceramic: { label: "Ceramic", color: 0xf0efe9, roughness: 0.15, metalness: 0 },
 };
 
-export interface SkyGradientStops {
-  top: string;
-  horizon: string;
-  ground: string;
-}
+/** Fixed fallback horizon color for `resolveFogColor`'s `fogMatchesSky`
+ * branch (RenderEngine.ts) — the Sky/Water/Bloom/Clouds "Ocean" tab
+ * removed the old per-project `skyPreset` gradient system entirely (the
+ * physical `SkyMesh` is now the only backdrop, with no cheap single
+ * "horizon color" to derive from its continuous elevation/azimuth-driven
+ * atmosphere without an expensive readback), so this is one fixed,
+ * reasonable approximation rather than 5 preset-driven ones — was the old
+ * `"clear_day"` preset's own horizon stop, kept as-is. */
+export const FOG_SKY_HORIZON_COLOR = "#bfe0ff";
 
-/** Originally the procedural sky itself (a vertical-gradient
- * `CanvasTexture` fed through `PMREMGenerator`) — the Sky/Water/Bloom/
- * Clouds pass replaced that with a real physically-based sky dome
- * (`SkyMesh`, see `SKY_PHYSICAL_PARAMS` below and RenderEngine.ts's
- * `rebuildEnvironment`). These gradient stops now only feed
- * `resolveFogColor`'s `fogMatchesSky` fallback (an HDRI has no
- * equivalently-cheap single "horizon color" to derive either way, so both
- * cases already accepted an approximation, not a regression). */
-export const SKY_GRADIENTS: Record<SkyPreset, SkyGradientStops> = {
-  clear_day: { top: "#3a7bd5", horizon: "#bfe0ff", ground: "#e8ecef" },
-  soft_day: { top: "#8fb8e0", horizon: "#e3edf5", ground: "#eef1f0" },
-  overcast: { top: "#7c848f", horizon: "#a9afb6", ground: "#b7bbb9" },
-  golden_hour: { top: "#3a4a7a", horizon: "#ff9d5c", ground: "#7a5a4a" },
-  evening: { top: "#0c1440", horizon: "#4a3a6a", ground: "#241f33" },
-};
-
-export interface SkyPhysicalParams {
-  /** Atmospheric haze — higher looks hazier/more washed out. */
-  turbidity: number;
-  /** Rayleigh scattering coefficient — drives blue-sky intensity. */
-  rayleigh: number;
-  mieCoefficient: number;
-  mieDirectionalG: number;
-}
-
-/** Preetham-model atmospheric parameters for `SkyMesh` (Sky/Water/Bloom/
- * Clouds pass) — one fixed, tuned tuple per existing `skyPreset`, the same
- * "Admin picks a controlled preset rather than authoring raw shader
- * uniforms" approach `SKY_GRADIENTS` above already used, so the existing
- * Sky preset dropdown keeps producing 5 visually distinct results instead
- * of gaining a second, competing set of manual turbidity/rayleigh/mie
- * sliders (webgl_shaders_ocean.html hardcodes one fixed tuple the same
- * way — its GUI never exposes these either, only elevation/azimuth/
- * exposure, which this app already has via the Sun & Time and Exposure
- * sub-tabs). Sun elevation/azimuth/color still come from the real
- * geographic/manual sun (`applySunAndEnvironment`) exactly as before —
- * only the sky dome's own atmosphere physics are preset-driven. */
-export const SKY_PHYSICAL_PARAMS: Record<SkyPreset, SkyPhysicalParams> = {
-  clear_day: { turbidity: 4, rayleigh: 2.4, mieCoefficient: 0.004, mieDirectionalG: 0.78 },
-  soft_day: { turbidity: 6, rayleigh: 1.6, mieCoefficient: 0.006, mieDirectionalG: 0.8 },
-  overcast: { turbidity: 18, rayleigh: 0.6, mieCoefficient: 0.02, mieDirectionalG: 0.9 },
-  golden_hour: { turbidity: 8, rayleigh: 3, mieCoefficient: 0.01, mieDirectionalG: 0.85 },
-  evening: { turbidity: 10, rayleigh: 1.2, mieCoefficient: 0.012, mieDirectionalG: 0.88 },
-};
+// Preetham-model atmospheric parameters for `SkyMesh` (turbidity/rayleigh/
+// mieCoefficient/mieDirectionalG) used to be one fixed constant here
+// (`SKY_PHYSICAL_PARAMS`, itself the old `"clear_day"` preset's own
+// tuple). The new standalone "Sky" tab (webgl_shaders_sky.html parity,
+// 2026-08-14) made them real per-project `Project3DConfig` columns
+// instead — see Project3DConfig's own doc comment in prisma/schema.prisma
+// for the exact defaults (kept identical to this constant's old values,
+// so no existing project's rendered sky changed when the column landed).

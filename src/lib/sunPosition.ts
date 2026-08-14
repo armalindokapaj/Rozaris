@@ -1,39 +1,18 @@
 /**
- * Real geographic sun position — "3D Experience Phase 1" (spec §4: "do not
- * fake the sun"). Dependency-free NOAA-style simplified solar position
- * algorithm (the same formulas behind NOAA's public Solar Calculator
- * spreadsheet), not a package, since the calculation is compact and this
- * avoids pulling in a timezone-database dependency.
- *
- * `timeOfDay` is treated as a UTC decimal hour (0-24) rather than the
- * project's local civil time — resolving true local civil time needs an
- * IANA timezone lookup keyed off lat/lng, a whole separate dependency this
- * pass deliberately skips. Instead, `lng` does its real job here: the
- * equation-of-time + longitude correction below converts the UTC clock
- * time into true *solar* time (solar noon = the sun's actual highest
- * point at that longitude), which is what the visual sun position should
- * track — every one of the spec's listed inputs (lat, lng, north rotation,
- * date) is actually used, none of them decorative.
+ * Sun position math — direction vector + color-temperature approximation
+ * for a real sun given elevation/azimuth (Sky/Water/Bloom/Clouds "Ocean"
+ * tab). The old geographic solar-position calculator (NOAA-style
+ * elevation/azimuth from lat/lng/date/time, plus a sunrise/sunset
+ * calculator) was removed entirely 2026-08-14 along with the geographic
+ * sun system it fed — see Project3DConfig's own doc comment in
+ * src/lib/types.ts. `SunPosition` (elevation/azimuth/isNight) is now
+ * always authored directly, matching webgl_shaders_ocean.html's own GUI.
  */
-
-export interface SunPositionInput {
-  lat: number;
-  lng: number;
-  /** Any Date — only its UTC calendar day (month/day) feeds the seasonal
-   * declination; year is irrelevant. */
-  date: Date;
-  /** UTC decimal hour, 0-24 (e.g. 14.5 = 14:30 UTC). */
-  timeOfDay: number;
-  /** Degrees — rotates the resulting azimuth so "north" in the 3D scene
-   * lines up with true north for a GLB that wasn't authored north-aligned. */
-  northRotationDeg?: number;
-}
 
 export interface SunPosition {
   /** Degrees above the horizon; negative once the sun is below it. */
   elevationDeg: number;
-  /** Degrees clockwise from the scene's "north" (0 = north, 90 = east),
-   * already corrected by `northRotationDeg`. */
+  /** Degrees clockwise from the scene's "north" (0 = north, 90 = east). */
   azimuthDeg: number;
   /** True once elevationDeg <= 0 — sun is below the horizon. */
   isNight: boolean;
@@ -41,105 +20,6 @@ export interface SunPosition {
 
 function toRad(deg: number) {
   return (deg * Math.PI) / 180;
-}
-function toDeg(rad: number) {
-  return (rad * 180) / Math.PI;
-}
-function dayOfYearUTC(date: Date) {
-  const start = Date.UTC(date.getUTCFullYear(), 0, 1);
-  const now = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-  return Math.floor((now - start) / 86_400_000) + 1;
-}
-
-/** Fractional-year angle (radians) + solar declination (radians) + the
- * equation-of-time correction (minutes) — the three quantities every other
- * calculation below is built from. */
-function solarBasics(date: Date, timeOfDay: number) {
-  const dayOfYear = dayOfYearUTC(date);
-  const gamma = ((2 * Math.PI) / 365) * (dayOfYear - 1 + (timeOfDay - 12) / 24);
-
-  const eqTimeMin =
-    229.18 *
-    (0.000075 +
-      0.001868 * Math.cos(gamma) -
-      0.032077 * Math.sin(gamma) -
-      0.014615 * Math.cos(2 * gamma) -
-      0.040849 * Math.sin(2 * gamma));
-
-  const declRad =
-    0.006918 -
-    0.399912 * Math.cos(gamma) +
-    0.070257 * Math.sin(gamma) -
-    0.006758 * Math.cos(2 * gamma) +
-    0.000907 * Math.sin(2 * gamma) -
-    0.002697 * Math.cos(3 * gamma) +
-    0.00148 * Math.sin(3 * gamma);
-
-  return { eqTimeMin, declRad };
-}
-
-/** Real azimuth/elevation for a project's real lat/lng at a given UTC
- * instant — feeds the viewer's DirectionalLight directly (see
- * ProceduralProjectViewer.tsx), replacing the old fake preset-interpolated
- * sun. */
-export function calcSunPosition({
-  lat,
-  lng,
-  date,
-  timeOfDay,
-  northRotationDeg = 0,
-}: SunPositionInput): SunPosition {
-  const { eqTimeMin, declRad } = solarBasics(date, timeOfDay);
-
-  // True solar time, in minutes since local solar midnight.
-  const trueSolarTimeMin = timeOfDay * 60 + eqTimeMin + 4 * lng;
-  let hourAngleDeg = trueSolarTimeMin / 4 - 180;
-  hourAngleDeg = ((hourAngleDeg + 180) % 360) - 180; // wrap to [-180, 180)
-  const hourAngleRad = toRad(hourAngleDeg);
-
-  const latRad = toRad(lat);
-  const cosZenith =
-    Math.sin(latRad) * Math.sin(declRad) + Math.cos(latRad) * Math.cos(declRad) * Math.cos(hourAngleRad);
-  const zenithRad = Math.acos(Math.min(1, Math.max(-1, cosZenith)));
-  const elevationDeg = 90 - toDeg(zenithRad);
-
-  const sinZenith = Math.sin(zenithRad);
-  let azimuthDeg: number;
-  if (Math.abs(sinZenith) < 1e-6) {
-    azimuthDeg = 180; // sun at zenith/nadir — azimuth undefined, pick a stable value
-  } else {
-    const cosAzimuth =
-      (Math.sin(declRad) - Math.sin(latRad) * Math.cos(zenithRad)) / (Math.cos(latRad) * sinZenith);
-    const azimuthRad = Math.acos(Math.min(1, Math.max(-1, cosAzimuth)));
-    azimuthDeg = toDeg(azimuthRad);
-    if (hourAngleDeg > 0) azimuthDeg = 360 - azimuthDeg;
-  }
-
-  return {
-    elevationDeg,
-    azimuthDeg: (azimuthDeg + northRotationDeg + 360) % 360,
-    isNight: elevationDeg <= 0,
-  };
-}
-
-/** Sunrise/sunset for a given date/location, as UTC decimal hours — the
- * Admin editor's read-only "Sunrise / Sunset" display (spec §4). Returns
- * `null` for polar day/night (sun never sets/rises that date+latitude). */
-export function calcSunriseSunset(
-  lat: number,
-  lng: number,
-  date: Date
-): { sunriseHourUTC: number; sunsetHourUTC: number } | null {
-  const { eqTimeMin, declRad } = solarBasics(date, 12);
-  const latRad = toRad(lat);
-  const cosHourAngle = -Math.tan(latRad) * Math.tan(declRad);
-  if (cosHourAngle < -1 || cosHourAngle > 1) return null; // polar day/night
-  const haSunsetDeg = toDeg(Math.acos(cosHourAngle));
-
-  const solarNoonUTCMin = 720 - 4 * lng - eqTimeMin;
-  const sunriseHourUTC = ((solarNoonUTCMin - 4 * haSunsetDeg) / 60 + 24) % 24;
-  const sunsetHourUTC = ((solarNoonUTCMin + 4 * haSunsetDeg) / 60 + 24) % 24;
-  return { sunriseHourUTC, sunsetHourUTC };
 }
 
 /** Converts elevation/azimuth into a unit direction vector in Three.js's
@@ -168,4 +48,31 @@ export function sunColorForElevation(elevationDeg: number): number {
   const g = Math.round(warm.g + (white.g - warm.g) * t);
   const b = Math.round(warm.b + (white.b - warm.b) * t);
   return (r << 16) | (g << 8) | b;
+}
+
+/** Public-viewer "Sun Orientation" slider (2026-08-14, 2nd pass — "move
+ * the time from 6am to 8pm with a slider") — NOT a revival of the
+ * removed geographic calculator this file's own doc comment describes;
+ * a simple, self-contained east-to-west arc with no lat/lng/date
+ * dependency at all. Elevation follows a sine curve that's exactly 0 at
+ * both `minHour`/`maxHour` (sun right at the horizon at each edge, real
+ * sunrise/sunset framing for a 6am-8pm range) and peaks at the
+ * midpoint; azimuth sweeps linearly from roughly east to roughly west
+ * across the same span. `hour` is clamped into range first, so a caller
+ * can pass a slightly-out-of-range value safely. */
+const SUN_ARC_MAX_ELEVATION_DEG = 65;
+const SUN_ARC_AZIMUTH_START_DEG = 85; // roughly east
+const SUN_ARC_AZIMUTH_END_DEG = 275; // roughly west
+
+export function sunPositionForHour(
+  hour: number,
+  minHour: number,
+  maxHour: number
+): { elevationDeg: number; azimuthDeg: number } {
+  const clampedHour = Math.min(maxHour, Math.max(minHour, hour));
+  const t = (clampedHour - minHour) / (maxHour - minHour);
+  return {
+    elevationDeg: SUN_ARC_MAX_ELEVATION_DEG * Math.sin(Math.PI * t),
+    azimuthDeg: SUN_ARC_AZIMUTH_START_DEG + (SUN_ARC_AZIMUTH_END_DEG - SUN_ARC_AZIMUTH_START_DEG) * t,
+  };
 }

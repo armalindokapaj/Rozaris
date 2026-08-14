@@ -12,14 +12,6 @@ export interface ThreeProjectViewerHandle {
   /** Captures the current WebGL frame as a PNG data URL — null if the
    * renderer isn't ready (e.g. WebGL failed to init). */
   captureScreenshot: () => string | null;
-  /** "Render this" — a real, separate photorealistic path-traced
-   * screenshot (`webgl_renderer_pathtracer.html` parity, see
-   * RenderEngine.ts's renderPathTraceScreenshot doc comment for the full
-   * scope) — distinct from `captureScreenshot` above, which just grabs
-   * whatever's already on screen. Async and slow by design (accumulates
-   * real samples for `durationMs`, default 10s); null if the renderer
-   * isn't ready. */
-  renderPathTraceScreenshot: (durationMs?: number) => Promise<string | null>;
   /** The live preview's current camera position/target/fov — null if the
    * renderer isn't ready. Used by Project3DConfigEditor's "Save current
    * view" camera-preset button (Render/visual quality pass). */
@@ -59,33 +51,25 @@ export interface ThreeProjectViewerProps {
    * behind unsaved changes. Mirrors how `config` above already works —
    * no internal fetch there either. */
   detailModels: { slotId: string; model: ProjectDetailModel }[];
-  /** Resolved URL of `config.hdriId`'s shared PlatformHdri row, or `null`
-   * if none is selected (or it failed to resolve) — the engine loads and
-   * uses it in place of the procedural sky gradient. Caller-resolved for
-   * the same reason `detailModels` is: both real callers already fetch
-   * their own copy of the platform HDRI list (usePlatformHdris) and
-   * resolve `config.hdriId` against it, so the engine itself doesn't need
-   * its own network fetch just to look up one URL. */
-  hdriUrl?: string | null;
   className?: string;
   selectedUnitId?: string | null;
   onSelectUnit?: (unit: Unit) => void;
   /** Public viewer chrome (bottom icon menu) is on by default; the Admin
    * live-preview embed turns it off to keep the form the only UI. */
   showChrome?: boolean;
-  /** Fires whenever the bottom menu's Unit Search / Time of Day panel is
+  /** Fires whenever the bottom menu's Unit Search panel is
    * expanded/collapsed, so a parent floating its own chrome (e.g.
    * ArchVizClient's construction-progress pill) can react instead of
    * guessing whether extra bottom-of-viewport height is in use. */
   onBarOpenChange?: (open: boolean) => void;
   /** Fires whenever the bottom menu's "Unit Search" panel specifically
-   * (not Time of Day/Camera Presets/Sections) opens or closes — narrower
-   * than `onBarOpenChange` above. Availability/unit-box color/legend and
-   * the unit-details popup are only meant to be visible while Unit Search
-   * is the active panel: switching to Home (which only shows once no
-   * panel is open) or Time of Day, or closing Unit Search outright, all
-   * report `false` here so a parent (ArchVizClient's selected-unit popup)
-   * can hide/clear along with them instead of lingering. */
+   * (not Camera Presets/Sections) opens or closes — narrower than
+   * `onBarOpenChange` above. Availability/unit-box color/legend and the
+   * unit-details popup are only meant to be visible while Unit Search is
+   * the active panel: switching to Home (which only shows once no panel
+   * is open), or closing Unit Search outright, all report `false` here so
+   * a parent (ArchVizClient's selected-unit popup) can hide/clear along
+   * with them instead of lingering. */
   onUnitSearchActiveChange?: (active: boolean) => void;
   /** Admin-only debug overlay (FPS/draw calls/triangles/DPR) — Publish/
    * runtime hardening pass. Deliberately separate from `showChrome`

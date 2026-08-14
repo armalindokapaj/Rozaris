@@ -7,6 +7,7 @@ import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { useAdminProject } from "@/hooks/useAdminProject";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
+import { useStoreHydrated } from "@/hooks/useStoreHydrated";
 import { Project3DConfigEditor } from "@/components/dashboard/Project3DConfigEditor";
 
 /**
@@ -28,15 +29,26 @@ export default function Admin3DExperiencePage() {
   // no repair path — every upload/delete/publish silently 401'd while the
   // page still looked "signed in as Admin" (the Zustand mock flag below).
   const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
+  // Real bug fix — "can't access Configure 3D Experience" on a fresh load
+  // (hard refresh / new tab / bookmark): `auth` is a persisted Zustand
+  // slice with `skipHydration: true`, so it reads its default
+  // (`signedIn: false`) on the very first client render, before
+  // `StoreHydration.tsx` finishes asynchronously restoring it from
+  // localStorage. The redirect below used to fire on that first,
+  // pre-hydration render and stick even once `auth.signedIn` corrected
+  // itself moments later — see useStoreHydrated's own doc comment.
+  const hydrated = useStoreHydrated();
 
   useEffect(() => {
     // Same console-wide "signed in as Admin" gate admin/page.tsx applies —
     // this route is reachable directly by URL, bypassing that gate, so it
     // needs its own. Redirects to /admin rather than duplicating the full
-    // sign-in UI/flow here.
+    // sign-in UI/flow here. Waits for real hydration first (see above).
+    if (!hydrated) return;
     if (!auth.signedIn) router.replace("/admin");
-  }, [auth.signedIn, router]);
+  }, [hydrated, auth.signedIn, router]);
 
+  if (!hydrated) return null;
   if (!auth.signedIn) return null;
 
   if (!project) {

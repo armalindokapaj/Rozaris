@@ -33,11 +33,6 @@ export function ViewerPanel({
           checked={draft.viewerUI.unitSearch}
           onChange={(v) => update({ viewerUI: { ...draft.viewerUI, unitSearch: v } }, { commit: true })}
         />
-        <ToggleField
-          label={t("project.timeOfDay")}
-          checked={draft.viewerUI.timeOfDay}
-          onChange={(v) => update({ viewerUI: { ...draft.viewerUI, timeOfDay: v } }, { commit: true })}
-        />
       </div>
       <p className="mt-1.5 text-[11px] text-neutral-400">{t("admin.sceneViewerUINote")}</p>
 
@@ -74,6 +69,14 @@ export function ViewerPanel({
           label={t("admin.interactionShowSections")}
           checked={draft.viewerUI.sectionsEnabled ?? true}
           onChange={(v) => update({ viewerUI: { ...draft.viewerUI, sectionsEnabled: v } }, { commit: true })}
+        />
+        {/* "Sun Orientation" bottom-menu button — 5 fixed presets, real
+            client-side override on top of the Sky tab's own authored sun.
+            Same optional/defaults-true toggle pattern as the 4 above. */}
+        <ToggleField
+          label={t("admin.interactionShowSunPresets")}
+          checked={draft.viewerUI.sunPresetEnabled ?? true}
+          onChange={(v) => update({ viewerUI: { ...draft.viewerUI, sunPresetEnabled: v } }, { commit: true })}
         />
       </div>
     </section>

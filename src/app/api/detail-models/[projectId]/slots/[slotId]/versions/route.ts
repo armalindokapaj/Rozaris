@@ -10,7 +10,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { buildExperienceDocument } from "@/lib/experienceDocument";
 import type { CameraPreset, NodeOverride, Project3DConfig, SceneManifestNode, ViewerUIToggles } from "@/lib/types";
 
-const DEFAULT_VIEWER_UI: ViewerUIToggles = { home: true, unitSearch: true, timeOfDay: true };
+const DEFAULT_VIEWER_UI: ViewerUIToggles = { home: true, unitSearch: true };
 
 const createSchema = z.object({
   glbUrl: z.string().url(),

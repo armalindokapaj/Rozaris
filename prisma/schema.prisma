@@ -504,8 +504,6 @@ model ConstructionTimelineRequest {
 
 model Project3DConfig {
   projectId                     String  @id
-  lightingPreset                String  @default("daylight")
-  backgroundPreset              String  @default("sky")
   groundEnabled                 Boolean @default(true)
   /// "disc" | "infinite" — Ground Platform follow-up (same day as Sky/
   /// Water/Bloom/Clouds). "infinite" is the only style available in GLB
@@ -539,47 +537,57 @@ model Project3DConfig {
   // is untouched — it never depended on this column.
   status                        String  @default("draft")
 
-  // "3D Experience Phase 1" — rendering foundation, quality presets, glass,
-  // real geographic sun. See src/lib/sunPosition.ts, src/lib/viewerPresets.ts.
+  // "3D Experience Phase 1" — rendering foundation, quality presets, glass.
+  // See src/lib/viewerPresets.ts.
   renderingMode        String  @default("auto") // auto | webgpu | webgl2
   qualityPreset        String  @default("high_desktop")
   // ultra_desktop | high_desktop | balanced | mobile_high | mobile_low
   glassPreset          String  @default("standard") // performance | standard | premium
-  skyPreset            String  @default("clear_day")
-  // clear_day | soft_day | overcast | golden_hour | evening
   environmentIntensity Float   @default(1)
-  northRotationDeg     Float   @default(0)
-  defaultTimeOfDay     Float   @default(14)
-  allowUserTimeChange  Boolean @default(true)
-  /// "YYYY-MM-DD", or null — Sun & Time restructure. Null means "use the
-  /// real current calendar date" (unchanged behavior, `calcSunPosition`
-  /// is fed `new Date()` exactly as before). Set means the admin is
-  /// simulating a specific date (e.g. "21 June" for a solar study) — feeds
-  /// the same `calcSunPosition`/`calcSunriseSunset` calls instead. No
-  /// default so every existing project stays on "live" until touched.
-  simulationDate       String?
   cameraFovDesktop     Int     @default(38)
   cameraFovMobile      Int     @default(48)
 
-  // Platform HDRI + manual sun position (Task 2 — Track A). `hdriId` null
-  // means "no HDRI, use the existing procedural `skyPreset` gradient" —
-  // this is additive, not a replacement, so every existing project keeps
-  // rendering exactly as before. `onDelete: SetNull` so deleting a shared
-  // HDRI from the library just falls a project back to its procedural sky
-  // rather than breaking it.
-  hdriId String?
-  hdri   PlatformHdri? @relation(fields: [hdriId], references: [id], onDelete: SetNull)
+  /// Sky/Water/Bloom/Clouds "Ocean" tab (webgl_shaders_ocean.html parity)
+  /// — direct sun elevation/azimuth feeding the physical SkyMesh, matching
+  /// the reference demo's own GUI exactly (no geographic date/time
+  /// simulation, no manual/geographic mode split — this is the only sun
+  /// model now). Removed 2026-08-14 at the user's explicit request,
+  /// along with the whole geographic-sun/HDRI/lensflare/light-probe/
+  /// motion-blur system this project had grown around it: sunMode,
+  /// sunIntensity, northRotationDeg, defaultTimeOfDay, allowUserTimeChange,
+  /// simulationDate, hdriId (+ the PlatformHdri table), lensflareEnabled,
+  /// lightProbeEnabled, motionBlurEnabled/Amount, skyPreset,
+  /// backgroundPreset, backgroundBlurriness, bloomThreshold, and the
+  /// separate volumetricCloud* fields (a different reference demo,
+  /// webgl_volume_cloud.html — out of scope for this tab). Not kept as
+  /// dead toggles — dropped as real columns via a live migration.
+  /// `lightingPreset` (already dead/unread) dropped in the same pass.
+  /// `lutEnabled`/`lutPreset`/`lutIntensity` (3D LUT color grading) is
+  /// explicitly KEPT, further down this model — see its own doc comment.
+  sunAzimuthDeg   Float @default(180)
+  sunElevationDeg Float @default(45)
 
-  /// "geographic" (default, unchanged behavior — real sun via
-  /// src/lib/sunPosition.ts) or "manual" (admin sets azimuth/elevation/
-  /// intensity directly, no date/time math involved).
-  sunMode         String @default("geographic")
-  sunAzimuthDeg   Float  @default(180)
-  sunElevationDeg Float  @default(45)
-  /// Multiplier on the sun's base intensity — now applies under both sun
-  /// modes (previously ignored under "geographic"; see RenderEngine.ts's
-  /// applySunAndEnvironment).
-  sunIntensity    Float  @default(1)
+  /// New standalone "Sky" tab (webgl_shaders_sky.html parity, 2026-08-14
+  /// — separate from and added after the "Ocean" tab above). That
+  /// reference demo's own GUI is elevation/azimuth/exposure (already
+  /// covered by sunElevationDeg/sunAzimuthDeg/exposure — reused, not
+  /// duplicated as columns) plus turbidity/rayleigh/mieCoefficient/
+  /// mieDirectionalG, previously a single fixed constant
+  /// (viewerPresets.ts's SKY_PHYSICAL_PARAMS) applied to every project —
+  /// now real per-project columns, defaulted to that exact prior fixed
+  /// tuple so no existing project's rendered sky changes until an admin
+  /// touches this tab. `skyEnabled` is a Rozaris-specific addition (the
+  /// reference demo has no off switch — its Sky is always the scene) per
+  /// explicit user request ("possibility to turn off"); false falls back
+  /// to a flat neutral background/environment instead of the physical
+  /// dome — see RenderEngine.ts's rebuildEnvironment. Default true: zero
+  /// behavior change for any existing project (the physical sky dome was
+  /// already the unconditional backdrop before this column existed).
+  skyEnabled          Boolean @default(true)
+  skyTurbidity        Float   @default(4)
+  skyRayleigh         Float   @default(2.4)
+  skyMieCoefficient   Float   @default(0.004)
+  skyMieDirectionalG  Float   @default(0.78)
 
   // Full-configurator pass — Fog, per-project unit status colors, and
   // per-project post-processing overrides (ANDed with, not replacing,
@@ -587,22 +595,11 @@ model Project3DConfig {
   fogEnabled Boolean @default(false)
   fogColor   String  @default("#c9d6e0")
   fogDensity Float   @default(0.015)
-  /// When true, fog color is derived live from the resolved sky/background
-  /// color instead of the authored `fogColor` above — the "seamless
-  /// horizon" technique from three.js's webgl_geometry_terrain example.
-  /// Default false: zero behavior change for any existing project.
+  /// When true, fog color is derived live from the resolved sky color
+  /// instead of the authored `fogColor` above — the "seamless horizon"
+  /// technique from three.js's webgl_geometry_terrain example. Default
+  /// false: zero behavior change for any existing project.
   fogMatchesSky Boolean @default(false)
-  /// Real lens flare (webgl_lensflares.html technique) attached to the
-  /// sun, via three.js's WebGPU-native LensflareMesh port. Default false:
-  /// zero behavior change for any existing project.
-  lensflareEnabled Boolean @default(false)
-  /// Real spherical-harmonics light probe (webgl_lightprobes_sponza.html
-  /// technique) — direction-dependent indirect/ambient lighting captured
-  /// from the live sky/HDRI environment via a CubeCamera, supplementing
-  /// the flat AmbientLight. Default false: zero behavior change for any
-  /// existing project (the extra cube-capture cost only happens when an
-  /// admin opts in).
-  lightProbeEnabled Boolean @default(false)
   /// Real stencil-buffer-derived Section cap silhouette
   /// (webgl_clipping_stencil.html technique — RenderEngine.ts's
   /// rebuildSectionCap) instead of the default flat-quad cap. Requires
@@ -628,42 +625,37 @@ model Project3DConfig {
   waterDistortionScale Float   @default(3.7)
   waterSize            Float   @default(1)
 
+  /// Sky/Water/Bloom/Clouds "Ocean" tab — webgl_shaders_ocean.html's own
+  /// "Clouds" GUI folder is really 3 more uniforms on its Sky object, not
+  /// a separate mesh; these feed SkyMesh.cloudCoverage/cloudDensity/
+  /// cloudElevation directly (see RenderEngine.ts's applySunAndEnvironment).
+  /// A different, second cloud implementation (real 3D-texture
+  /// raymarching, webgl_volume_cloud.html parity) used to live alongside
+  /// this one on its own tab — removed entirely 2026-08-14 (out of scope
+  /// for this demo's own Clouds panel), along with its
+  /// volumetricCloudEnabled/Threshold/Opacity/Range/Steps columns.
   cloudsEnabled  Boolean @default(false)
   cloudCoverage  Float   @default(0.4)
   cloudDensity   Float   @default(0.5)
   cloudElevation Float   @default(0.5)
 
-  // Motion blur (webgpu_postprocessing_motion_blur.html parity) — real
-  // per-object velocity (VelocityNode, MRT'd off the scene pass alongside
-  // "output") fed into the TSL motionBlur() node. `motionBlurAmount`
-  // mirrors the reference demo's own "blur amount" GUI slider (0-3,
-  // default 1) — a multiplier on the raw velocity vector, not a sample
-  // count (numSamples stays the node's own default of 16, unexposed, same
-  // as the demo). Default false: zero behavior change for any existing
-  // project. See RenderEngine.ts's buildRenderPipeline for why this must
-  // sample the scene pass's raw output texture directly, before bloom.
-  motionBlurEnabled Boolean @default(false)
-  motionBlurAmount  Float   @default(1)
+  /// webgl_watch.html parity — real, previously-unset THREE.js property
+  /// (DirectionalLight.shadow.radius) that always defaulted to its engine
+  /// default (0 — hard shadow edge) with no admin control. Default here
+  /// matches that engine default exactly.
+  shadowSoftness Float @default(0)
 
-  // Real-look additions from webgl_watch.html — bloom threshold was
-  // previously hardcoded to 0.85 in RenderEngine.ts, now a real per-project
-  // slider; backgroundBlurriness/shadowSoftness are real, previously-unset
-  // THREE.js properties (Scene.backgroundBlurriness, DirectionalLight
-  // .shadow.radius) that always defaulted to their engine defaults (0 for
-  // both — sharp background, hard shadow edge) with no admin control.
-  // Defaults here match those same engine defaults exactly: zero behavior
-  // change for any existing project.
-  bloomThreshold      Float @default(0.85)
-  backgroundBlurriness Float @default(0)
-  shadowSoftness      Float @default(0)
-
-  // 3D LUT color grading (webgl_postprocessing_3dlut.html parity) — TSL
-  // `lut3D()` node (already installed, WebGPU-compatible) fed a real
-  // vendored `.cube` LUT file (see RenderEngine.ts's buildRenderPipeline).
-  // `lutPreset` is a free string, not a Prisma enum, matching `skyPreset`'s
-  // own precedent — validated against the real available-preset list at
-  // the zod layer instead. Off by default: zero behavior change for any
-  // existing project.
+  // 3D LUT color grading (webgl_postprocessing_3dlut.html parity) — every
+  // option the reference demo's own GUI exposes: `enabled`, a 9-way `lut`
+  // dropdown (all 9 of the demo's own vendored presets — 5 real `.CUBE`
+  // files via `LUTCubeLoader`, 1 real `.3dl` file via `LUT3dlLoader`, 3
+  // real image-strip LUTs via `LUTImageLoader` — see viewerPresets.ts's
+  // `LUT_PRESETS` and RenderEngine.ts's `loadLut` for the loader-per-
+  // format dispatch, and `public/luts/` for the vendored assets), and
+  // `intensity`. `lutPreset` is a free string, not a Prisma enum,
+  // validated against the real available-preset list at the zod layer
+  // instead. Off by default: zero behavior change for any existing
+  // project.
   lutEnabled   Boolean @default(false)
   lutPreset    String  @default("bourbon64")
   lutIntensity Float   @default(1)
@@ -690,21 +682,6 @@ model Project3DConfig {
   /// needs a fresh mount to take effect. Default false: zero behavior
   /// change for any existing project.
   logarithmicDepthEnabled Boolean @default(false)
-
-  // Volumetric raymarched cloud (webgl_volume_cloud.html parity) — a real,
-  // second/different cloud implementation kept deliberately alongside the
-  // existing procedural sky-dome clouds (cloudsEnabled/cloudCoverage/etc.
-  // above), not replacing them, per explicit user request ("add this
-  // cloud to another tab, we will test both of it"). See
-  // volumetricCloud.ts for the real 3D-texture-raymarching implementation.
-  // Params mirror the reference demo's own GUI exactly (threshold/opacity/
-  // range/steps). Off by default: zero behavior change for any existing
-  // project.
-  volumetricCloudEnabled   Boolean @default(false)
-  volumetricCloudThreshold Float   @default(0.25)
-  volumetricCloudOpacity   Float   @default(0.25)
-  volumetricCloudRange     Float   @default(0.1)
-  volumetricCloudSteps     Int     @default(100)
 
   /// Loading-screen reveal (webgl_postprocessing_transition.html
   /// technique) — real per-project on/off (per explicit user request:
@@ -758,8 +735,11 @@ model Project3DConfig {
   /// target: {x,y,z}, fov, durationMs, easing }]. Clicking one in the
   /// public viewer smoothly transitions the live camera to it.
   cameraPresets Json?
-  /// Tone-mapping exposure multiplier — renderer.toneMapping itself is
-  /// fixed to ACESFilmic (not made per-project configurable this pass).
+  /// Tone-mapping exposure multiplier (renderer.toneMappingExposure) —
+  /// also the Sky/Water/Bloom/Clouds "Ocean" tab's Sky "exposure" slider,
+  /// matching webgl_shaders_ocean.html's own GUI exactly. renderer.
+  /// toneMapping itself is fixed to ACESFilmic (not made per-project
+  /// configurable).
   exposure      Float @default(1)
 
   // Publish/runtime hardening pass.
@@ -788,27 +768,12 @@ model Project3DConfig {
   @@map("project_3d_configs")
 }
 
-/// A shared, platform-wide HDRI environment map — uploaded once by an
-/// admin, selectable across every project's 3D Experience instead of each
-/// project needing its own upload (Task 2 — Track A). First genuinely
-/// shared/reusable asset table in this schema; every other model here is
-/// project- or version-scoped.
-model PlatformHdri {
-  id           String   @id @default(cuid())
-  name         String
-  url          String
-  thumbnailUrl String?
-  createdAt    DateTime @default(now())
-  uploadedBy   String?
-
-  /// Super Admin recycle bin ("media").
-  deletedAt DateTime?
-  deletedBy String?
-
-  configs Project3DConfig[]
-
-  @@map("platform_hdris")
-}
+// `PlatformHdri` (a shared, platform-wide HDRI environment map — Task 2,
+// Track A) removed entirely 2026-08-14 along with `Project3DConfig.hdriId`
+// — the Sky/Water/Bloom/Clouds "Ocean" tab replaces the old HDRI/
+// procedural-sky-preset background system with the physical SkyMesh as the
+// only backdrop, so there's no longer a background mode for a Platform
+// HDRI to apply to.
 
 /// Admin's "3D Map Control" GLB placement — glbUrl now points at a real
 /// Vercel Blob object (shared, public, permanent) instead of one browser's

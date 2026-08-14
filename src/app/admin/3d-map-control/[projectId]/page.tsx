@@ -7,6 +7,7 @@ import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { useAdminProject } from "@/hooks/useAdminProject";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
+import { useStoreHydrated } from "@/hooks/useStoreHydrated";
 import { MapModelEditor } from "@/components/dashboard/MapModelEditor";
 
 /**
@@ -26,11 +27,17 @@ export default function Admin3DMapControlPage() {
   const project = useAdminProject(params.projectId);
   const { t } = useT();
   const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
+  // Same real bug fix as ../../3d-experience/[projectId]/page.tsx — see
+  // useStoreHydrated's own doc comment for the full "fresh load bounces
+  // back to /admin" root cause.
+  const hydrated = useStoreHydrated();
 
   useEffect(() => {
+    if (!hydrated) return;
     if (!auth.signedIn) router.replace("/admin");
-  }, [auth.signedIn, router]);
+  }, [hydrated, auth.signedIn, router]);
 
+  if (!hydrated) return null;
   if (!auth.signedIn) return null;
 
   if (!project) {

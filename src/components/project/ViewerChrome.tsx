@@ -58,6 +58,10 @@ export function DarkSelect({
   );
 }
 
+/** "h:mm AM/PM" display for the Sun Orientation slider's hour value
+ * (2026-08-14, 2nd pass) — re-added verbatim from the old Time of Day
+ * scrubber this replaced (same name/signature), which read this file
+ * before being removed the same day as the Sky/Ocean tab work. */
 export function formatHour(h: number): string {
   const hour24 = Math.floor(h);
   const minutes = Math.round((h - hour24) * 60);

@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Building2, Camera, Cpu, Palette, Scissors, Sun, Eye } from "lucide-react";
+import { Box, Building2, Camera, Cpu, Palette, Scissors, Sun, Waves, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EDITOR_MODES, type EditorMode } from "./modes";
 import type { Translate } from "./editorTypes";
@@ -8,7 +8,8 @@ import type { Translate } from "./editorTypes";
 const TAB_LABEL_KEY: Record<EditorMode, string> = {
   model: "admin.editorTabModel",
   materials: "admin.editorTabMaterials",
-  lighting: "admin.editorTabLighting",
+  sky: "admin.editorTabSky",
+  ocean: "admin.editorTabOcean",
   camera: "admin.editorTabCamera",
   sections: "admin.editorTabSections",
   inventory: "admin.editorTabInventory",
@@ -19,7 +20,8 @@ const TAB_LABEL_KEY: Record<EditorMode, string> = {
 const TAB_ICON: Record<EditorMode, typeof Box> = {
   model: Box,
   materials: Palette,
-  lighting: Sun,
+  sky: Sun,
+  ocean: Waves,
   camera: Camera,
   sections: Scissors,
   inventory: Building2,

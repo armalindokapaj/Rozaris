@@ -38,7 +38,6 @@
     "react-dom": "19.2.4",
     "tailwind-merge": "^3.6.0",
     "three": "^0.185.1",
-    "three-gpu-pathtracer": "^0.0.24",
     "three-mesh-bvh": "^0.9.14",
     "xatlas-web": "^0.1.0",
     "zod": "^4.4.3",

@@ -9,11 +9,13 @@ import { prisma } from "@/lib/db";
  * surface) — Prisma's per-model delegate types don't unify cleanly enough
  * to be worth fighting for a file this size.
  *
- * Covers exactly the 8 models the plan's Recycle Bin scope names: Project,
- * Unit, Listing, User, MapModelVersion, DetailModelVersion, PlatformHdri
- * ("media"), Publisher. `Project3DConfig` is deliberately NOT here — it's a
- * 1:1 singleton with no delete concept, restorable only via AuditLog
- * whole-row snapshots (see /api/admin/entities/.../restore-version).
+ * Covers exactly the 7 models the plan's Recycle Bin scope names: Project,
+ * Unit, Listing, User, MapModelVersion, DetailModelVersion, Publisher.
+ * `Project3DConfig` is deliberately NOT here — it's a 1:1 singleton with
+ * no delete concept, restorable only via AuditLog whole-row snapshots (see
+ * /api/admin/entities/.../restore-version). `PlatformHdri` ("media") used
+ * to be the 8th — removed 2026-08-14 along with the model itself (see
+ * prisma/schema.prisma's own removal note).
  */
 export type RecycleBinEntityType =
   | "project"
@@ -22,8 +24,7 @@ export type RecycleBinEntityType =
   | "user"
   | "listing"
   | "mapModelVersion"
-  | "detailModelVersion"
-  | "platformHdri";
+  | "detailModelVersion";
 
 export const RECYCLE_BIN_ENTITY_TYPES: RecycleBinEntityType[] = [
   "project",
@@ -33,7 +34,6 @@ export const RECYCLE_BIN_ENTITY_TYPES: RecycleBinEntityType[] = [
   "listing",
   "mapModelVersion",
   "detailModelVersion",
-  "platformHdri",
 ];
 
 interface EntityConfig {
@@ -126,7 +126,6 @@ const MAP_MODEL_VERSION_RESTORABLE_FIELDS = [
   "hideBaseBuilding", "hiddenBuildings",
 ];
 const DETAIL_MODEL_VERSION_RESTORABLE_FIELDS = ["scale", "rotationDeg", "altitudeOffset", "nodeOverrides"];
-const PLATFORM_HDRI_RESTORABLE_FIELDS = ["name", "url", "thumbnailUrl"];
 
 export const RECYCLE_BIN_ENTITIES: Record<RecycleBinEntityType, EntityConfig> = {
   project: {
@@ -255,23 +254,6 @@ export const RECYCLE_BIN_ENTITIES: Record<RecycleBinEntityType, EntityConfig> = 
         data: pick(state, DETAIL_MODEL_VERSION_RESTORABLE_FIELDS),
       }),
   },
-  platformHdri: {
-    auditEntityType: "PlatformHdri",
-    findMany: (where) => prisma.platformHdri.findMany({ where, orderBy: { deletedAt: "desc" } }),
-    findOne: (id) => prisma.platformHdri.findUnique({ where: { id } }),
-    softDelete: (id, actor) =>
-      prisma.platformHdri.update({ where: { id }, data: { deletedAt: new Date(), deletedBy: actor } }),
-    restore: (id) => prisma.platformHdri.update({ where: { id }, data: { deletedAt: null, deletedBy: null } }),
-    confirmValue: (row) => String(row.name),
-    label: (row) => String(row.name),
-    hardDelete: async (id, row) => {
-      await bestEffortBlobDelete([row.url as string, row.thumbnailUrl as string]);
-      await prisma.platformHdri.delete({ where: { id } });
-    },
-    restorableFields: PLATFORM_HDRI_RESTORABLE_FIELDS,
-    applyState: (id, state) =>
-      prisma.platformHdri.update({ where: { id }, data: pick(state, PLATFORM_HDRI_RESTORABLE_FIELDS) }),
-  },
 };
 
 export function getEntityConfig(entityType: string): EntityConfig | null {
@@ -279,15 +261,14 @@ export function getEntityConfig(entityType: string): EntityConfig | null {
 }
 
 const PROJECT_3D_CONFIG_RESTORABLE_FIELDS = [
-  "lightingPreset", "backgroundPreset", "groundEnabled",
+  "groundEnabled",
   "cameraStartDistanceMultiplier", "cameraMinDistanceMultiplier",
   "cameraMaxDistanceMultiplier", "cameraMaxPolarDeg", "cameraMinPolarDeg",
   "autoRotate", "renderingMode",
-  "qualityPreset", "glassPreset", "skyPreset", "environmentIntensity",
-  "northRotationDeg", "defaultTimeOfDay", "allowUserTimeChange",
-  "cameraFovDesktop", "cameraFovMobile", "hdriId", "sunMode",
-  "sunAzimuthDeg", "sunElevationDeg", "sunIntensity", "fogEnabled",
-  "fogColor", "fogDensity", "fogMatchesSky", "lensflareEnabled", "lightProbeEnabled", "sectionCapStencilEnabled", "unitColorAvailable", "unitColorReserved",
+  "qualityPreset", "glassPreset", "environmentIntensity",
+  "cameraFovDesktop", "cameraFovMobile",
+  "sunAzimuthDeg", "sunElevationDeg", "fogEnabled",
+  "fogColor", "fogDensity", "fogMatchesSky", "sectionCapStencilEnabled", "unitColorAvailable", "unitColorReserved",
   "unitColorSold", "unitColorSelected", "shadowsEnabled",
   "antialiasEnabled", "cameraPresets", "exposure",
   "viewerUI", "sections",
