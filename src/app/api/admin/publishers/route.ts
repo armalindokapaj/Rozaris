@@ -32,6 +32,11 @@ export async function GET(request: Request) {
       verified: true,
       restricted: true,
       restrictedReason: true,
+      // Additive — VerificationTab needs a real signal for "how long has
+      // this publisher been waiting", since there's no VerificationRequest
+      // entity to carry a real submittedAt. Existing consumers (Account
+      // Controls picker, PublishersTab) just ignore the extra field.
+      createdAt: true,
     },
     take: 100,
   });
