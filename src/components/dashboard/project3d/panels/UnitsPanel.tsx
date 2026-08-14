@@ -3,7 +3,7 @@
 import { cn, formatPrice } from "@/lib/utils";
 import { autoMatchUnitNodes } from "@/lib/glbUnitNodes";
 import type { Project3DConfig, Unit } from "@/lib/types";
-import { ColorField } from "../fields";
+import { ColorField, SliderField, ToggleField } from "../fields";
 import type { FloorFilter, SetOpts, Translate } from "../editorTypes";
 
 const STATUS_KEY: Record<Unit["status"], string> = {
@@ -237,6 +237,69 @@ export function UnitsPanel({
             value={draft.unitColorSelected}
             onChange={(v) => update({ unitColorSelected: v }, { commit: true })}
           />
+        </div>
+      </section>
+
+      {/* --- Unit-status caustics (webgpu_caustics.html parity, adapted)
+          — procedural-mode units only. Color reuses the 4 status colors
+          above (no separate caustics-color fields); availability drives
+          per-status intensity below; scale/speed are the real caustics
+          properties. --- */}
+      <section className="border-t border-neutral-100 pt-5">
+        <h4 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
+          {t("admin.inventoryCausticsTitle")}
+        </h4>
+        <div className="space-y-2.5">
+          <ToggleField
+            label={t("admin.causticsEnabled")}
+            checked={draft.causticsEnabled}
+            onChange={(v) => update({ causticsEnabled: v }, { commit: true })}
+          />
+          {draft.causticsEnabled && (
+            <>
+              <SliderField
+                label={t("admin.causticsScale")}
+                min={0.05}
+                max={3}
+                step={0.05}
+                value={draft.causticsScale}
+                onChange={(v) => update({ causticsScale: v })}
+              />
+              <SliderField
+                label={t("admin.causticsSpeed")}
+                min={0}
+                max={1}
+                step={0.01}
+                value={draft.causticsSpeed}
+                onChange={(v) => update({ causticsSpeed: v })}
+              />
+              <SliderField
+                label={t("admin.causticsIntensityAvailable")}
+                min={0}
+                max={3}
+                step={0.05}
+                value={draft.causticsIntensityAvailable}
+                onChange={(v) => update({ causticsIntensityAvailable: v })}
+              />
+              <SliderField
+                label={t("admin.causticsIntensityReserved")}
+                min={0}
+                max={3}
+                step={0.05}
+                value={draft.causticsIntensityReserved}
+                onChange={(v) => update({ causticsIntensityReserved: v })}
+              />
+              <SliderField
+                label={t("admin.causticsIntensitySold")}
+                min={0}
+                max={3}
+                step={0.05}
+                value={draft.causticsIntensitySold}
+                onChange={(v) => update({ causticsIntensitySold: v })}
+              />
+              <p className="text-[11px] text-neutral-400">{t("admin.causticsNote")}</p>
+            </>
+          )}
         </div>
       </section>
 

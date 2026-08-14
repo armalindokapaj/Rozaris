@@ -5,8 +5,28 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
-import { pass, positionWorld, length as tslLength, smoothstep, mix, uniform } from "three/tsl";
+import {
+  pass,
+  positionWorld,
+  length as tslLength,
+  smoothstep,
+  mix,
+  uniform,
+  mrt,
+  output,
+  velocity,
+  texture3D,
+  uv,
+  vec3,
+  vec4,
+  color as tslColor,
+  mx_fractal_noise_float,
+} from "three/tsl";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
+import { motionBlur } from "three/examples/jsm/tsl/display/MotionBlur.js";
+import { lut3D } from "three/examples/jsm/tsl/display/Lut3DNode.js";
+import { dof } from "three/examples/jsm/tsl/display/DepthOfFieldNode.js";
+import { LUTCubeLoader } from "three/examples/jsm/loaders/LUTCubeLoader.js";
 import { smaa } from "three/examples/jsm/tsl/display/SMAANode.js";
 import { LensflareMesh, LensflareElement } from "three/examples/jsm/objects/LensflareMesh.js";
 import { LightProbeGenerator } from "three/examples/jsm/lights/LightProbeGenerator.js";
@@ -19,6 +39,12 @@ import { LightProbeGenerator } from "three/examples/jsm/lights/LightProbeGenerat
 // cloud object exists in either version.
 import { SkyMesh } from "three/examples/jsm/objects/SkyMesh.js";
 import { WaterMesh } from "three/examples/jsm/objects/WaterMesh.js";
+import { buildVolumetricCloudMaterial, buildVolumetricCloudNoiseTexture } from "./volumetricCloud";
+import { buildCausticsUnitEmissiveNode, loadCausticsTexture, type CausticsUnitUniforms } from "./caustics";
+// webgl_shadowmap_viewer.html parity — the WebGPU-native port
+// (ShadowMapViewerGPU.js), not the classic WebGLRenderer-only
+// ShadowMapViewer.js (see this app's WebGPURenderer-first architecture).
+import { ShadowMapViewer } from "three/examples/jsm/utils/ShadowMapViewerGPU.js";
 import { computeProjectLayout, type UnitBox } from "@/lib/threeBuilding";
 import { DRACO_DECODER_PATH } from "@/lib/gltfDecoder";
 import { applyUnitBoxMaterial, disposeGlbObject3D } from "@/lib/glbUnitNodes";
@@ -28,6 +54,7 @@ import {
   GLASS_NODE_PATTERN,
   GLASS_TIERS,
   GROUND_INFINITE_SIZE,
+  LUT_PRESETS,
   MATERIAL_PRESETS,
   QUALITY_TIERS,
   SELECTED_COLOR,
@@ -133,7 +160,6 @@ export interface MountParams {
    * initial `refreshAppearance` call at the end of mount() — see there. */
   selectedUnitId: string | null;
   filters: UnitFilters;
-  constructionProgressPercent: number | undefined;
   showUnitBoxes: boolean;
   /** True for the admin editor's own live preview, false for every
    * public-facing viewer — see `this.isEditorPreview`'s field doc
@@ -160,7 +186,6 @@ export interface RefreshAppearanceParams {
   usingGlb: boolean;
   selectedUnitId: string | null;
   filters: UnitFilters;
-  constructionProgressPercent: number | undefined;
   showUnitBoxes: boolean;
 }
 
@@ -216,6 +241,21 @@ export class RenderEngine {
   private groundFogRadiusUniform: { value: number } | null = null;
   private groundFogStrengthUniform: { value: number } | null = null;
   private sun: THREE.DirectionalLight | null = null;
+  /** Real shadow-map debug HUD (`webgl_shadowmap_viewer.html` parity) —
+   * admin-only debug aid, not a `Project3DConfig` field (same
+   * "not persisted, session-only" category as `showPerfStats`). Lazily
+   * constructed the first frame `this.sun.shadow.map` actually exists
+   * (per `ShadowMapViewerGPU.js`'s own doc comment: a light's shadow map
+   * only initializes after its first render pass with shadows on) —
+   * `shadowMapViewerEnabled` can flip true before that frame happens, the
+   * render loop just waits. Only meaningful in a full-window viewer: the
+   * addon positions/sizes itself in `window.innerWidth`/`innerHeight`
+   * terms internally, not this app's own `container` div, so it's only
+   * wired into the public viewer (a real full-viewport canvas) — the
+   * admin editor's smaller embedded preview panel would place the HUD
+   * using the wrong coordinate basis. */
+  private shadowMapViewer: InstanceType<typeof ShadowMapViewer> | null = null;
+  private shadowMapViewerEnabled = false;
   /** The scene's bounding-box center, computed once per mount() — `sun.target`
    * is pointed here once and never moves again, so `applySunAndEnvironment`
    * needs the same point to offset `sun.position` by; otherwise the sun's
@@ -243,6 +283,23 @@ export class RenderEngine {
    * already does, rather than always paying for an unused texture
    * load/reflection render target. */
   private waterMesh: WaterMesh | null = null;
+  /** Volumetric raymarched cloud (webgl_volume_cloud.html parity,
+   * volumetricCloud.ts) — a real box mesh + NodeMaterial, only constructed
+   * when `config.volumetricCloudEnabled` (per-project opt-in, most
+   * projects have none — same "needs a fresh mount to toggle" reasoning
+   * as `waterEnabled`). `volumetricCloudUniforms` are the 4 real live
+   * `UniformNode`s the reference demo's own GUI exposes (threshold/
+   * opacity/range/steps) — `applyLiveUpdate` drags those without a
+   * rebuild; `volumetricCloudNoiseTexture` is the real CPU-generated 3D
+   * Perlin texture, disposed alongside the mesh. */
+  private volumetricCloudMesh: THREE.Mesh | null = null;
+  private volumetricCloudUniforms: ReturnType<typeof buildVolumetricCloudMaterial>["uniforms"] | null = null;
+  private volumetricCloudNoiseTexture: THREE.Data3DTexture | null = null;
+  /** Bumped every frame the cloud is visible — feeds its material's
+   * `frame` uniform, the same per-frame dither-seed increment the
+   * reference demo's own `animate()` bumps every render (see the render
+   * loop below). */
+  private volumetricCloudFrame = 0;
   /** The bloom node itself (not just a boolean) — `strength`/`radius` are
    * real `UniformNode<float>`s on this instance (confirmed against
    * BloomNode.js's own source), so `applyLiveUpdate` can drag those live
@@ -250,6 +307,51 @@ export class RenderEngine {
    * `bloomEnabled` itself (which structurally adds/removes the node from
    * the chain) needs a fresh mount, same as `antialiasEnabled`. */
   private bloomNode: ReturnType<typeof bloom> | null = null;
+  /** Live `UniformNode<float>` multiplying the raw MRT velocity vector fed
+   * into the `motionBlur()` node — see buildRenderPipeline's doc comment
+   * for why this must be a plain uniform (unlike `bloomNode`, `motionBlur`
+   * is a stateless `Fn`, not a class instance with its own uniforms to
+   * reuse). `applyLiveUpdate` drags this live; `motionBlurEnabled` itself
+   * (which structurally adds/removes MRT + the node from the chain) needs
+   * a fresh mount, same as `bloomEnabled`/`antialiasEnabled`. */
+  private motionBlurAmount: ReturnType<typeof uniform> | null = null;
+  /** The currently-loaded LUT's real `Data3DTexture` (`LUTCubeLoader`'s
+   * own parsed result) — `null` until `loadLut` resolves. `lutPresetLoaded`
+   * tracks which preset id it corresponds to, same "only reload on a real
+   * change" guard `hdriUrlLoaded` already uses for HDRI. `lutIntensity` is
+   * a real live `UniformNode<float>` (`Lut3DNode`'s own `intensityNode`),
+   * draggable via `applyLiveUpdate` with no rebuild; `lutEnabled`/
+   * `lutPreset` themselves need a fresh mount (structural + a real async
+   * texture load), same category as `bloomEnabled`. */
+  private lutTexture: THREE.Data3DTexture | null = null;
+  private lutPresetLoaded: string | null = null;
+  private lutIntensity: ReturnType<typeof uniform> | null = null;
+  /** Depth of field (`webgl_postprocessing_dof2.html` parity) — 3 real
+   * live `UniformNode<float>`s (`DepthOfFieldNode`'s own constructor just
+   * stores whatever node it's given, unlike `BloomNode`'s auto-uniform-
+   * wrapping, so these are created explicitly here, same idea as
+   * `motionBlurAmount`). `dofFocusDistance` is the odd one out: recomputed
+   * every frame in the render loop (`camera.position.distanceTo(controls.target)`,
+   * real auto-focus) rather than dragged from a config field —
+   * `dofFocalLength`/`dofBokehScale` are the two that `applyLiveUpdate`
+   * drags from real per-project sliders. `depthOfFieldEnabled` itself
+   * needs a fresh mount (structural), same category as `bloomEnabled`. */
+  private dofFocusDistance: ReturnType<typeof uniform> | null = null;
+  private dofFocalLength: ReturnType<typeof uniform> | null = null;
+  private dofBokehScale: ReturnType<typeof uniform> | null = null;
+  /** Loading-screen reveal (`webgl_postprocessing_transition.html`
+   * technique, ported to a real procedural TSL fractal-noise mask instead
+   * of the reference demo's static texture — no extra vendored asset
+   * needed, and this app's own version needs a single reusable mask, not
+   * a per-transition-style picker). NOT a `Project3DConfig` field —
+   * automatic engine behavior, not an admin toggle: plays once for ~1.1s
+   * the moment mount() has its first frame ready to show (see mount()'s
+   * own `revealActive = true` line), then the render loop tears the node
+   * back out of the pipeline entirely (one more `buildRenderPipeline`
+   * call) so it costs nothing on every subsequent frame afterward. */
+  private revealThreshold: ReturnType<typeof uniform> | null = null;
+  private revealActive = false;
+  private revealStartTime = 0;
   /** Debounces the expensive PMREM/light-probe rebuild inside
    * `applySunAndEnvironment` — see `scheduleEnvironmentRebuild`. */
   private environmentRebuildTimer: ReturnType<typeof setTimeout> | null = null;
@@ -287,8 +389,20 @@ export class RenderEngine {
 
   // Procedural mode
   private unitMeshes = new Map<string, THREE.Mesh>();
-  private shells: THREE.Mesh[] = [];
   private unitBoxes: UnitBox[] = [];
+  /** Unit-status caustics (`webgpu_caustics.html` parity, see caustics.ts)
+   * — procedural-mode units only. `causticsTexture` is the one real
+   * vendored asset, loaded once per mount; `causticsScaleUniform`/
+   * `causticsSpeedUniform` are shared live `UniformNode`s (one value for
+   * every unit); `causticsUnitUniforms` holds each unit's own real
+   * `color`/`intensity` uniforms (genuinely different per unit by status)
+   * — `applyUnitAppearance` updates those live on every hover/select/
+   * status refresh. `causticsEnabled` itself needs a fresh mount
+   * (structural — upgrades each unit's material to a real NodeMaterial). */
+  private causticsTexture: THREE.Texture | null = null;
+  private causticsScaleUniform: ReturnType<typeof uniform> | null = null;
+  private causticsSpeedUniform: ReturnType<typeof uniform> | null = null;
+  private causticsUnitUniforms = new Map<string, CausticsUnitUniforms>();
 
   // GLB mode — one root per detail-model slot (Multiple Detail-Model
   // Slots pass), keyed by slotId. `glbUnitBoxes` keys became
@@ -512,6 +626,50 @@ export class RenderEngine {
     return renderer.domElement.toDataURL("image/png");
   }
 
+  /** "Render this" — the public Project Viewer's one-shot photorealistic
+   * path-traced screenshot. Real, gated to desktop-oriented quality tiers
+   * (path tracing is genuinely GPU/CPU-heavy) — caller (the viewer
+   * component) is responsible for checking `tier.pathTracer` before ever
+   * showing the button, this method itself just refuses to run without
+   * that check too, defense in depth. See pathTraceScreenshot.ts's own
+   * doc comment for the full material-compatibility scope this
+   * implements. `durationMs` defaults to the literal "10 seconds" this
+   * feature was asked for. */
+  async renderPathTraceScreenshot(durationMs = 10000): Promise<string | null> {
+    const scene = this.scene;
+    const camera = this.camera;
+    const container = this.container;
+    if (!scene || !camera || !container) return null;
+    const { renderPathTraceScreenshot: run } = await import("./pathTraceScreenshot");
+    const width = Math.min(1600, container.clientWidth || 1600);
+    const height = Math.min(900, container.clientHeight || 900);
+    return run({
+      scene,
+      camera,
+      ground: this.ground,
+      groundColor: this.groundColorUniform?.value ?? null,
+      sun: this.sun,
+      ambient: this.ambient,
+      envTexture: this.envRenderTarget?.texture ?? null,
+      exposure: this.config.exposure,
+      width,
+      height,
+      durationMs,
+    });
+  }
+
+  /** Toggles the real shadow-map debug HUD (see its own field doc comment
+   * above for the full lifecycle/positioning-scope caveat). Cheap either
+   * way: turning it off just drops the reference so it's lazily rebuilt
+   * from scratch if re-enabled — no owned GPU resources of its own to
+   * dispose (it reads the light's existing `shadow.map.depthTexture`,
+   * never creates one — confirmed against `ShadowMapViewerGPU.js`'s own
+   * source). */
+  setShadowMapViewerEnabled(enabled: boolean) {
+    this.shadowMapViewerEnabled = enabled;
+    if (!enabled) this.shadowMapViewer = null;
+  }
+
   getCameraState(): { position: { x: number; y: number; z: number }; target: { x: number; y: number; z: number }; fov: number } | null {
     const camera = this.camera;
     const controls = this.controls;
@@ -523,11 +681,7 @@ export class RenderEngine {
     };
   }
 
-  private applyUnitAppearance(
-    mesh: THREE.Mesh,
-    box: UnitBox,
-    params: { selectedUnitId: string | null; filters: UnitFilters; constructionProgressPercent: number | undefined; constructionStagesEnabled: boolean }
-  ) {
+  private applyUnitAppearance(mesh: THREE.Mesh, box: UnitBox, params: { selectedUnitId: string | null; filters: UnitFilters }) {
     const material = mesh.material as THREE.MeshStandardMaterial;
     const isSelected = box.unit.id === params.selectedUnitId;
     const isHovered = box.unit.id === this.hoveredId;
@@ -542,12 +696,18 @@ export class RenderEngine {
     material.roughness = 0.6;
     material.metalness = 0.05;
 
-    const progress = params.constructionProgressPercent ?? this.project.progressPercent;
-    const isBuilt =
-      !params.constructionStagesEnabled ||
-      this.project.status !== "under_construction" ||
-      box.floorIndex / Math.max(1, box.totalFloorsInBuilding) <= progress / 100;
-    mesh.visible = this.matchesFilters(box.unit, params.filters) && isBuilt;
+    // Unit-status caustics — real per-unit live uniforms (color/intensity
+    // genuinely vary by status), updated on every hover/select/status
+    // refresh same as the rest of this method. No-op (map lookup miss)
+    // when caustics is disabled or this unit's material was never
+    // upgraded — see the mount()-time construction loop.
+    const causticsUniforms = this.causticsUnitUniforms.get(box.unit.id);
+    if (causticsUniforms) {
+      causticsUniforms.color.value.setHex(unitColors[box.unit.status] ?? unitColors.available);
+      causticsUniforms.intensity.value = this.resolveCausticsIntensity(box.unit.status);
+    }
+
+    mesh.visible = this.matchesFilters(box.unit, params.filters);
   }
 
   /** Resolves the 4 admin-configurable unit-status colors (added alongside
@@ -571,6 +731,16 @@ export class RenderEngine {
       sold: hex(c?.unitColorSold, UNIT_BOX_COLOR.sold),
       selected: hex(c?.unitColorSelected, SELECTED_COLOR),
     };
+  }
+
+  /** Unit-status caustics — availability half of the "Availability, color,
+   * caustics properties" linkage the feature was built against. Real
+   * admin sliders, not a hardcoded ratio. */
+  private resolveCausticsIntensity(status: Unit["status"]): number {
+    const c = this.config;
+    if (status === "available") return c?.causticsIntensityAvailable ?? 1;
+    if (status === "reserved") return c?.causticsIntensityReserved ?? 0.4;
+    return c?.causticsIntensitySold ?? 0;
   }
 
   private refreshGlbUnitBoxAppearance(params: { selectedUnitId: string | null; filters: UnitFilters; showUnitBoxes: boolean }) {
@@ -623,8 +793,6 @@ export class RenderEngine {
           this.applyUnitAppearance(mesh, box, {
             selectedUnitId: params.selectedUnitId,
             filters: params.filters,
-            constructionProgressPercent: params.constructionProgressPercent,
-            constructionStagesEnabled: params.config.constructionStagesEnabled,
           });
         }
       });
@@ -741,18 +909,48 @@ export class RenderEngine {
       }
 
       const preset = override.materialPreset ? MATERIAL_PRESETS[override.materialPreset] : null;
+      // webgl_watch.html parity — clearcoat/iridescence only exist on
+      // MeshPhysicalMaterial, not the plain MeshStandardMaterial GLTFLoader
+      // produces for an arbitrary uploaded GLB with no clearcoat/
+      // iridescence glTF extension of its own.
+      const hasClearcoatOverride = override.clearcoat != null || override.clearcoatRoughness != null;
+      const hasIridescenceOverride = override.iridescence != null || override.iridescenceIOR != null;
       const hasMaterialOverride = !!(
         preset ||
         override.colorHex ||
         override.roughness != null ||
         override.metalness != null ||
-        override.opacity != null
+        override.opacity != null ||
+        hasClearcoatOverride ||
+        hasIridescenceOverride
       );
       const mesh = child as THREE.Mesh;
       if (!hasMaterialOverride || !mesh.isMesh) return;
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      materials.forEach((mat) => {
-        const std = mat as THREE.MeshStandardMaterial;
+      const prevMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const nextMaterials = prevMaterials.map((mat) => {
+        let std = mat as THREE.MeshStandardMaterial;
+        // Upgrade to a real MeshPhysicalMaterial the same way
+        // applyGlassPreset already does for Glass_* nodes above, preserving
+        // the existing look, rather than setting a property that silently
+        // does nothing on a plain MeshStandardMaterial. Skipped once
+        // already upgraded (re-runs on every applyNodeOverrides call, e.g.
+        // from applyLiveUpdate, not just once) — no repeat allocation.
+        if ((hasClearcoatOverride || hasIridescenceOverride) && !(std instanceof THREE.MeshPhysicalMaterial)) {
+          const upgraded = new THREE.MeshPhysicalMaterial({
+            color: std.color?.clone(),
+            map: std.map ?? null,
+            normalMap: std.normalMap ?? null,
+            roughnessMap: std.roughnessMap ?? null,
+            metalnessMap: std.metalnessMap ?? null,
+            roughness: std.roughness,
+            metalness: std.metalness,
+            opacity: std.opacity,
+            transparent: std.transparent,
+            envMapIntensity: std.envMapIntensity,
+          });
+          std.dispose();
+          std = upgraded;
+        }
         if (override.colorHex) std.color?.set(override.colorHex);
         else if (preset) std.color?.setHex(preset.color);
         if (override.roughness != null) std.roughness = override.roughness;
@@ -763,7 +961,15 @@ export class RenderEngine {
           std.opacity = override.opacity;
           std.transparent = override.opacity < 1;
         }
+        if (std instanceof THREE.MeshPhysicalMaterial) {
+          if (override.clearcoat != null) std.clearcoat = override.clearcoat;
+          if (override.clearcoatRoughness != null) std.clearcoatRoughness = override.clearcoatRoughness;
+          if (override.iridescence != null) std.iridescence = override.iridescence;
+          if (override.iridescenceIOR != null) std.iridescenceIOR = override.iridescenceIOR;
+        }
+        return std;
       });
+      mesh.material = Array.isArray(mesh.material) ? nextMaterials : nextMaterials[0];
     });
   }
 
@@ -926,10 +1132,23 @@ export class RenderEngine {
       // "always render behind everything" skybox trick), so in practice
       // this mostly guards against a future change to that shader, not a
       // failure observed today.
+      //
+      // Real perf fix ("Lighting tab doesn't work" report): unlike the old
+      // `fromEquirectangular(flatGradientTexture)` this replaced (free —
+      // no shading, just resampling a 2×256 texture), `fromScene` actually
+      // renders the sky dome's real atmospheric-scattering shader into 6
+      // cube faces. Confirmed live (Playwright + in-engine instrumentation)
+      // that this landed squarely on the editor's existing "config loads
+      // in 2-3 progressive stages, each triggers a full remount" pattern —
+      // previously cheap regardless of how many times it fired, now
+      // genuinely expensive each time. `size: 128` (PMREMGenerator's own
+      // default is 256) cuts the shaded-pixel count ~4x; a PMREM target
+      // only feeds blurry indirect lighting/reflections, not a sharp
+      // visible image, so this is not a visually meaningful quality loss.
       skyMesh.visible = true;
       scene.remove(skyMesh);
       envScene.add(skyMesh);
-      renderTarget = pmrem.fromScene(envScene, 0, 0.1, SKY_DOME_SCALE * 1.5);
+      renderTarget = pmrem.fromScene(envScene, 0, 0.1, SKY_DOME_SCALE * 1.5, { size: 128 });
       envScene.remove(skyMesh);
       scene.add(skyMesh);
     }
@@ -954,6 +1173,12 @@ export class RenderEngine {
     this.envRenderTarget = renderTarget;
     scene.environment = renderTarget.texture;
     scene.environmentIntensity = config.environmentIntensity;
+    // webgl_watch.html parity — real `Scene.backgroundBlurriness`. Only
+    // visibly does anything when `scene.background` below ends up as a
+    // texture (Platform HDRI active); harmless no-op against a flat
+    // THREE.Color background otherwise, so it's always safe to set here
+    // rather than branching on `usingHdri` separately.
+    scene.backgroundBlurriness = config.backgroundBlurriness;
 
     if (config.backgroundPreset === "sky") {
       // The HDRI still paints scene.background as an equirect texture
@@ -1044,6 +1269,43 @@ export class RenderEngine {
     });
   }
 
+  /** Loads the real vendored `.cube` LUT file for `presetId` (see
+   * `LUT_PRESETS`), same "only reload on a real change" / "awaited inside
+   * mount() before buildRenderPipeline" shape as `setHdri` above. Failure
+   * (bad/missing preset id, fetch error) degrades to "no LUT" rather than
+   * breaking the mount — mirrors `setHdri`'s own fallback-to-procedural
+   * behavior on HDRI load failure. */
+  private async loadLut(presetId: string) {
+    if (this.lutPresetLoaded === presetId && this.lutTexture) return;
+    const preset = LUT_PRESETS.find((p) => p.id === presetId);
+    if (!preset) {
+      this.lutTexture = null;
+      this.lutPresetLoaded = null;
+      return;
+    }
+    const token = this.mountToken;
+    const loader = new LUTCubeLoader();
+    await new Promise<void>((resolve) => {
+      loader.load(
+        `/luts/${preset.file}`,
+        (result) => {
+          if (token !== this.mountToken) return resolve();
+          this.lutTexture = result.texture3D;
+          this.lutPresetLoaded = presetId;
+          resolve();
+        },
+        undefined,
+        (err) => {
+          if (token !== this.mountToken) return resolve();
+          console.warn(`3D Experience: LUT preset "${presetId}" failed to load, LUT grading disabled`, err);
+          this.lutTexture = null;
+          this.lutPresetLoaded = null;
+          resolve();
+        }
+      );
+    });
+  }
+
   /** Builds (or rebuilds) the TSL post-processing pipeline for the given
    * quality tier. Uses `RenderPipeline` (three.js's current, non-deprecated
    * pipeline/output-node manager) over a plain scene pass. Wrapped in
@@ -1073,13 +1335,51 @@ export class RenderEngine {
    * Bloom (Sky/Water/Bloom/Clouds pass) — was a hardcoded-always-off TSL
    * node before this; now a real per-project toggle
    * (`config.bloomEnabled`), ANDed with `tier.bloom` exactly like
-   * `antialiasEnabled` already is against `tier.antialias`. Threshold
-   * stays fixed at 0.85 — same as webgl_shaders_ocean.html's own Bloom GUI
-   * folder, which only exposes strength/radius too. */
+   * `antialiasEnabled` already is against `tier.antialias`. Threshold was
+   * fixed at 0.85 (webgl_shaders_ocean.html's own Bloom GUI default) until
+   * the webgl_watch.html pass added a real `bloomThreshold` slider.
+   *
+   * Motion blur (`webgpu_postprocessing_motion_blur.html` parity) — real
+   * per-object velocity, not a fake screen-space smear: `scenePass.setMRT`
+   * adds a second `velocity` render target (three.js's own `VelocityNode`,
+   * which tracks each object's previous-frame model/view/projection
+   * matrices) alongside the existing `output` color target, then
+   * `motionBlur(color, vel)` samples `color` at 16 taps along that
+   * per-pixel velocity vector. Must run directly on `color` — confirmed by
+   * reading the installed `MotionBlur.js` source: it's a plain `Fn` that
+   * calls `inputNode.sample(uv)` internally, which only exists on a real
+   * `TextureNode` (`TextureNode.js`'s own `sample()` method), not on an
+   * arbitrary composited expression like `color.add(bloomNode)`. That's
+   * why this runs *before* bloom is folded into `chain` (bloom's own
+   * `BloomNode` is a full render-target-backed node that accepts any
+   * `Node<vec4>` as input, so it's fine receiving the already-blurred
+   * chain) — the base scene gets motion-blurred, bloom's glow is added on
+   * top of that. Gated behind `tier.motionBlur && config.motionBlurEnabled`,
+   * same AND-gate pattern as bloom/antialiasing. Only set up when enabled:
+   * `setMRT` isn't called at all otherwise, so disabled projects pay
+   * nothing extra (matches `scenePass.getTextureNode("output")` already
+   * working with no MRT configured — confirmed in `PassNode.js`, "output"
+   * is the default named slot regardless).
+   *
+   * Depth of field (`webgl_postprocessing_dof2.html` parity) — real bokeh
+   * blur from `scenePass.getViewZNode()` (works unmodified, no MRT/setMRT
+   * needed: `PassNode`'s own default depth texture is always created
+   * unless `depthBuffer: false` is explicitly passed to `pass()`, which
+   * this app never does). Unlike `motionBlur`, `dof()`'s first argument is
+   * internally wrapped in `convertToTexture()` (confirmed in
+   * `DepthOfFieldNode.js`), so it accepts the already-composited
+   * bloom+chain fine — placed *after* bloom is folded in, so bright bloom
+   * highlights blur into proper bokeh discs instead of staying sharp
+   * inside a blurred base. */
   private buildRenderPipeline(tier: QualityTierSettings) {
     this.renderPipeline?.dispose();
     this.renderPipeline = null;
     this.bloomNode = null;
+    this.motionBlurAmount = null;
+    this.lutIntensity = null;
+    this.dofFocusDistance = null;
+    this.dofFocalLength = null;
+    this.dofBokehScale = null;
     const renderer = this.renderer;
     const scene = this.scene;
     const camera = this.camera;
@@ -1089,19 +1389,105 @@ export class RenderEngine {
       const color = scenePass.getTextureNode("output");
 
       let chain: THREE.Node<"vec4"> = color;
+      if (tier.motionBlur && this.config.motionBlurEnabled) {
+        scenePass.setMRT(mrt({ output, velocity }));
+        const blurAmount = uniform(this.config.motionBlurAmount);
+        this.motionBlurAmount = blurAmount;
+        const vel = scenePass.getTextureNode("velocity").mul(blurAmount);
+        chain = motionBlur(color, vel);
+      }
       if (tier.bloom && this.config.bloomEnabled) {
-        const bloomNode = bloom(chain, this.config.bloomStrength, this.config.bloomRadius, 0.85);
+        // webgl_watch.html parity — threshold used to be hardcoded 0.85;
+        // now a real per-project slider. Confirmed against BloomNode.js's
+        // own source (same file the strength/radius doc comment above
+        // cites): `threshold` is a real UniformNode<float> too, so
+        // applyLiveUpdate can drag it live just like strength/radius.
+        const bloomNode = bloom(chain, this.config.bloomStrength, this.config.bloomRadius, this.config.bloomThreshold);
         this.bloomNode = bloomNode;
         chain = chain.add(bloomNode);
       }
+      // Isolated into its own widened-type variable (same reasoning as
+      // aaChain/finalChain below) — DepthOfFieldNode, like SMAANode/
+      // Lut3DNode, doesn't structurally satisfy THREE.Node<"vec4"> per
+      // tsc, so reusing the narrower `chain` binding here would also break
+      // the `chain.add(bloomNode)` call above it.
+      let dofChain: typeof chain | ReturnType<typeof dof> = chain;
+      if (tier.depthOfField && this.config.depthOfFieldEnabled) {
+        // Real auto-focus (see the field doc comment above) — starts at
+        // the config's own focalLength as a reasonable pre-first-frame
+        // value; the render loop overwrites it every frame from then on.
+        const focusDistance = uniform(this.config.depthOfFieldFocalLength);
+        const focalLength = uniform(this.config.depthOfFieldFocalLength);
+        const bokehScale = uniform(this.config.depthOfFieldBokehScale);
+        this.dofFocusDistance = focusDistance;
+        this.dofFocalLength = focalLength;
+        this.dofBokehScale = bokehScale;
+        dofChain = dof(chain, scenePass.getViewZNode(), focusDistance, focalLength, bokehScale);
+      }
+
+      const aaChain = tier.antialias && this.config.antialiasEnabled ? smaa(dofChain) : dofChain;
+
+      // 3D LUT (webgl_postprocessing_3dlut.html parity) — applied last,
+      // after antialiasing, matching the reference demo's own
+      // OutputPass -> LUTPass ordering (color grading is the final step).
+      // `this.lutTexture` is only ever non-null when `config.lutEnabled`
+      // (mount() clears it otherwise, see loadLut's call site) — checking
+      // it directly here (not `config.lutEnabled` again) is what correctly
+      // no-ops if the async load hasn't resolved yet or failed.
+      let finalChain: typeof aaChain | ReturnType<typeof lut3D> = aaChain;
+      if (tier.lut && this.lutTexture) {
+        const intensity = uniform(this.config.lutIntensity);
+        this.lutIntensity = intensity;
+        finalChain = lut3D(aaChain, texture3D(this.lutTexture), this.lutTexture.image.width, intensity);
+      }
+
+      // Loading-screen reveal (webgl_postprocessing_transition.html
+      // technique) — absolute last step, wrapping the fully-composited
+      // image (every other effect above included) so the whole thing
+      // wipes in together, not just the raw color. `revealActive` is only
+      // ever true for the render(s) right after mount() first has
+      // something ready to show — see this method's own field doc
+      // comment above for the full lifecycle (set in mount(), ticked and
+      // torn back out by the render loop).
+      let revealedChain: typeof finalChain | ReturnType<typeof mix> = finalChain;
+      if (this.revealActive) {
+        const threshold = uniform(0);
+        this.revealThreshold = threshold;
+        const noise = mx_fractal_noise_float(vec3(uv().mul(6), 0), 3, 2, 0.5);
+        const fadeWidth = 0.08;
+        const mask = smoothstep(threshold.sub(fadeWidth), threshold, noise);
+        // Matches this app's own dark glass-panel chrome color, not an
+        // arbitrary black — reads as an intentional loading-shell tone
+        // rather than a flash of nothing.
+        const placeholder = vec4(tslColor(0x18181b), 1);
+        // finalChain's static type is a union including SMAANode/
+        // Lut3DNode/DepthOfFieldNode (same "doesn't structurally satisfy
+        // NodeExtensions" cosmetic typing gap documented on dofChain/
+        // aaChain above — nodeObject() doesn't resolve it either, tried
+        // first). mix()'s 3-arg overload needs an exact match on every
+        // union member, unlike smaa()/lut3D()'s own single-node params
+        // above, which happen to be loose enough to accept the union
+        // as-is — an explicit cast here is the least-bad fix: at runtime
+        // this really is always a real vec4 color node regardless of
+        // which effects happen to be enabled.
+        revealedChain = mix(placeholder, finalChain as unknown as THREE.Node<"vec4">, mask);
+      } else {
+        this.revealThreshold = null;
+      }
 
       const pipeline = new THREE.RenderPipeline(renderer);
-      pipeline.outputNode = tier.antialias && this.config.antialiasEnabled ? smaa(chain) : chain;
+      pipeline.outputNode = revealedChain;
       this.renderPipeline = pipeline;
     } catch (err) {
       console.error("3D Experience: post-processing pipeline failed, falling back to direct render", err);
       this.renderPipeline = null;
       this.bloomNode = null;
+      this.motionBlurAmount = null;
+      this.lutIntensity = null;
+      this.dofFocusDistance = null;
+      this.dofFocalLength = null;
+      this.dofBokehScale = null;
+      this.revealThreshold = null;
     }
   }
 
@@ -1130,6 +1516,13 @@ export class RenderEngine {
       // rebuildSectionCap's stencil branch). A renderer-construction-time
       // flag, not a live toggle — changing it requires a fresh mount.
       stencil: config.sectionCapStencilEnabled,
+      // webgpu_camera_logarithmicdepthbuffer.html parity — reduces
+      // z-fighting at distance against this app's fixed far=2000 camera
+      // (see the PerspectiveCamera constructed below). Off by default,
+      // matches WebGPURenderer's own default; another renderer-
+      // construction-time flag, same "needs a fresh mount" category as
+      // `stencil`/`forceWebGL` above.
+      logarithmicDepthBuffer: config.logarithmicDepthEnabled,
     });
     try {
       await renderer.init();
@@ -1206,6 +1599,13 @@ export class RenderEngine {
     const sun = new THREE.DirectionalLight(0xffffff, 2);
     sun.castShadow = config.shadowsEnabled;
     sun.shadow.mapSize.set(tier.shadowMapSize, tier.shadowMapSize);
+    // webgl_watch.html parity — real PCF soft-shadow-edge blur (in shadow
+    // map texels). Only visible because renderer.shadowMap.type is already
+    // PCFSoftShadowMap (set below) — that's the one shadow map type this
+    // property actually affects (confirmed against three.js's own
+    // DirectionalLightShadow/WebGPU shadow-node source). 0 (default)
+    // matches today's hard edge exactly.
+    sun.shadow.radius = config.shadowSoftness;
     const ambient = new THREE.AmbientLight(0xffffff, 0.15);
     scene.add(sun, sun.target, ambient);
     this.sun = sun;
@@ -1270,7 +1670,6 @@ export class RenderEngine {
 
     this.pickable = new Map();
     this.unitMeshes = new Map();
-    this.shells = [];
     this.glbUnitBoxes = new Map();
     this.unitMaterialCache = new Map();
 
@@ -1368,29 +1767,60 @@ export class RenderEngine {
       // in both content modes, after `boundingRadius` is finalized below;
       // see that shared block for why it moved out of this branch.
 
-      for (const b of layout.buildings) {
-        const shell = new THREE.Mesh(
-          new THREE.BoxGeometry(b.width + 0.4, b.height + 0.4, b.depth + 0.4),
-          new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.08, depthWrite: false })
-        );
-        shell.position.set(b.centerX, b.height / 2, b.z);
-        shell.userData.isShell = true;
-        clippingGroup.add(shell);
-        this.shells.push(shell);
-      }
-
       const geometry = new THREE.BoxGeometry(1, 1, 1);
+      // Unit-status caustics — real texture + shared scale/speed uniforms
+      // loaded/created once here, not once per unit (see caustics.ts's own
+      // doc comment for the full technique). `causticsUnitUniforms` is
+      // rebuilt fresh every mount, same lifecycle as `unitMeshes` itself.
+      const causticsActive = tier.caustics && config.causticsEnabled;
+      this.causticsUnitUniforms = new Map();
+      if (causticsActive) {
+        this.causticsTexture = loadCausticsTexture();
+        this.causticsScaleUniform = uniform(config.causticsScale);
+        this.causticsSpeedUniform = uniform(config.causticsSpeed);
+      } else {
+        this.causticsTexture = null;
+        this.causticsScaleUniform = null;
+        this.causticsSpeedUniform = null;
+      }
       for (const unitBox of layout.units) {
-        const material = new THREE.MeshStandardMaterial({
-          // Initial seed color for the very first frame — refreshAppearance
-          // (called right after mount by every real caller) immediately
-          // overwrites this via applyUnitAppearance/resolveUnitColors, but
-          // seeding it correctly avoids a one-frame flash of the wrong
-          // color on projects with custom status colors.
-          color: this.resolveUnitColors()[unitBox.unit.status] ?? this.resolveUnitColors().available,
+        // Initial seed color for the very first frame — refreshAppearance
+        // (called right after mount by every real caller) immediately
+        // overwrites this via applyUnitAppearance/resolveUnitColors, but
+        // seeding it correctly avoids a one-frame flash of the wrong
+        // color on projects with custom status colors.
+        const seedColor = this.resolveUnitColors()[unitBox.unit.status] ?? this.resolveUnitColors().available;
+        let material: THREE.MeshStandardMaterial = new THREE.MeshStandardMaterial({
+          color: seedColor,
           roughness: 0.6,
           metalness: 0.05,
         });
+        if (causticsActive && this.causticsTexture && this.causticsScaleUniform && this.causticsSpeedUniform) {
+          // Real NodeMaterial upgrade — `.emissiveNode` (unlike `.color`/
+          // `.roughness`/`.metalness`/`.emissive`/`.emissiveIntensity`,
+          // which MeshStandardNodeMaterial still exposes for classic-API
+          // compatibility, confirmed against its own source) only exists
+          // on NodeMaterial subclasses, not the plain MeshStandardMaterial
+          // just constructed above. Same upgrade pattern applyNodeOverrides
+          // already uses for clearcoat/iridescence.
+          const nodeMaterial = new THREE.MeshStandardNodeMaterial({
+            color: seedColor,
+            roughness: 0.6,
+            metalness: 0.05,
+          });
+          material.dispose();
+          const initialIntensity = this.resolveCausticsIntensity(unitBox.unit.status);
+          const { emissiveNode, uniforms } = buildCausticsUnitEmissiveNode(
+            this.causticsTexture,
+            this.causticsScaleUniform,
+            this.causticsSpeedUniform,
+            seedColor,
+            initialIntensity
+          );
+          nodeMaterial.emissiveNode = emissiveNode;
+          this.causticsUnitUniforms.set(unitBox.unit.id, uniforms);
+          material = nodeMaterial as unknown as THREE.MeshStandardMaterial;
+        }
         const mesh = new THREE.Mesh(geometry, material);
         mesh.scale.set(unitBox.width, unitBox.height, unitBox.depth);
         mesh.position.set(unitBox.x, unitBox.y, unitBox.z);
@@ -1407,9 +1837,6 @@ export class RenderEngine {
         this.unitMeshes.forEach((mesh) => (mesh.material as THREE.Material).dispose());
         scene.traverse((obj) => {
           if (obj instanceof THREE.Mesh && obj.geometry !== geometry) obj.geometry.dispose();
-          if (obj instanceof THREE.Mesh && obj.userData.isShell) {
-            (obj.material as THREE.Material).dispose();
-          }
         });
       };
     }
@@ -1479,11 +1906,58 @@ export class RenderEngine {
       this.ground = null;
     }
 
-    const showShells = project.status === "under_construction" && config.constructionStagesEnabled;
-    this.shells.forEach((shell) => (shell.visible = showShells));
+    // Volumetric raymarched cloud (webgl_volume_cloud.html parity) — real
+    // box mesh + raymarching NodeMaterial, sized/positioned off the same
+    // `boundingRadius`/`sceneCenter` the sky/water/ground already use
+    // (the reference demo's own 1×1×1 box would be invisible at this
+    // app's real building scale). Floats above the scene like an actual
+    // cloud layer rather than enclosing it.
+    this.volumetricCloudMesh?.geometry.dispose();
+    (this.volumetricCloudMesh?.material as THREE.Material | undefined)?.dispose();
+    this.volumetricCloudNoiseTexture?.dispose();
+    this.volumetricCloudMesh = null;
+    this.volumetricCloudUniforms = null;
+    this.volumetricCloudNoiseTexture = null;
+    if (tier.volumetricCloud && config.volumetricCloudEnabled) {
+      const cloudSize = boundingRadius * 2.2;
+      const noiseTexture = buildVolumetricCloudNoiseTexture();
+      const { material, uniforms } = buildVolumetricCloudMaterial(noiseTexture);
+      const cloudMesh = new THREE.Mesh(new THREE.BoxGeometry(cloudSize, cloudSize, cloudSize), material);
+      cloudMesh.position.set(this.sceneCenter?.x ?? 0, boundingRadius * 1.3, this.sceneCenter?.z ?? 0);
+      scene.add(cloudMesh);
+      this.volumetricCloudMesh = cloudMesh;
+      this.volumetricCloudUniforms = uniforms;
+      this.volumetricCloudNoiseTexture = noiseTexture;
+      uniforms.threshold.value = config.volumetricCloudThreshold;
+      uniforms.opacity.value = config.volumetricCloudOpacity;
+      uniforms.range.value = config.volumetricCloudRange;
+      uniforms.steps.value = config.volumetricCloudSteps;
+    }
+
     scene.fog = config.fogEnabled ? new THREE.FogExp2(this.resolveFogColor(config), config.fogDensity) : null;
 
     this.rebuildEnvironment(config);
+    // 3D LUT — real async texture load, awaited before buildRenderPipeline
+    // reads `this.lutTexture` below (both `lutEnabled` and `lutPreset` are
+    // mount deps — see ProceduralProjectViewer.tsx — so this only ever
+    // runs on a fresh mount, same as `setHdri`'s own token-guard pattern).
+    if (config.lutEnabled) {
+      await this.loadLut(config.lutPreset);
+    } else {
+      this.lutTexture = null;
+      this.lutPresetLoaded = null;
+    }
+    if (token !== this.mountToken) return;
+    // Loading-screen reveal — armed before this same buildRenderPipeline
+    // call so the very first frame the render loop below ever draws is
+    // already the fully-hidden (threshold 0) state, not one frame of the
+    // finished, unrevealed image flashing first. Real per-project on/off
+    // (config.loadingRevealEnabled) — when off, buildRenderPipeline's own
+    // `if (this.revealActive)` check is simply never true, so no reveal
+    // node is ever added to the chain at all (same "no dead toggle"
+    // pattern as every other Enabled flag this session).
+    this.revealActive = config.loadingRevealEnabled;
+    this.revealStartTime = performance.now();
     this.buildRenderPipeline(this.effectiveTier);
 
     this.callbacks.onReady(true);
@@ -1575,6 +2049,10 @@ export class RenderEngine {
       camera.updateProjectionMatrix();
       const t = QUALITY_TIERS[this.config.qualityPreset];
       renderer.setSize(container.clientWidth * t.renderScale, container.clientHeight * t.renderScale, false);
+      // Shadow-map debug HUD positions itself in window-pixel terms
+      // internally (see its own field doc comment) — needs to know
+      // whenever the window (not just this container) resizes too.
+      this.shadowMapViewer?.updateForWindowResize();
     });
     resizeObserver.observe(container);
     this.resizeObserver = resizeObserver;
@@ -1641,7 +2119,6 @@ export class RenderEngine {
       usingGlb,
       selectedUnitId: params.selectedUnitId,
       filters: params.filters,
-      constructionProgressPercent: params.constructionProgressPercent,
       showUnitBoxes: params.showUnitBoxes,
     });
     await renderer.setAnimationLoop(() => {
@@ -1657,8 +2134,55 @@ export class RenderEngine {
       // "never visibly teleport" smoothstep with a slow drift.
       controls.update();
       stepCameraTransition(now);
+      // Depth of field real auto-focus — recomputed every frame from the
+      // camera's real live distance to its orbit target, after
+      // stepCameraTransition (the frame's authoritative final camera
+      // write, see the comment above) so a preset transition's focus
+      // stays correct mid-flight too, not just once it settles.
+      if (this.dofFocusDistance) {
+        this.dofFocusDistance.value = camera.position.distanceTo(controls.target);
+      }
+      // Loading-screen reveal — ticked every frame while active; once the
+      // ~1.1s window elapses, rebuilds the pipeline once more without the
+      // reveal node (see buildRenderPipeline's own doc comment) so it's a
+      // one-time cost, not a permanent one on every frame after mount.
+      // 1.15 (not 1.0) overshoots the noise's ~[0,1] range on purpose —
+      // smoothstep's own fadeWidth needs the threshold to clear the
+      // noise's highest values too, or a few pixels would stay dimmed
+      // forever at progress=1.
+      if (this.revealActive && this.revealThreshold) {
+        const revealDurationMs = 1100;
+        const progress = Math.min(1, (now - this.revealStartTime) / revealDurationMs);
+        this.revealThreshold.value = progress * 1.15;
+        if (progress >= 1) {
+          this.revealActive = false;
+          this.buildRenderPipeline(this.effectiveTier);
+        }
+      }
+      // Volumetric cloud dither-seed — bumped every frame, same as the
+      // reference demo's own animate() loop, so the per-fragment random
+      // offset (see volumetricCloud.ts's fragmentNode) changes frame to
+      // frame instead of producing a static dither pattern.
+      if (this.volumetricCloudUniforms) {
+        this.volumetricCloudFrame += 1;
+        this.volumetricCloudUniforms.frame.value = this.volumetricCloudFrame;
+      }
       if (this.renderPipeline) this.renderPipeline.render();
       else renderer.render(scene, camera);
+      // Shadow-map debug HUD — drawn as an overlay after the main render
+      // (its own .render() call temporarily sets renderer.autoClear=false
+      // so it composites on top instead of erasing the frame just drawn).
+      // Lazily constructed the first frame the sun's real shadow map
+      // actually exists (see this.shadowMapViewer's own field doc comment
+      // for why it can't be built any earlier).
+      if (this.shadowMapViewerEnabled && this.sun?.shadow.map) {
+        if (!this.shadowMapViewer) {
+          this.shadowMapViewer = new ShadowMapViewer(this.sun);
+          this.shadowMapViewer.size.set(160, 160);
+          this.shadowMapViewer.updateForWindowResize();
+        }
+        this.shadowMapViewer.render(renderer);
+      }
       samplePerfStats();
     });
   }
@@ -1724,6 +2248,26 @@ export class RenderEngine {
     // on renderPipeline's teardown to reach into the node graph.
     this.bloomNode?.dispose();
     this.bloomNode = null;
+    // Motion blur — plain UniformNode, no GPU resources of its own to
+    // dispose (unlike bloomNode's internal render targets above); the
+    // MRT velocity render target itself is owned/disposed by renderPipeline.
+    this.motionBlurAmount = null;
+    // 3D LUT — the real Data3DTexture holds actual GPU-uploadable pixel
+    // data, unlike the plain uniforms above, so it gets an explicit
+    // dispose() same as hdriTexture above it.
+    this.lutTexture?.dispose();
+    this.lutTexture = null;
+    this.lutPresetLoaded = null;
+    this.lutIntensity = null;
+    // Depth of field — plain UniformNodes, no GPU resources of their own.
+    this.dofFocusDistance = null;
+    this.dofFocalLength = null;
+    this.dofBokehScale = null;
+    // Loading-screen reveal — plain UniformNode, no GPU resources of its
+    // own; `revealActive` reset too so a disposed-then-remounted engine
+    // instance doesn't inherit a stale in-progress reveal state.
+    this.revealThreshold = null;
+    this.revealActive = false;
     if (this.skyMesh) {
       this.skyMesh.geometry.dispose();
       (this.skyMesh.material as THREE.Material).dispose();
@@ -1736,6 +2280,27 @@ export class RenderEngine {
       (this.waterMesh.material as THREE.Material).dispose();
       this.waterMesh = null;
     }
+    if (this.volumetricCloudMesh) {
+      this.volumetricCloudMesh.geometry.dispose();
+      (this.volumetricCloudMesh.material as THREE.Material).dispose();
+      this.volumetricCloudMesh = null;
+    }
+    this.volumetricCloudNoiseTexture?.dispose();
+    this.volumetricCloudNoiseTexture = null;
+    this.volumetricCloudUniforms = null;
+    // Shadow-map debug HUD — no owned GPU resources (see its own field
+    // doc comment), just drop the reference.
+    this.shadowMapViewer = null;
+    this.shadowMapViewerEnabled = false;
+    // Unit-status caustics — the real texture holds actual GPU-uploadable
+    // pixel data, disposed explicitly same as hdriTexture/lutTexture
+    // above; per-unit materials/their emissiveNode graphs are disposed
+    // along with the rest of unitMeshes elsewhere in this method already.
+    this.causticsTexture?.dispose();
+    this.causticsTexture = null;
+    this.causticsScaleUniform = null;
+    this.causticsSpeedUniform = null;
+    this.causticsUnitUniforms.clear();
     // Ground Platform — centrally built/disposed now regardless of
     // content mode (see mount()'s unified ground block); the geometry
     // double-dispose this can overlap with in procedural mode (that
@@ -1811,8 +2376,6 @@ export class RenderEngine {
     const { project, config, detailModels, usingGlb } = params;
 
     if (this.ground) this.ground.visible = config.groundEnabled;
-    const showShells = project.status === "under_construction" && config.constructionStagesEnabled;
-    this.shells.forEach((shell) => (shell.visible = showShells));
     // scene.fog is a plain, stable three.js API — cheap to update live
     // (unlike the post-processing chain), no remount needed.
     if (this.scene) {
@@ -1862,6 +2425,48 @@ export class RenderEngine {
     if (this.bloomNode) {
       this.bloomNode.strength.value = config.bloomStrength;
       this.bloomNode.radius.value = config.bloomRadius;
+      this.bloomNode.threshold.value = config.bloomThreshold;
+    }
+    // Volumetric raymarched cloud — 4 real live UniformNode<float>s (the
+    // exact reference demo's own GUI params); volumetricCloudEnabled
+    // itself still needs a fresh mount (structural — the mesh/material
+    // don't exist at all otherwise).
+    if (this.volumetricCloudUniforms) {
+      this.volumetricCloudUniforms.threshold.value = config.volumetricCloudThreshold;
+      this.volumetricCloudUniforms.opacity.value = config.volumetricCloudOpacity;
+      this.volumetricCloudUniforms.range.value = config.volumetricCloudRange;
+      this.volumetricCloudUniforms.steps.value = config.volumetricCloudSteps;
+    }
+    // Motion blur amount — a real live UniformNode multiplying the MRT
+    // velocity vector, same pattern as bloom's strength/radius above;
+    // motionBlurEnabled itself still needs a fresh mount (structural).
+    if (this.motionBlurAmount) {
+      this.motionBlurAmount.value = config.motionBlurAmount;
+    }
+    // 3D LUT intensity — real live UniformNode; `lutEnabled`/`lutPreset`
+    // still need a fresh mount (structural + async texture load).
+    if (this.lutIntensity) {
+      this.lutIntensity.value = config.lutIntensity;
+    }
+    // Depth of field — real live UniformNodes; `dofFocusDistance` is
+    // intentionally NOT touched here, it's owned by the per-frame render
+    // loop instead (real auto-focus, see its field doc comment).
+    // `depthOfFieldEnabled` itself still needs a fresh mount (structural).
+    if (this.dofFocalLength) {
+      this.dofFocalLength.value = config.depthOfFieldFocalLength;
+    }
+    if (this.dofBokehScale) {
+      this.dofBokehScale.value = config.depthOfFieldBokehScale;
+    }
+    // Unit-status caustics — real shared live UniformNodes (scale/speed);
+    // per-unit color/intensity are updated by applyUnitAppearance instead
+    // (they depend on each unit's own status, not just global config).
+    // `causticsEnabled` itself still needs a fresh mount (structural).
+    if (this.causticsScaleUniform) {
+      this.causticsScaleUniform.value = config.causticsScale;
+    }
+    if (this.causticsSpeedUniform) {
+      this.causticsSpeedUniform.value = config.causticsSpeed;
     }
 
     // Ground Platform's ground fog — same live-`UniformNode` pattern as
@@ -1897,6 +2502,10 @@ export class RenderEngine {
     const ambient = this.ambient;
     const scene = this.scene;
     if (!sun || !ambient || !scene) return;
+
+    // webgl_watch.html parity — cheap scalar, no shadow-map reallocation
+    // needed, safe to set on every call same as the sun direction below.
+    sun.shadow.radius = config.shadowSoftness;
 
     // Manual sun (Task 2 — Track A): admin sets azimuth/elevation directly
     // instead of it being derived from date/time/lat/lng. Reuses the same

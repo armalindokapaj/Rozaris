@@ -12,6 +12,14 @@ export interface ThreeProjectViewerHandle {
   /** Captures the current WebGL frame as a PNG data URL — null if the
    * renderer isn't ready (e.g. WebGL failed to init). */
   captureScreenshot: () => string | null;
+  /** "Render this" — a real, separate photorealistic path-traced
+   * screenshot (`webgl_renderer_pathtracer.html` parity, see
+   * RenderEngine.ts's renderPathTraceScreenshot doc comment for the full
+   * scope) — distinct from `captureScreenshot` above, which just grabs
+   * whatever's already on screen. Async and slow by design (accumulates
+   * real samples for `durationMs`, default 10s); null if the renderer
+   * isn't ready. */
+  renderPathTraceScreenshot: (durationMs?: number) => Promise<string | null>;
   /** The live preview's current camera position/target/fov — null if the
    * renderer isn't ready. Used by Project3DConfigEditor's "Save current
    * view" camera-preset button (Render/visual quality pass). */
@@ -62,9 +70,6 @@ export interface ThreeProjectViewerProps {
   className?: string;
   selectedUnitId?: string | null;
   onSelectUnit?: (unit: Unit) => void;
-  /** Live construction completion (0-100) — defaults to the project's own
-   * seeded value; the Admin preview can override it while scrubbing. */
-  constructionProgressPercent?: number;
   /** Public viewer chrome (bottom icon menu) is on by default; the Admin
    * live-preview embed turns it off to keep the form the only UI. */
   showChrome?: boolean;
@@ -73,12 +78,30 @@ export interface ThreeProjectViewerProps {
    * ArchVizClient's construction-progress pill) can react instead of
    * guessing whether extra bottom-of-viewport height is in use. */
   onBarOpenChange?: (open: boolean) => void;
+  /** Fires whenever the bottom menu's "Unit Search" panel specifically
+   * (not Time of Day/Camera Presets/Sections) opens or closes — narrower
+   * than `onBarOpenChange` above. Availability/unit-box color/legend and
+   * the unit-details popup are only meant to be visible while Unit Search
+   * is the active panel: switching to Home (which only shows once no
+   * panel is open) or Time of Day, or closing Unit Search outright, all
+   * report `false` here so a parent (ArchVizClient's selected-unit popup)
+   * can hide/clear along with them instead of lingering. */
+  onUnitSearchActiveChange?: (active: boolean) => void;
   /** Admin-only debug overlay (FPS/draw calls/triangles/DPR) — Publish/
    * runtime hardening pass. Deliberately separate from `showChrome`
    * (public visitor chrome vs. an admin debug tool are different
    * concerns): off by default, Project3DConfigEditor's preview turns it
    * on. */
   showPerfStats?: boolean;
+  /** Real shadow-map debug HUD (`webgl_shadowmap_viewer.html` parity) —
+   * shows exactly what the sun's real shadow map contains, overlaid in a
+   * corner. Not a `Project3DConfig` field (same "not persisted, session-
+   * only" category as `showPerfStats`); only wired up on the public
+   * viewer (ArchVizClient.tsx, hidden behind a `?debugShadowMap=1` query
+   * param, not a visible button real visitors would see) — see
+   * RenderEngine.ts's `shadowMapViewer` field doc comment for why it's
+   * scoped to a full-viewport context specifically. */
+  showShadowMapViewer?: boolean;
   /** Mirrors the same 4 fields the built-in perf overlay already shows
    * (fps/drawCalls/triangles/dpr) — when supplied, the caller is
    * rendering its own perf display, so the internal floating overlay is

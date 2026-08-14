@@ -60,10 +60,11 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       className,
       selectedUnitId = null,
       onSelectUnit,
-      constructionProgressPercent,
       showChrome = true,
       onBarOpenChange,
+      onUnitSearchActiveChange,
       showPerfStats = false,
+      showShadowMapViewer = false,
       onPerfStats,
       onSectionDraftChange,
       onSectionDraftCommit,
@@ -170,6 +171,15 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       onBarOpenChange?.(panel !== null && showChrome);
     }, [panel, showChrome, onBarOpenChange]);
 
+    // Narrower than the above — specifically "Unit Search" (availability/
+    // unit-box colors/legend/the selected-unit popup all key off this one),
+    // not any panel. Home only ever shows once `panel` is already null (see
+    // the icon row below), so returning there — directly or via Time of
+    // Day/Camera Presets/Sections — always reports `false` here too.
+    useEffect(() => {
+      onUnitSearchActiveChange?.(panel === "search" && showChrome);
+    }, [panel, showChrome, onUnitSearchActiveChange]);
+
     // Sections module — real, non-hidden sections a visitor can activate.
     const visibleSections = useMemo(() => config.sections.filter((s) => !s.hidden), [config.sections]);
 
@@ -227,6 +237,7 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
     useImperativeHandle(ref, () => ({
       resetView: resetCamera,
       captureScreenshot: () => engineRef.current?.captureScreenshot() ?? null,
+      renderPathTraceScreenshot: (durationMs) => engineRef.current?.renderPathTraceScreenshot(durationMs) ?? Promise.resolve(null),
       getCameraState: () => engineRef.current?.getCameraState() ?? null,
       beginDrawSection: (opts, onComplete) => engineRef.current?.beginDrawSection(opts, onComplete),
       cancelDrawSection: () => engineRef.current?.cancelDrawSection(),
@@ -250,7 +261,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
         usingGlb,
         selectedUnitId,
         filters,
-        constructionProgressPercent,
         showUnitBoxes,
         // Sections module — `showChrome={false}` is already this
         // codebase's existing signal for "this is the admin editor's own
@@ -290,6 +300,42 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       // sliders are cheap live updates instead, see the effect below).
       config.waterEnabled,
       config.bloomEnabled,
+      // Motion blur — structurally adds a real MRT velocity render target
+      // + the motionBlur() node to the chain, same "needs a full remount"
+      // reasoning as bloomEnabled right above; its own `motionBlurAmount`
+      // slider is a cheap live update instead, see the effect below.
+      config.motionBlurEnabled,
+      // 3D LUT — both need a fresh mount: `lutEnabled` structurally adds
+      // the lut3D() node, `lutPreset` triggers a real async texture
+      // (re)load (loadLut) before the pipeline is rebuilt; its own
+      // `lutIntensity` slider is a cheap live update instead, see below.
+      config.lutEnabled,
+      config.lutPreset,
+      // Logarithmic depth buffer — a WebGPURenderer construction-time
+      // flag, same "needs a full remount" reasoning as `stencil` above.
+      config.logarithmicDepthEnabled,
+      // Depth of field — structurally adds the dof() node to the chain,
+      // same "needs a full remount" reasoning as bloomEnabled; its own
+      // focalLength/bokehScale sliders are cheap live updates instead,
+      // see below (focusDistance itself is real-time auto-focus, owned
+      // entirely by RenderEngine's render loop — no React wiring at all).
+      config.depthOfFieldEnabled,
+      // Volumetric raymarched cloud — structurally adds a real mesh +
+      // NodeMaterial + 3D noise texture, same "needs a full remount"
+      // reasoning as waterEnabled/bloomEnabled; its own threshold/
+      // opacity/range/steps sliders are cheap live updates instead, see
+      // below.
+      config.volumetricCloudEnabled,
+      // Loading-screen reveal — read once at mount time (armed before the
+      // very first frame, see RenderEngine.ts's mount() doc comment), so
+      // toggling it only takes effect on the next remount, same category
+      // as the other Enabled flags here.
+      config.loadingRevealEnabled,
+      // Unit-status caustics — structurally upgrades each unit's material
+      // to a real NodeMaterial (MeshStandardNodeMaterial), same "needs a
+      // full remount" reasoning as the other Enabled flags here; its own
+      // scale/speed/intensity are cheap live updates instead, see below.
+      config.causticsEnabled,
       // Ground Platform — "disc" vs "infinite" is a real geometry swap
       // (CircleGeometry vs a big PlaneGeometry), same "needs a full
       // remount" reasoning as the two flags above; groundEnabled/
@@ -304,8 +350,16 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ready, hdriUrl]);
 
-    // --- Apply lower-cost config changes without a full rebuild: ground/
-    // shell visibility, camera limits, glass tier. ---
+    // --- Shadow-map debug HUD (webgl_shadowmap_viewer.html parity) —
+    // cheap either way, see RenderEngine.ts's own setShadowMapViewerEnabled
+    // doc comment. ---
+    useEffect(() => {
+      if (!ready) return;
+      engineRef.current?.setShadowMapViewerEnabled(showShadowMapViewer);
+    }, [ready, showShadowMapViewer]);
+
+    // --- Apply lower-cost config changes without a full rebuild: ground
+    // visibility, camera limits, glass tier. ---
     useEffect(() => {
       if (!ready) return;
       engineRef.current?.applyLiveUpdate({ project, config, detailModels, usingGlb });
@@ -313,7 +367,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
     }, [
       ready,
       config.groundEnabled,
-      config.constructionStagesEnabled,
       config.cameraMinDistanceMultiplier,
       config.cameraMaxDistanceMultiplier,
       config.cameraMaxPolarDeg,
@@ -342,6 +395,30 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       config.waterSize,
       config.bloomStrength,
       config.bloomRadius,
+      // webgl_watch.html parity — real live UniformNode<float> on the
+      // already-constructed bloomNode, no remount needed.
+      config.bloomThreshold,
+      // Motion blur — real live UniformNode<float>, no remount needed.
+      config.motionBlurAmount,
+      // 3D LUT intensity — real live UniformNode<float>, no remount needed.
+      config.lutIntensity,
+      // Depth of field — real live UniformNode<float>s, no remount needed.
+      config.depthOfFieldFocalLength,
+      config.depthOfFieldBokehScale,
+      // Volumetric cloud — real live UniformNode<float>s, no remount needed.
+      config.volumetricCloudThreshold,
+      config.volumetricCloudOpacity,
+      config.volumetricCloudRange,
+      config.volumetricCloudSteps,
+      // Unit-status caustics — real shared live UniformNode<float>s
+      // (scale/speed); per-unit color/intensity are updated by the
+      // refreshAppearance effect below instead (status-driven).
+      config.causticsScale,
+      config.causticsSpeed,
+      // webgl_watch.html parity — sun.shadow.radius is a cheap scalar,
+      // recomputed every applySunAndEnvironment call (see the effect
+      // below) same as the sun direction itself — no separate wiring
+      // needed here, `config.shadowSoftness` is a dep of that effect.
       // Ground Platform's ground fog — real live UniformNodes, no remount.
       config.groundColor,
       config.groundFogEnabled,
@@ -365,6 +442,11 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       config.skyPreset,
       config.backgroundPreset,
       config.environmentIntensity,
+      // webgl_watch.html parity — both set unconditionally inside
+      // applySunAndEnvironment/rebuildEnvironment on every call, same
+      // "cheap scalar, no separate wiring" reasoning as environmentIntensity.
+      config.backgroundBlurriness,
+      config.shadowSoftness,
       config.northRotationDeg,
       config.sunMode,
       config.sunAzimuthDeg,
@@ -390,7 +472,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
         usingGlb,
         selectedUnitId,
         filters,
-        constructionProgressPercent,
         showUnitBoxes,
       });
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -400,9 +481,21 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       bedroomFilter,
       bathroomFilter,
       minArea,
-      constructionProgressPercent,
-      config.constructionStagesEnabled,
       showUnitBoxes,
+      // Unit-status caustics — real per-unit color/intensity, both read
+      // inside applyUnitAppearance on every refresh. Added alongside the
+      // existing unitColor* fields (a small pre-existing gap: those
+      // weren't in this deps array either, so an admin's status-color
+      // edit didn't live-refresh the unit boxes' own color/emissive —
+      // fixed here too, since caustics color explicitly reuses this same
+      // data and shipping that live-broken would be dishonest about it).
+      config.unitColorAvailable,
+      config.unitColorReserved,
+      config.unitColorSold,
+      config.unitColorSelected,
+      config.causticsIntensityAvailable,
+      config.causticsIntensityReserved,
+      config.causticsIntensitySold,
     ]);
 
     if (webglFailReason) {
@@ -674,7 +767,7 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
           </button>
         )}
 
-        {showChrome && ready && (!usingGlb || showUnitBoxes) && presentStatuses.length > 0 && (
+        {showChrome && ready && showUnitBoxes && presentStatuses.length > 0 && (
           <StatusLegend
             className="absolute bottom-4 left-4 z-10"
             statuses={presentStatuses}
@@ -687,7 +780,7 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
           />
         )}
 
-        {showChrome && hoveredUnit && (
+        {showChrome && showUnitBoxes && hoveredUnit && (
           <div
             ref={tooltipElRef}
             className="glass-panel-dark pointer-events-none fixed left-0 top-0 z-20 w-52 rounded-panel px-3.5 py-3 text-white"

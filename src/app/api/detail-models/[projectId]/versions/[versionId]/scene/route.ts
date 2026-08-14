@@ -15,6 +15,13 @@ const nodeOverrideSchema = z.object({
   colorHex: z.string().optional(),
   roughness: z.number().min(0).max(1).optional(),
   metalness: z.number().min(0).max(1).optional(),
+  opacity: z.number().min(0).max(1).optional(),
+  // webgl_watch.html parity — see NodeOverride's own doc comment in
+  // types.ts for why iridescenceIOR's range is 1-2.333, not 0-1.
+  clearcoat: z.number().min(0).max(1).optional(),
+  clearcoatRoughness: z.number().min(0).max(1).optional(),
+  iridescence: z.number().min(0).max(1).optional(),
+  iridescenceIOR: z.number().min(1).max(2.333).optional(),
   visible: z.boolean().optional(),
   carried: z.boolean().optional(),
 });

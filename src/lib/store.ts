@@ -60,7 +60,6 @@ export const defaultProject3DConfig: Project3DConfig = {
   cameraMaxPolarDeg: 85,
   cameraMinPolarDeg: 0,
   autoRotate: true,
-  constructionStagesEnabled: true,
   status: "published",
   renderingMode: "auto",
   qualityPreset: "high_desktop",
@@ -103,12 +102,48 @@ export const defaultProject3DConfig: Project3DConfig = {
   cloudCoverage: 0.4,
   cloudDensity: 0.5,
   cloudElevation: 0.5,
+  // Motion blur — off by default; amount 1 mirrors
+  // webgpu_postprocessing_motion_blur.html's own default GUI value.
+  motionBlurEnabled: false,
+  motionBlurAmount: 1,
+  // Real-look additions (webgl_watch.html) — defaults match the engine's
+  // own previous hardcoded/unset behavior exactly.
+  bloomThreshold: 0.85,
+  backgroundBlurriness: 0,
+  shadowSoftness: 0,
+  // 3D LUT — off by default.
+  lutEnabled: false,
+  lutPreset: "bourbon64",
+  lutIntensity: 1,
+  // Depth of field — off by default; focalLength/bokehScale match the
+  // TSL dof() node's own default GUI values.
+  depthOfFieldEnabled: false,
+  depthOfFieldFocalLength: 10,
+  depthOfFieldBokehScale: 1,
+  logarithmicDepthEnabled: false,
+  // Volumetric raymarched cloud — off by default; defaults match the
+  // reference demo's own GUI defaults exactly.
+  volumetricCloudEnabled: false,
+  volumetricCloudThreshold: 0.25,
+  volumetricCloudOpacity: 0.25,
+  volumetricCloudRange: 0.1,
+  volumetricCloudSteps: 100,
+  // Loading-screen reveal — on by default, see types.ts's own field doc
+  // comment for why.
+  loadingRevealEnabled: true,
   // Match the previously-hardcoded UNIT_BOX_COLOR/SELECTED_COLOR constants
   // in viewerPresets.ts exactly, so existing projects render identically.
   unitColorAvailable: "#22c55e",
   unitColorReserved: "#eab308",
   unitColorSold: "#ef4444",
   unitColorSelected: "#6b55f5",
+  // Unit-status caustics — off by default.
+  causticsEnabled: false,
+  causticsScale: 0.5,
+  causticsSpeed: 0.15,
+  causticsIntensityAvailable: 1,
+  causticsIntensityReserved: 0.4,
+  causticsIntensitySold: 0,
   shadowsEnabled: true,
   antialiasEnabled: true,
   sections: [],

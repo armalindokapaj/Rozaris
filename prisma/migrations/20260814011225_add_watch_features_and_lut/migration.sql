@@ -1,0 +1,8 @@
+-- AlterTable
+ALTER TABLE "project_3d_configs" ADD COLUMN     "backgroundBlurriness" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "bloomThreshold" DOUBLE PRECISION NOT NULL DEFAULT 0.85,
+ADD COLUMN     "logarithmicDepthEnabled" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "lutEnabled" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "lutIntensity" DOUBLE PRECISION NOT NULL DEFAULT 1,
+ADD COLUMN     "lutPreset" TEXT NOT NULL DEFAULT 'bourbon64',
+ADD COLUMN     "shadowSoftness" DOUBLE PRECISION NOT NULL DEFAULT 0;

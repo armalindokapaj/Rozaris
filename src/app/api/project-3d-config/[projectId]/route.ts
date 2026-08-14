@@ -5,6 +5,7 @@ import type { Prisma } from "@/generated/prisma";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { refreshExperienceDocument } from "@/lib/experienceDocument";
+import { LUT_PRESET_IDS } from "@/lib/viewerPresets";
 
 const vector3Schema = z.object({ x: z.number(), y: z.number(), z: z.number() });
 
@@ -80,7 +81,6 @@ const patchSchema = z.object({
   cameraMaxPolarDeg: z.number().min(0).max(180).optional(),
   cameraMinPolarDeg: z.number().min(0).max(180).optional(),
   autoRotate: z.boolean().optional(),
-  constructionStagesEnabled: z.boolean().optional(),
   status: z.enum(["draft", "published"]).optional(),
   renderingMode: z.enum(["auto", "webgpu", "webgl2"]).optional(),
   qualityPreset: z.enum(["ultra_desktop", "high_desktop", "balanced", "mobile_high", "mobile_low"]).optional(),
@@ -116,6 +116,13 @@ const patchSchema = z.object({
   unitColorReserved: hexColorSchema.optional(),
   unitColorSold: hexColorSchema.optional(),
   unitColorSelected: hexColorSchema.optional(),
+  // Unit-status caustics (webgpu_caustics.html parity, adapted).
+  causticsEnabled: z.boolean().optional(),
+  causticsScale: z.number().min(0.05).max(3).optional(),
+  causticsSpeed: z.number().min(0).max(1).optional(),
+  causticsIntensityAvailable: z.number().min(0).max(3).optional(),
+  causticsIntensityReserved: z.number().min(0).max(3).optional(),
+  causticsIntensitySold: z.number().min(0).max(3).optional(),
   shadowsEnabled: z.boolean().optional(),
   antialiasEnabled: z.boolean().optional(),
   sections: z.array(sectionSchema).optional(),
@@ -133,6 +140,32 @@ const patchSchema = z.object({
   cloudCoverage: z.number().min(0).max(1).optional(),
   cloudDensity: z.number().min(0).max(1).optional(),
   cloudElevation: z.number().min(0).max(1).optional(),
+  // Motion blur (webgpu_postprocessing_motion_blur.html parity) — range
+  // mirrors the reference demo's own "blur amount" GUI slider (0-3).
+  motionBlurEnabled: z.boolean().optional(),
+  motionBlurAmount: z.number().min(0).max(3).optional(),
+  // Real-look additions (webgl_watch.html parity).
+  bloomThreshold: z.number().min(0).max(1).optional(),
+  backgroundBlurriness: z.number().min(0).max(1).optional(),
+  shadowSoftness: z.number().min(0).max(10).optional(),
+  // 3D LUT (webgl_postprocessing_3dlut.html parity) — lutPreset is
+  // validated against the real vendored preset list, not a free string.
+  lutEnabled: z.boolean().optional(),
+  lutPreset: z.enum(LUT_PRESET_IDS).optional(),
+  lutIntensity: z.number().min(0).max(1).optional(),
+  logarithmicDepthEnabled: z.boolean().optional(),
+  // Volumetric raymarched cloud (webgl_volume_cloud.html parity) — ranges
+  // mirror the reference demo's own GUI exactly.
+  volumetricCloudEnabled: z.boolean().optional(),
+  volumetricCloudThreshold: z.number().min(0).max(1).optional(),
+  volumetricCloudOpacity: z.number().min(0).max(1).optional(),
+  volumetricCloudRange: z.number().min(0).max(1).optional(),
+  volumetricCloudSteps: z.number().min(0).max(200).optional(),
+  loadingRevealEnabled: z.boolean().optional(),
+  // Depth of field (webgl_postprocessing_dof2.html parity).
+  depthOfFieldEnabled: z.boolean().optional(),
+  depthOfFieldFocalLength: z.number().min(0.1).max(200).optional(),
+  depthOfFieldBokehScale: z.number().min(0).max(5).optional(),
 });
 
 export async function GET(

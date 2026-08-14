@@ -264,7 +264,6 @@ export interface Project3DConfig {
    * down from directly above, the OrbitControls default). */
   cameraMinPolarDeg: number;
   autoRotate: boolean;
-  constructionStagesEnabled: boolean;
   status: "draft" | "published";
 
   /** Three.js WebGPURenderer target — "auto"/"webgpu" both let the renderer
@@ -386,6 +385,92 @@ export interface Project3DConfig {
   cloudDensity: number;
   cloudElevation: number;
 
+  /** Real per-object motion blur (`webgpu_postprocessing_motion_blur.html`
+   * parity) — a real `VelocityNode` MRT'd off the scene pass, fed into the
+   * TSL `motionBlur()` node, ANDed with `QUALITY_TIERS[qualityPreset].motionBlur`
+   * (same pattern `antialiasEnabled`/`bloomEnabled` already use). Off by
+   * default: zero behavior change for any existing project.
+   * `motionBlurAmount` mirrors the reference demo's own "blur amount" GUI
+   * slider (0-3, default 1) — a live `UniformNode<float>` multiplying the
+   * raw velocity vector, not a sample count (the node's own `numSamples`
+   * stays its default of 16, unexposed here, same as the demo). See
+   * RenderEngine.ts's buildRenderPipeline doc comment for why this effect
+   * must run directly on the scene pass's raw output texture, before
+   * bloom. */
+  motionBlurEnabled: boolean;
+  motionBlurAmount: number;
+
+  /** Real-look additions from `webgl_watch.html` — `bloomThreshold` was
+   * previously hardcoded to 0.85 inside RenderEngine.ts's
+   * buildRenderPipeline, now a real per-project slider (only meaningful
+   * when `bloomEnabled`). `backgroundBlurriness` maps directly onto
+   * `THREE.Scene.backgroundBlurriness` (blurs the visible sky/HDRI
+   * backdrop while leaving reflections sharp) — only visible when a
+   * Platform HDRI is active, since the procedural sky dome fills the same
+   * role differently. `shadowSoftness` maps onto the sun
+   * `DirectionalLight.shadow.radius` (PCF soft-shadow-edge blur, in shadow
+   * map texels) — 0 matches today's hard-edged default exactly. */
+  bloomThreshold: number;
+  backgroundBlurriness: number;
+  shadowSoftness: number;
+
+  /** Real 3D LUT color grading (`webgl_postprocessing_3dlut.html` parity)
+   * — TSL `lut3D()` node (already installed, WebGPU-compatible) sampling a
+   * real vendored `.cube` LUT file loaded via `LUTCubeLoader` (see
+   * RenderEngine.ts's buildRenderPipeline/loadLut). `lutPreset` is a free
+   * string key into a fixed, real vendored preset list (`LUT_PRESETS` in
+   * viewerPresets.ts) — same "string, not a DB enum" precedent as
+   * `skyPreset`. Applied last in the post-processing chain (after bloom
+   * and antialiasing), matching the reference demo's own OutputPass ->
+   * LUTPass ordering. Off by default: zero behavior change for any
+   * existing project. */
+  lutEnabled: boolean;
+  lutPreset: string;
+  lutIntensity: number;
+
+  /** Real depth of field (`webgl_postprocessing_dof2.html` parity) — TSL
+   * `dof()` node sampling the scene's own viewZ (depth) buffer. Focus
+   * distance isn't a stored field: RenderEngine.ts recomputes it every
+   * frame from the real live camera-to-orbit-target distance, auto-
+   * focusing on whatever's currently framed rather than a manual distance
+   * that would drift out of sync as a visitor orbits. `focalLength`/
+   * `bokehScale` mirror the TSL node's own param names/defaults (1/1). Off
+   * by default: zero behavior change for any existing project. */
+  depthOfFieldEnabled: boolean;
+  depthOfFieldFocalLength: number;
+  depthOfFieldBokehScale: number;
+
+  /** Real logarithmic depth buffer
+   * (`webgpu_camera_logarithmicdepthbuffer.html` parity) — passed to the
+   * `WebGPURenderer` constructor, reducing z-fighting at distance. A
+   * renderer-construction-time flag like `sectionCapStencilEnabled`, so it
+   * needs a fresh mount to take effect. Off by default: zero behavior
+   * change for any existing project. */
+  logarithmicDepthEnabled: boolean;
+
+  /** Volumetric raymarched cloud (`webgl_volume_cloud.html` parity) — a
+   * real, second/different cloud implementation kept deliberately
+   * alongside the existing procedural sky-dome clouds
+   * (`cloudsEnabled`/`cloudCoverage`/etc. above), not replacing them, per
+   * explicit user request. Params mirror the reference demo's own GUI
+   * exactly. See RenderEngine.ts/volumetricCloud.ts. Off by default: zero
+   * behavior change for any existing project. */
+  volumetricCloudEnabled: boolean;
+  volumetricCloudThreshold: number;
+  volumetricCloudOpacity: number;
+  volumetricCloudRange: number;
+  volumetricCloudSteps: number;
+
+  /** Loading-screen reveal (`webgl_postprocessing_transition.html`
+   * technique, RenderEngine.ts's `revealActive`/`buildRenderPipeline`) —
+   * real per-project on/off, per explicit user request ("every feature
+   * has an option to turn it on/off"). Default `true` is a deliberate
+   * exception to this file's usual "off by default" rule for new fields
+   * — same "accepted visual default change" precedent the physical sky
+   * dome rollout already used, since this is a purely cosmetic one-time
+   * mount transition with no functional behavior to preserve. */
+  loadingRevealEnabled: boolean;
+
   /** Hex colors for the four unit statuses (+ the shared "selected"
    * highlight) shown both in the 3D scene (GLB unit boxes and the
    * procedural box fallback) and the public viewer's status legend/filter
@@ -398,6 +483,21 @@ export interface Project3DConfig {
   unitColorReserved: string;
   unitColorSold: string;
   unitColorSelected: string;
+
+  /** Unit-status caustics (`webgpu_caustics.html` parity, adapted — see
+   * RenderEngine.ts's `buildCausticsNode` doc comment for the real
+   * technique and honest deviations from the reference's refract()/
+   * castShadowNode approach). Procedural-mode unit boxes only. Color
+   * reuses the real `unitColor*` fields above (no separate caustics-color
+   * fields); intensity is per-availability-status; scale/speed are the
+   * real tunable caustics properties. Off by default: zero behavior
+   * change for any existing project. */
+  causticsEnabled: boolean;
+  causticsScale: number;
+  causticsSpeed: number;
+  causticsIntensityAvailable: number;
+  causticsIntensityReserved: number;
+  causticsIntensitySold: number;
 
   /** Real per-project overrides for the post-processing chain — ANDed with
    * QUALITY_TIERS' own tier-level flags in RenderEngine.ts's
@@ -618,6 +718,17 @@ export interface NodeOverride {
    * applyNodeOverrides) — a value of 1 is functionally "opaque" even
    * though it's stored, matching the slider's own full-range default. */
   opacity?: number;
+  /** Real MeshPhysicalMaterial clearcoat/iridescence (webgl_watch.html
+   * parity) — 0-1 each, plus iridescence's own IOR (1-2.333, matching
+   * MeshPhysicalMaterial's own documented range for that field). Setting
+   * either clearcoat* or iridescence* upgrades the node's material to a
+   * real MeshPhysicalMaterial if it isn't already one (see
+   * RenderEngine.ts's applyNodeOverrides) — these properties don't exist
+   * on the plain MeshStandardMaterial GLTFLoader normally produces. */
+  clearcoat?: number;
+  clearcoatRoughness?: number;
+  iridescence?: number;
+  iridescenceIOR?: number;
   visible?: boolean;
   carried?: boolean;
 }

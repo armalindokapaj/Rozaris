@@ -3,6 +3,7 @@
 import { Trash2, Upload } from "lucide-react";
 import { useState, type RefObject } from "react";
 import type { PlatformHdri, Project3DConfig } from "@/lib/types";
+import { LUT_PRESETS } from "@/lib/viewerPresets";
 import { cn } from "@/lib/utils";
 import { ColorField, DateField, SelectField, SliderField, TextField, ToggleField } from "../fields";
 import type { SetOpts, Translate } from "../editorTypes";
@@ -13,12 +14,18 @@ function formatUTCHour(h: number): string {
   return `${String(hour).padStart(2, "0")}:${String(minutes).padStart(2, "0")} UTC`;
 }
 
-type LightingSubTab = "sunTime" | "sky" | "water" | "environment" | "effects" | "exposure";
+type LightingSubTab = "sunTime" | "sky" | "water" | "volumetricCloud" | "environment" | "effects" | "exposure";
 
 const SUB_TABS: { id: LightingSubTab; labelKey: string }[] = [
   { id: "sunTime", labelKey: "admin.lightingSubTabSunTime" },
   { id: "sky", labelKey: "admin.lightingSubTabSky" },
   { id: "water", labelKey: "admin.lightingSubTabWater" },
+  // A genuinely different, separate cloud implementation from the
+  // procedural sky-dome clouds already in the "Sky" sub-tab above — its
+  // own sub-tab per explicit user request ("add this cloud to another
+  // tab, we will test both of it"), not folded into the existing Clouds
+  // box.
+  { id: "volumetricCloud", labelKey: "admin.lightingSubTabVolumetricCloud" },
   { id: "environment", labelKey: "admin.lightingSubTabEnvironment" },
   { id: "effects", labelKey: "admin.lightingSubTabEffects" },
   { id: "exposure", labelKey: "admin.lightingSubTabExposure" },
@@ -227,6 +234,23 @@ export function LightingPanel({
               suffix="×"
             />
 
+            {/* --- Background blurriness (webgl_watch.html parity) — real
+                Scene.backgroundBlurriness. Only shown when a Platform HDRI
+                is actually active: the procedural sky dome paints itself as
+                real geometry (see rebuildEnvironment), not as
+                scene.background, so this control would have no visible
+                effect otherwise. --- */}
+            {draft.hdriId && (
+              <SliderField
+                label={t("admin.sceneBackgroundBlurriness")}
+                min={0}
+                max={1}
+                step={0.01}
+                value={draft.backgroundBlurriness}
+                onChange={(v) => update({ backgroundBlurriness: v })}
+              />
+            )}
+
             {/* --- Clouds (Sky/Water/Bloom/Clouds pass) — real uniforms on
                 the physical sky dome itself (webgl_shaders_ocean.html's
                 "Clouds" GUI folder is really 3 more uniforms on its Sky
@@ -300,6 +324,59 @@ export function LightingPanel({
                   onChange={(v) => update({ waterSize: v })}
                 />
                 <p className="text-[11px] text-neutral-400">{t("admin.sceneWaterNote")}</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {subTab === "volumetricCloud" && (
+          <>
+            {/* --- Volumetric raymarched cloud (webgl_volume_cloud.html
+                parity) — a real, second cloud implementation (3D-texture
+                raymarching, not the "Sky" tab's procedural sky-dome
+                clouds), kept deliberately separate so both can be
+                compared. Params mirror the reference demo's own GUI
+                exactly (threshold/opacity/range/steps). --- */}
+            <ToggleField
+              label={t("admin.sceneVolumetricCloudEnabled")}
+              checked={draft.volumetricCloudEnabled}
+              onChange={(v) => update({ volumetricCloudEnabled: v }, { commit: true })}
+            />
+            {draft.volumetricCloudEnabled && (
+              <div className="space-y-3">
+                <SliderField
+                  label={t("admin.sceneVolumetricCloudThreshold")}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={draft.volumetricCloudThreshold}
+                  onChange={(v) => update({ volumetricCloudThreshold: v })}
+                />
+                <SliderField
+                  label={t("admin.sceneVolumetricCloudOpacity")}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={draft.volumetricCloudOpacity}
+                  onChange={(v) => update({ volumetricCloudOpacity: v })}
+                />
+                <SliderField
+                  label={t("admin.sceneVolumetricCloudRange")}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={draft.volumetricCloudRange}
+                  onChange={(v) => update({ volumetricCloudRange: v })}
+                />
+                <SliderField
+                  label={t("admin.sceneVolumetricCloudSteps")}
+                  min={0}
+                  max={200}
+                  step={1}
+                  value={draft.volumetricCloudSteps}
+                  onChange={(v) => update({ volumetricCloudSteps: v })}
+                />
+                <p className="text-[11px] text-neutral-400">{t("admin.sceneVolumetricCloudNote")}</p>
               </div>
             )}
           </>
@@ -491,7 +568,74 @@ export function LightingPanel({
                     value={draft.bloomRadius}
                     onChange={(v) => update({ bloomRadius: v })}
                   />
+                  {/* webgl_watch.html parity — used to be hardcoded 0.85. */}
+                  <SliderField
+                    label={t("admin.sceneBloomThreshold")}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={draft.bloomThreshold}
+                    onChange={(v) => update({ bloomThreshold: v })}
+                  />
                   <p className="text-[11px] text-neutral-400">{t("admin.sceneBloomNote")}</p>
+                </div>
+              )}
+            </div>
+
+            {/* --- Motion blur (webgpu_postprocessing_motion_blur.html
+                parity) — real per-object velocity (MRT'd off the scene
+                pass), not a fake screen-space smear. "Amount" mirrors the
+                reference demo's own "blur amount" GUI slider (0-3, default
+                1); sample count isn't exposed here either, same as the
+                demo. --- */}
+            <div className="rounded-panel border border-neutral-100 p-3">
+              <ToggleField
+                label={t("admin.sceneMotionBlurEnabled")}
+                checked={draft.motionBlurEnabled}
+                onChange={(v) => update({ motionBlurEnabled: v }, { commit: true })}
+              />
+              {draft.motionBlurEnabled && (
+                <div className="mt-3 space-y-3">
+                  <SliderField
+                    label={t("admin.sceneMotionBlurAmount")}
+                    min={0}
+                    max={3}
+                    step={0.05}
+                    value={draft.motionBlurAmount}
+                    onChange={(v) => update({ motionBlurAmount: v })}
+                  />
+                  <p className="text-[11px] text-neutral-400">{t("admin.sceneMotionBlurNote")}</p>
+                </div>
+              )}
+            </div>
+
+            {/* --- 3D LUT color grading (webgl_postprocessing_3dlut.html
+                parity) — real vendored .cube LUT presets via TSL lut3D(),
+                applied last in the post-processing chain (after bloom and
+                antialiasing). --- */}
+            <div className="rounded-panel border border-neutral-100 p-3">
+              <ToggleField
+                label={t("admin.sceneLutEnabled")}
+                checked={draft.lutEnabled}
+                onChange={(v) => update({ lutEnabled: v }, { commit: true })}
+              />
+              {draft.lutEnabled && (
+                <div className="mt-3 space-y-3">
+                  <SelectField
+                    label={t("admin.sceneLutPreset")}
+                    value={draft.lutPreset}
+                    onChange={(v) => update({ lutPreset: v }, { commit: true })}
+                    options={LUT_PRESETS.map((p) => [p.id, p.label] as [string, string])}
+                  />
+                  <SliderField
+                    label={t("admin.sceneLutIntensity")}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={draft.lutIntensity}
+                    onChange={(v) => update({ lutIntensity: v })}
+                  />
+                  <p className="text-[11px] text-neutral-400">{t("admin.sceneLutNote")}</p>
                 </div>
               )}
             </div>

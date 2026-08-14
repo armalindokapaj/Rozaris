@@ -528,7 +528,15 @@ model Project3DConfig {
   cameraMaxPolarDeg             Int     @default(85)
   cameraMinPolarDeg             Int     @default(0)
   autoRotate                    Boolean @default(true)
-  constructionStagesEnabled     Boolean @default(true)
+  // "Construction Stage reveal" (the translucent per-building shell
+  // outlines + progressive per-floor unit-box hiding based on
+  // constructionProgressPercent, both procedural-mode-only — see
+  // RenderEngine.ts's git history) removed entirely 2026-08-14 at the
+  // user's explicit request, along with its `constructionStagesEnabled`
+  // column — not kept as a dead toggle. The separate, still-live
+  // `constructionProgressPercent` shown in the public viewer's header
+  // pill/timeline strip (useProjectConstruction/ConstructionTimelineStrip)
+  // is untouched — it never depended on this column.
   status                        String  @default("draft")
 
   // "3D Experience Phase 1" — rendering foundation, quality presets, glass,
@@ -625,6 +633,89 @@ model Project3DConfig {
   cloudDensity   Float   @default(0.5)
   cloudElevation Float   @default(0.5)
 
+  // Motion blur (webgpu_postprocessing_motion_blur.html parity) — real
+  // per-object velocity (VelocityNode, MRT'd off the scene pass alongside
+  // "output") fed into the TSL motionBlur() node. `motionBlurAmount`
+  // mirrors the reference demo's own "blur amount" GUI slider (0-3,
+  // default 1) — a multiplier on the raw velocity vector, not a sample
+  // count (numSamples stays the node's own default of 16, unexposed, same
+  // as the demo). Default false: zero behavior change for any existing
+  // project. See RenderEngine.ts's buildRenderPipeline for why this must
+  // sample the scene pass's raw output texture directly, before bloom.
+  motionBlurEnabled Boolean @default(false)
+  motionBlurAmount  Float   @default(1)
+
+  // Real-look additions from webgl_watch.html — bloom threshold was
+  // previously hardcoded to 0.85 in RenderEngine.ts, now a real per-project
+  // slider; backgroundBlurriness/shadowSoftness are real, previously-unset
+  // THREE.js properties (Scene.backgroundBlurriness, DirectionalLight
+  // .shadow.radius) that always defaulted to their engine defaults (0 for
+  // both — sharp background, hard shadow edge) with no admin control.
+  // Defaults here match those same engine defaults exactly: zero behavior
+  // change for any existing project.
+  bloomThreshold      Float @default(0.85)
+  backgroundBlurriness Float @default(0)
+  shadowSoftness      Float @default(0)
+
+  // 3D LUT color grading (webgl_postprocessing_3dlut.html parity) — TSL
+  // `lut3D()` node (already installed, WebGPU-compatible) fed a real
+  // vendored `.cube` LUT file (see RenderEngine.ts's buildRenderPipeline).
+  // `lutPreset` is a free string, not a Prisma enum, matching `skyPreset`'s
+  // own precedent — validated against the real available-preset list at
+  // the zod layer instead. Off by default: zero behavior change for any
+  // existing project.
+  lutEnabled   Boolean @default(false)
+  lutPreset    String  @default("bourbon64")
+  lutIntensity Float   @default(1)
+
+  // Depth of field (webgl_postprocessing_dof2.html parity) — TSL `dof()`
+  // node, real bokeh blur sampled from the scene's own viewZ (depth)
+  // buffer. `focusDistance` isn't a stored field — RenderEngine.ts
+  // recomputes it every frame from the real live camera-to-orbit-target
+  // distance (`camera.position.distanceTo(controls.target)`), same "auto-
+  // focus on whatever's framed" behavior a real camera's autofocus gives,
+  // rather than a manual distance an admin would have to keep in sync with
+  // wherever a visitor happens to orbit the camera. `focalLength`/
+  // `bokehScale` mirror the TSL node's own param names/defaults (1/1).
+  // Off by default: zero behavior change for any existing project.
+  depthOfFieldEnabled     Boolean @default(false)
+  depthOfFieldFocalLength Float   @default(10)
+  depthOfFieldBokehScale  Float   @default(1)
+
+  /// Real logarithmic depth buffer (`webgpu_camera_logarithmicdepthbuffer.html`
+  /// parity) — `logarithmicDepthBuffer: true` passed to the WebGPURenderer
+  /// constructor, reducing z-fighting at this app's scale (camera far
+  /// plane is a fixed 2000 units — see RenderEngine.ts's mount()). A
+  /// renderer-construction-time flag like `stencil`/`forceWebGL`, so it
+  /// needs a fresh mount to take effect. Default false: zero behavior
+  /// change for any existing project.
+  logarithmicDepthEnabled Boolean @default(false)
+
+  // Volumetric raymarched cloud (webgl_volume_cloud.html parity) — a real,
+  // second/different cloud implementation kept deliberately alongside the
+  // existing procedural sky-dome clouds (cloudsEnabled/cloudCoverage/etc.
+  // above), not replacing them, per explicit user request ("add this
+  // cloud to another tab, we will test both of it"). See
+  // volumetricCloud.ts for the real 3D-texture-raymarching implementation.
+  // Params mirror the reference demo's own GUI exactly (threshold/opacity/
+  // range/steps). Off by default: zero behavior change for any existing
+  // project.
+  volumetricCloudEnabled   Boolean @default(false)
+  volumetricCloudThreshold Float   @default(0.25)
+  volumetricCloudOpacity   Float   @default(0.25)
+  volumetricCloudRange     Float   @default(0.1)
+  volumetricCloudSteps     Int     @default(100)
+
+  /// Loading-screen reveal (webgl_postprocessing_transition.html
+  /// technique) — real per-project on/off (per explicit user request:
+  /// "every feature has an option to turn it on/off"). Default true is a
+  /// deliberate exception to this file's usual "off by default" rule —
+  /// same "accepted visual default change, not gated behind a flag"
+  /// precedent the physical sky dome rollout already used — since this is
+  /// a purely cosmetic one-time mount transition with no functional
+  /// behavior to preserve for existing projects.
+  loadingRevealEnabled Boolean @default(true)
+
   /// Hex colors for the 4 unit statuses + the shared "selected" highlight —
   /// defaults match the previously-hardcoded UNIT_BOX_COLOR/SELECTED_COLOR
   /// constants in viewerPresets.ts exactly, so existing projects render
@@ -633,6 +724,22 @@ model Project3DConfig {
   unitColorReserved  String @default("#eab308")
   unitColorSold      String @default("#ef4444")
   unitColorSelected  String @default("#6b55f5")
+
+  // Unit-status caustics (webgpu_caustics.html parity, adapted — see
+  // RenderEngine.ts's buildCausticsNode doc comment for the real technique
+  // and the honest deviations from the reference's refract()/
+  // castShadowNode approach) — procedural-mode unit boxes only. Explicitly
+  // linked to all 3 things the user asked for: color reuses the real
+  // unitColor* fields above (no separate caustics-color fields), intensity
+  // is per-availability-status (causticsIntensity*), and scale/speed are
+  // the real tunable caustics properties. Off by default: zero behavior
+  // change for any existing project.
+  causticsEnabled           Boolean @default(false)
+  causticsScale             Float   @default(0.5)
+  causticsSpeed             Float   @default(0.15)
+  causticsIntensityAvailable Float  @default(1)
+  causticsIntensityReserved  Float  @default(0.4)
+  causticsIntensitySold      Float  @default(0)
 
   /// shadowsEnabled/antialiasEnabled are real and functional. ssrEnabled/
   /// gtaoEnabled (screen-space reflections/ambient occlusion) used to be

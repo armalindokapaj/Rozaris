@@ -282,7 +282,7 @@ const PROJECT_3D_CONFIG_RESTORABLE_FIELDS = [
   "lightingPreset", "backgroundPreset", "groundEnabled",
   "cameraStartDistanceMultiplier", "cameraMinDistanceMultiplier",
   "cameraMaxDistanceMultiplier", "cameraMaxPolarDeg", "cameraMinPolarDeg",
-  "autoRotate", "constructionStagesEnabled", "renderingMode",
+  "autoRotate", "renderingMode",
   "qualityPreset", "glassPreset", "skyPreset", "environmentIntensity",
   "northRotationDeg", "defaultTimeOfDay", "allowUserTimeChange",
   "cameraFovDesktop", "cameraFovMobile", "hdriId", "sunMode",

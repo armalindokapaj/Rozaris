@@ -105,6 +105,43 @@ export interface QualityTierSettings {
   antialias: boolean;
   /** Always false this pass — see file header comment. */
   ssgi: boolean;
+  /** Motion blur (`webgpu_postprocessing_motion_blur.html` parity) — an
+   * upper bound per tier, ANDed with the real per-project
+   * `Project3DConfig.motionBlurEnabled` toggle in RenderEngine.ts's
+   * buildRenderPipeline, same pattern `bloom`/`antialias` already use.
+   * Real per-object cost: a `VelocityNode` is evaluated per vertex per
+   * mesh (MRT'd off the main scene pass) plus a 16-tap blur node, so it
+   * stays off on mobile tiers like the other post-processing flags here. */
+  motionBlur: boolean;
+  /** 3D LUT color grading (`webgl_postprocessing_3dlut.html` parity) — a
+   * single extra `texture3D` sample per pixel via TSL's `lut3D()` node,
+   * cheap relative to bloom/motion blur, but still gated per-tier for the
+   * same "off on mobile" consistency the other post-processing flags use. */
+  lut: boolean;
+  /** Depth of field (`webgl_postprocessing_dof2.html` parity) — TSL
+   * `dof()` node, a real bokeh blur sampled from the scene's `viewZ`
+   * (depth) buffer. Off on mobile tiers, same reasoning as the others. */
+  depthOfField: boolean;
+  /** "Render this" one-shot path-traced screenshot
+   * (`webgl_renderer_pathtracer.html` parity, `three-gpu-pathtracer`) —
+   * genuinely GPU/CPU-heavy (10s of continuous accumulated sampling), so
+   * this gates whether the button is even shown at all (see
+   * ArchVizClient.tsx), not just an upper bound on an always-visible
+   * control like the others in this interface. Desktop-oriented tiers
+   * only. */
+  pathTracer: boolean;
+  /** Volumetric raymarched cloud (`webgl_volume_cloud.html` parity) —
+   * real per-pixel raymarching (up to 200 steps, admin-configurable) of a
+   * real 3D noise texture, meaningfully more expensive per-pixel than the
+   * procedural sky-dome clouds, so it stays off on mobile tiers like the
+   * other post-processing/effect flags here even though its own admin
+   * `volumetricCloudSteps` slider can already lighten the real cost. */
+  volumetricCloud: boolean;
+  /** Unit-status caustics (`webgpu_caustics.html` parity, adapted) — a
+   * real per-unit animated texture sample + emissive-node upgrade, cheap
+   * per-unit but scales with unit count, so it stays off on mobile tiers
+   * like the other per-pixel effect flags here. */
+  caustics: boolean;
 }
 
 export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
@@ -115,6 +152,12 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     bloom: true,
     antialias: true,
     ssgi: false,
+    motionBlur: true,
+    lut: true,
+    depthOfField: true,
+    pathTracer: true,
+    volumetricCloud: true,
+    caustics: true,
   },
   high_desktop: {
     renderScale: 0.95,
@@ -123,6 +166,12 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     bloom: true,
     antialias: true,
     ssgi: false,
+    motionBlur: true,
+    lut: true,
+    depthOfField: true,
+    pathTracer: true,
+    volumetricCloud: true,
+    caustics: true,
   },
   balanced: {
     renderScale: 0.8,
@@ -131,6 +180,12 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     bloom: true,
     antialias: true,
     ssgi: false,
+    motionBlur: false,
+    lut: true,
+    depthOfField: false,
+    pathTracer: false,
+    volumetricCloud: true,
+    caustics: true,
   },
   mobile_high: {
     renderScale: 0.75,
@@ -139,6 +194,12 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     bloom: false,
     antialias: false,
     ssgi: false,
+    motionBlur: false,
+    lut: false,
+    depthOfField: false,
+    pathTracer: false,
+    volumetricCloud: false,
+    caustics: false,
   },
   mobile_low: {
     renderScale: 0.6,
@@ -147,14 +208,45 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     bloom: false,
     antialias: false,
     ssgi: false,
+    motionBlur: false,
+    lut: false,
+    depthOfField: false,
+    pathTracer: false,
+    volumetricCloud: false,
+    caustics: false,
   },
 };
+
+/** Real vendored `.cube` LUT files (`webgl_postprocessing_3dlut.html`'s own
+ * reference assets — same "vendor the demo's real asset" precedent as
+ * Water's waternormals.jpg) — see `public/luts/`. Label is shown in the
+ * admin preset dropdown; `file` is the vendored filename `loadLut`
+ * (RenderEngine.ts) fetches through `LUTCubeLoader`. The preset *names*
+ * ("Bourbon 64" etc.) are each file's own title from its source — not its
+ * real grid resolution; checked all 4 vendored files directly, every one
+ * is actually `LUT_3D_SIZE 32`. `loadLut` reads the loader's own reported
+ * `.size` at runtime rather than trusting a hardcoded number here, so this
+ * type intentionally carries no `size` field to avoid a second, driftable
+ * copy of that fact. */
+export const LUT_PRESETS = [
+  { id: "bourbon64", label: "Bourbon 64", file: "Bourbon 64.CUBE" },
+  { id: "chemical168", label: "Chemical 168", file: "Chemical 168.CUBE" },
+  { id: "clayton33", label: "Clayton 33", file: "Clayton 33.CUBE" },
+  { id: "cubicle99", label: "Cubicle 99", file: "Cubicle 99.CUBE" },
+] as const;
+
+export const LUT_PRESET_IDS = LUT_PRESETS.map((p) => p.id) as [string, ...string[]];
 
 /** Order the runtime adaptive-quality sampler steps through when sustained
  * frame time is too high — most expensive/least noticeable first. Render
  * scale isn't in this list: it's the last-resort step, applied directly
  * (not via a boolean flag) once every effect here is already off. */
-export const ADAPTIVE_DOWNGRADE_ORDER: (keyof Pick<QualityTierSettings, "bloom" | "antialias">)[] = [
+export const ADAPTIVE_DOWNGRADE_ORDER: (keyof Pick<
+  QualityTierSettings,
+  "bloom" | "antialias" | "motionBlur" | "lut" | "depthOfField"
+>)[] = [
+  "depthOfField",
+  "motionBlur",
   "bloom",
   "antialias",
 ];

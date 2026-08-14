@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { getProjectBySlug, projects } from "@/lib/mockData";
 import { SITE_URL } from "@/lib/constants";
 import { ArchVizClient } from "./ArchVizClient";
@@ -76,7 +77,12 @@ export default async function ProjectArchVizPage({
           </ul>
         </main>
       </noscript>
-      <ArchVizClient project={project} />
+      {/* Suspense boundary for useSearchParams() (shadow-map debug HUD's
+          ?debugShadowMap=1 query param) so this route can still prerender
+          statically — same precedent as rent-vs-buy/page.tsx. */}
+      <Suspense fallback={null}>
+        <ArchVizClient project={project} />
+      </Suspense>
     </>
   );
 }

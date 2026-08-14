@@ -4,7 +4,7 @@ import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GLASS_TIERS, QUALITY_TIERS } from "@/lib/viewerPresets";
 import type { Project3DConfig } from "@/lib/types";
-import { SelectField, ToggleField } from "../fields";
+import { SelectField, SliderField, ToggleField } from "../fields";
 import type { SetOpts, Translate } from "../editorTypes";
 
 /**
@@ -128,6 +128,18 @@ export function EffectsPanel({
             checked={draft.shadowsEnabled}
             onChange={(v) => update({ shadowsEnabled: v }, { commit: true })}
           />
+          {/* webgl_watch.html parity — real PCF soft-shadow-edge slider,
+              only meaningful while shadows themselves are on. */}
+          {draft.shadowsEnabled && (
+            <SliderField
+              label={t("admin.performanceShadowSoftness")}
+              min={0}
+              max={10}
+              step={0.5}
+              value={draft.shadowSoftness}
+              onChange={(v) => update({ shadowSoftness: v })}
+            />
+          )}
           <ToggleField
             label={t("admin.performanceAntialiasing")}
             checked={draft.antialiasEnabled}
@@ -141,6 +153,69 @@ export function EffectsPanel({
             />
             <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceSectionCapStencilNote")}</p>
           </div>
+          {/* webgpu_camera_logarithmicdepthbuffer.html parity — a real
+              WebGPURenderer construction-time flag (needs a fresh mount,
+              same category as Section Cap Stencil's own `stencil: true`). */}
+          <div>
+            <ToggleField
+              label={t("admin.performanceLogarithmicDepth")}
+              checked={draft.logarithmicDepthEnabled}
+              onChange={(v) => update({ logarithmicDepthEnabled: v }, { commit: true })}
+            />
+            <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceLogarithmicDepthNote")}</p>
+          </div>
+        </div>
+      </section>
+
+      {/* --- Bloom (webgl_postprocessing_unreal_bloom.html parity) — the
+          exact same `Project3DConfig.bloomEnabled/Strength/Radius/Threshold`
+          fields LightingPanel's Effects sub-tab already controls, surfaced
+          here too so it's reachable from the standalone Effects tab, not a
+          second independent copy of the setting. `bloom()` (BloomNode.js,
+          RenderEngine.ts's buildRenderPipeline) is three.js's own
+          WebGPU/TSL-native reimplementation of the classic
+          `UnrealBloomPass` — same luminosity-highpass + separable-Gaussian-
+          blur-pyramid technique, just node-graph-based instead of a
+          postprocessing Pass. --- */}
+      <section className="border-t border-neutral-100 pt-4">
+        <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
+          {t("admin.sceneBloomEnabled")}
+        </h3>
+        <div className="space-y-3">
+          <ToggleField
+            label={t("admin.sceneBloomEnabled")}
+            checked={draft.bloomEnabled}
+            onChange={(v) => update({ bloomEnabled: v }, { commit: true })}
+          />
+          {draft.bloomEnabled && (
+            <>
+              <SliderField
+                label={t("admin.sceneBloomStrength")}
+                min={0}
+                max={3}
+                step={0.01}
+                value={draft.bloomStrength}
+                onChange={(v) => update({ bloomStrength: v })}
+              />
+              <SliderField
+                label={t("admin.sceneBloomRadius")}
+                min={0}
+                max={1}
+                step={0.01}
+                value={draft.bloomRadius}
+                onChange={(v) => update({ bloomRadius: v })}
+              />
+              <SliderField
+                label={t("admin.sceneBloomThreshold")}
+                min={0}
+                max={1}
+                step={0.01}
+                value={draft.bloomThreshold}
+                onChange={(v) => update({ bloomThreshold: v })}
+              />
+              <p className="text-[11px] text-neutral-400">{t("admin.sceneBloomNote")}</p>
+            </>
+          )}
         </div>
       </section>
 

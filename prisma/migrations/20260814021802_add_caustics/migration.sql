@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "project_3d_configs" ADD COLUMN     "causticsEnabled" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "causticsIntensityAvailable" DOUBLE PRECISION NOT NULL DEFAULT 1,
+ADD COLUMN     "causticsIntensityReserved" DOUBLE PRECISION NOT NULL DEFAULT 0.4,
+ADD COLUMN     "causticsIntensitySold" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "causticsScale" DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+ADD COLUMN     "causticsSpeed" DOUBLE PRECISION NOT NULL DEFAULT 0.15;

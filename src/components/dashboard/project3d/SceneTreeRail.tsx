@@ -217,6 +217,90 @@ export function SceneTreeRail({
             }
           />
 
+          {/* Clearcoat/iridescence (webgl_watch.html parity) — setting
+              either upgrades the node's material to a real
+              MeshPhysicalMaterial if it isn't already one (see
+              RenderEngine.ts's applyNodeOverrides doc comment); 0 is each
+              field's own "off" default, matching MeshPhysicalMaterial's
+              own constructor default exactly, same "unset means default"
+              semantics as the sliders above. */}
+          <SliderField
+            label={t("admin.sceneExplorerClearcoat")}
+            value={nodeOverrides[selectedNode.rzNodeId]?.clearcoat ?? 0}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={(clearcoat) =>
+              setNodeOverrides(
+                (s) => ({
+                  ...s,
+                  [selectedNode.rzNodeId]: {
+                    ...(s[selectedNode.rzNodeId] ?? { rzNodeId: selectedNode.rzNodeId }),
+                    clearcoat,
+                  },
+                }),
+                { commit: true }
+              )
+            }
+          />
+          <SliderField
+            label={t("admin.sceneExplorerClearcoatRoughness")}
+            value={nodeOverrides[selectedNode.rzNodeId]?.clearcoatRoughness ?? 0}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={(clearcoatRoughness) =>
+              setNodeOverrides(
+                (s) => ({
+                  ...s,
+                  [selectedNode.rzNodeId]: {
+                    ...(s[selectedNode.rzNodeId] ?? { rzNodeId: selectedNode.rzNodeId }),
+                    clearcoatRoughness,
+                  },
+                }),
+                { commit: true }
+              )
+            }
+          />
+          <SliderField
+            label={t("admin.sceneExplorerIridescence")}
+            value={nodeOverrides[selectedNode.rzNodeId]?.iridescence ?? 0}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={(iridescence) =>
+              setNodeOverrides(
+                (s) => ({
+                  ...s,
+                  [selectedNode.rzNodeId]: {
+                    ...(s[selectedNode.rzNodeId] ?? { rzNodeId: selectedNode.rzNodeId }),
+                    iridescence,
+                  },
+                }),
+                { commit: true }
+              )
+            }
+          />
+          <SliderField
+            label={t("admin.sceneExplorerIridescenceIOR")}
+            value={nodeOverrides[selectedNode.rzNodeId]?.iridescenceIOR ?? 1.3}
+            min={1}
+            max={2.333}
+            step={0.01}
+            onChange={(iridescenceIOR) =>
+              setNodeOverrides(
+                (s) => ({
+                  ...s,
+                  [selectedNode.rzNodeId]: {
+                    ...(s[selectedNode.rzNodeId] ?? { rzNodeId: selectedNode.rzNodeId }),
+                    iridescenceIOR,
+                  },
+                }),
+                { commit: true }
+              )
+            }
+          />
+
           {nodeOverrides[selectedNode.rzNodeId] && (
             <button
               type="button"

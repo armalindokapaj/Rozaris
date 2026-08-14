@@ -65,10 +65,13 @@ export function CameraPanel({
             checked={draft.autoRotate}
             onChange={(v) => update({ autoRotate: v }, { commit: true })}
           />
+          {/* webgl_postprocessing_transition.html technique — real
+              per-project on/off, per explicit user request ("every
+              feature has an option to turn it on/off"). */}
           <ToggleField
-            label={t("admin.viewer3DConstructionStages")}
-            checked={draft.constructionStagesEnabled}
-            onChange={(v) => update({ constructionStagesEnabled: v }, { commit: true })}
+            label={t("admin.viewer3DLoadingReveal")}
+            checked={draft.loadingRevealEnabled}
+            onChange={(v) => update({ loadingRevealEnabled: v }, { commit: true })}
           />
           <SliderField
             label={t("admin.viewer3DCameraStart")}
@@ -130,6 +133,46 @@ export function CameraPanel({
             onChange={(v) => update({ cameraFovMobile: v })}
             suffix="°"
           />
+        </div>
+      </section>
+
+      {/* --- Depth of field (webgl_postprocessing_dof2.html parity) — real
+          bokeh blur, TSL dof() node. Focus distance isn't a control here:
+          it auto-tracks the real live camera-to-orbit-target distance
+          every frame (RenderEngine.ts's render loop), same as a real
+          camera autofocusing on whatever's framed, so there's nothing for
+          an admin to keep in sync as a visitor orbits. --- */}
+      <section className="border-t border-neutral-100 pt-5">
+        <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
+          {t("admin.sceneDofTitle")}
+        </h3>
+        <div className="space-y-3">
+          <ToggleField
+            label={t("admin.sceneDofEnabled")}
+            checked={draft.depthOfFieldEnabled}
+            onChange={(v) => update({ depthOfFieldEnabled: v }, { commit: true })}
+          />
+          {draft.depthOfFieldEnabled && (
+            <>
+              <SliderField
+                label={t("admin.sceneDofFocalLength")}
+                min={0.5}
+                max={100}
+                step={0.5}
+                value={draft.depthOfFieldFocalLength}
+                onChange={(v) => update({ depthOfFieldFocalLength: v })}
+              />
+              <SliderField
+                label={t("admin.sceneDofBokehScale")}
+                min={0}
+                max={5}
+                step={0.1}
+                value={draft.depthOfFieldBokehScale}
+                onChange={(v) => update({ depthOfFieldBokehScale: v })}
+              />
+              <p className="text-[11px] text-neutral-400">{t("admin.sceneDofNote")}</p>
+            </>
+          )}
         </div>
       </section>
 
