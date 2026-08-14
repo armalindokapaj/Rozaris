@@ -39,10 +39,15 @@ jobs:
     # (listing/[slug], project/[slug], projects/[slug], developer/[slug]),
     # which hits the real database at build time — this job needs
     # DATABASE_URL / AUTH_SECRET / BLOB_READ_WRITE_TOKEN / NEXT_PUBLIC_MAPBOX_TOKEN
-    # added as repo secrets (Settings -> Secrets and variables -> Actions)
-    # to actually run. Until they're added it's skipped (not red) rather
-    # than failing on every push.
-    if: ${{ vars.CI_BUILD_ENABLED == 'true' || secrets.DATABASE_URL != '' }}
+    # added as repo secrets (Settings -> Secrets and variables -> Actions),
+    # *and* a repo Variable `CI_BUILD_ENABLED=true` (Settings -> Secrets
+    # and variables -> Actions -> Variables) to switch this job on. Job-
+    # level `if:` can't reference `secrets` directly (that's a hard
+    # GitHub Actions parse error, not just a false condition — confirmed
+    # live: the first version of this workflow that tried it failed
+    # instantly with zero jobs run), so a plain repo Variable is the gate
+    # instead. Skipped (not failing) until that variable is set.
+    if: ${{ vars.CI_BUILD_ENABLED == 'true' }}
     needs: lint-and-typecheck
     steps:
       - uses: actions/checkout@v4
