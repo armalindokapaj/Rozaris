@@ -95,3 +95,18 @@ export function telHref(phoneE164: string) {
 export function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
+
+/** Generic kebab-case slug generation — a create-form's own text (a
+ * listing title, an account/publisher name) that never collects a slug
+ * directly. Uniqueness (appending `-2`, `-3`, ...) is the caller's job;
+ * see `POST /api/listings` and `POST /api/auth/signup` for the same
+ * dedupe-loop shape `POST /api/projects` already established. */
+export function slugify(text: string): string {
+  const base = text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "") // strip accents (ë, ç, etc.)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base || "item";
+}

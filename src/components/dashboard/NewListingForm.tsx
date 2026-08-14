@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useT } from "@/lib/i18n/useT";
 import { CONDITION_LABELS, AMENITY_LABELS, PROPERTY_TYPE_LABELS } from "@/lib/constants";
 import { mainFieldsFor } from "@/lib/propertyTypeFields";
+import { neighborhoods } from "@/lib/mockData";
 import { cn } from "@/lib/utils";
 import type { Amenity, Condition, PropertyType, Locale } from "@/lib/types";
 
@@ -111,7 +112,15 @@ function Pill({
   );
 }
 
-export function NewListingForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: () => void }) {
+export function NewListingForm({
+  publisherId,
+  onSaved,
+  onCancel,
+}: {
+  publisherId: string;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
   const { t, locale } = useT();
   const propertyTypeLabels = PROPERTY_TYPE_LABELS[locale];
   const conditionLabels = CONDITION_LABELS[locale];
@@ -119,6 +128,7 @@ export function NewListingForm({ onSaved, onCancel }: { onSaved: () => void; onC
 
   const [title, setTitle] = useState("");
   const [propertyType, setPropertyType] = useState<PropertyType | null>(null);
+  const [neighborhoodId, setNeighborhoodId] = useState("");
   const [price, setPrice] = useState<number | "">("");
   const [bedrooms, setBedrooms] = useState<number | "">("");
   const [bathrooms, setBathrooms] = useState<number | "">("");
@@ -134,6 +144,8 @@ export function NewListingForm({ onSaved, onCancel }: { onSaved: () => void; onC
   const [totalFloors, setTotalFloors] = useState<number | "">("");
   const [yearBuilt, setYearBuilt] = useState<number | "">("");
   const [negotiable, setNegotiable] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const fields = mainFieldsFor(propertyType);
   const needsBedrooms = fields.includes("bedrooms");
@@ -145,6 +157,7 @@ export function NewListingForm({ onSaved, onCancel }: { onSaved: () => void; onC
   const canSave =
     title.trim() !== "" &&
     propertyType !== null &&
+    neighborhoodId !== "" &&
     price !== "" &&
     price > 0 &&
     (!needsBedrooms || (bedrooms !== "" && bedrooms > 0)) &&
@@ -156,6 +169,7 @@ export function NewListingForm({ onSaved, onCancel }: { onSaved: () => void; onC
   function reset() {
     setTitle("");
     setPropertyType(null);
+    setNeighborhoodId("");
     setPrice("");
     setBedrooms("");
     setBathrooms("");
@@ -171,12 +185,55 @@ export function NewListingForm({ onSaved, onCancel }: { onSaved: () => void; onC
     setTotalFloors("");
     setYearBuilt("");
     setNegotiable(false);
+    setSaveError(null);
   }
 
-  function handleSave() {
-    if (!canSave) return;
-    onSaved();
-    reset();
+  async function handleSave() {
+    if (!canSave || !propertyType) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      // The form only collects one language at a time — the language not
+      // written in is mirrored with the same text as an untranslated
+      // placeholder rather than left blank (both are required columns; see
+      // the "Rozaris locale: English only for now" memory for the same
+      // convention applied to UI copy).
+      const res = await fetch("/api/listings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          transaction: "sale",
+          propertyType,
+          price,
+          negotiable,
+          area: needsArea ? area : 0,
+          landArea: needsLandSize ? landSize : undefined,
+          buildingPermit: hasBuildingPermitField ? buildingPermit : undefined,
+          bedrooms: needsBedrooms ? bedrooms : 0,
+          bathrooms: needsBathrooms ? bathrooms : 0,
+          floor: floor === "" ? undefined : floor,
+          totalFloors: totalFloors === "" ? undefined : totalFloors,
+          yearBuilt: yearBuilt === "" ? undefined : yearBuilt,
+          condition: condition ?? "good",
+          amenities,
+          neighborhoodId,
+          descriptionEn: description,
+          descriptionSq: description,
+          publisherId,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? "Could not save the listing — try again.");
+      }
+      onSaved();
+      reset();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not save the listing — try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -196,6 +253,27 @@ export function NewListingForm({ onSaved, onCancel }: { onSaved: () => void; onC
           ))}
         </div>
       </div>
+
+      {/* Stands in for a real map-pin drop until the create form gets one —
+          the listing's coordinates/city are the chosen neighborhood's
+          centroid (see POST /api/listings). */}
+      <label className="block">
+        <RequiredLabel>{t("compareFields.neighborhood")}</RequiredLabel>
+        <select
+          value={neighborhoodId}
+          onChange={(e) => setNeighborhoodId(e.target.value)}
+          className="w-full rounded-control border border-neutral-200 bg-white px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+        >
+          <option value="" disabled>
+            {t("dashboard.selectNeighborhood")}
+          </option>
+          {neighborhoods.map((n) => (
+            <option key={n.id} value={n.id}>
+              {n.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {!propertyType ? (
         <p className="text-xs text-neutral-400">{t("dashboard.selectPropertyTypeFirst")}</p>
@@ -318,13 +396,17 @@ export function NewListingForm({ onSaved, onCancel }: { onSaved: () => void; onC
         </>
       )}
 
+      {saveError && (
+        <p className="rounded-control bg-red-50 px-3.5 py-2.5 text-sm font-medium text-red-700">{saveError}</p>
+      )}
+
       <div className="flex gap-2">
         <button
           onClick={handleSave}
-          disabled={!canSave}
+          disabled={!canSave || saving}
           className="rounded-control bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {t("dashboard.saveListing")}
+          {saving ? t("dashboard.saving") : t("dashboard.saveListing")}
         </button>
         <button
           onClick={onCancel}

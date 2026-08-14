@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   Box,
   Scale,
+  MessageCircle,
+  Phone,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
@@ -32,6 +34,8 @@ import {
   formatArea,
   formatRelativeDate,
   transactionLabel,
+  telHref,
+  whatsappHref,
   cn,
 } from "@/lib/utils";
 import type { Listing } from "@/lib/types";
@@ -175,6 +179,36 @@ export function ListingDetailClient({
                 title={listing.title}
                 className="flex-1 lg:flex-none"
               />
+            </div>
+
+            {/* Mobile only: WhatsApp/Call live here too, right under the
+                price, not just in the contact card at the very bottom of a
+                long scroll — reaching the publisher shouldn't require
+                scrolling past the whole listing first. The full PublisherCard
+                (with profile link, verified badge, etc.) still renders lower
+                down for both breakpoints. */}
+            <div className="grid grid-cols-2 gap-2 border-t border-neutral-100 pt-3 lg:hidden">
+              <a
+                href={whatsappHref(
+                  listing.publisher.whatsapp,
+                  `Hi, I'm interested in "${listing.title}"`
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-analytics="whatsapp_clicked"
+                className="flex items-center justify-center gap-1.5 rounded-control bg-[#25D366] py-2.5 text-sm font-semibold text-white hover:brightness-95"
+              >
+                <MessageCircle className="h-4 w-4" />
+                {t("publisher.whatsapp")}
+              </a>
+              <a
+                href={telHref(listing.publisher.phone)}
+                data-analytics="phone_clicked"
+                className="flex items-center justify-center gap-1.5 rounded-control border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
+              >
+                <Phone className="h-4 w-4 shrink-0" />
+                {t("publisher.call")}
+              </a>
             </div>
           </div>
 

@@ -13,6 +13,7 @@ import type {
   FollowState,
   GeoPoint,
   LeadStatus,
+  Listing,
   Locale,
   MobileSheet,
   Project,
@@ -85,7 +86,6 @@ export const defaultProject3DConfig: Project3DConfig = {
   fogColor: "#c9d6e0",
   fogDensity: 0.015,
   fogMatchesSky: false,
-  sectionCapStencilEnabled: false,
   // Sky/Water/Bloom/Clouds pass — all off by default (bloom/water/clouds),
   // param defaults mirror webgl_shaders_ocean.html's own GUI defaults
   // exactly (bloom strength 0.1/radius 0, water distortionScale 3.7/
@@ -239,6 +239,20 @@ interface AppState {
   setTransaction: (transaction: FilterState["transaction"]) => void;
   resetFilters: () => void;
 
+  // Live listings — real Postgres `Listing` rows (`GET /api/listings`),
+  // fetched once by `useLiveListings()` and shared here so ResultsList and
+  // MapView (siblings, not parent/child) both read the same array without
+  // each fetching independently. `null` while the initial GET is in
+  // flight (or if it's never been triggered on this page) so callers can
+  // fall back to `liveListings ?? []` rather than flashing an empty state —
+  // same reasoning `useProjectUnits.ts` documents for its own `| null`.
+  // Deliberately absent from `partialize` below: this is always refetched,
+  // never persisted to localStorage, so it can't ever go stale.
+  liveListings: Listing[] | null;
+  liveListingsLoading: boolean;
+  setLiveListings: (listings: Listing[]) => void;
+  setLiveListingsLoading: (loading: boolean) => void;
+
   // Map / selection
   mapBounds: MapBounds | null;
   setMapBounds: (bounds: MapBounds) => void;
@@ -275,7 +289,16 @@ interface AppState {
   savedSearches: SavedSearch[];
   addSavedSearch: (search: SavedSearch) => void;
 
-  // Auth (mock — phone OTP is out of scope for the frontend prototype)
+  // Auth — `auth` is a read-mostly mirror of the real Auth.js session,
+  // kept in sync by `AuthSessionSync` (mounted once in app/layout.tsx)
+  // calling `setAuthFromSession()` on every session change (real auth to
+  // UI pass — see the "Rozaris Platform Audit" memory). `signIn()` below
+  // predates that and is now just a manual override for the couple of
+  // call sites that still want to set it directly (e.g. the Admin
+  // console's demo-flag toggle alongside its own real session
+  // establishment) — the mirror overwrites it the moment the real session
+  // resolves either way, so it can't drift permanently out of sync.
+  // Phone/OTP sign-in is still out of scope; email+password only for now.
   auth: AuthState;
   signIn: (
     name: string,
@@ -284,6 +307,11 @@ interface AppState {
     publisherId?: string
   ) => void;
   signOut: () => void;
+  /** The one real write path — syncs `auth` from the actual Auth.js
+   * session. `null` means signed out. */
+  setAuthFromSession: (
+    session: { name?: string | null; role?: string; orgType?: string; publisherId?: string } | null
+  ) => void;
   signInModalOpen: boolean;
   openSignIn: () => void;
   closeSignIn: () => void;
@@ -411,6 +439,11 @@ export const useAppStore = create<AppState>()(
         })),
       resetFilters: () => set({ filters: defaultFilters }),
 
+      liveListings: null,
+      liveListingsLoading: false,
+      setLiveListings: (liveListings) => set({ liveListings, liveListingsLoading: false }),
+      setLiveListingsLoading: (liveListingsLoading) => set({ liveListingsLoading }),
+
       mapBounds: null,
       setMapBounds: (mapBounds) => set({ mapBounds }),
       mapAreaSearchBounds: null,
@@ -504,6 +537,18 @@ export const useAppStore = create<AppState>()(
           signInModalOpen: false,
         }),
       signOut: () => set({ auth: { signedIn: false, name: null, role: "visitor" } }),
+      setAuthFromSession: (session) =>
+        set({
+          auth: session
+            ? {
+                signedIn: true,
+                name: session.name ?? null,
+                role: (session.role as AuthState["role"]) ?? "buyer",
+                orgType: session.orgType as PublisherType | undefined,
+                publisherId: session.publisherId,
+              }
+            : { signedIn: false, name: null, role: "visitor" },
+        }),
       signInModalOpen: false,
       openSignIn: () => set({ signInModalOpen: true }),
       closeSignIn: () => set({ signInModalOpen: false }),

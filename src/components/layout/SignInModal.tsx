@@ -3,24 +3,25 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
-import { DEMO_ACCOUNTS, findDemoAccount } from "@/lib/demoAccounts";
+import { useCredentialsSignIn } from "@/hooks/useCredentialsSignIn";
+import { DEMO_ACCOUNTS } from "@/lib/demoAccounts";
 
 /**
  * Global sign-in modal (PRD_Authentication §4-5: a lightweight modal over the
- * current page, not an instant/anonymous login). This is still a frontend
- * mock — no real phone/OTP, no backend — matched against a fixed list of
- * demo username/password pairs (see src/lib/demoAccounts.ts) instead of
- * hardcoding "John Doe" on every click.
+ * current page, not an instant/anonymous login). Real Auth.js credentials
+ * sign-in (real auth to UI pass — see the "Rozaris Platform Audit" memory);
+ * the demo-account buttons below still quick-fill a known email/password,
+ * but the actual check now happens against the real database, not a
+ * client-only list.
  */
 export function SignInModal() {
   const open = useAppStore((s) => s.signInModalOpen);
   const closeSignIn = useAppStore((s) => s.closeSignIn);
-  const signIn = useAppStore((s) => s.signIn);
+  const { submit, error, setError, submitting } = useCredentialsSignIn();
   const { t } = useT();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<Element | null>(null);
 
@@ -54,22 +55,20 @@ export function SignInModal() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, closeSignIn]);
+  }, [open, closeSignIn, setError]);
 
   if (!open) return null;
 
   const canSubmit = username.trim().length > 0 && password.length > 0;
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
-    const account = findDemoAccount(username, password);
-    if (!account) {
-      setError(true);
-      return;
+    const ok = await submit(username.trim(), password);
+    if (ok) {
+      closeSignIn();
+      reset();
     }
-    signIn(account.displayName, account.role, account.orgType, account.publisherId);
-    reset();
   }
 
   function handleClose() {
@@ -105,6 +104,7 @@ export function SignInModal() {
         </label>
         <input
           id="signin-username"
+          type="email"
           ref={inputRef}
           value={username}
           onChange={(e) => {
@@ -112,7 +112,7 @@ export function SignInModal() {
             setError(false);
           }}
           placeholder={t("signInModal.usernamePlaceholder")}
-          autoComplete="username"
+          autoComplete="email"
           className="mt-1.5 w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
         />
 
@@ -144,13 +144,13 @@ export function SignInModal() {
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {DEMO_ACCOUNTS.map((a) => (
               <button
-                key={a.username}
+                key={a.email}
                 type="button"
-                onClick={() => fillDemo(a.username)}
+                onClick={() => fillDemo(a.email)}
                 title={a.typeLabel}
                 className="rounded-full border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700"
               >
-                {a.username}
+                {a.displayName}
               </button>
             ))}
           </div>
@@ -168,7 +168,7 @@ export function SignInModal() {
           </button>
           <button
             type="submit"
-            disabled={!canSubmit}
+            disabled={!canSubmit || submitting}
             className="flex-1 rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("signInModal.continue")}

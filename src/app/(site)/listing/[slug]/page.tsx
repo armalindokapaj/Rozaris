@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getListingBySlug, getNeighborhood, relatedListings, searchableListings } from "@/lib/mockData";
+import { getNeighborhood } from "@/lib/mockData";
+import { getListingDetail, getAllListingSlugs } from "@/lib/listings.server";
 import { formatPrice } from "@/lib/utils";
 import { SITE_URL } from "@/lib/constants";
 import { ListingDetailClient } from "./ListingDetailClient";
 
-export function generateStaticParams() {
-  return searchableListings.map((l) => ({ slug: l.slug }));
+export async function generateStaticParams() {
+  const slugs = await getAllListingSlugs();
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({
@@ -15,8 +17,9 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const listing = getListingBySlug(slug);
-  if (!listing) return {};
+  const detail = await getListingDetail(slug);
+  if (!detail) return {};
+  const { listing } = detail;
   const price = formatPrice(listing.price, listing.currency);
   return {
     title: `${listing.title} — ${price}`,
@@ -34,10 +37,10 @@ export default async function ListingDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const listing = getListingBySlug(slug);
-  if (!listing) notFound();
+  const detail = await getListingDetail(slug);
+  if (!detail) notFound();
+  const { listing, related } = detail;
 
-  const related = relatedListings(listing);
   const neighborhood = getNeighborhood(listing.neighborhoodId);
 
   const jsonLd = {

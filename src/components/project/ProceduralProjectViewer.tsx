@@ -103,6 +103,14 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
 
     const containerRef = useRef<HTMLDivElement>(null);
     const tooltipElRef = useRef<HTMLDivElement>(null);
+    // North Sign compass needle — written directly every frame (see the
+    // rAF loop below), never through React state. A camera orbit drag can
+    // fire many times a frame; routing that through setState would
+    // re-render this whole component (filters, tooltip, every menu panel)
+    // 60 times a second for a rotation nobody but this one <span> needs to
+    // see. Same "mutate the DOM directly, skip React" reasoning as
+    // `onPointerMove` positioning `tooltipElRef` above.
+    const compassNeedleRef = useRef<HTMLSpanElement>(null);
 
     const [ready, setReady] = useState(false);
     const [webglFailReason, setWebglFailReason] = useState<string | null>(null);
@@ -257,6 +265,27 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       activateSection: (sectionId) => engineRef.current?.activateSection(sectionId),
     }));
 
+    // North Sign — live compass rAF loop (2026-08-14 audit). Polls
+    // `getCameraAzimuthDeg()` and writes it straight to the needle span's
+    // `transform` every frame, entirely outside React (see
+    // `compassNeedleRef`'s own doc comment for why). Only runs once the
+    // engine has something to read and the chrome that owns the needle is
+    // actually mounted; cleans itself up on the way out so an unmounted/
+    // hidden viewer never keeps a rAF loop alive in the background.
+    useEffect(() => {
+      if (!ready || !showChrome) return;
+      let frameId: number;
+      const tick = () => {
+        const azimuthDeg = engineRef.current?.getCameraAzimuthDeg();
+        if (azimuthDeg != null && compassNeedleRef.current) {
+          compassNeedleRef.current.style.transform = `rotate(${azimuthDeg}deg)`;
+        }
+        frameId = requestAnimationFrame(tick);
+      };
+      frameId = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(frameId);
+    }, [ready, showChrome]);
+
     // --- One-time scene setup per project/content-mode/rendering-mode —
     // delegates entirely to engine.mount()/dispose(). ---
     useEffect(() => {
@@ -299,16 +328,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       config.qualityPreset,
       config.shadowsEnabled,
       config.antialiasEnabled,
-      // stencil: true on the renderer only takes effect at construction —
-      // same "needs a full remount" reasoning as the flags above.
-      config.sectionCapStencilEnabled,
-      // Sky/Water/Bloom/Clouds "Ocean" tab — both structurally add/remove
-      // a real object or pipeline node rather than just tweaking a number
-      // on an already-existing one, same "needs a full remount" reasoning
-      // as the flags above (their own strength/radius/distortionScale/size
-      // sliders are cheap live updates instead, see the effect below).
-      config.waterEnabled,
-      config.bloomEnabled,
       // 3D LUT — both need a fresh mount: `lutEnabled` structurally adds
       // the lut3D() node, `lutPreset` triggers a real async texture
       // (re)load (loadLut) before the pipeline is rebuilt; its own
@@ -318,12 +337,6 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       // Logarithmic depth buffer — a WebGPURenderer construction-time
       // flag, same "needs a full remount" reasoning as `stencil` above.
       config.logarithmicDepthEnabled,
-      // Depth of field — structurally adds the dof() node to the chain,
-      // same "needs a full remount" reasoning as bloomEnabled; its own
-      // focalLength/bokehScale sliders are cheap live updates instead,
-      // see below (focusDistance itself is real-time auto-focus, owned
-      // entirely by RenderEngine's render loop — no React wiring at all).
-      config.depthOfFieldEnabled,
       // Loading-screen reveal — read once at mount time (armed before the
       // very first frame, see RenderEngine.ts's mount() doc comment), so
       // toggling it only takes effect on the next remount, same category
@@ -386,6 +399,20 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       config.waterSize,
       config.bloomStrength,
       config.bloomRadius,
+      // Real click-responsiveness bug fix (2026-08-14, Configurator audit):
+      // `waterEnabled`/`bloomEnabled`/`depthOfFieldEnabled` used to sit in
+      // the full-remount effect above — flipping any of them tore down
+      // and rebuilt the entire WebGPU renderer/context and reloaded every
+      // GLB just to add or remove one mesh/pipeline node, confirmed with a
+      // real Playwright repro to freeze the Configurator for seconds and
+      // eat the next several clicks. `applyLiveUpdate` now diffs each
+      // against the *previous* config itself (see its own doc comment)
+      // and calls `setWaterEnabled`/`buildRenderPipeline` directly —
+      // these three are deps here only so a toggle actually re-runs this
+      // effect at all; the cheap-vs-expensive decision happens inside it.
+      config.waterEnabled,
+      config.bloomEnabled,
+      config.depthOfFieldEnabled,
       // 3D LUT intensity — real live UniformNode<float>, no remount needed.
       config.lutIntensity,
       // Depth of field — real live UniformNode<float>s, no remount needed.
@@ -512,14 +539,28 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
           </div>
         )}
 
+        {/* North Sign — a real live compass (2026-08-14 audit), not just a
+            reset shortcut wearing a compass-shaped icon: `compassNeedleRef`
+            is spun every frame by the rAF loop above to always point at
+            the project's true north as the visitor orbits, exactly like
+            the reference site's own bottom-bar "N" control. Clicking it
+            still resets the camera to that heading (`resetToNorth`,
+            unchanged) — now the needle visibly animates back to "up"
+            instead of just snapping the view with no orientation cue
+            beforehand. The ring stays fixed; only the inner glyph rotates,
+            same convention as a real compass rose. */}
         {showChrome && ready && (
           <button
             onClick={resetToNorth}
             aria-label={t("project.northSign")}
-            className="glass-panel-dark absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full text-white"
+            title={t("project.northSign")}
+            className="glass-panel-dark absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full text-white ring-1 ring-inset ring-white/15"
           >
-            <span className="flex flex-col items-center leading-none">
-              <span className="text-[9px] font-bold">N</span>
+            <span
+              ref={compassNeedleRef}
+              className="flex flex-col items-center leading-none will-change-transform"
+            >
+              <span className="text-[9px] font-bold text-red-400">N</span>
               <svg viewBox="0 0 24 24" className="mt-0.5 h-3 w-3" fill="currentColor" aria-hidden="true">
                 <path d="M12 3 L16 15 L12 12 L8 15 Z" />
               </svg>

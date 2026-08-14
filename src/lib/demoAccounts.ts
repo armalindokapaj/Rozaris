@@ -1,78 +1,51 @@
-import type { AuthState } from "@/lib/store";
-import type { PublisherType } from "@/lib/types";
-
 /**
- * Fixed demo credentials for the frontend prototype's mock sign-in.
- *
- * IMPORTANT: this is not real authentication. There is no backend, no
- * hashing, no session security — every "password" is literally the string
- * "1" and the check happens entirely in the browser. This exists purely so
- * the four ROZARIS account types (per PRD_Authentication_Account_Selection)
- * have distinct, memorable logins to click through during demos, since the
- * app's role model currently only distinguishes "buyer" / "publisher" /
- * "admin" — Private Publisher, Agency, and Developer all share the
- * "publisher" role until the dashboard is built out to branch on org type.
+ * Quick-fill demo credentials for SignInModal/JoinMenu's "one click" login
+ * buttons. Real auth to UI pass (see the "Rozaris Platform Audit" memory):
+ * these no longer ARE the auth check — `signIn("credentials", {email,
+ * password})` from `next-auth/react` does, against the real seeded
+ * `passwordHash` rows `prisma/seed.ts` writes (all password "1", matching
+ * this file's previous convention). This file now only maps each of the
+ * four PRD account types (PRD_Authentication_Account_Selection) onto the
+ * real seed email that persona signs in as, so the demo buttons keep
+ * working unchanged.
  */
 export interface DemoAccount {
-  username: string;
+  email: string;
   password: string;
   displayName: string;
-  role: AuthState["role"];
-  orgType?: PublisherType;
-  /** The mock Publisher record (src/lib/mockData.ts) this persona's
-   * listings/projects are drawn from. Matches orgType's account type. */
-  publisherId?: string;
   /** Human label for the PRD account type this persona represents. */
   typeLabel: string;
 }
 
 export const DEMO_ACCOUNTS: DemoAccount[] = [
   {
-    username: "elira",
+    email: "buyer@seed.rozaris.demo",
     password: "1",
     displayName: "Elira Krasniqi",
-    role: "buyer",
     typeLabel: "User",
   },
   {
-    username: "genti",
+    email: "andi-hoxha@seed.rozaris.demo",
     password: "1",
-    displayName: "Genti Hoxha",
-    role: "publisher",
-    orgType: "private_owner",
-    publisherId: "p-andi",
+    displayName: "Andi Hoxha",
     typeLabel: "Private Publisher",
   },
   {
-    username: "alma",
+    email: "vega-real-estate@seed.rozaris.demo",
     password: "1",
-    displayName: "Alma Berisha",
-    role: "publisher",
-    orgType: "agency",
-    publisherId: "p-vega",
+    displayName: "Vega Real Estate",
     typeLabel: "Business Publisher — Agency",
   },
   {
-    username: "ilir",
+    email: "alba-construction@seed.rozaris.demo",
     password: "1",
-    displayName: "Ilir Shehu",
-    role: "publisher",
-    orgType: "developer",
-    publisherId: "p-alba",
+    displayName: "ALBA Construction",
     typeLabel: "Business Publisher — Developer",
   },
   {
-    username: "admin",
+    email: "admin@rozaris.demo",
     password: "1",
     displayName: "Admin",
-    role: "admin",
     typeLabel: "Admin",
   },
 ];
-
-export function findDemoAccount(username: string, password: string): DemoAccount | null {
-  const u = username.trim().toLowerCase();
-  return (
-    DEMO_ACCOUNTS.find((a) => a.username.toLowerCase() === u && a.password === password) ?? null
-  );
-}

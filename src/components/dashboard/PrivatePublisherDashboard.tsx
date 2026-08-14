@@ -19,7 +19,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { listingsByPublisher } from "@/lib/mockData";
+import { usePublisherListings } from "@/hooks/usePublisherListings";
 import { publisherNotifications } from "@/lib/mockActivity";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
@@ -85,15 +85,15 @@ const STAGE_LABEL_KEY: Record<Stage, string> = {
   archived: "privatePublisher.stageArchived",
 };
 
-/** Maps this app's actual Listing.status (active/sold/rented/expired/
- * suspended/archived — there's no draft/pending-review/approved status in
- * the data model yet) onto the PRD's fuller lifecycle stepper. Necessarily
- * approximate until ListingStatus itself grows those states — flagged here
- * rather than silently invented, and deliberately not attempted as a
- * type-wide rename in this pass (touches every ListingStatus switch in the
- * app for a cosmetic gain). */
+/** Maps this app's actual Listing.status onto the PRD's fuller lifecycle
+ * stepper. `pending` (real since `POST /api/listings` started creating
+ * real rows — see the "Rozaris Platform Audit" memory) maps cleanly onto
+ * "pendingReview"; there's still no distinct draft/approved status in the
+ * data model, so those two stages remain unreachable from a real listing. */
 function stageForStatus(status: Listing["status"]): Stage {
   switch (status) {
+    case "pending":
+      return "pendingReview";
     case "active":
     case "sold":
     case "rented":
@@ -155,11 +155,12 @@ function listingCompleteness(listing: Listing): number {
 export function PrivatePublisherDashboard({ publisher }: { publisher: Publisher }) {
   const [tab, setTab] = useState<TabId>("overview");
   const { t } = useT();
-  // Single-listing rule (PRD §3): whichever mock listing landed on this
+  // Single-listing rule (PRD §3): whichever real listing landed on this
   // publisher is treated as "the" listing; any further ones stay in the
   // underlying data as historical/archived, never surfaced as a second
   // active listing here.
-  const myListing = listingsByPublisher(publisher.id)[0] ?? null;
+  const { listings: myListings, refresh: refreshListing } = usePublisherListings(publisher.id);
+  const myListing = myListings?.[0] ?? null;
 
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row lg:px-8">
@@ -195,7 +196,9 @@ export function PrivatePublisherDashboard({ publisher }: { publisher: Publisher 
 
       <div className="min-w-0 flex-1">
         {tab === "overview" && <OverviewTab publisher={publisher} listing={myListing} onManage={() => setTab("listing")} />}
-        {tab === "listing" && <MyListingTab listing={myListing} />}
+        {tab === "listing" && (
+          <MyListingTab listing={myListing} publisherId={publisher.id} onSaved={refreshListing} />
+        )}
         {tab === "media" && <MediaTab />}
         {tab === "inquiries" && <InquiriesTab publisher={publisher} />}
         {tab === "performance" && <PerformanceTab listing={myListing} />}
@@ -300,7 +303,15 @@ function EmptyListingCard() {
   );
 }
 
-function MyListingTab({ listing }: { listing: Listing | null }) {
+function MyListingTab({
+  listing,
+  publisherId,
+  onSaved,
+}: {
+  listing: Listing | null;
+  publisherId: string;
+  onSaved: () => void;
+}) {
   const { t, locale } = useT();
   const priceFmt = usePriceFormat();
   const [formOpen, setFormOpen] = useState(!listing);
@@ -331,9 +342,11 @@ function MyListingTab({ listing }: { listing: Listing | null }) {
 
       {formOpen ? (
         <NewListingForm
+          publisherId={publisherId}
           onSaved={() => {
             setFormOpen(false);
             setSavedMessage(true);
+            onSaved();
             setTimeout(() => setSavedMessage(false), 3000);
           }}
           onCancel={() => setFormOpen(false)}

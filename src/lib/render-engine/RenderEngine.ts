@@ -59,7 +59,14 @@ import {
   WATER_PLANE_SIZE,
   type QualityTierSettings,
 } from "@/lib/viewerPresets";
-import { buildSectionCapGeometry, buildSectionPlanes, sectionFromDragPoints, SECTION_INDICATOR_COLOR } from "./sections";
+import {
+  buildSectionCapGeometry,
+  buildSectionPlanes,
+  NO_ACTIVE_SECTION_PLANES,
+  sectionFromDragPoints,
+  SECTION_INDICATOR_COLOR,
+  SECTION_MAX_DIMENSION_M,
+} from "./sections";
 import type { CameraPreset, Project, Project3DConfig, ProjectDetailModel, Section, Unit, UnitMeshLink } from "@/lib/types";
 
 export type AvailabilityFilter = "all" | Unit["status"];
@@ -285,17 +292,30 @@ export class RenderEngine {
    * the reference demo's own `sun` Vector3 feeds both. */
   private sunDirection = new THREE.Vector3(0, 1, 0);
   /** The optional water plane (`WaterMesh`) — only constructed when
-   * `config.waterEnabled` (per-project opt-in; most projects have none),
-   * so toggling it needs a fresh mount() same as `sectionCapStencilEnabled`
-   * already does, rather than always paying for an unused texture
-   * load/reflection render target. */
+   * `config.waterEnabled` (per-project opt-in; most projects have none).
+   * Real click-responsiveness bug fix (2026-08-14, Configurator audit):
+   * this used to be mount()-only, meaning the Ocean tab's "Water Enabled"
+   * checkbox triggered a full engine teardown/rebuild (new WebGPU
+   * renderer + context, every GLB reloaded from the network, PMREM
+   * environment regenerated) just to add one mesh — confirmed with a real
+   * Playwright repro to visibly freeze the Configurator for seconds and
+   * eat the next several clicks (matches the "need to triple-click"
+   * report exactly). `setWaterEnabled` below now adds/removes this one
+   * self-contained mesh live instead, same "cheap update" category as
+   * everything else `applyLiveUpdate` already drags without a remount —
+   * `createWaterMesh` is the shared construction code both it and
+   * mount() call. */
   private waterMesh: WaterMesh | null = null;
   /** The bloom node itself (not just a boolean) — `strength`/`radius` are
    * real `UniformNode<float>`s on this instance (confirmed against
    * BloomNode.js's own source), so `applyLiveUpdate` can drag those live
-   * without rebuilding the whole post-processing pipeline; only
-   * `bloomEnabled` itself (which structurally adds/removes the node from
-   * the chain) needs a fresh mount, same as `antialiasEnabled`. */
+   * without rebuilding the whole post-processing pipeline. `bloomEnabled`
+   * itself used to also force a full engine remount (same over-broad
+   * "structural" categorization `waterEnabled` had — see its own doc
+   * comment above); it's now handled by `applyLiveUpdate` calling
+   * `buildRenderPipeline` again on its own, which was already a cheap,
+   * self-contained node-graph rebuild with no renderer/context/GLB work
+   * in it — the expensive part of a remount was never this. */
   private bloomNode: ReturnType<typeof bloom> | null = null;
   /** The currently-loaded LUT's real `Data3DTexture` (whichever of
    * `LUTCubeLoader`/`LUT3dlLoader`/`LUTImageLoader` its preset's `format`
@@ -418,47 +438,51 @@ export class RenderEngine {
    * with the anchor's transform on every "objectChange" tick; read back
    * by `getLiveSectionDraft()`/streamed via `onSectionDraftChange`. */
   private liveSection: Section | null = null;
-  private sectionCapMesh: THREE.Mesh | null = null;
-  private sectionCapMaterial: THREE.MeshBasicMaterial | null = null;
-  /** Cheap signature of `sectionCapMaterial`'s pipeline-affecting state
-   * (transparent/depthWrite/stencil-branch) — lets `rebuildSectionCap`
-   * only bump `needsUpdate` (a real WebGPU pipeline rebuild, see that
-   * method's own doc comment) when that state actually changed, not on
-   * every call. Needed because this method also runs on every gizmo-drag
-   * tick (pure position/rotation/scale changes), where fill/stencil state
-   * never differs from the previous call. */
-  private sectionCapMaterialSignature: string | null = null;
-  /** Stencil-derived cap (webgl_clipping_stencil.html technique,
-   * `config.sectionCapStencilEnabled`) — invisible back/front marking
-   * mesh pairs, one pair per real clippable object currently in
-   * `clippingGroup`, sharing that object's own geometry (not cloned) and
-   * world transform. Rebuilt alongside `sectionCapMesh` in
-   * `rebuildSectionCap`; disposed on every rebuild and in `dispose()`
-   * (materials only — the shared geometry is borrowed, not owned). */
-  private stencilMarkMeshes: THREE.Mesh[] = [];
-  /** Real bug fix: the stencil cap technique used to set `clippingPlanes`
-   * directly on each material (`sectionCapMaterial`, the back/front
-   * marking materials) — verified against the installed three.js source
-   * (grepped the entire renderer/nodes tree for any consumer of
-   * `material.clippingPlanes`; only `ClippingContext`/`ClippingGroup` are
-   * ever read) that this is a **complete no-op** under this app's
-   * `THREE.WebGPURenderer`, same lesson [[rozaris-3d-sections-module]]
-   * already learned for the main clip — silently reintroduced here. For a
-   * closed/watertight mesh, marking WITHOUT the intended `[topPlane]`
-   * clip means every ray crosses equal front/back faces, so the
-   * increment/decrement passes always net to exactly 0 — the cap's
-   * `NotEqualStencilFunc` test then fails everywhere, rendering nothing.
-   * Fixed with two persistent, lazily-created `ClippingGroup`s (the same
-   * real mechanism `this.clippingGroup` already uses) nested inside
-   * `sectionHelperGroup`: this one clips the back/front marking mesh
-   * pairs to just the section's top plane. */
-  private stencilMarkClippingGroup: THREE.ClippingGroup | null = null;
-  /** Bounds the stencil-mode cap's flat quad to the section's other
-   * (non-top) planes — matches the upstream example's own
-   * `planes.filter(p => p !== plane)` cap-clipping pattern. See
-   * `stencilMarkClippingGroup`'s doc comment for why a `ClippingGroup`,
-   * not per-material `clippingPlanes`, is required here. */
-  private sectionCapClippingGroup: THREE.ClippingGroup | null = null;
+  /** The translucent, unclipped "clip plane indicator" rectangle —
+   * `fillGapsEnabled: false`, editor-only (see `rebuildSectionCap`'s own
+   * doc comment). Its own dedicated material (`sectionIndicatorMaterial`)
+   * is never toggled/reused for anything else, unlike the old shared
+   * cap material this replaced — see the 2026-08-14 doc note on
+   * `rebuildSectionCap` for why that mattered. */
+  private sectionIndicatorMesh: THREE.Mesh | null = null;
+  private sectionIndicatorMaterial: THREE.MeshBasicMaterial | null = null;
+  /** Real color fill (`fillGapsEnabled: true`) — one mesh per real
+   * clippable object currently in `clippingGroup`, sharing that object's
+   * own geometry (not cloned) and world transform, rendered `BackSide`
+   * only and clipped by the section's own full plane set. All share
+   * `sectionFillMaterial` (color updated in place, no per-mesh material).
+   *
+   * **Real bug fixed 2026-08-14** ("colors the clipper plane instead [of
+   * the clipped model]", the second time — see this field's own history
+   * below): this used to be a stencil-buffer technique (invisible marking
+   * mesh pairs + a stencil-tested flat cap quad, the classic
+   * webgl_clipping_stencil.html approach) — structurally correct
+   * (verified against the actual upstream example source, and against
+   * this app's own `ClippingGroup`/`ClippingContext` consumers, unlike
+   * two earlier bugs in this same area — see the git history/memory for
+   * "rozaris-3d-sections-audit-fix" round 3), but empirically confirmed
+   * BROKEN in a real browser once this session finally opened one: the
+   * cap rendered its fill color across the *entire* screen, not just the
+   * real cut silhouette — the `NotEqualStencilFunc`/ref-0 test was not
+   * gating visibility at all under this app's `THREE.WebGPURenderer`.
+   * Root cause not fully chased down (WebGPU's own stencil pipeline state
+   * plumbing for a plain `MeshBasicMaterial`'s classic stencil properties
+   * is comparatively new/less-traveled code in three.js next to its
+   * mature WebGL backend) — rather than keep debugging an engine-level
+   * stencil gap, this replaces the whole technique with one that doesn't
+   * need a stencil buffer at all: rendering the solid's own *back* faces,
+   * clipped to the section volume, IS a correct, self-contained "what
+   * does the inside of this cut look like" fill — back faces only exist
+   * where the mesh itself does, so there's no separate test to get wrong.
+   * `stencil: true` came back off the `WebGPURenderer` constructor
+   * (mount(), below) since nothing here needs it anymore. */
+  private sectionFillMeshes: THREE.Mesh[] = [];
+  private sectionFillMaterial: THREE.MeshBasicMaterial | null = null;
+  /** Bounds the fill meshes to the section's own clip volume (the exact
+   * same `buildSectionPlanes(section)` the main `clippingGroup` uses) —
+   * without this, a source mesh's back faces would show through
+   * everywhere they're not occluded, not just within the cut. */
+  private sectionFillClippingGroup: THREE.ClippingGroup | null = null;
   private activeSectionId: string | null = null;
   /** True for the admin editor's own live preview (`showChrome={false}`),
    * false for every public-facing viewer — set once at `mount()` from
@@ -615,6 +639,22 @@ export class RenderEngine {
   setShadowMapViewerEnabled(enabled: boolean) {
     this.shadowMapViewerEnabled = enabled;
     if (!enabled) this.shadowMapViewer = null;
+  }
+
+  /** Live compass heading (degrees) — the same `theta` `resetToNorth`
+   * drives to 0, just read instead of written. `0` = camera already at
+   * the canonical "North Sign" heading; the viewer polls this every frame
+   * (cheap: one `atan2`, no allocation beyond a scratch Vector3/Spherical)
+   * to keep a compass needle in sync with orbiting, entirely outside
+   * React state — see ProceduralProjectViewer.tsx's own compass rAF loop
+   * doc comment for why. `null` before the camera/controls exist. */
+  getCameraAzimuthDeg(): number | null {
+    const controls = this.controls;
+    const camera = this.camera;
+    if (!controls || !camera) return null;
+    const offset = camera.position.clone().sub(controls.target);
+    const spherical = new THREE.Spherical().setFromVector3(offset);
+    return THREE.MathUtils.radToDeg(spherical.theta);
   }
 
   getCameraState(): { position: { x: number; y: number; z: number }; target: { x: number; y: number; z: number }; fov: number } | null {
@@ -1230,6 +1270,50 @@ export class RenderEngine {
     }
   }
 
+  /** Builds a fresh `WaterMesh` from the given config — the exact
+   * construction `mount()` used to inline; factored out so
+   * `setWaterEnabled` (a live toggle, no remount) can build the same mesh
+   * on demand. Doesn't add it to the scene or touch `this.waterMesh` —
+   * callers own both. */
+  private createWaterMesh(config: Project3DConfig): WaterMesh {
+    const waterNormals = new THREE.TextureLoader().load("/textures/waternormals.jpg", (texture) => {
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    });
+    const waterMesh = new WaterMesh(new THREE.PlaneGeometry(WATER_PLANE_SIZE, WATER_PLANE_SIZE), {
+      waterNormals,
+      sunDirection: this.sunDirection.clone(),
+      sunColor: 0xffffff,
+      waterColor: 0x001e0f,
+      distortionScale: config.waterDistortionScale,
+      size: config.waterSize,
+    });
+    waterMesh.rotation.x = -Math.PI / 2;
+    return waterMesh;
+  }
+
+  /** Live add/remove of the water plane — see `waterMesh`'s own field doc
+   * comment for why this exists (real click-responsiveness bug fix, no
+   * longer a mount()-only flag). No-ops if the scene isn't mounted yet, or
+   * if the requested state is already current (called unconditionally
+   * from `applyLiveUpdate` whenever `waterEnabled` differs from the
+   * previous config — this guard just makes the method itself idempotent
+   * for any other caller). */
+  setWaterEnabled(enabled: boolean, config: Project3DConfig) {
+    if (!this.scene) return;
+    if (enabled) {
+      if (this.waterMesh) return;
+      const waterMesh = this.createWaterMesh(config);
+      this.scene.add(waterMesh);
+      this.waterMesh = waterMesh;
+    } else {
+      if (!this.waterMesh) return;
+      this.scene.remove(this.waterMesh);
+      this.waterMesh.geometry.dispose();
+      (this.waterMesh.material as THREE.Material).dispose();
+      this.waterMesh = null;
+    }
+  }
+
   /** One-time scene setup per project/content-mode/rendering-mode — full
    * teardown+rebuild, called by the component whenever project.id,
    * usingGlb, any slot's glbUrl, config.renderingMode or
@@ -1249,12 +1333,14 @@ export class RenderEngine {
       // to WebGL2 automatically (WebGPURenderer's own built-in
       // `getFallback`); only "webgl2" forces the WebGL2 backend outright.
       forceWebGL: config.renderingMode === "webgl2",
-      // Off by default (matches WebGPURenderer's own default) — only
-      // requested when the stencil-derived Section cap technique is on,
-      // since it's the one thing in this renderer that needs it (see
-      // rebuildSectionCap's stencil branch). A renderer-construction-time
-      // flag, not a live toggle — changing it requires a fresh mount.
-      stencil: config.sectionCapStencilEnabled,
+      // Off (matches WebGPURenderer's own default) — the Section cap fill
+      // used to need this (a stencil-buffer silhouette technique), briefly
+      // made unconditional on 2026-08-14, then removed the same day when
+      // that whole technique turned out not to work under this app's
+      // WebGPURenderer (see `sectionFillMeshes`'s own doc comment) and was
+      // replaced with a back-face render that needs no stencil buffer at
+      // all. Nothing else in this app uses stencil.
+      stencil: false,
       // webgpu_camera_logarithmicdepthbuffer.html parity — reduces
       // z-fighting at distance against this app's fixed far=2000 camera
       // (see the PerspectiveCamera constructed below). Off by default,
@@ -1299,6 +1385,16 @@ export class RenderEngine {
     // directly, further below; sun/ambient/lights and section-editing
     // chrome stay direct children of `scene`.
     const clippingGroup = new THREE.ClippingGroup();
+    // Real click-freeze bug fix (2026-08-14) — starts life at the same
+    // fixed 6-plane "nothing active" state `applyActiveClipping` always
+    // uses from here on (see NO_ACTIVE_SECTION_PLANES's own doc comment
+    // in sections.ts), instead of `ClippingGroup`'s own default (an empty
+    // array). Whatever pipeline variant the very first rendered frame
+    // needs for this group's meshes, every later on/off/switch-section
+    // action reuses unchanged — there's no separate "default" length for
+    // the first real activation to differ from and force a second compile
+    // against.
+    clippingGroup.clippingPlanes = NO_ACTIVE_SECTION_PLANES;
     scene.add(clippingGroup);
     this.clippingGroup = clippingGroup;
     const sectionHelperGroup = new THREE.Group();
@@ -1345,28 +1441,19 @@ export class RenderEngine {
     this.skyMesh = skyMesh;
 
     // Optional water plane (WaterMesh) — only built when
-    // config.waterEnabled (per-project opt-in; most projects have none),
-    // so toggling it on/off is a mount-time decision, same as
-    // sectionCapStencilEnabled. Auto-sized/positioned like
-    // webgl_shaders_ocean.html's own Water (no placement fields — see
+    // config.waterEnabled (per-project opt-in; most projects have none).
+    // Mount-time construction here is still real (this is what a fresh
+    // mount/project-switch needs), but toggling it live no longer forces
+    // one — see `setWaterEnabled`'s own doc comment for the 2026-08-14
+    // click-freeze fix that moved live on/off out of this path. Auto-
+    // sized/positioned like
     // WATER_PLANE_SIZE's doc comment). The normals texture is the actual
     // asset the reference demo loads (`textures/waternormals.jpg`),
     // vendored into `public/textures/` rather than re-approximated with a
     // procedural canvas gradient — this is exactly the kind of hand-
     // authored tiling detail a gradient can't reproduce.
     if (config.waterEnabled) {
-      const waterNormals = new THREE.TextureLoader().load("/textures/waternormals.jpg", (texture) => {
-        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-      });
-      const waterMesh = new WaterMesh(new THREE.PlaneGeometry(WATER_PLANE_SIZE, WATER_PLANE_SIZE), {
-        waterNormals,
-        sunDirection: this.sunDirection.clone(),
-        sunColor: 0xffffff,
-        waterColor: 0x001e0f,
-        distortionScale: config.waterDistortionScale,
-        size: config.waterSize,
-      });
-      waterMesh.rotation.x = -Math.PI / 2;
+      const waterMesh = this.createWaterMesh(config);
       scene.add(waterMesh);
       this.waterMesh = waterMesh;
     } else {
@@ -1900,16 +1987,16 @@ export class RenderEngine {
     // GPU resources of their own — plain Object3D/Group).
     this.cancelDrawSection();
     this.detachSectionGizmo();
-    this.sectionCapMaterial?.dispose();
-    this.sectionCapMaterial = null;
-    this.sectionCapMaterialSignature = null;
-    this.sectionCapMesh = null;
-    this.clearStencilMarking();
+    this.sectionIndicatorMaterial?.dispose();
+    this.sectionIndicatorMaterial = null;
+    this.sectionIndicatorMesh = null;
+    this.sectionFillMaterial?.dispose();
+    this.sectionFillMaterial = null;
+    this.clearSectionFillMeshes();
     // Plain `ClippingGroup`s (Group subclass) — no GPU resources of their
     // own, same as `sectionHelperGroup`/`clippingGroup` right below;
     // discarded along with the scene, just null the references.
-    this.stencilMarkClippingGroup = null;
-    this.sectionCapClippingGroup = null;
+    this.sectionFillClippingGroup = null;
     this.clippingGroup = null;
     this.sectionHelperGroup = null;
     this.liveSection = null;
@@ -2026,6 +2113,14 @@ export class RenderEngine {
    * once `ready` (mount() has completed) — the caller gates on that, same
    * as the original effect did. */
   applyLiveUpdate(params: LiveUpdateParams) {
+    // Captured before `this.config` is overwritten below — the only way
+    // to tell an *enabled* flag actually flipped (vs. this call firing for
+    // an unrelated field) so the two structural-but-cheap toggles right
+    // below only do real work when they need to. Always a real config
+    // (the constructor seeds `this.config`, same as `mount()` does), never
+    // null — the first-ever call just diffs against that initial value,
+    // which is harmless since it's always in sync with what's on screen.
+    const prevConfig = this.config;
     this.setProject(params.project);
     this.config = params.config;
     const { project, config, detailModels, usingGlb } = params;
@@ -2068,28 +2163,41 @@ export class RenderEngine {
 
     // Sky/Water/Bloom/Clouds pass — wave-look and bloom-look sliders are
     // real live `UniformNode<float>`s on the already-constructed
-    // waterMesh/bloomNode, so these drag live with no pipeline rebuild;
-    // only the `waterEnabled`/`bloomEnabled` toggles themselves need a
-    // fresh mount (they change what exists, not just a number on it —
-    // same distinction `antialiasEnabled` already draws against a plain
-    // uniform tweak).
+    // waterMesh/bloomNode, so these drag live with no pipeline rebuild.
+    // `waterEnabled` itself used to also force a full engine remount
+    // (real click-responsiveness bug, see `waterMesh`'s own field doc
+    // comment) — `setWaterEnabled` below is the fix, only called when the
+    // flag actually changed so a plain distortion/size drag stays a no-op
+    // here as before.
+    if (config.waterEnabled !== prevConfig.waterEnabled) {
+      this.setWaterEnabled(config.waterEnabled, config);
+    }
     if (this.waterMesh) {
       this.waterMesh.distortionScale.value = config.waterDistortionScale;
       this.waterMesh.size.value = config.waterSize;
+    }
+    // Same fix, same reasoning, for `bloomEnabled`/`depthOfFieldEnabled`:
+    // both only ever changed *which nodes* `buildRenderPipeline` chains
+    // together, a plain in-memory TSL graph rebuild with no renderer/
+    // context/GLB work in it (see that method's own doc comment) — there
+    // was never a real reason either needed a full mount(). One rebuild
+    // covers both if they changed together (e.g. a preset switch).
+    if (config.bloomEnabled !== prevConfig.bloomEnabled || config.depthOfFieldEnabled !== prevConfig.depthOfFieldEnabled) {
+      this.buildRenderPipeline(this.effectiveTier);
     }
     if (this.bloomNode) {
       this.bloomNode.strength.value = config.bloomStrength;
       this.bloomNode.radius.value = config.bloomRadius;
     }
     // 3D LUT intensity — real live UniformNode; `lutEnabled`/`lutPreset`
-    // still need a fresh mount (structural + async texture load).
+    // still need a fresh mount (structural + a real async texture load,
+    // unlike water/bloom/DoF above which are pure in-memory rebuilds).
     if (this.lutIntensity) {
       this.lutIntensity.value = config.lutIntensity;
     }
-    // Depth of field — real live UniformNodes; `dofFocusDistance` is
+    // Depth of field's own live uniforms — `dofFocusDistance` is
     // intentionally NOT touched here, it's owned by the per-frame render
     // loop instead (real auto-focus, see its field doc comment).
-    // `depthOfFieldEnabled` itself still needs a fresh mount (structural).
     if (this.dofFocalLength) {
       this.dofFocalLength.value = config.depthOfFieldFocalLength;
     }
@@ -2390,19 +2498,27 @@ export class RenderEngine {
    * floor) funnel through, so the cap and the clip can never disagree.
    * `null` clears both. */
   private applyActiveClipping(section: Section | null) {
-    if (this.clippingGroup) this.clippingGroup.clippingPlanes = section ? buildSectionPlanes(section) : [];
+    // Real click-freeze bug fix (2026-08-14, "Clipping doesn't work") —
+    // `NO_ACTIVE_SECTION_PLANES` instead of `[]` here specifically: see
+    // its own doc comment in sections.ts for the full mechanism (a
+    // changed clip-plane *count* forces a real ~12s shader/pipeline
+    // recompile across every clipped mesh; keeping the count fixed at 6
+    // always means this is now a cheap uniform update instead).
+    if (this.clippingGroup) {
+      this.clippingGroup.clippingPlanes = section ? buildSectionPlanes(section) : NO_ACTIVE_SECTION_PLANES;
+    }
     this.rebuildSectionCap(section);
   }
 
   /** Every real `THREE.Mesh` currently in `clippingGroup` — the actual
    * clippable content (GLB roots and/or procedural ground/shells/unit
    * boxes), traversed recursively since a GLB root is a nested hierarchy,
-   * not a flat list. This is the geometry the stencil cap technique marks
-   * against — deliberately NOT a synthetic proxy box, so the cap only
-   * lights up where real geometry was actually cut open, not the
-   * section's full authored rectangle (see rebuildSectionCap's stencil
-   * branch). */
-  private collectStencilableMeshes(): THREE.Mesh[] {
+   * not a flat list. This is the geometry the section fill technique
+   * borrows (back faces only, see `sectionFillMeshes`'s own doc comment)
+   * — deliberately NOT a synthetic proxy box, so the fill only appears
+   * where real geometry was actually cut open, not the section's full
+   * authored rectangle. */
+  private collectClippableMeshes(): THREE.Mesh[] {
     const meshes: THREE.Mesh[] = [];
     this.clippingGroup?.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh) meshes.push(obj as THREE.Mesh);
@@ -2410,240 +2526,115 @@ export class RenderEngine {
     return meshes;
   }
 
-  private clearStencilMarking() {
-    // Marking meshes live inside `stencilMarkClippingGroup`, not
-    // `sectionHelperGroup` directly (see that field's doc comment) — fall
-    // back to removing from `helpers` too in case a mesh somehow ended up
-    // there (defensive, `remove()` is a no-op for a non-child).
-    const parent = this.stencilMarkClippingGroup ?? this.sectionHelperGroup;
-    for (const mesh of this.stencilMarkMeshes) {
-      parent?.remove(mesh);
+  /** Removes every real color-fill mesh (`sectionFillMeshes`) from the
+   * scene — the shared `sectionFillMaterial` is NOT disposed here (it
+   * outlives any one rebuild, same as `sectionIndicatorMaterial`; both
+   * are only disposed in `dispose()`), only each mesh's own borrowed-
+   * geometry reference is dropped (the geometry itself belongs to the
+   * source mesh in `clippingGroup`, never owned/disposed here). */
+  private clearSectionFillMeshes() {
+    for (const mesh of this.sectionFillMeshes) {
+      this.sectionFillClippingGroup?.remove(mesh);
       this.sectionHelperGroup?.remove(mesh);
-      (mesh.material as THREE.Material).dispose();
     }
-    this.stencilMarkMeshes = [];
+    this.sectionFillMeshes = [];
   }
 
   /** Real behavior, not just a color swap (see `Section.fillGapsEnabled`'s
    * own doc comment for the full contract):
-   * - `fillGapsEnabled: true` — opaque, admin-picked `fillColor`, rendered
-   *   in both the editor and the public viewer.
+   * - `fillGapsEnabled: true` — opaque, admin-picked `fillColor`, shown on
+   *   the real cut surface only (back-face fill — see
+   *   `sectionFillMeshes`'s own doc comment for the technique and its
+   *   2026-08-14 history), in both the editor and the public viewer.
    * - `fillGapsEnabled: false` — a translucent (50%) neutral "clip plane
-   *   indicator" in the admin editor only; skipped entirely (no mesh at
-   *   all, not just alpha'd to invisible) in the public viewer, since
-   *   it's a pure editing aid a visitor has no use for.
-   *
-   * `config.sectionCapStencilEnabled` (real, experimental, off by
-   * default — webgl_clipping_stencil.html technique, requires
-   * `stencil: true` on the renderer, set once at mount()) swaps the
-   * cap's *silhouette source* only — every color/opacity/visibility rule
-   * above still applies unchanged. Technique, reconstructed from the
-   * actual upstream three.js example source (verified constant names/
-   * stencil op values against it, not guessed): for the section's own
-   * "top" plane (`buildSectionPlanes(section)[4]` — see that function's
-   * own doc comment for the fixed plane order), render every real
-   * clippable object's own back faces (incrementing the stencil buffer)
-   * then front faces (decrementing), each pass clipped by *only* that
-   * one top plane and with color/depth writes off — the standard
-   * increment/decrement parity trick, netting a nonzero stencil value
-   * exactly where solid geometry was actually cut open at that plane.
-   * The existing flat cap quad is then stencil-tested (`NotEqualStencilFunc`,
-   * ref 0) instead of drawn unconditionally, and clipped by every *other*
-   * section plane (bounding it to the footprint, exactly matching the
-   * upstream example's own `planes.filter(p => p !== plane)` pattern for
-   * its cap) — so it only shows within the stencil-marked, real-geometry
-   * silhouette, not the section's full authored rectangle.
-   *
-   * **Real bug fixed 2026-08-14** ("gaps that are clipped does not fill
-   * with color"): the "clipped by only that one top plane" / "clipped by
-   * every other section plane" parts above were never actually true —
-   * this used to set `clippingPlanes` directly on each material, which
-   * has zero consumers anywhere in this app's WebGPURenderer pipeline
-   * (grepped the full renderer/nodes source tree to confirm; only
-   * `ClippingGroup` traversal is ever read — same lesson
-   * `rozaris-3d-sections-module`'s original build already learned for the
-   * *main* clip, silently reintroduced when this stencil technique was
-   * added later). Unclipped, a closed/watertight source mesh's back/front
-   * faces always pair up 1:1, so the increment/decrement marking passes
-   * netted to exactly 0 everywhere — the cap's stencil test failed
-   * everywhere, rendering nothing. Fixed with two real `ClippingGroup`s
-   * (`stencilMarkClippingGroup`/`sectionCapClippingGroup`), the same
-   * mechanism the main clip already uses. */
+   *   indicator" rectangle in the admin editor only; skipped entirely (no
+   *   mesh at all, not just alpha'd to invisible) in the public viewer,
+   *   since it's a pure editing aid a visitor has no use for. Stays a
+   *   plain, unclipped rectangle deliberately: while dragging/resizing a
+   *   section an admin needs to see the boundary they're actually
+   *   drawing, not a geometry-dependent fill that may show nothing at all
+   *   if the section isn't over any geometry yet. */
   private rebuildSectionCap(section: Section | null) {
     const helpers = this.sectionHelperGroup;
     if (!helpers) return;
-    if (this.sectionCapMesh) {
-      // The cap can have been parented to either `helpers` directly
-      // (non-stencil mode) or `sectionCapClippingGroup` (stencil mode) on
-      // the previous rebuild — remove from both, `remove()` is a no-op
-      // for a non-child.
-      helpers.remove(this.sectionCapMesh);
-      this.sectionCapClippingGroup?.remove(this.sectionCapMesh);
-      this.sectionCapMesh.geometry.dispose();
-      this.sectionCapMesh = null;
+    if (this.sectionIndicatorMesh) {
+      helpers.remove(this.sectionIndicatorMesh);
+      this.sectionIndicatorMesh.geometry.dispose();
+      this.sectionIndicatorMesh = null;
     }
-    this.clearStencilMarking();
+    this.clearSectionFillMeshes();
     if (!section) return;
     if (!section.fillGapsEnabled && !this.isEditorPreview) return;
 
-    const stencilMode = this.config.sectionCapStencilEnabled;
-    const geometry = buildSectionCapGeometry(section);
-    const color = section.fillGapsEnabled ? section.fillColor : SECTION_INDICATOR_COLOR;
-    const opacity = section.fillGapsEnabled ? 1 : 0.5;
-    // Real bug fix ("Fill gaps with color" reported as rendering solid
-    // black): `transparent` used to be hardcoded `true` forever, for both
-    // the translucent indicator AND the fully-opaque fill — contradicting
-    // this method's own stated intent one line below ("should still
-    // occlude/sort like solid geometry"). A fully-opaque fill now
-    // genuinely renders through the OPAQUE pass like real geometry
-    // (`transparent: false`), matching `depthWrite` below; only the
-    // translucent indicator stays in the transparent/blended pass.
-    const transparent = !section.fillGapsEnabled;
-    if (!this.sectionCapMaterial) {
-      this.sectionCapMaterial = new THREE.MeshBasicMaterial({ color, transparent, opacity, side: THREE.DoubleSide });
-    } else {
-      this.sectionCapMaterial.color.set(color);
-      this.sectionCapMaterial.opacity = opacity;
-      this.sectionCapMaterial.transparent = transparent;
-    }
-    // A fully-opaque real fill should still occlude/sort like solid
-    // geometry; the translucent indicator disables depth-write (standard
-    // practice for see-through helpers, avoids z-fighting/occlusion
-    // artifacts against whatever it's overlapping).
-    this.sectionCapMaterial.depthWrite = section.fillGapsEnabled;
-
-    if (stencilMode) {
-      const planes = buildSectionPlanes(section);
-      const topPlane = planes[4];
-      const otherPlanes = [...planes.slice(0, 4), ...planes.slice(5)];
-      // Real bug fix — see `sectionCapClippingGroup`'s field doc comment:
-      // `Material.clippingPlanes` has zero consumers in this app's
-      // WebGPURenderer pipeline, confirmed by reading the actual installed
-      // source. Bounding the cap's flat quad to the section's other
-      // (non-top) planes now goes through a real `ClippingGroup`, the
-      // same mechanism `this.clippingGroup` already proves works.
-      if (!this.sectionCapClippingGroup) {
-        this.sectionCapClippingGroup = new THREE.ClippingGroup();
-        helpers.add(this.sectionCapClippingGroup);
+    if (section.fillGapsEnabled) {
+      if (!this.sectionFillClippingGroup) {
+        this.sectionFillClippingGroup = new THREE.ClippingGroup();
+        helpers.add(this.sectionFillClippingGroup);
       }
-      this.sectionCapClippingGroup.clippingPlanes = otherPlanes;
-      this.sectionCapMaterial.stencilWrite = true;
-      this.sectionCapMaterial.stencilRef = 0;
-      this.sectionCapMaterial.stencilFunc = THREE.NotEqualStencilFunc;
-      this.sectionCapMaterial.stencilFail = THREE.ReplaceStencilOp;
-      this.sectionCapMaterial.stencilZFail = THREE.ReplaceStencilOp;
-      this.sectionCapMaterial.stencilZPass = THREE.ReplaceStencilOp;
+      // Full plane set (not just the top plane) — a box-shaped section
+      // can cut through solid geometry on any of its faces (side walls
+      // too, if the section boundary itself slices through a building,
+      // not just its own top/bottom); `heightOnly` sections get the same
+      // treatment for free since their side planes are already inert
+      // `noClipPlane()`s (see that field's own doc comment) — nothing
+      // extra to special-case here.
+      this.sectionFillClippingGroup.clippingPlanes = buildSectionPlanes(section);
 
-      // Same real bug fix for the marking pair — without a genuine
-      // `[topPlane]` clip, a closed/watertight source mesh's back/front
-      // faces always pair up 1:1 (every ray crosses equal counts of each),
-      // so the increment/decrement passes net to exactly 0 everywhere and
-      // the cap's `NotEqualStencilFunc` test fails everywhere — this is
-      // the actual mechanism behind "gaps that are clipped does not fill
-      // with color."
-      if (!this.stencilMarkClippingGroup) {
-        this.stencilMarkClippingGroup = new THREE.ClippingGroup();
-        helpers.add(this.stencilMarkClippingGroup);
+      if (!this.sectionFillMaterial) {
+        this.sectionFillMaterial = new THREE.MeshBasicMaterial({ color: section.fillColor, side: THREE.BackSide });
+      } else {
+        // A plain color change is a uniform update, not a pipeline-
+        // affecting one (unlike the old stencil material's transparent/
+        // depthWrite/stencilWrite toggling) — no `needsUpdate` dance
+        // needed here; this material's `side`/opacity/transparency never
+        // change after construction.
+        this.sectionFillMaterial.color.set(section.fillColor);
       }
-      this.stencilMarkClippingGroup.clippingPlanes = [topPlane];
 
-      for (const source of this.collectStencilableMeshes()) {
-        const backMat = new THREE.MeshBasicMaterial({
-          side: THREE.BackSide,
-          colorWrite: false,
-          depthWrite: false,
-          depthTest: false,
-          stencilWrite: true,
-          stencilFunc: THREE.AlwaysStencilFunc,
-          stencilFail: THREE.IncrementWrapStencilOp,
-          stencilZFail: THREE.IncrementWrapStencilOp,
-          stencilZPass: THREE.IncrementWrapStencilOp,
-        });
-        const frontMat = backMat.clone();
-        frontMat.side = THREE.FrontSide;
-        frontMat.stencilFail = THREE.DecrementWrapStencilOp;
-        frontMat.stencilZFail = THREE.DecrementWrapStencilOp;
-        frontMat.stencilZPass = THREE.DecrementWrapStencilOp;
-        const backMesh = new THREE.Mesh(source.geometry, backMat);
-        const frontMesh = new THREE.Mesh(source.geometry, frontMat);
+      for (const source of this.collectClippableMeshes()) {
+        const fillMesh = new THREE.Mesh(source.geometry, this.sectionFillMaterial);
         // Shares source's world transform directly rather than
         // re-parenting (source stays exactly where it is, inside
         // clippingGroup) — sectionHelperGroup sits at identity at the
         // scene root, so copying world-space matrixWorld straight into
         // local .matrix (with matrixAutoUpdate off, so nothing overwrites
-        // it) reproduces the same placement. `stencilMarkClippingGroup`
-        // (their real parent, added to `helpers` above) also sits at
+        // it) reproduces the same placement. `sectionFillClippingGroup`
+        // (its real parent, added to `helpers` above) also sits at
         // identity, so this world-space copy is still valid one level
         // deeper.
-        backMesh.matrixAutoUpdate = false;
-        frontMesh.matrixAutoUpdate = false;
-        backMesh.matrix.copy(source.matrixWorld);
-        frontMesh.matrix.copy(source.matrixWorld);
-        backMesh.frustumCulled = false;
-        frontMesh.frustumCulled = false;
-        // Must render before the cap (renderOrder 10 below), so the
-        // stencil buffer is fully written before the cap reads it.
-        backMesh.renderOrder = 9;
-        frontMesh.renderOrder = 9;
-        this.stencilMarkClippingGroup.add(backMesh, frontMesh);
-        this.stencilMarkMeshes.push(backMesh, frontMesh);
+        fillMesh.matrixAutoUpdate = false;
+        fillMesh.matrix.copy(source.matrixWorld);
+        fillMesh.frustumCulled = false;
+        fillMesh.castShadow = false;
+        fillMesh.receiveShadow = false;
+        // Draws after the clipped geometry so it doesn't z-fight with
+        // whatever real geometry the cut happens to graze exactly at the
+        // clip planes.
+        fillMesh.renderOrder = 10;
+        this.sectionFillClippingGroup.add(fillMesh);
+        this.sectionFillMeshes.push(fillMesh);
       }
     } else {
-      // Explicit reset — this.sectionCapMaterial is reused across
-      // rebuilds (see the color/opacity update above), so a project that
-      // had stencil mode on and then off must not keep stale stencil
-      // state from a previous rebuild. (`sectionCapClippingGroup`'s
-      // planes don't need resetting — the cap goes straight into
-      // `helpers` below when not in stencil mode, bypassing that group
-      // entirely.)
-      this.sectionCapMaterial.stencilWrite = false;
-    }
-    // Real bug fix, same "Fill gaps with color" report: this material is
-    // reused across rebuilds (every mutation above is an in-place property
-    // write, not a `new THREE.MeshBasicMaterial(...)`), but nothing ever
-    // told the renderer its *pipeline-affecting* state (transparent/
-    // depthWrite/stencilWrite/clippingPlanes) had changed. Verified
-    // against the installed three.js WebGPU backend
-    // (node_modules/three/src/renderers/common/RenderObjects.js:127):
-    // a cached render object/pipeline is only rebuilt when
-    // `material.version` has advanced past what it was compiled with, and
-    // `material.version` only advances when `needsUpdate` is explicitly
-    // set `true` (Material.js's setter). Without this, toggling "Fill
-    // gaps with a color" on/off could keep rendering through a stale
-    // pipeline compiled for whichever state (translucent-indicator vs.
-    // opaque-fill) this exact material instance happened to compile for
-    // first — a real, plausible cause of a fill that renders wrong
-    // (including solid black) instead of the picked color.
-    //
-    // Only bumped when the signature actually changed, not on every call
-    // — this method also runs on every gizmo-drag tick (pure move/rotate/
-    // resize), where fill/stencil state is unchanged from the previous
-    // call; forcing a pipeline rebuild every frame of a drag would be real
-    // wasted GPU work for no visual benefit.
-    const signature = `${transparent}|${section.fillGapsEnabled}|${stencilMode}`;
-    if (signature !== this.sectionCapMaterialSignature) {
-      this.sectionCapMaterialSignature = signature;
-      this.sectionCapMaterial.needsUpdate = true;
-    }
-
-    const mesh = new THREE.Mesh(geometry, this.sectionCapMaterial);
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    // Draws after the clipped geometry (and, in stencil mode, after its
-    // own marking pair above) so it doesn't z-fight with whatever real
-    // geometry the cut happens to graze exactly at heightM.
-    mesh.renderOrder = 10;
-    // Stencil mode parents through `sectionCapClippingGroup` (bounds the
-    // quad to the section's other planes, a real ClippingGroup — see that
-    // field's doc comment); non-stencil mode's geometry is already sized
-    // exactly to widthM×depthM, so it goes straight into `helpers`
-    // unclipped, same as before this fix.
-    if (stencilMode && this.sectionCapClippingGroup) {
-      this.sectionCapClippingGroup.add(mesh);
-    } else {
+      // Translucent editing indicator — unchanged plain rectangle, sized
+      // to the section's own drawn footprint, unclipped, no back-face
+      // trick needed (it's not meant to look like real cut geometry).
+      const geometry = buildSectionCapGeometry(section);
+      if (!this.sectionIndicatorMaterial) {
+        this.sectionIndicatorMaterial = new THREE.MeshBasicMaterial({
+          color: SECTION_INDICATOR_COLOR,
+          transparent: true,
+          opacity: 0.5,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
+      }
+      const mesh = new THREE.Mesh(geometry, this.sectionIndicatorMaterial);
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      mesh.renderOrder = 10;
       helpers.add(mesh);
+      this.sectionIndicatorMesh = mesh;
     }
-    this.sectionCapMesh = mesh;
   }
 
   /** Activates a section by id (real clip + cap) or clears it (`null`) —
@@ -2683,8 +2674,18 @@ export class RenderEngine {
       // this one section. Wrapping preserves the exact same visual
       // rotation (sin/cos are periodic) while always staying in range.
       rotationDeg: THREE.MathUtils.euclideanModulo(THREE.MathUtils.radToDeg(anchor.rotation.y) + 180, 360) - 180,
-      widthM: Math.max(0.5, anchor.scale.x),
-      depthM: Math.max(0.5, anchor.scale.z),
+      // Real bug fix (2026-08-14, "resize doesn't save") — same class of
+      // bug the rotationDeg wrap above already fixed: nothing capped the
+      // Resize handle's drag distance, so an admin dragging well past the
+      // server's own max produced a `Section` the PATCH route's zod
+      // schema then rejected outright (400s the whole config save, not
+      // just this field) — the edit looked fine on screen and in the
+      // panel's own numbers, then silently never persisted. Clamped to
+      // the exact same bound the server enforces (`SECTION_MAX_DIMENSION_M`,
+      // shared from sections.ts) so a drag can no longer produce a value
+      // guaranteed to be rejected.
+      widthM: Math.min(SECTION_MAX_DIMENSION_M, Math.max(0.5, anchor.scale.x)),
+      depthM: Math.min(SECTION_MAX_DIMENSION_M, Math.max(0.5, anchor.scale.z)),
     };
     this.liveSection = next;
     this.applyActiveClipping(next);

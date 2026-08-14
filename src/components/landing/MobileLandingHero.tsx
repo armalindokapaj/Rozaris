@@ -14,6 +14,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { MobileNav } from "@/components/layout/MobileNav";
+import { Button } from "@/components/ui/Button";
 import { PROPERTY_TYPES } from "@/components/search/FiltersForm";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
 import { useAppStore } from "@/lib/store";
@@ -261,13 +262,15 @@ export function MobileLandingHero({
                 />
               </div>
 
-              <button
+              <Button
+                variant="accent"
+                size="lg"
                 onClick={onSearch}
-                className="mt-0.5 flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-accent text-sm font-extrabold uppercase tracking-[0.08em] text-neutral-900 transition-colors duration-150 ease-[var(--ease-rz)] active:bg-accent-600"
+                className="mt-0.5 shrink-0 active:bg-accent-600"
               >
                 View properties
                 <ArrowRight className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
           </div>
         </div>

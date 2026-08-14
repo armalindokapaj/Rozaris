@@ -5,7 +5,10 @@ import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
 import { requireAdmin } from "@/lib/adminAuth";
 import { fetchAndValidateGlb } from "@/lib/glbValidate";
-import { optimizeGlbForDelivery } from "@/lib/glbOptimize";
+// `optimizeGlbForDelivery` (below, inside the try block) is intentionally
+// a dynamic import, not a static one here — see its call site's own
+// comment for why: a static import of `@gltf-transform/core` was crashing
+// this entire route MODULE on Vercel, not just the optimization step.
 import { logAuditEvent } from "@/lib/audit";
 import { buildExperienceDocument } from "@/lib/experienceDocument";
 import type { CameraPreset, NodeOverride, Project3DConfig, SceneManifestNode, ViewerUIToggles } from "@/lib/types";
@@ -94,12 +97,33 @@ export async function POST(
   // Falls back to the original URL on ANY failure — this step must never
   // be why an upload fails; worst case is today's exact pre-rewrite
   // behavior (source and delivery identical).
+  //
+  // Real production bug fix (2026-08-14, reported as "Admin write session
+  // expired — uploads will fail" on Vercel, which was a red herring: the
+  // actual failure had nothing to do with the admin session at all).
+  // `optimizeGlbForDelivery` pulls in `@gltf-transform/core`, which pulls
+  // in `ndarray-pixels`, which depends on `sharp` for texture pixel
+  // decoding — and Vercel's runtime error log showed `sharp` failing to
+  // `dlopen` its native `libvips` binary on every single request to this
+  // route, GET and POST alike (confirmed there are two conflicting sharp
+  // installs in node_modules — a hoisted 0.34.5 and ndarray-pixels' own
+  // nested 0.35.3 — so the deployed function almost certainly traced/
+  // shipped the wrong one's native binaries). That crash was happening at
+  // MODULE LOAD time from the static top-level `import` this file used to
+  // have, which happens before any of this function's own code — including
+  // the try/catch right below — ever runs, so it took down the entire
+  // route (even the unrelated GET handler, which never touches this at
+  // all) instead of being safely caught. Loading it dynamically, inside
+  // the try block, means a broken sharp install can now only ever disable
+  // this one optimization step, exactly as the comment above already
+  // promised it would.
   let publicAssetUrl = parsed.data.glbUrl;
   if (validation.status !== "blocked") {
     try {
       const sourceRes = await fetch(parsed.data.glbUrl);
       if (!sourceRes.ok) throw new Error(`Could not re-fetch source asset (HTTP ${sourceRes.status})`);
       const sourceBuffer = await sourceRes.arrayBuffer();
+      const { optimizeGlbForDelivery } = await import("@/lib/glbOptimize");
       const optimized = await optimizeGlbForDelivery(sourceBuffer);
       const delivery = await put(`project-detail-models/delivery-${slotId}-v${nextVersion}.glb`, Buffer.from(optimized), {
         access: "public",

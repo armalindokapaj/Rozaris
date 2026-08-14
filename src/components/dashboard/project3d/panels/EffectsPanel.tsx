@@ -145,14 +145,6 @@ export function EffectsPanel({
             checked={draft.antialiasEnabled}
             onChange={(v) => update({ antialiasEnabled: v }, { commit: true })}
           />
-          <div>
-            <ToggleField
-              label={t("admin.performanceSectionCapStencil")}
-              checked={draft.sectionCapStencilEnabled}
-              onChange={(v) => update({ sectionCapStencilEnabled: v }, { commit: true })}
-            />
-            <p className="mt-1 text-[11px] text-neutral-400">{t("admin.performanceSectionCapStencilNote")}</p>
-          </div>
         </div>
       </section>
 

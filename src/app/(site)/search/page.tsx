@@ -12,11 +12,13 @@ import { CompareTray } from "@/components/compare/CompareTray";
 import { ModeSwitch } from "@/components/home/ModeSwitch";
 import { OnboardingHint } from "@/components/common/OnboardingHint";
 import { MobileSearchRow } from "@/components/home/MobileSearchRow";
+import { MobileFilterChipBar } from "@/components/search/MobileFilterChipBar";
 import { CategoryQuickFilters } from "@/components/home/CategoryQuickFilters";
 import { PopularAreasRow } from "@/components/home/PopularAreasRow";
 import { BottomSheet, type SheetSnap } from "@/components/common/BottomSheet";
 import { cn } from "@/lib/utils";
 import { ListingPreviewPanel } from "@/components/results/ListingPreviewPanel";
+import { ListingCard } from "@/components/results/ListingCard";
 import { searchableListings } from "@/lib/mockData";
 
 export default function SearchPage() {
@@ -47,8 +49,9 @@ export default function SearchPage() {
   return (
     <div className="relative flex h-full min-h-0 flex-1 overflow-hidden flex-col lg:flex-row">
 
-      {/* Mobile-only search row */}
+      {/* Mobile-only search row + quick-filter chip strip */}
       <MobileSearchRow onOpenFilters={() => setMobileSheet("filters")} />
+      <MobileFilterChipBar onOpenFilters={() => setMobileSheet("filters")} />
 
       <div className="relative flex min-h-0 flex-1 flex-col lg:contents">
         {/* Persistent map column — one Mapbox instance shared across map/list modes and breakpoints */}
@@ -114,6 +117,15 @@ export default function SearchPage() {
           >
             <FiltersForm compact />
           </BottomSheet>
+
+          {/* Mobile: a compact preview card for the marker just tapped on the
+              map, floating above the mode pill — matches the mockup's map
+              screen. Only when no sheet is already open over it. */}
+          {selectedListing && mobileSheet === null && (
+            <div className="absolute bottom-[4.75rem] left-1/2 z-30 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 overflow-hidden rounded-panel shadow-[var(--shadow-2)] lg:hidden">
+              <ListingCard listing={selectedListing} variant="panel" />
+            </div>
+          )}
 
           <div className="glass-panel absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center rounded-pill p-1 shadow-[var(--shadow-2)] lg:hidden" role="tablist" aria-label={t("home.viewMode")}>
             <button onClick={() => setMobileSheet("filters")} className="flex h-10 items-center gap-1.5 rounded-pill px-3 text-xs font-semibold text-neutral-700" aria-label={t("home.openFilters")}>

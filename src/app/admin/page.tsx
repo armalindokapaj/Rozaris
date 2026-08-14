@@ -108,10 +108,21 @@ interface QueueItem {
   title: string;
   type: "listing" | "project_update" | "publisher_verification";
   submittedBy: string;
+  /** Real Postgres `Listing.id` — set only on rows fetched from
+   * `GET /api/admin/listings?status=pending` (see the effect below).
+   * `decide()` routes these through the real
+   * `PATCH /api/admin/listings/[id]/publication` route instead of the
+   * mock-only path the remaining project_update/publisher_verification
+   * seed items still use (that migration is separate, out of scope here —
+   * see the "Rozaris Platform Audit" memory). */
+  realListingId?: string;
 }
 
+// The "listing" seed entry is gone — real pending Listing rows (created via
+// the Business/Private Publisher dashboards' NewListingForm) now populate
+// that slot for real, fetched below. project_update/publisher_verification
+// stay mock until their own submission pipelines exist.
 const seedQueue: QueueItem[] = [
-  { id: "q1", title: "Sunlit Corner Apartment — new submission", type: "listing", submittedBy: "Andi Hoxha" },
   { id: "q2", title: "Marina Residence — Unit B-212 price change", type: "project_update", submittedBy: "ALBA Construction" },
   { id: "q3", title: "Vega Real Estate — verification documents", type: "publisher_verification", submittedBy: "Vega Real Estate" },
   { id: "q4", title: "Don Bosko Heights — construction progress evidence", type: "project_update", submittedBy: "Skyline Developers" },
@@ -190,6 +201,29 @@ function AdminPageInner() {
       .then(setMe);
   }, [auth.signedIn]);
 
+  // Real pending Listings, merged into the same Queue tab the mock
+  // project_update/publisher_verification items still render in.
+  useEffect(() => {
+    if (!auth.signedIn) return;
+    fetch("/api/admin/listings?status=pending")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: { id: string; title: string; publisherName: string }[]) => {
+        setQueue((q) => [
+          ...rows.map(
+            (r): QueueItem => ({
+              id: `listing-${r.id}`,
+              title: `${r.title} — new submission`,
+              type: "listing",
+              submittedBy: r.publisherName,
+              realListingId: r.id,
+            })
+          ),
+          ...q.filter((i) => i.type !== "listing"),
+        ]);
+      })
+      .catch(() => {});
+  }, [auth.signedIn]);
+
   // In this frontend prototype, any signed-in demo account may preview the
   // Admin console — a real deployment gates this behind the Admin role.
   if (!auth.signedIn) {
@@ -218,7 +252,21 @@ function AdminPageInner() {
   function decide(id: string, action: "approved" | "rejected" = "approved") {
     const item = queue.find((i) => i.id === id);
     setQueue((q) => q.filter((i) => i.id !== id));
-    if (item) logAudit(action === "approved" ? "Approved" : "Rejected", item.title);
+    if (!item) return;
+    if (item.realListingId) {
+      // Real approve/reject — no ListingStatus enum value means "rejected
+      // before ever going live", so a reject archives it (distinct from a
+      // legitimately-expired listing via the reason on the audit trail).
+      fetch(`/api/admin/listings/${item.realListingId}/publication`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: action === "approved" ? "active" : "archived",
+          reason: action === "rejected" ? "Rejected during listing review." : undefined,
+        }),
+      }).catch(() => {});
+    }
+    logAudit(action === "approved" ? "Approved" : "Rejected", item.title);
   }
 
   async function signOutAdmin() {

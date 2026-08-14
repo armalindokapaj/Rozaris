@@ -1,17 +1,19 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useAppStore } from "@/lib/store";
-import { useClickOutside } from "@/hooks/useClickOutside";
+import { useDropdown } from "@/hooks/useDropdown";
+import { DropdownPanel } from "@/components/ui/Dropdown";
+import { Button, buttonVariants } from "@/components/ui/Button";
 import { useT } from "@/lib/i18n/useT";
-import { findDemoAccount } from "@/lib/demoAccounts";
+import { useCredentialsSignIn } from "@/hooks/useCredentialsSignIn";
 
 /**
  * Compact "Join" popover — the header's sole logged-out entry point (top
- * right of the desktop nav). Inline sign-in (username/password, same demo
- * account validation as the global SignInModal) with a Sign Up link into
- * /buyer/signup below it.
+ * right of the desktop nav). Real Auth.js credentials sign-in (real auth to
+ * UI pass — see the "Rozaris Platform Audit" memory), same
+ * `useCredentialsSignIn()` the global SignInModal uses, with a Sign Up link
+ * into /buyer/signup below it.
  *
  * The full-screen SignInModal (openSignIn()) still exists and still backs
  * every OTHER "sign in required" prompt in the app (save/compare guards on
@@ -20,14 +22,11 @@ import { findDemoAccount } from "@/lib/demoAccounts";
  * account" pill.
  */
 export function JoinMenu({ variant = "pill" }: { variant?: "pill" | "bare" }) {
-  const [open, setOpen] = useState(false);
+  const { open, toggle, close, ref } = useDropdown<HTMLDivElement>();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const signIn = useAppStore((s) => s.signIn);
+  const { submit, error, setError, submitting } = useCredentialsSignIn();
   const { t } = useT();
-  useClickOutside(ref, () => setOpen(false), open);
 
   function reset() {
     setUsername("");
@@ -35,23 +34,20 @@ export function JoinMenu({ variant = "pill" }: { variant?: "pill" | "bare" }) {
     setError(false);
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const account = findDemoAccount(username, password);
-    if (!account) {
-      setError(true);
-      return;
+    const ok = await submit(username.trim(), password);
+    if (ok) {
+      reset();
+      close();
     }
-    signIn(account.displayName, account.role, account.orgType, account.publisherId);
-    reset();
-    setOpen(false);
   }
 
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         aria-expanded={open}
         className={
           variant === "bare"
@@ -62,7 +58,7 @@ export function JoinMenu({ variant = "pill" }: { variant?: "pill" | "bare" }) {
         {variant === "bare" ? t("common.signIn") : t("common.join")}
       </button>
       {open && (
-        <div className="absolute right-0 top-[calc(100%+8px)] z-40 w-72 rounded-card border border-neutral-200 bg-white p-4 shadow-[var(--shadow-2)]">
+        <DropdownPanel width="w-72" className="p-4">
           <form onSubmit={handleSubmit}>
             <label
               htmlFor="join-username"
@@ -72,13 +68,14 @@ export function JoinMenu({ variant = "pill" }: { variant?: "pill" | "bare" }) {
             </label>
             <input
               id="join-username"
+              type="email"
               value={username}
               onChange={(e) => {
                 setUsername(e.target.value);
                 setError(false);
               }}
               placeholder={t("signInModal.usernamePlaceholder")}
-              autoComplete="username"
+              autoComplete="email"
               className="mt-1.5 w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
             />
 
@@ -101,30 +98,22 @@ export function JoinMenu({ variant = "pill" }: { variant?: "pill" | "bare" }) {
               className="mt-1.5 w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
             />
             {error && (
-              <p className="mt-1.5 text-xs font-medium text-red-600" role="alert">
+              <p className="mt-1.5 text-xs font-medium text-danger" role="alert">
                 {t("signInModal.invalidCredentials")}
               </p>
             )}
 
-            <button
-              type="submit"
-              disabled={!username.trim() || !password}
-              className="mt-3 w-full rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            <Button type="submit" fullWidth disabled={!username.trim() || !password || submitting} className="mt-3">
               {t("common.signIn")}
-            </button>
+            </Button>
           </form>
 
           <div className="my-3 h-px bg-neutral-100" />
 
-          <Link
-            href="/buyer/signup"
-            onClick={() => setOpen(false)}
-            className="flex w-full items-center justify-center rounded-control border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
-          >
+          <Link href="/buyer/signup" onClick={close} className={buttonVariants({ variant: "secondary", fullWidth: true })}>
             {t("common.signUp")}
           </Link>
-        </div>
+        </DropdownPanel>
       )}
     </div>
   );

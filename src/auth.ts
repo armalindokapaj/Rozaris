@@ -5,13 +5,15 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 
 /**
- * Real auth (Auth.js v5), replacing lib/demoAccounts.ts + the client-only
- * `auth` slice in lib/store.ts. NOT YET WIRED INTO THE UI — SignInModal and
- * every component reading `useAppStore(s => s.auth)` still use the old mock
- * (see the "rozaris-backend-plan" memory for why that rewire is a separate,
- * deliberately later step: it touches dozens of components and needs a live
- * Postgres database to test sign-up/sign-in/session-persistence against,
- * which doesn't exist until DATABASE_URL is real).
+ * Real auth (Auth.js v5). Wired into the UI as of the real-auth-to-UI pass
+ * (see the "Rozaris Platform Audit" memory): SignInModal/JoinMenu/buyer
+ * signup call `signIn("credentials", ...)` for real, and
+ * `AuthSessionSync.tsx` mirrors the resulting session into the Zustand
+ * `auth` slice every existing dashboard/component already reads, so that
+ * rewire didn't need to touch each of those components individually.
+ * `src/lib/demoAccounts.ts` now only maps each demo persona onto its real
+ * seeded email for the sign-in UI's quick-fill buttons — it's no longer
+ * the auth check itself.
  *
  * Credentials (email + password) rather than the PRD's phone OTP for this
  * first pass — OTP needs a paid SMS provider (Twilio etc.), a separate
@@ -52,6 +54,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // sign-in UI concern, out of scope for this pass.
         if (user.status === "suspended" || user.status === "disabled") return null;
 
+        // A publisher-role user owns exactly one Publisher row (real auth
+        // to UI pass — see the "Rozaris Platform Audit" memory). Resolved
+        // once here rather than on every gated route/session read.
+        const publisher =
+          user.role === "publisher"
+            ? await prisma.publisher.findUnique({ where: { ownerUserId: user.id } })
+            : null;
+
         return {
           id: user.id,
           name: user.name,
@@ -60,6 +70,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           status: user.status,
           superAdmin: user.superAdmin,
           adminScopes: user.adminScopes,
+          publisherId: publisher?.id,
+          orgType: publisher?.type,
         };
       },
     }),
@@ -71,7 +83,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // Super Admin control/audit pass added id/status/superAdmin/adminScopes
     // alongside role, same pattern — requireSuperAdmin()/requireScope() in
     // src/lib/adminAuth.ts read these straight off the session rather than
-    // re-querying User on every gated route.
+    // re-querying User on every gated route. publisherId/orgType (real
+    // auth to UI pass) follow the same pattern for requirePublisherSession()
+    // and the client's session->Zustand `auth` mirror.
     jwt: ({ token, user }) => {
       if (user) {
         token.id = user.id;
@@ -79,6 +93,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.status = user.status;
         token.superAdmin = user.superAdmin;
         token.adminScopes = user.adminScopes;
+        token.publisherId = user.publisherId;
+        token.orgType = user.orgType;
       }
       return token;
     },
@@ -96,6 +112,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.status = token.status as string | undefined;
         session.user.superAdmin = token.superAdmin as boolean | undefined;
         session.user.adminScopes = token.adminScopes as string[] | undefined;
+        session.user.publisherId = token.publisherId as string | undefined;
+        session.user.orgType = token.orgType as string | undefined;
       }
       return session;
     },

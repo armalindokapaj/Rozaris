@@ -51,6 +51,41 @@ async function fetchWithSessionRetry(
   return fetch(input, init);
 }
 
+/** Real bug fix (2026-08-14, "resize doesn't save"): a rejected PATCH
+ * (e.g. `sectionSchema`'s zod validation failing on an out-of-range
+ * `widthM`) used to surface as this hook's raw `res.text()` — the
+ * literal JSON body of `{ error: parsed.error.flatten() }` — dumped
+ * straight into an `Error`'s `.message`. That's unreadable, and
+ * `useAutosave`'s own error display is a small line in the bottom status
+ * bar an admin mid-drag has no reason to be looking at, so the actual
+ * failure was effectively invisible: the edit just silently never
+ * persisted, and the next load showed whatever was last *successfully*
+ * saved — reads exactly like "resizing reverts to the small default."
+ * Real root cause fixed separately (`widthM`/`depthM`'s max raised, the
+ * Resize gizmo now clamps to match — see EditorShell.tsx's own note) —
+ * this is the defense-in-depth half: whatever rejects a future PATCH,
+ * the admin gets a real sentence, not a JSON blob. */
+async function readConfigSaveError(res: Response): Promise<string> {
+  const raw = await res.text();
+  try {
+    const body = JSON.parse(raw) as { error?: unknown };
+    const err = body?.error;
+    if (typeof err === "string") return err;
+    if (err && typeof err === "object") {
+      const flat = err as { formErrors?: string[]; fieldErrors?: Record<string, unknown> };
+      const messages: string[] = [...(flat.formErrors ?? [])];
+      for (const [field, value] of Object.entries(flat.fieldErrors ?? {})) {
+        if (Array.isArray(value) && value.length) messages.push(`${field}: ${value.join(", ")}`);
+      }
+      if (messages.length) return messages.join(" · ");
+    }
+  } catch {
+    // Not JSON (or not the shape above) — fall through to the raw text
+    // below rather than pretending there's a clean message to extract.
+  }
+  return raw || `HTTP ${res.status}`;
+}
+
 /** A non-focused slot's real, currently-saved placement — no live-edit
  * overlay (the admin isn't actively dragging that slot's sliders right
  * now), just what the server already has. The focused slot's own preview
@@ -741,7 +776,7 @@ export function Project3DConfigEditor({
       },
       establishAdminSession
     );
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(await readConfigSaveError(res));
     const updated: Project3DConfig = await res.json();
     // Silent — echoing back what the server just persisted, not a new
     // user edit; doesn't touch (or need to touch) undo history.

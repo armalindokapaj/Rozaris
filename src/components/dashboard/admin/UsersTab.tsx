@@ -51,7 +51,7 @@ export function UsersTab({ initialQuery }: { initialQuery?: string }) {
   const filteredDemo = DEMO_ACCOUNTS.filter(
     (a) =>
       a.displayName.toLowerCase().includes(query.toLowerCase()) ||
-      a.username.toLowerCase().includes(query.toLowerCase())
+      a.email.toLowerCase().includes(query.toLowerCase())
   );
 
   return (
@@ -129,17 +129,17 @@ export function UsersTab({ initialQuery }: { initialQuery?: string }) {
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {filteredDemo.map((a) => (
-                <tr key={a.username}>
+                <tr key={a.email}>
                   <td className="flex items-center gap-2.5 px-4 py-3">
                     <PlaceholderImage
-                      seed={a.username}
+                      seed={a.email}
                       kind="avatar"
                       className="h-8 w-8 rounded-lg"
                       iconClassName="h-3.5 w-3.5"
                     />
                     <div className="min-w-0">
                       <p className="truncate font-medium text-neutral-800">{a.displayName}</p>
-                      <p className="truncate text-xs text-neutral-400">@{a.username}</p>
+                      <p className="truncate text-xs text-neutral-400">{a.email}</p>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-neutral-600">{a.typeLabel}</td>

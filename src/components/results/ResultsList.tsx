@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
+import { useLiveListings } from "@/hooks/useLiveListings";
 import { getVisibleListings, getVisibleProjects } from "@/lib/filtering";
 import { ListingCard } from "./ListingCard";
 import { ProjectCard } from "./ProjectCard";
@@ -44,6 +45,8 @@ export function ResultsList({
   const filters = useAppStore((s) => s.filters);
   const mapBounds = useAppStore((s) => s.mapBounds);
   const mapAreaSearchBounds = useAppStore((s) => s.mapAreaSearchBounds);
+  const liveListings = useAppStore((s) => s.liveListings);
+  useLiveListings();
   const [page, setPage] = useState(1);
   const { t } = useT();
 
@@ -72,8 +75,14 @@ export function ResultsList({
   }
 
   const listingResults = useMemo(
-    () => getVisibleListings(filters, restrictToBounds ? mapAreaSearchBounds : mapBounds, restrictToBounds),
-    [filters, mapBounds, mapAreaSearchBounds, restrictToBounds]
+    () =>
+      getVisibleListings(
+        filters,
+        restrictToBounds ? mapAreaSearchBounds : mapBounds,
+        restrictToBounds,
+        liveListings
+      ),
+    [filters, mapBounds, mapAreaSearchBounds, restrictToBounds, liveListings]
   );
   const projectResults = useMemo(
     () => getVisibleProjects(filters, restrictToBounds ? mapAreaSearchBounds : mapBounds, restrictToBounds),

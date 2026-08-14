@@ -502,13 +502,29 @@ export function EditorShell({
           active tab's settings (right). `order-*` keeps the viewport
           visually first on a stacked mobile layout, `lg:order-*` restores
           true left/middle/right on desktop — same technique as the prior
-          3-column pass. */}
+          3-column pass.
+          Rail widths — real fix (2026-08-14 audit): the previous
+          `lg:w-1/4`/`lg:w-1/4` gave the two utility rails HALF the window
+          between them on every desktop size, e.g. 480px each (960px of
+          rails) on a 1920px display, and 640px each (1280px total) on a
+          2560px one — a settings list and a building-nav list have no
+          reason to keep inflating like that, and the one thing that does
+          deserve the space they were eating is the 3D viewport itself,
+          the actual content every tab is editing. Professional viewport-
+          centric tools (Blender, Unreal, and the reference site's own
+          admin-adjacent tooling) fix their utility panels to a comfortable
+          reading width and let the viewport claim everything else — `320`/
+          `380` below are that width (380 on the right since it holds
+          denser controls: sliders with live value readouts, color
+          swatches, longer labels), and `lg:flex-1` on the viewport column
+          (unchanged) now means it actually gets the rest of the screen
+          instead of being capped at 50%. */}
       <div className="flex flex-1 min-h-0 w-full flex-col lg:flex-row">
         {/* LEFT — building/floor navigation, except the Sections tab
             (first-class Configurator module), which uses this space for
             the sections list + "+ Draw Section" instead — see
             SectionsListRail.tsx's own doc comment. */}
-        <div className="order-2 flex min-h-0 w-full shrink-0 flex-col border-b border-neutral-200 lg:order-1 lg:h-full lg:w-1/4 lg:border-b-0 lg:border-r">
+        <div className="order-2 flex min-h-0 w-full shrink-0 flex-col border-b border-neutral-200 lg:order-1 lg:h-full lg:w-[320px] lg:border-b-0 lg:border-r">
           <div className="min-h-0 flex-1 overflow-y-auto scroll-thin p-5">
             {activeMode === "sections" ? (
               <SectionsListRail
@@ -553,7 +569,7 @@ export function EditorShell({
         </div>
 
         {/* RIGHT — settings for the active top tab. */}
-        <div className="order-3 flex min-h-0 w-full shrink-0 flex-col border-t border-neutral-200 lg:h-full lg:w-1/4 lg:border-l lg:border-t-0">
+        <div className="order-3 flex min-h-0 w-full shrink-0 flex-col border-t border-neutral-200 lg:h-full lg:w-[380px] lg:border-l lg:border-t-0">
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scroll-thin p-5">
             {activeMode === "model" && (
               <>

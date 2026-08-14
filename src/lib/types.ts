@@ -24,6 +24,11 @@ export type PropertyType =
 export type Condition = "new" | "renovated" | "good" | "needs_renovation";
 
 export type ListingStatus =
+  // Submitted, awaiting admin approval — not yet live anywhere. Matches
+  // Prisma's `ListingStatus` enum default; added when `POST /api/listings`
+  // became real (see the "Rozaris Platform Audit" memory) since every
+  // publisher-submitted listing starts here.
+  | "pending"
   | "active"
   | "sold"
   | "rented"
@@ -322,13 +327,6 @@ export interface Project3DConfig {
    * three.js's webgl_geometry_terrain example. Off by default: zero
    * behavior change for any existing project until an admin enables it. */
   fogMatchesSky: boolean;
-  /** Real stencil-buffer-derived Section cap silhouette
-   * (webgl_clipping_stencil.html technique) instead of the default
-   * flat-quad cap — see RenderEngine.ts's rebuildSectionCap. Requires a
-   * fresh mount to take effect (renderer-construction-time flag). Off by
-   * default. */
-  sectionCapStencilEnabled: boolean;
-
   /** Real HDR bloom (TSL `bloom()` node, already wired but dormant since
    * the Render/visual quality pass) — per-project opt-in, ANDed with
    * `QUALITY_TIERS[qualityPreset].bloom` in RenderEngine.ts's
@@ -406,9 +404,9 @@ export interface Project3DConfig {
   /** Real logarithmic depth buffer
    * (`webgpu_camera_logarithmicdepthbuffer.html` parity) — passed to the
    * `WebGPURenderer` constructor, reducing z-fighting at distance. A
-   * renderer-construction-time flag like `sectionCapStencilEnabled`, so it
-   * needs a fresh mount to take effect. Off by default: zero behavior
-   * change for any existing project. */
+   * renderer-construction-time flag, so it needs a fresh mount to take
+   * effect. Off by default: zero behavior change for any existing
+   * project. */
   logarithmicDepthEnabled: boolean;
 
   /** Loading-screen reveal (`webgl_postprocessing_transition.html`
@@ -553,6 +551,20 @@ export interface Section {
   /** Whether a 6th, bottom clipping plane is also applied — off by
    * default (open-bottomed cut, matching the reference mockup). */
   bottomEnabled: boolean;
+  /** When true, the 4 side (right/left/front/back) planes are dropped —
+   * only `heightM` (and `bottomEnabled`, if also on) actually clip
+   * anything, and the cut runs the full unbounded width/depth of
+   * whatever's in the scene, not just this section's own drawn rectangle.
+   * `widthM`/`depthM`/`centerX`/`centerZ`/`rotationDeg` stay set (still
+   * used to size/place the little authoring gizmo + the "clip plane
+   * indicator" rectangle an admin edits against) but stop affecting the
+   * real clip/cap the moment this is on. Real user request ("I want only
+   * plane Y to clip") — matches webgl_clipping_stencil.html's own single-
+   * axis planes exactly, vs. this module's usual 4-6-plane box. Optional/
+   * defaults falsy for any section saved before this field existed (same
+   * "new Json? key, every old row defaults to today's behavior" pattern
+   * `hidden`/`floorId` above already use). */
+  heightOnly?: boolean;
   /** The cut's cap surface — real behavior, not just a color: whichever
    * is currently true drives BOTH the material AND whether it renders
    * at all (see RenderEngine.ts's `rebuildSectionCap`):

@@ -45,18 +45,49 @@ async function seedAdmin() {
   console.log("Seeded admin@rozaris.demo (password: 1, superAdmin: true).");
 }
 
+/** One real buyer credential, same "password 1" convention as
+ * `seedAdmin()`/the publisher owners below — real auth to UI pass (see the
+ * "Rozaris Platform Audit" memory). Lets the existing "Elira Krasniqi"
+ * demo-account button in SignInModal/JoinMenu keep working once those
+ * switch from the client-only mock to a real `signIn("credentials", ...)`
+ * call, instead of only publisher/admin personas being real. */
+async function seedBuyer() {
+  const passwordHash = await bcrypt.hash("1", 10);
+  await prisma.user.upsert({
+    where: { email: "buyer@seed.rozaris.demo" },
+    update: { passwordHash, role: "buyer", name: "Elira Krasniqi", status: "active" },
+    create: {
+      email: "buyer@seed.rozaris.demo",
+      name: "Elira Krasniqi",
+      role: "buyer",
+      passwordHash,
+      status: "active",
+    },
+  });
+  console.log("Seeded buyer@seed.rozaris.demo (password: 1).");
+}
+
 async function main() {
   await seedAdmin();
+  await seedBuyer();
+
+  // Same "password 1" convention as seedAdmin() above — every seeded
+  // publisher owner can now sign in for real (previously only the admin
+  // account had a passwordHash; Credentials' authorize() requires one, so
+  // these Users existed but could never actually sign in until this pass).
+  const publisherPasswordHash = await bcrypt.hash("1", 10);
 
   for (const p of publishers) {
     const ownerEmail = `${p.slug}@seed.rozaris.demo`;
     const owner = await prisma.user.upsert({
       where: { email: ownerEmail },
-      update: { name: p.name },
+      update: { name: p.name, passwordHash: publisherPasswordHash, status: "active" },
       create: {
         email: ownerEmail,
         name: p.name,
         role: "publisher",
+        passwordHash: publisherPasswordHash,
+        status: "active",
       },
     });
 

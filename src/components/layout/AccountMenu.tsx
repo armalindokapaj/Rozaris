@@ -1,20 +1,18 @@
 "use client";
 
-import { useRef, useState } from "react";
-import Link from "next/link";
 import { ChevronDown, Heart, LayoutDashboard, LogOut, ShieldCheck, User } from "lucide-react";
+import { signOut as nextAuthSignOut } from "next-auth/react";
 import { useAppStore } from "@/lib/store";
-import { useClickOutside } from "@/hooks/useClickOutside";
+import { useDropdown } from "@/hooks/useDropdown";
+import { DropdownPanel, DropdownMenuItem, DropdownSeparator } from "@/components/ui/Dropdown";
 import { useT } from "@/lib/i18n/useT";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { JoinMenu } from "./JoinMenu";
 
 export function AccountMenu() {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const { open, toggle, close, ref } = useDropdown<HTMLDivElement>();
   const { auth, signOut } = useAppStore();
   const { t } = useT();
-  useClickOutside(ref, () => setOpen(false), open);
 
   if (!auth.signedIn) {
     return <JoinMenu />;
@@ -24,7 +22,7 @@ export function AccountMenu() {
     <div className="relative" ref={ref}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         aria-expanded={open}
         aria-haspopup="menu"
         className="flex items-center gap-2 rounded-control py-1 pl-1 pr-2 hover:bg-neutral-100 transition-colors"
@@ -38,10 +36,7 @@ export function AccountMenu() {
         <ChevronDown className="h-4 w-4 text-neutral-500" />
       </button>
       {open && (
-        <div
-          role="menu"
-          className="absolute right-0 z-40 mt-2 w-60 rounded-card border border-neutral-200 bg-white p-2 shadow-[var(--shadow-2)]"
-        >
+        <DropdownPanel width="w-60">
           <div className="flex items-center gap-3 px-2 py-2">
             <PlaceholderImage
               seed={auth.name ?? "user"}
@@ -54,46 +49,37 @@ export function AccountMenu() {
               <p className="text-xs capitalize text-neutral-500">{auth.role}</p>
             </div>
           </div>
-          <div className="my-1.5 h-px bg-neutral-100" />
-          <Link
-            href="/dashboard"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
-          >
-            <LayoutDashboard className="h-4 w-4" /> {t("nav.publisherDashboard")}
-          </Link>
-          <Link
-            href="/buyer/dashboard"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
-          >
-            <Heart className="h-4 w-4" /> {t("nav.buyerDashboard")}
-          </Link>
-          <Link
-            href="/admin"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
-          >
-            <ShieldCheck className="h-4 w-4" /> {t("nav.adminConsole")}
-          </Link>
-          <Link
-            href="/dashboard#profile"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
-          >
-            <User className="h-4 w-4" /> {t("nav.profileSettings")}
-          </Link>
-          <div className="my-1.5 h-px bg-neutral-100" />
-          <button
-            onClick={() => {
+          <DropdownSeparator />
+          <DropdownMenuItem href="/dashboard" onClick={close} icon={<LayoutDashboard className="h-4 w-4" />}>
+            {t("nav.publisherDashboard")}
+          </DropdownMenuItem>
+          <DropdownMenuItem href="/buyer/dashboard" onClick={close} icon={<Heart className="h-4 w-4" />}>
+            {t("nav.buyerDashboard")}
+          </DropdownMenuItem>
+          <DropdownMenuItem href="/admin" onClick={close} icon={<ShieldCheck className="h-4 w-4" />}>
+            {t("nav.adminConsole")}
+          </DropdownMenuItem>
+          <DropdownMenuItem href="/dashboard#profile" onClick={close} icon={<User className="h-4 w-4" />}>
+            {t("nav.profileSettings")}
+          </DropdownMenuItem>
+          <DropdownSeparator />
+          <DropdownMenuItem
+            variant="danger"
+            icon={<LogOut className="h-4 w-4" />}
+            onClick={async () => {
+              close();
+              // Zustand's `signOut()` clears `auth` immediately (no flash
+              // of stale signed-in UI while the network call below is in
+              // flight); the real Auth.js session ends right after —
+              // AuthSessionSync would otherwise resurrect `auth` from the
+              // still-live session on its next sync.
               signOut();
-              setOpen(false);
+              await nextAuthSignOut({ redirect: false });
             }}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-red-600 hover:bg-red-50"
           >
-            <LogOut className="h-4 w-4" /> {t("nav.signOut")}
-          </button>
-        </div>
+            {t("nav.signOut")}
+          </DropdownMenuItem>
+        </DropdownPanel>
       )}
     </div>
   );

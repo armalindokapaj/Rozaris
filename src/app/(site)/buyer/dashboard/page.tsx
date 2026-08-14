@@ -16,7 +16,8 @@ import {
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
-import { listings, projects, searchableListings, getNeighborhood } from "@/lib/mockData";
+import { useLiveListings } from "@/hooks/useLiveListings";
+import { projects, projectUnitListings, getNeighborhood } from "@/lib/mockData";
 import { buyerNotifications } from "@/lib/mockActivity";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
 import { ListingCard } from "@/components/results/ListingCard";
@@ -95,6 +96,12 @@ export default function BuyerDashboardPage() {
   const compare = useAppStore((s) => s.compare);
   const recentlyViewed = useAppStore((s) => s.recentlyViewed);
   const readNotificationIds = useAppStore((s) => s.readNotificationIds);
+  const liveListings = useAppStore((s) => s.liveListings);
+  useLiveListings();
+  const searchableListings = useMemo(
+    () => [...(liveListings ?? []), ...projectUnitListings],
+    [liveListings]
+  );
   const mounted = useHasMounted();
   const { t } = useT();
   const [tab, setTab] = useState<TabId>("overview");
@@ -129,7 +136,7 @@ export default function BuyerDashboardPage() {
     );
   }
 
-  const savedListings = listings.filter((l) => saved.listings.includes(l.id));
+  const savedListings = searchableListings.filter((l) => saved.listings.includes(l.id));
   const savedProjects = projects.filter((p) => saved.projects.includes(p.id));
   const myConversations = conversations.filter((c) => c.buyerId === buyerProfile.id);
 
@@ -174,11 +181,12 @@ export default function BuyerDashboardPage() {
             unreadAlerts={unreadCount}
             preferences={buyerProfile.preferences}
             priceAlerts={notifications.filter((n) => n.type === "price_change")}
+            searchableListings={searchableListings}
           />
         )}
         {tab === "saved" && <SavedTab listings={savedListings} projects={savedProjects} />}
         {tab === "compare" && <CompareTab items={compare} />}
-        {tab === "recent" && <RecentTab entries={recentlyViewed} />}
+        {tab === "recent" && <RecentTab entries={recentlyViewed} searchableListings={searchableListings} />}
         {tab === "alerts" && (
           <div className="space-y-4">
             <h1 className="font-serif text-xl text-neutral-900">{t("user.tabAlerts")}</h1>
@@ -217,6 +225,7 @@ function OverviewTab({
   unreadAlerts,
   preferences,
   priceAlerts,
+  searchableListings,
 }: {
   name: string;
   savedListingsCount: number;
@@ -226,6 +235,7 @@ function OverviewTab({
   unreadAlerts: number;
   preferences: BuyerPreferences;
   priceAlerts: NotificationItem[];
+  searchableListings: Listing[];
 }) {
   const { t } = useT();
   const priceFmt = usePriceFormat();
@@ -237,16 +247,16 @@ function OverviewTab({
         .map((e) => searchableListings.find((l) => l.id === e.id))
         .filter((l): l is Listing => !!l)
         .slice(0, 8),
-    [recentlyViewed]
+    [recentlyViewed, searchableListings]
   );
 
   const recommended = useMemo(
     () =>
-      listings
+      searchableListings
         .filter((l) => matchesPreferences(l, preferences))
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         .slice(0, 3),
-    [preferences]
+    [preferences, searchableListings]
   );
 
   return (
@@ -420,7 +430,13 @@ function CompareTab({ items }: { items: CompareEntity[] }) {
   );
 }
 
-function RecentTab({ entries }: { entries: RecentlyViewedEntry[] }) {
+function RecentTab({
+  entries,
+  searchableListings,
+}: {
+  entries: RecentlyViewedEntry[];
+  searchableListings: Listing[];
+}) {
   const { t } = useT();
   const priceFmt = usePriceFormat();
   const clearRecentlyViewed = useAppStore((s) => s.clearRecentlyViewed);
@@ -437,7 +453,7 @@ function RecentTab({ entries }: { entries: RecentlyViewedEntry[] }) {
           return project ? { entry: e, title: project.name, price: undefined, href: `/project/${project.slug}` } : null;
         })
         .filter((v): v is NonNullable<typeof v> => !!v),
-    [entries]
+    [entries, searchableListings]
   );
 
   return (

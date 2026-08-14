@@ -3,6 +3,7 @@ import { Nunito_Sans, Roboto } from "next/font/google";
 import "./globals.css";
 import { StoreHydration } from "@/components/providers/StoreHydration";
 import { AuthSessionProvider } from "@/components/providers/AuthSessionProvider";
+import { AuthSessionSync } from "@/components/providers/AuthSessionSync";
 import { CompareOverlay } from "@/components/compare/CompareOverlay";
 import { CompareReplaceModal } from "@/components/compare/CompareReplaceModal";
 import { SignInModal } from "@/components/layout/SignInModal";
@@ -43,6 +44,7 @@ export default function RootLayout({
         <SkipLink />
         <StoreHydration />
         <AuthSessionProvider>
+          <AuthSessionSync />
           {children}
           <CompareOverlay />
           <CompareReplaceModal />

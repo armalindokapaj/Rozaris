@@ -29,7 +29,8 @@ import {
   Table,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { listingsByPublisher, projectsByDeveloper, getPublisherById, DEMO_PUBLISHER } from "@/lib/mockData";
+import { projectsByDeveloper, getPublisherById, DEMO_PUBLISHER } from "@/lib/mockData";
+import { usePublisherListings } from "@/hooks/usePublisherListings";
 import { publisherNotifications } from "@/lib/mockActivity";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
@@ -46,7 +47,7 @@ import { ConstructionTab } from "@/components/dashboard/business/ConstructionTab
 import { ThreeDExperiencesTab } from "@/components/dashboard/business/ThreeDExperiencesTab";
 import { CompanyProfileTab } from "@/components/dashboard/business/CompanyProfileTab";
 import { cn } from "@/lib/utils";
-import type { Publisher } from "@/lib/types";
+import type { Listing, Publisher } from "@/lib/types";
 
 const TABS = [
   { id: "overview", labelKey: "dashboard.tabOverview", icon: LayoutDashboard },
@@ -107,7 +108,7 @@ function BusinessPublisherDashboard({ publisher }: { publisher: Publisher }) {
   const [tab, setTab] = useState<TabId>("overview");
   const { t } = useT();
 
-  const myListings = listingsByPublisher(publisher.id);
+  const { listings: myListings, refresh: refreshListings, deleteListing } = usePublisherListings(publisher.id);
   const myProjects = projectsByDeveloper(publisher.id);
 
   return (
@@ -145,12 +146,21 @@ function BusinessPublisherDashboard({ publisher }: { publisher: Publisher }) {
       </aside>
 
       <div className="min-w-0 flex-1">
-        {tab === "overview" && <OverviewTab listingCount={myListings.length} projectCount={myProjects.length} />}
+        {tab === "overview" && (
+          <OverviewTab listingCount={(myListings ?? []).length} projectCount={myProjects.length} />
+        )}
         {tab === "projects" && <ProjectsTab projects={myProjects} />}
         {tab === "inventory" && <InventoryTab projects={myProjects} />}
-        {tab === "listings" && <ListingsTab listings={myListings} />}
-        {tab === "leads" && <LeadsTab listings={myListings} projects={myProjects} />}
-        {tab === "analytics" && <AnalyticsTab listings={myListings} projects={myProjects} />}
+        {tab === "listings" && (
+          <ListingsTab
+            listings={myListings ?? []}
+            publisherId={publisher.id}
+            onChanged={refreshListings}
+            onDelete={deleteListing}
+          />
+        )}
+        {tab === "leads" && <LeadsTab listings={myListings ?? []} projects={myProjects} />}
+        {tab === "analytics" && <AnalyticsTab listings={myListings ?? []} projects={myProjects} />}
         {tab === "construction" && <ConstructionTab projects={myProjects} />}
         {tab === "threeD" && <ThreeDExperiencesTab projects={myProjects} />}
         {tab === "company" && <CompanyProfileTab publisher={publisher} />}
@@ -224,11 +234,46 @@ function OverviewTab({
   );
 }
 
-function ListingsTab({ listings }: { listings: ReturnType<typeof listingsByPublisher> }) {
+const LISTING_STATUS_STYLE: Record<Listing["status"], string> = {
+  pending: "bg-amber-100 text-amber-700",
+  active: "bg-green-100 text-green-700",
+  archived: "bg-neutral-100 text-neutral-500",
+  sold: "bg-neutral-100 text-neutral-500",
+  rented: "bg-neutral-100 text-neutral-500",
+  expired: "bg-neutral-100 text-neutral-500",
+  suspended: "bg-red-100 text-red-700",
+};
+
+function ListingsTab({
+  listings,
+  publisherId,
+  onChanged,
+  onDelete,
+}: {
+  listings: Listing[];
+  publisherId: string;
+  onChanged: () => void;
+  onDelete: (id: string) => Promise<boolean>;
+}) {
   const priceFmt = usePriceFormat();
   const { t } = useT();
   const [formOpen, setFormOpen] = useState(false);
   const [savedMessage, setSavedMessage] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const statusLabel = (status: Listing["status"]) =>
+    status === "active"
+      ? t("dashboard.statusPublished")
+      : status === "pending"
+      ? t("dashboard.statusPendingReview")
+      : t("dashboard.statusArchived");
+
+  async function handleDelete(id: string) {
+    if (!window.confirm(t("dashboard.confirmDeleteListing"))) return;
+    setDeletingId(id);
+    await onDelete(id);
+    setDeletingId(null);
+  }
 
   return (
     <div className="space-y-4">
@@ -253,9 +298,11 @@ function ListingsTab({ listings }: { listings: ReturnType<typeof listingsByPubli
 
       {formOpen && (
         <NewListingForm
+          publisherId={publisherId}
           onSaved={() => {
             setFormOpen(false);
             setSavedMessage(true);
+            onChanged();
             setTimeout(() => setSavedMessage(false), 3000);
           }}
           onCancel={() => setFormOpen(false)}
@@ -289,13 +336,17 @@ function ListingsTab({ listings }: { listings: ReturnType<typeof listingsByPubli
                 </td>
                 <td className="px-4 py-3 text-neutral-600">{priceFmt(l.price)}</td>
                 <td className="px-4 py-3">
-                  <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-semibold text-green-700">
-                    {t("dashboard.statusPublished")}
+                  <span className={cn("rounded-full px-2 py-1 text-xs font-semibold", LISTING_STATUS_STYLE[l.status])}>
+                    {statusLabel(l.status)}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button className="text-xs font-semibold text-brand-600 hover:underline">
-                    {t("dashboard.edit")}
+                  <button
+                    onClick={() => handleDelete(l.id)}
+                    disabled={deletingId === l.id}
+                    className="text-xs font-semibold text-red-600 hover:underline disabled:opacity-40"
+                  >
+                    {t("dashboard.deleteListing")}
                   </button>
                 </td>
               </tr>
@@ -486,7 +537,7 @@ function AnalyticsTab({
   listings,
   projects,
 }: {
-  listings: ReturnType<typeof listingsByPublisher>;
+  listings: Listing[];
   projects: ReturnType<typeof projectsByDeveloper>;
 }) {
   const { t } = useT();

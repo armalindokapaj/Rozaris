@@ -27,13 +27,13 @@ const sq: Dictionary = {
   signInModal: {
     title: "Mirë se erdhe përsëri",
     subtitle: "Identifikohu për të ruajtur prona, ndjekur projekte dhe vazhduar aty ku e le.",
-    usernameLabel: "Emri i përdoruesit",
-    usernamePlaceholder: "p.sh. elira",
+    usernameLabel: "Email",
+    usernamePlaceholder: "ju@example.com",
     passwordLabel: "Fjalëkalimi",
     passwordPlaceholder: "••••••••",
-    invalidCredentials: "Ky emër përdoruesi dhe fjalëkalim nuk përputhen me ndonjë llogari demo.",
+    invalidCredentials: "Ky email dhe fjalëkalim nuk përputhen me asnjë llogari.",
     demoAccounts: "Llogari demo (fjalëkalimi: 1)",
-    mockNote: "Identifikim prototip — ende pa telefon/OTP, dhe pa backend real pas këtyre kredencialeve.",
+    mockNote: "Identifikimi me telefon/OTP nuk është gati ende — vetëm email dhe fjalëkalim për momentin.",
     continue: "Vazhdo",
   },
   nav: {
@@ -528,6 +528,10 @@ const sq: Dictionary = {
       "Krijo një profil blerësi për të ruajtur preferencat e kërkimit — kur publikohet një pronë përputhëse, do të shfaqet në feed-in tënd.",
     nameLabel: "Emri i plotë",
     emailLabel: "Email",
+    // Untranslated placeholders — see the "Rozaris locale: English only for
+    // now" memory.
+    passwordLabel: "Password",
+    passwordHint: "At least 8 characters.",
     phoneLabel: "Telefoni",
     preferencesTitle: "Preferencat e tua të kërkimit",
     transactionLabel: "Po kërkon për",
@@ -669,7 +673,13 @@ const sq: Dictionary = {
     colStatus: "Statusi",
     noListingsYet: "Ende pa listime.",
     statusPublished: "E publikuar",
+    // Untranslated placeholders — see the "Rozaris locale: English only for
+    // now" memory.
+    statusPendingReview: "Pending review",
+    statusArchived: "Archived",
     edit: "Ndrysho",
+    deleteListing: "Delete",
+    confirmDeleteListing: "Delete this listing? This can't be undone from here.",
     newListingFormTitle: "Shto listim të ri",
     titleLabel: "Titulli",
     priceLabel: "Çmimi",
@@ -677,10 +687,15 @@ const sq: Dictionary = {
     descriptionLanguageHint: "Zgjidh gjuhën në të cilën po e publikon.",
     requiredMark: "E detyrueshme",
     selectPropertyTypeFirst: "Zgjidh llojin e pronës për të vazhduar.",
+    // Untranslated placeholder — see the "Rozaris locale: English only for
+    // now" memory; new keys land in English on both files until Albanian
+    // copy is authored for real.
+    selectNeighborhood: "Select a neighborhood to continue.",
     totalFloorsLabel: "Kate gjithsej",
     negotiableLabel: "Çmim i negociueshëm",
     moreDetailsOptional: "Më shumë detaje (opsionale)",
     saveListing: "Ruaj listimin",
+    saving: "Saving…",
     listingSavedConfirmation: "U ruajt. (Vetëm demo — nuk ruhet përfundimisht.)",
     projectsTitle: "Projektet",
     projectsSubtitle: "Hapësirat e punës për projektet tuaja — ndërtimi, media dhe dokumentet janë për projekt; inventari i njësive është te skeda Inventari.",
@@ -890,9 +905,19 @@ const sq: Dictionary = {
     sectionDepth: "Thellësia",
     sectionRotation: "Rrotullimi",
     sectionBottomClip: "Preje edhe nën tokë",
+    // Untranslated English placeholder — new key, see
+    // rozaris-locale-english-only memory (hold off on Albanian
+    // translation for new i18n work until told otherwise).
+    sectionHeightOnly: "Whole width & depth",
+    sectionHeightOnlyNote: "Ignores this section's own width/depth/rotation — cuts (and colors) the entire project at this height, not just the drawn rectangle. The rectangle stays visible here as an editing aid only.",
     sectionFillGapsTitle: "Mbush Boshllëqet",
     sectionFillGapsEnabled: "Mbushi boshllëqet me një ngjyrë",
-    sectionFillGapsNote: "Fikur: shfaqet vetëm si udhëzues gjysmë-transparent gjatë redaktimit, i padukshëm për vizitorët. Ndezur: një mbushje solide shfaqet kudo, që prerja të mos duket bosh.",
+    // Real bug fix (2026-08-14): the previous Albanian text described the
+    // old, incorrect "fills the whole rectangle" behavior — corrected to
+    // match sectionFillGapsNote's own updated English (a genuine content
+    // fix, not new translation work, since leaving stale/wrong copy here
+    // would actively mislead rather than just being untranslated).
+    sectionFillGapsNote: "Fikur: shfaqet vetëm si udhëzues gjysmë-transparent gjatë redaktimit, i padukshëm për vizitorët. Ndezur: sipërfaqja reale e prerjes mbushet me ngjyrën tënde — vetëm aty ku modeli është prerë faktikisht, jo në gjithë drejtkëndëshin e seksionit.",
     sectionFillColor: "Ngjyra e mbushjes",
     sectionSetCamera: "Cakto Kamerën e Seksionit",
     sectionCameraSaved: "Kamera u ruajt për këtë seksion.",
@@ -931,8 +956,6 @@ const sq: Dictionary = {
     scenePerformanceTitle: "Performanca",
     performanceShadows: "Hijet",
     performanceAntialiasing: "Antialiasing",
-    performanceSectionCapStencil: "Kapak seksioni me stencil",
-    performanceSectionCapStencilNote: "Eksperimentale. E kufizon kapakun e seksionit me siluetën reale të prerjes në vend të drejtkëndëshit të plotë. Kërkon rihapjen e shikuesit për të hyrë në fuqi.",
     // English placeholders, same reasoning as the block comment above.
     performanceShadowSoftness: "Shadow softness",
     performanceLogarithmicDepth: "Logarithmic depth buffer",

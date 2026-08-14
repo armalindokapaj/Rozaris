@@ -1,4 +1,4 @@
-import { searchableListings, projects, getNeighborhood } from "./mockData";
+import { projects, projectUnitListings, getNeighborhood } from "./mockData";
 import type { FilterState, Listing, Project } from "./types";
 import type { MapBounds } from "./store";
 
@@ -99,11 +99,21 @@ export function sortEntities<T extends { premium: boolean }>(
   }
 }
 
+/**
+ * `liveListings` — the real Postgres `Listing` rows fetched by
+ * `useLiveListings()` into the store's `liveListings` slice (`null` while
+ * that fetch is still in flight or hasn't been triggered on this page).
+ * Combined here with `projectUnitListings` (still mock — see the
+ * "Rozaris Platform Audit" memory), the one place that combination
+ * happens, mirroring the old `mockData.searchableListings` it replaces.
+ */
 export function getVisibleListings(
   f: FilterState,
   bounds: MapBounds | null,
-  restrictToBounds: boolean
+  restrictToBounds: boolean,
+  liveListings: Listing[] | null
 ): Listing[] {
+  const searchableListings = [...(liveListings ?? []), ...projectUnitListings];
   const filtered = searchableListings.filter(
     (l) =>
       matchesListingFilters(l, f) &&

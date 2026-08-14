@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { UserRound } from "lucide-react";
 import { useAppStore, defaultBuyerPreferences } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
+import { useCredentialsSignIn } from "@/hooks/useCredentialsSignIn";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
 import type { PropertyType } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -26,39 +27,62 @@ function toggle<T>(arr: T[], value: T): T[] {
 export default function BuyerSignupPage() {
   const router = useRouter();
   const { t, locale } = useT();
-  const signIn = useAppStore((s) => s.signIn);
   const setBuyerProfile = useAppStore((s) => s.setBuyerProfile);
+  const { submit: signIn } = useCredentialsSignIn();
   const propertyTypeLabels = PROPERTY_TYPE_LABELS[locale];
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [transaction, setTransaction] = useState<"buy" | "rent">(defaultBuyerPreferences.transaction);
   const [propertyTypes, setPropertyTypes] = useState<PropertyType[]>([]);
   const [maxPrice, setMaxPrice] = useState("");
   const [location, setLocation] = useState(defaultBuyerPreferences.location);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const canSubmit = name.trim() !== "" && email.trim() !== "";
+  const canSubmit = name.trim() !== "" && email.trim() !== "" && password.length >= 8;
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!canSubmit) return;
-    setBuyerProfile({
-      // A single demo buyer identity, consistent with how the Publisher
-      // dashboard is always the same demo publisher — this mock has no real
-      // multi-account backend, so the seeded conversations/feed tie to one id.
-      id: "buyer-demo-1",
-      name: name.trim(),
-      email: email.trim(),
-      phone: phone.trim(),
-      preferences: {
-        transaction,
-        propertyTypes,
-        priceMax: maxPrice ? Number(maxPrice) : null,
-        location: location.trim() || defaultBuyerPreferences.location,
-      },
-    });
-    signIn(name.trim(), "buyer");
-    router.push("/buyer/dashboard");
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), email: email.trim(), password, role: "buyer" }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? "Could not create your account — try again.");
+      }
+      const signedIn = await signIn(email.trim(), password);
+      if (!signedIn) throw new Error("Account created, but sign-in failed — try signing in from the header.");
+
+      setBuyerProfile({
+        // One profile per real account (the User row from the signup call
+        // above is the actual identity now — this only carries buyer
+        // preferences, which have no Postgres table of their own yet, see
+        // the "Rozaris Platform Audit" memory for that boundary).
+        id: "buyer-demo-1",
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        preferences: {
+          transaction,
+          propertyTypes,
+          priceMax: maxPrice ? Number(maxPrice) : null,
+          location: location.trim() || defaultBuyerPreferences.location,
+        },
+      });
+      router.push("/buyer/dashboard");
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Could not create your account — try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -87,6 +111,7 @@ export default function BuyerSignupPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
             />
           </Field>
@@ -98,6 +123,17 @@ export default function BuyerSignupPage() {
             />
           </Field>
         </div>
+
+        <Field label={t("buyer.passwordLabel")}>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+          />
+          <p className="mt-1 text-xs text-neutral-400">{t("buyer.passwordHint")}</p>
+        </Field>
 
         <div className="h-px bg-neutral-100" />
 
@@ -160,9 +196,13 @@ export default function BuyerSignupPage() {
           </Field>
         </div>
 
+        {submitError && (
+          <p className="rounded-control bg-red-50 px-3.5 py-2.5 text-sm font-medium text-red-700">{submitError}</p>
+        )}
+
         <button
           onClick={handleSubmit}
-          disabled={!canSubmit}
+          disabled={!canSubmit || submitting}
           className="w-full rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {t("buyer.createProfile")}

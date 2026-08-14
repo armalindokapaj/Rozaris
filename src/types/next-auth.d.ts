@@ -13,6 +13,14 @@ declare module "next-auth" {
       status?: string;
       superAdmin?: boolean;
       adminScopes?: string[];
+      // Real-auth-to-UI pass — a publisher-role user owns exactly one
+      // Publisher row (schema's `Publisher.ownerUserId @unique`); carried
+      // here so requirePublisherSession() (src/lib/publisherAuth.ts) and
+      // the client-side session->Zustand `auth` mirror don't need a
+      // separate round trip to resolve "which publisher is this". Absent
+      // for buyer/admin sessions.
+      publisherId?: string;
+      orgType?: string;
     } & DefaultSession["user"];
   }
 
@@ -22,6 +30,8 @@ declare module "next-auth" {
     status?: string;
     superAdmin?: boolean;
     adminScopes?: string[];
+    publisherId?: string;
+    orgType?: string;
   }
 }
 
@@ -32,5 +42,7 @@ declare module "next-auth/jwt" {
     status?: string;
     superAdmin?: boolean;
     adminScopes?: string[];
+    publisherId?: string;
+    orgType?: string;
   }
 }

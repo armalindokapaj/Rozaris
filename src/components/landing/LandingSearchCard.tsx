@@ -8,6 +8,7 @@ import { useT } from "@/lib/i18n/useT";
 import { cn, formatPrice } from "@/lib/utils";
 import { PROPERTY_TYPES, priceScaleFor } from "@/components/search/FiltersForm";
 import { RangeSlider } from "@/components/search/RangeSlider";
+import { Button } from "@/components/ui/Button";
 import type { PropertyType } from "@/lib/types";
 
 type Menu = "type" | "location" | "price" | "bedrooms" | "bathrooms" | "area" | "more" | null;
@@ -202,13 +203,16 @@ export function LandingSearchCard({ onSubmit }: { onSubmit: () => void }) {
         {t("filters.moreFilters")}
       </button>
 
-      <button
+      <Button
+        variant="accent"
+        size="lg"
+        fullWidth
         onClick={onSubmit}
-        className="group mt-4 flex w-full items-center justify-center gap-2 bg-accent px-9 py-3 text-sm font-extrabold uppercase tracking-[0.08em] text-neutral-900 transition-all duration-150 ease-[var(--ease-rz)] hover:-translate-y-0.5 hover:bg-accent-600 hover:shadow-[var(--shadow-2)] active:translate-y-0"
+        className="group mt-4 transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-2)] active:translate-y-0"
       >
         View properties
         <ArrowRight className="h-4 w-4 transition-transform duration-150 group-hover:translate-x-1" />
-      </button>
+      </Button>
     </div>
   );
 }

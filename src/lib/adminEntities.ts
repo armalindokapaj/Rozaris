@@ -268,7 +268,7 @@ const PROJECT_3D_CONFIG_RESTORABLE_FIELDS = [
   "qualityPreset", "glassPreset", "environmentIntensity",
   "cameraFovDesktop", "cameraFovMobile",
   "sunAzimuthDeg", "sunElevationDeg", "fogEnabled",
-  "fogColor", "fogDensity", "fogMatchesSky", "sectionCapStencilEnabled", "unitColorAvailable", "unitColorReserved",
+  "fogColor", "fogDensity", "fogMatchesSky", "unitColorAvailable", "unitColorReserved",
   "unitColorSold", "unitColorSelected", "shadowsEnabled",
   "antialiasEnabled", "cameraPresets", "exposure",
   "viewerUI", "sections",

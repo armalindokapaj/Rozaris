@@ -132,10 +132,21 @@ export function SectionsPanel({
             onChange={(v) => update({ heightM: v }, { commit: false })}
             suffix="m"
           />
+          {/* Real bug fix (2026-08-14, "resize doesn't save") — raised
+              from 200 to 1000: a native range input can never itself
+              produce a value outside its own min/max, so a section
+              resized past 200 via the *gizmo* (uncapped until this same
+              fix — see RenderEngine.ts's onSectionGizmoChange) would show
+              a slider silently clamped to 200 even though the real,
+              correctly-saved value was higher, and the next touch of
+              this exact slider would snap it back down. 1000 covers any
+              real single-wing/floor cut with headroom; the new "Whole
+              width & depth" toggle below is the better tool for a
+              genuinely site-wide cut, not a bigger number here. */}
           <SliderField
             label={t("admin.sectionWidth")}
             min={1}
-            max={200}
+            max={1000}
             step={0.5}
             value={section.widthM}
             onChange={(v) => update({ widthM: v }, { commit: false })}
@@ -144,7 +155,7 @@ export function SectionsPanel({
           <SliderField
             label={t("admin.sectionDepth")}
             min={1}
-            max={200}
+            max={1000}
             step={0.5}
             value={section.depthM}
             onChange={(v) => update({ depthM: v }, { commit: false })}
@@ -164,6 +175,14 @@ export function SectionsPanel({
             checked={section.bottomEnabled}
             onChange={(v) => update({ bottomEnabled: v }, { commit: true })}
           />
+          <div>
+            <ToggleField
+              label={t("admin.sectionHeightOnly")}
+              checked={!!section.heightOnly}
+              onChange={(v) => update({ heightOnly: v }, { commit: true })}
+            />
+            <p className="mt-1 text-[11px] text-neutral-400">{t("admin.sectionHeightOnlyNote")}</p>
+          </div>
         </fieldset>
       </section>
 

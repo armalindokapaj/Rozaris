@@ -600,13 +600,17 @@ model Project3DConfig {
   /// technique from three.js's webgl_geometry_terrain example. Default
   /// false: zero behavior change for any existing project.
   fogMatchesSky Boolean @default(false)
-  /// Real stencil-buffer-derived Section cap silhouette
-  /// (webgl_clipping_stencil.html technique — RenderEngine.ts's
-  /// rebuildSectionCap) instead of the default flat-quad cap. Requires
-  /// `stencil: true` on the WebGPURenderer, which only takes effect on a
-  /// fresh mount() — mount-tier config, not a cheap live toggle. Default
-  /// false: zero behavior/cost change for any existing project.
-  sectionCapStencilEnabled Boolean @default(false)
+  // `sectionCapStencilEnabled` column removed 2026-08-14 — the real
+  // stencil-buffer-derived Section cap silhouette (webgl_clipping_stencil.html
+  // technique) it gated is no longer a project-wide opt-in: it's now
+  // unconditional for any `fillGapsEnabled` section (RenderEngine.ts's
+  // rebuildSectionCap), since the opt-in default (off) is exactly what
+  // was reported as "colors the clipper plane instead [of the clipped
+  // model]" — the toggle was buried in the Effects tab, off by default,
+  // invisible from the Sections tab where fillColor is actually picked,
+  // so almost nobody ever found their way to the already-correct
+  // behavior. `stencil: true` moved to the WebGPURenderer's fixed
+  // constructor options instead of this column.
 
   // Sky/Water/Bloom/Clouds pass (webgl_shaders_ocean.html parity) —
   // real HDR bloom (dormant TSL node, now a per-project toggle), a real

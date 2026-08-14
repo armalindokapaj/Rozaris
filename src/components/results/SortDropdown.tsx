@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { useClickOutside } from "@/hooks/useClickOutside";
+import { useDropdown } from "@/hooks/useDropdown";
+import { DropdownPanel, DropdownMenuItem } from "@/components/ui/Dropdown";
 import { useT } from "@/lib/i18n/useT";
 import { SORT_LABELS } from "@/lib/constants";
 import type { SortOption } from "@/lib/types";
@@ -20,18 +20,16 @@ const OPTIONS: SortOption[] = [
 ];
 
 export function SortDropdown() {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const { open, toggle, close, ref } = useDropdown<HTMLDivElement>();
   const sort = useAppStore((s) => s.filters.sort);
   const setFilters = useAppStore((s) => s.setFilters);
   const { t, locale } = useT();
   const sortLabels = SORT_LABELS[locale];
-  useClickOutside(ref, () => setOpen(false), open);
 
   return (
     <div className="relative min-w-0 max-w-full" ref={ref}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         aria-expanded={open}
         className="flex w-full min-w-0 max-w-full items-center gap-1 whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 hover:text-neutral-900"
       >
@@ -40,26 +38,21 @@ export function SortDropdown() {
         <ChevronDown className="h-3 w-3 shrink-0" />
       </button>
       {open && (
-        <div
-          role="listbox"
-          className="absolute left-1/2 z-30 mt-2 w-48 max-w-[90vw] -translate-x-1/2 rounded-card border border-neutral-200 bg-white p-1.5 shadow-[var(--shadow-2)]"
-        >
+        <DropdownPanel align="left" width="w-48 max-w-[90vw]" role="listbox" className="left-1/2 -translate-x-1/2">
           {OPTIONS.map((opt) => (
-            <button
+            <DropdownMenuItem
               key={opt}
               role="option"
-              aria-selected={sort === opt}
+              selected={sort === opt}
               onClick={() => {
                 setFilters({ sort: opt });
-                setOpen(false);
+                close();
               }}
-              className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
             >
               {sortLabels[opt]}
-              {sort === opt && <Check className="h-3.5 w-3.5 text-brand-500" />}
-            </button>
+            </DropdownMenuItem>
           ))}
-        </div>
+        </DropdownPanel>
       )}
     </div>
   );

@@ -4,8 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { useAppStore } from "@/lib/store";
 import { SELECTED_UNIT_ZOOM } from "@/lib/constants";
+import { useLiveListings } from "@/hooks/useLiveListings";
 import { getVisibleListings, getVisibleProjects } from "@/lib/filtering";
-import { getNeighborhood, searchableListings, projects, CITY_CENTER } from "@/lib/mockData";
+import { getNeighborhood, projectUnitListings, projects, CITY_CENTER } from "@/lib/mockData";
 import {
   buildClusterMarker,
   buildListingMarker,
@@ -118,6 +119,8 @@ export function MapView({
   const filters = useAppStore((s) => s.filters);
   const mapBounds = useAppStore((s) => s.mapBounds);
   const mapAreaSearchBounds = useAppStore((s) => s.mapAreaSearchBounds);
+  const liveListings = useAppStore((s) => s.liveListings);
+  useLiveListings();
   const setMapBounds = useAppStore((s) => s.setMapBounds);
   const selectedListingId = useAppStore((s) => s.selectedListingId);
   const selectedProjectId = useAppStore((s) => s.selectedProjectId);
@@ -139,8 +142,8 @@ export function MapView({
   // Bounds affect the dataset only after the visitor explicitly commits the
   // visible area with Search here; ordinary panning remains exploratory.
   const visibleListings = useMemo(
-    () => getVisibleListings(filters, mapAreaSearchBounds ?? mapBounds, !!mapAreaSearchBounds),
-    [filters, mapBounds, mapAreaSearchBounds]
+    () => getVisibleListings(filters, mapAreaSearchBounds ?? mapBounds, !!mapAreaSearchBounds, liveListings),
+    [filters, mapBounds, mapAreaSearchBounds, liveListings]
   );
   const visibleProjects = useMemo(
     () => getVisibleProjects(filters, mapAreaSearchBounds ?? mapBounds, !!mapAreaSearchBounds),
@@ -494,7 +497,7 @@ export function MapView({
   // anyway, since they get their own dedicated popup below instead.
   const activeBuildingListing =
     !activeProject && selectedListingId
-      ? searchableListings.find(
+      ? (liveListings ?? []).find(
           (l) =>
             l.id === selectedListingId &&
             !l.fromProjectSlug &&
@@ -507,7 +510,7 @@ export function MapView({
   // (rather than falling back to the generic project overview popup).
   const activeProjectUnit =
     !activeProject && !activeBuildingListing && selectedListingId
-      ? searchableListings.find(
+      ? projectUnitListings.find(
           (l) => l.id === selectedListingId && l.fromProjectSlug
         ) ?? null
       : null;

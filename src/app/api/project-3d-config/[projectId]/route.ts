@@ -44,11 +44,22 @@ const sectionSchema = z.object({
   buildingName: z.string().optional(),
   centerX: z.number(),
   centerZ: z.number(),
-  widthM: z.number().positive().max(500),
-  depthM: z.number().positive().max(500),
+  // Real bug fix (2026-08-14, "resize doesn't save"): 500 was too tight
+  // for a genuine "cut the whole project/site" section — the Resize
+  // gizmo let an admin drag well past it (no client-side ceiling existed
+  // either, see EditorShell.tsx's own fix), so the PATCH silently 400'd
+  // and the edit never persisted. 5000m covers any real project's full
+  // site footprint with headroom; still a real, finite sanity bound, not
+  // `Infinity` (a > 5km "section" is certainly a mis-drag, not an
+  // intentional cut).
+  widthM: z.number().positive().max(5000),
+  depthM: z.number().positive().max(5000),
   rotationDeg: z.number().min(-360).max(360),
   heightM: z.number().min(-50).max(500),
   bottomEnabled: z.boolean(),
+  // Real user request ("I want only plane Y to clip") — see Section.
+  // heightOnly's own doc comment in src/lib/types.ts.
+  heightOnly: z.boolean().optional(),
   fillGapsEnabled: z.boolean(),
   fillColor: hexColorSchema,
   cameraPreset: z.object({ position: vector3Schema, target: vector3Schema, fov: z.number().min(10).max(120) }).optional(),
@@ -107,7 +118,6 @@ const patchSchema = z.object({
   fogColor: hexColorSchema.optional(),
   fogDensity: z.number().min(0).max(0.1).optional(),
   fogMatchesSky: z.boolean().optional(),
-  sectionCapStencilEnabled: z.boolean().optional(),
   unitColorAvailable: hexColorSchema.optional(),
   unitColorReserved: hexColorSchema.optional(),
   unitColorSold: hexColorSchema.optional(),

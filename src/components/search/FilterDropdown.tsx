@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { useClickOutside } from "@/hooks/useClickOutside";
+import { useDropdown } from "@/hooks/useDropdown";
+import { DropdownPanel } from "@/components/ui/Dropdown";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,18 +28,16 @@ export function FilterDropdown({
   align?: "left" | "right";
   children: (close: () => void) => React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useClickOutside(ref, () => setOpen(false), open);
+  const { open, toggle, close, ref } = useDropdown<HTMLDivElement>();
 
   return (
     <div className={cn("relative", className)} ref={ref}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         aria-expanded={open}
         className={cn(
-          "flex h-10 w-full items-center justify-between gap-1.5 whitespace-nowrap rounded-none border border-neutral-300 bg-white px-3 text-sm font-semibold transition-colors",
+          "flex h-10 w-full items-center justify-between gap-1.5 whitespace-nowrap rounded-control border border-neutral-300 bg-white px-3 text-sm font-semibold transition-colors",
           active || open
             ? "border-neutral-800 text-neutral-900 shadow-[var(--shadow-1)]"
             : "text-neutral-600 hover:border-neutral-500 hover:text-neutral-900"
@@ -50,15 +48,9 @@ export function FilterDropdown({
         <ChevronDown className={cn("h-3 w-3 shrink-0 transition-transform", open && "rotate-180")} />
       </button>
       {open && (
-        <div
-          className={cn(
-            "absolute top-[calc(100%+2px)] z-40 w-full max-w-[calc(100vw-2rem)] rounded-none border border-neutral-300 bg-white p-2 shadow-[0_3px_9px_rgba(17,24,39,0.24)]",
-            align === "right" ? "right-0" : "left-0",
-            panelClassName
-          )}
-        >
-          {children(() => setOpen(false))}
-        </div>
+        <DropdownPanel align={align} width="w-full" className={panelClassName}>
+          {children(close)}
+        </DropdownPanel>
       )}
     </div>
   );
