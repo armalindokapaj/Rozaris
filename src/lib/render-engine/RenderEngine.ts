@@ -262,6 +262,27 @@ export class RenderEngine {
    * actual direction (position - target) only matches the intended
    * elevation/azimuth when the scene happens to sit near the world origin. */
   private sceneCenter: THREE.Vector3 | null = null;
+  /** Real distance (world units) from `sceneCenter` to `sun.position`,
+   * computed once per mount() from that mount's own `boundingRadius` (a
+   * fixed project scales tiny to huge) and reused as-is by
+   * `applySunAndEnvironment` every time it repositions the sun along the
+   * current elevation/azimuth. Root-caused, real bug this field fixes:
+   * before it existed, `applySunAndEnvironment` placed the sun at a
+   * hardcoded 200 units from `sceneCenter` while `sun.shadow.camera.far`
+   * (set once here, in mount()) was only `boundingRadius * 6` — for any
+   * project with `boundingRadius` under ~33 (most procedural-massing
+   * projects; real observed case: boundingRadius ≈ 26), that far plane
+   * (≈156) sat *closer* to the light than the light itself (200 units
+   * out), so the shadow camera's frustum never contained the sun's own
+   * scene-facing side at all — the shadow map allocated a real texture
+   * and rendered every frame, just always empty. No shadow anywhere, on
+   * any object, regardless of `shadowsEnabled`/bias/mapSize — all of
+   * which were individually correct and did nothing, because the
+   * occluders never made it into the depth pass in the first place.
+   * Real-GPU-verified (Playwright + a real WebGPU context, not the
+   * headless software-rasterizer fallback) against a live project before
+   * and after this fix. */
+  private sunDistance = 200;
   // --- Sky/Water/Bloom/Clouds pass ---
   /** The physical sky dome — replaces the old CanvasTexture gradient
    * (`buildSkyTexture`) as the actual "sky" backgroundPreset's visible
@@ -1867,8 +1888,19 @@ export class RenderEngine {
     // it was fine for the procedural fallback's small, uniform units.
     sun.shadow.bias = -0.00005 * boundingRadius;
     sun.shadow.normalBias = 0.01 * boundingRadius;
-    sun.shadow.camera.near = Math.max(0.1, boundingRadius * 0.05);
-    sun.shadow.camera.far = boundingRadius * 6;
+    // Real bug fix (see `sunDistance`'s own field doc comment) — near/far
+    // must bracket where the sun *actually* sits (`sunDistance` units from
+    // `target`, applySunAndEnvironment's own placement), not just scale
+    // off boundingRadius in isolation. `sunDistance` itself also scales
+    // with boundingRadius (floor of 200, same distance every project used
+    // before this fix, so a project already comfortably inside that floor
+    // is unaffected) so both stay proportional across tiny-to-huge
+    // projects instead of drifting apart the way the old fixed-200/
+    // boundingRadius*6 pair could.
+    const sunDistance = Math.max(200, boundingRadius * 3);
+    this.sunDistance = sunDistance;
+    sun.shadow.camera.near = Math.max(0.1, sunDistance - boundingRadius * 2);
+    sun.shadow.camera.far = sunDistance + boundingRadius * 2;
     const shadowSpan = boundingRadius * 1.5;
     sun.shadow.camera.left = -shadowSpan;
     sun.shadow.camera.right = shadowSpan;
@@ -2537,7 +2569,12 @@ export class RenderEngine {
             northRotationDeg: config.northRotationDeg,
           });
     const dir = sunDirectionVector(sunPos);
-    const distance = 200;
+    // Real bug fix — must be the exact same distance `sun.shadow.camera`'s
+    // near/far were bracketed around in mount() (see `sunDistance`'s own
+    // field doc comment for the full "shadow map was always empty" story),
+    // not an independent hardcoded value that can silently drift out of
+    // sync with it again.
+    const distance = this.sunDistance;
     // Used to only apply under "manual" sun mode (geographic mode ignored
     // it entirely) — now applies either way so the Lighting tab's Sun
     // Intensity slider is meaningful regardless of mode. Defaults to 1, so
