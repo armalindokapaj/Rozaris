@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { getProjectBySlug, projects } from "@/lib/mockData";
+import { getAllProjectSlugs, getProjectBySlug } from "@/lib/projects.server";
 import { SITE_URL } from "@/lib/constants";
 import { ArchVizClient } from "./ArchVizClient";
 import { CustomProjectPreview } from "./CustomProjectPreview";
 
-export function generateStaticParams() {
-  return projects.map((p) => ({ slug: p.slug }));
+export async function generateStaticParams() {
+  const slugs = await getAllProjectSlugs();
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({
@@ -15,7 +16,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const project = getProjectBySlug(slug);
+  const project = await getProjectBySlug(slug);
   if (!project) return {};
   return {
     title: `${project.name} — ArchViz | ${project.developer.name}`,
@@ -29,11 +30,13 @@ export default async function ProjectArchVizPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const project = getProjectBySlug(slug);
+  const project = await getProjectBySlug(slug);
   if (!project) {
-    // Not in the static mockData catalog — could still be an admin-created
-    // project that only exists in Zustand `customProjects` (MVP admin pipe,
-    // see "rozaris-mvp-admin-project-pipe" memory). Hand off to a client
+    // Not (yet) a published Postgres project — could still be a
+    // freshly admin-created one this server render's cache hasn't caught
+    // up with yet, or one still sitting in Zustand `customProjects` from
+    // an older session (MVP admin pipe, see
+    // "rozaris-mvp-admin-project-pipe" memory). Hand off to a client
     // component that checks there instead of 404ing outright.
     return <CustomProjectPreview slug={slug} />;
   }

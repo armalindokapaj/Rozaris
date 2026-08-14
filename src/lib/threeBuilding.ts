@@ -130,3 +130,42 @@ export function computeProjectLayout(project: Project): ProjectLayout {
 
   return { buildings, units, boundingRadius, centerY: maxHeight / 2 };
 }
+
+/** One building's coarse real-world "massing" box — meters, Y-up (matches a
+ * typical GLTF export's convention). */
+export interface MassingBox {
+  name: string;
+  offsetXM: number;
+  offsetZM: number;
+  widthM: number;
+  depthM: number;
+  heightM: number;
+}
+
+const MASSING_FLOOR_HEIGHT_M = 3;
+
+/**
+ * The public map's default 3D hero for a project with no admin-uploaded
+ * custom GLB (see ProjectModelLayer's `massing` entry support and the
+ * "Rozaris Platform Audit" memory's T1) — a real, data-driven building
+ * volume instead of a flat pin. Reuses `computeProjectLayout`'s real
+ * building/floor grouping and per-unit footprint (a ~3.2x3m bay is the
+ * right order of magnitude for one real apartment's frontage) but replaces
+ * its per-floor height: 1.6m there is a deliberately compressed "exploded
+ * elevation" for the interactive per-unit viewer, not a literal
+ * architectural height, and would read as a squat, wrong-looking box
+ * dropped onto a real city at true map scale. `MASSING_FLOOR_HEIGHT_M`
+ * (~3m) is the realistic figure instead. Still schematic — a solid massing
+ * volume, not the true floor plate — same honest tradeoff
+ * computeProjectLayout's own doc comment makes.
+ */
+export function computeProjectMassing(project: Project): MassingBox[] {
+  return computeProjectLayout(project).buildings.map((b) => ({
+    name: b.name,
+    offsetXM: b.centerX,
+    offsetZM: b.z,
+    widthM: b.width,
+    depthM: b.depth,
+    heightM: b.floors * MASSING_FLOOR_HEIGHT_M,
+  }));
+}

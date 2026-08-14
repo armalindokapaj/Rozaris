@@ -1,25 +1,27 @@
 "use client";
 
 import { useAppStore } from "@/lib/store";
-import { projects } from "@/lib/mockData";
+import { useLiveProjects } from "@/hooks/useLiveProjects";
 import type { Project } from "@/lib/types";
 
 /**
  * Resolves a `Project` by id for Admin's full-page 3D editors
  * (`/admin/3d-experience/[projectId]`, `/admin/3d-map-control/[projectId]`)
- * — the same `[...seeded mockData projects, ...Zustand customProjects]`
- * lookup `Viewer3DTab` (admin/page.tsx) already did inline before those
- * editors were modals opened from project cards there. Deliberately client
- * -side, not a server-side fetch: the public catalog (and everything
- * derived from it, including this) still reads from mockData.ts + Zustand
- * for *what's displayed*, per the "rozaris-backend-plan" memory — the real
- * Postgres `Project` row a custom project also gets (`/api/projects`) only
- * exists to anchor the 3D pipeline's own tables via a foreign key, and
- * doesn't cover the seeded mock projects at all, so it can't be used as the
- * sole source here.
+ * — the same lookup `Viewer3DTab` (admin/page.tsx) already did inline
+ * before those editors were modals opened from project cards there.
+ *
+ * Real Postgres now (see the "Rozaris Platform Audit" memory's
+ * Projects/Units migration) — `prisma/seed.ts` seeds every mockData
+ * project into the same table `POST /api/projects` writes to, so
+ * `liveProjects` alone covers both. `customProjects` (Zustand-only) stays
+ * as the fallback for a project created this session before its own
+ * `GET /api/projects` refetch has caught up — same reasoning
+ * `CustomProjectPreview.tsx` documents.
  */
 export function useAdminProject(projectId: string | undefined): Project | null {
   const customProjects = useAppStore((s) => s.customProjects);
+  const liveProjects = useAppStore((s) => s.liveProjects);
+  useLiveProjects();
   if (!projectId) return null;
-  return [...projects, ...customProjects].find((p) => p.id === projectId) ?? null;
+  return [...(liveProjects ?? []), ...customProjects].find((p) => p.id === projectId) ?? null;
 }

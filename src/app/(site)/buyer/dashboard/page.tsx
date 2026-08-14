@@ -17,7 +17,9 @@ import {
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { useLiveListings } from "@/hooks/useLiveListings";
-import { projects, projectUnitListings, getNeighborhood } from "@/lib/mockData";
+import { useLiveProjects } from "@/hooks/useLiveProjects";
+import { getNeighborhood } from "@/lib/mockData";
+import { projectUnitListingsFrom } from "@/lib/projects";
 import { buyerNotifications } from "@/lib/mockActivity";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
 import { ListingCard } from "@/components/results/ListingCard";
@@ -97,10 +99,12 @@ export default function BuyerDashboardPage() {
   const recentlyViewed = useAppStore((s) => s.recentlyViewed);
   const readNotificationIds = useAppStore((s) => s.readNotificationIds);
   const liveListings = useAppStore((s) => s.liveListings);
+  const liveProjects = useAppStore((s) => s.liveProjects);
   useLiveListings();
+  useLiveProjects();
   const searchableListings = useMemo(
-    () => [...(liveListings ?? []), ...projectUnitListings],
-    [liveListings]
+    () => [...(liveListings ?? []), ...projectUnitListingsFrom(liveProjects ?? [])],
+    [liveListings, liveProjects]
   );
   const mounted = useHasMounted();
   const { t } = useT();
@@ -137,7 +141,7 @@ export default function BuyerDashboardPage() {
   }
 
   const savedListings = searchableListings.filter((l) => saved.listings.includes(l.id));
-  const savedProjects = projects.filter((p) => saved.projects.includes(p.id));
+  const savedProjects = (liveProjects ?? []).filter((p) => saved.projects.includes(p.id));
   const myConversations = conversations.filter((c) => c.buyerId === buyerProfile.id);
 
   return (
@@ -186,7 +190,9 @@ export default function BuyerDashboardPage() {
         )}
         {tab === "saved" && <SavedTab listings={savedListings} projects={savedProjects} />}
         {tab === "compare" && <CompareTab items={compare} />}
-        {tab === "recent" && <RecentTab entries={recentlyViewed} searchableListings={searchableListings} />}
+        {tab === "recent" && (
+          <RecentTab entries={recentlyViewed} searchableListings={searchableListings} projects={liveProjects ?? []} />
+        )}
         {tab === "alerts" && (
           <div className="space-y-4">
             <h1 className="font-serif text-xl text-neutral-900">{t("user.tabAlerts")}</h1>
@@ -433,9 +439,11 @@ function CompareTab({ items }: { items: CompareEntity[] }) {
 function RecentTab({
   entries,
   searchableListings,
+  projects,
 }: {
   entries: RecentlyViewedEntry[];
   searchableListings: Listing[];
+  projects: Project[];
 }) {
   const { t } = useT();
   const priceFmt = usePriceFormat();
@@ -453,7 +461,7 @@ function RecentTab({
           return project ? { entry: e, title: project.name, price: undefined, href: `/project/${project.slug}` } : null;
         })
         .filter((v): v is NonNullable<typeof v> => !!v),
-    [entries, searchableListings]
+    [entries, searchableListings, projects]
   );
 
   return (

@@ -1,63 +1,51 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { signIn as nextAuthSignIn, useSession } from "next-auth/react";
+import { useState } from "react";
+import { useSession } from "next-auth/react";
 import { useAppStore } from "@/lib/store";
-import { useT } from "@/lib/i18n/useT";
 
 /**
  * The real Auth.js session (checked by every 3D-pipeline write route via
  * src/lib/adminAuth.ts) is a SEPARATE thing from the Zustand `auth` mock
  * flag most of the admin UI gates on, and the two can fall out of sync: the
  * mock persists to localStorage indefinitely, while the real session cookie
- * can expire, or its establishing signIn() call can fail/lag, leaving the
- * UI looking "signed in as Admin" while every upload/delete/publish
- * silently 401s.
+ * can expire, leaving the UI looking "signed in as Admin" while every
+ * upload/delete/publish silently 401s.
  *
- * `admin/page.tsx` already carried this exact auto-repair logic inline —
+ * `admin/page.tsx` already carried this exact repair-prompt logic inline —
  * this hook extracts it so the two full-page 3D editors
  * (`/admin/3d-experience/[projectId]`, `/admin/3d-map-control/[projectId]`)
  * can use it too. Those routes are reachable directly by URL (bypassing
  * `admin/page.tsx`'s own gate entirely), so a real session going stale
  * while sitting on one of them previously had no repair path at all — the
  * confirmed root cause of "3D Experience upload always fails."
+ *
+ * ⚠️ SECURITY FIX (see the "Rozaris Platform Audit" T-close-auth-gaps
+ * follow-up): this used to auto-repair — and every call site's "Reconnect"
+ * button used to repair — by silently signing in with the hardcoded seeded
+ * admin@rozaris.demo/"1" credentials, with no check on who was actually at
+ * the keyboard. That was a real, deployed one-click (and in the
+ * auto-effect's case, zero-click) privilege escalation: any signed-in
+ * demo buyer/publisher landing on an admin route got a genuine Auth.js
+ * admin session for free. Real re-authentication requires real
+ * credentials, which this hook doesn't have — so it now only *prompts*,
+ * via the same global SignInModal every other sign-in flow in the app
+ * uses (which has its own explicit, visible demo-admin button for
+ * testers, same as every other role — no different from any other
+ * sign-in, and no longer a hidden bypass).
+ *
+ * Deliberately no auto-repair effect anymore either: a stale/missing real
+ * session now only ever surfaces a visible prompt the signed-in person has
+ * to act on, never a silent re-auth.
  */
 export function useAdminSessionRepair() {
-  const auth = useAppStore((s) => s.auth);
+  const openSignIn = useAppStore((s) => s.openSignIn);
   const { status: sessionStatus } = useSession();
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [reauthing, setReauthing] = useState(false);
-  const { t } = useT();
+  const [authError] = useState<string | null>(null);
 
-  async function establishAdminSession() {
-    setReauthing(true);
-    setAuthError(null);
-    try {
-      const result = await nextAuthSignIn("credentials", {
-        email: "admin@rozaris.demo",
-        password: "1",
-        redirect: false,
-      });
-      if (!result || result.error) {
-        setAuthError(t("admin.sessionEstablishFailed"));
-      }
-    } catch {
-      setAuthError(t("admin.sessionEstablishFailed"));
-    } finally {
-      setReauthing(false);
-    }
+  function establishAdminSession() {
+    openSignIn();
   }
 
-  useEffect(() => {
-    // Auto-repair once the real session is confirmed missing (not while
-    // still "loading") for a user the mock already believes is signed in —
-    // e.g. after the JWT cookie expired since the last visit.
-    if (auth.signedIn && sessionStatus === "unauthenticated" && !reauthing) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      establishAdminSession();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth.signedIn, sessionStatus]);
-
-  return { sessionStatus, authError, reauthing, establishAdminSession };
+  return { sessionStatus, authError, reauthing: false, establishAdminSession };
 }

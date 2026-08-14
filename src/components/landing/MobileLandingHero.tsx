@@ -6,14 +6,12 @@ import {
   ArrowRight,
   Building2,
   ChevronDown,
-  CircleUserRound,
   Home,
   KeyRound,
   MapPin,
-  Menu,
   Wallet,
 } from "lucide-react";
-import { MobileNav } from "@/components/layout/MobileNav";
+import { MobilePromoBanner } from "./MobilePromoBanner";
 import { Button } from "@/components/ui/Button";
 import { PROPERTY_TYPES } from "@/components/search/FiltersForm";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
@@ -114,6 +112,14 @@ function FieldDropdown({
  * same word cycle as desktop, and the wallpaper texture backs the whole
  * page below the header — search area and tools bar both float on it.
  * Desktop (`lg:` and up) keeps rendering LandingHero's own markup.
+ *
+ * No header of its own — Top Bar + Menu are static everywhere in the app
+ * (per that rule), so `LandingHero` renders the one shared `<Header/>`
+ * above this component instead of this component having its own
+ * wordmark+hamburger variant. `h-full` (not `h-dvh`) is deliberate: this
+ * now sits inside a flex-1 sibling of that Header, not the whole
+ * viewport, so it should fill whatever's left, not re-claim the full
+ * screen height and overlap the real header above it.
  */
 export function MobileLandingHero({
   mode,
@@ -124,7 +130,6 @@ export function MobileLandingHero({
   onSelectMode: (mode: DiscoveryMode) => void;
   onSearch: () => void;
 }) {
-  const [navOpen, setNavOpen] = useState(false);
   const filters = useAppStore((s) => s.filters);
   const setFilters = useAppStore((s) => s.setFilters);
   const { t, locale } = useT();
@@ -132,48 +137,32 @@ export function MobileLandingHero({
   const selectedType = filters.propertyTypes[0] ?? "";
 
   return (
-    <div className="relative flex h-dvh flex-col overflow-hidden bg-white lg:hidden">
-      {/* Fixed header — hamburger / ROZARIS / account, three even columns
-          so the wordmark is truly centered regardless of the icons'
-          widths on either side. */}
-      <div className="relative z-20 grid h-14 shrink-0 grid-cols-3 items-center border-b border-neutral-200 bg-white px-3">
-        <button
-          onClick={() => setNavOpen(true)}
-          aria-label={t("nav.openMenu")}
-          className="justify-self-start rounded-control p-2 text-neutral-900 hover:bg-neutral-100"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-        <Link
-          href="/"
-          className="justify-self-center font-serif text-lg tracking-[0.22em] text-neutral-900"
-          aria-label={`ROZARIS — ${t("nav.home")}`}
-        >
-          ROZARIS
-        </Link>
-        <Link
-          href="/buyer/dashboard"
-          aria-label={t("nav.buyerDashboard")}
-          className="justify-self-end rounded-control p-1.5 text-neutral-900 hover:bg-neutral-100"
-        >
-          <CircleUserRound className="h-7 w-7" strokeWidth={1.5} />
-        </Link>
-      </div>
-
-      {/* Whole page below the header — one continuous wallpaper-textured
-          background, from right under the header down to the very bottom
-          of the screen (behind both the scrollable search area and the
-          tools bar pinned below it). */}
+    <div className="relative flex h-full flex-col overflow-hidden bg-white lg:hidden">
+      {/* One continuous wallpaper-textured background, from the top of
+          this component (right under the shared Header) down to the very
+          bottom of the screen (behind both the scrollable search area and
+          the tools bar pinned below it). */}
       <div className="relative flex min-h-0 flex-1 flex-col" style={WALLPAPER_STYLE}>
-        {/* Scrollable search area. Scrolls only if a given phone is short
-            enough to need it (it doesn't on any tested size); the header
-            above and tools bar below never move. Scrollbar hidden — a
-            classic (non-overlay) browser scrollbar reserves gutter width
-            for `overflow-y-auto` even with nothing to scroll, which read
-            as a permanent empty strip on the right. Scrolling itself
-            still works if content ever does overflow — only the visible
-            track is suppressed. */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-3 pt-5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* Scrollable search area, top-aligned close under the header
+            rather than vertically centered — centering left no room for
+            the promo banner below the search card without either card
+            fighting for the same dead space. What used to be bare
+            wallpaper between the card and the pinned tools bar is now the
+            banner's slot. Scrollbar hidden — a classic (non-overlay)
+            browser scrollbar reserves gutter width for `overflow-y-auto`
+            even with nothing to scroll, which read as a permanent empty
+            strip on the right; scrolling itself still works, only the
+            visible track is suppressed. `overflow-x-hidden` is required,
+            not decorative: the promo banner's edge-to-edge card track
+            bleeds past this container's own `px-5` via a negative margin,
+            and per the CSS overflow spec, setting only `overflow-y`
+            computes `overflow-x` to `auto` on the other axis too — without
+            this, that horizontal overflow turned the *entire* search area
+            (not just the banner) into a second, whole-page horizontal
+            scroller, which is exactly the "empty space on the right,
+            everything drags sideways" bug this fixes. */}
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex min-h-full flex-col justify-start pt-4 pb-5">
           <h1 className="text-2xl font-extrabold leading-[1.15] text-neutral-900">
             Find <TypewriterWord words={CYCLE_WORDS} className="text-brand-600" />
             <br />
@@ -273,6 +262,9 @@ export function MobileLandingHero({
               </Button>
             </div>
           </div>
+
+          <MobilePromoBanner />
+        </div>
         </div>
 
         {/* Tools bar — pinned to the bottom of the screen (not inline
@@ -304,8 +296,6 @@ export function MobileLandingHero({
           </div>
         </div>
       </div>
-
-      <MobileNav open={navOpen} onClose={() => setNavOpen(false)} />
     </div>
   );
 }

@@ -68,6 +68,7 @@ export const defaultProject3DConfig: Project3DConfig = {
   cameraFovMobile: 48,
   cameraPresets: [],
   exposure: 1,
+  toneMapping: "aces",
   viewerUI: { home: true, unitSearch: true },
   // Sky/Water/Bloom/Clouds "Ocean" tab — the geographic-sun/HDRI system
   // this replaced (see Project3DConfig's own doc comment) is gone; sun
@@ -252,6 +253,15 @@ interface AppState {
   liveListingsLoading: boolean;
   setLiveListings: (listings: Listing[]) => void;
   setLiveListingsLoading: (loading: boolean) => void;
+
+  // Live projects — real Postgres `Project` rows (`GET /api/projects`),
+  // same shape/reasoning as `liveListings` above (fetched once by
+  // `useLiveProjects()`, shared so MapView/SearchBar/etc. don't each fetch
+  // independently, `null` while in flight, absent from `partialize`).
+  liveProjects: Project[] | null;
+  liveProjectsLoading: boolean;
+  setLiveProjects: (projects: Project[]) => void;
+  setLiveProjectsLoading: (loading: boolean) => void;
 
   // Map / selection
   mapBounds: MapBounds | null;
@@ -443,6 +453,11 @@ export const useAppStore = create<AppState>()(
       liveListingsLoading: false,
       setLiveListings: (liveListings) => set({ liveListings, liveListingsLoading: false }),
       setLiveListingsLoading: (liveListingsLoading) => set({ liveListingsLoading }),
+
+      liveProjects: null,
+      liveProjectsLoading: false,
+      setLiveProjects: (liveProjects) => set({ liveProjects, liveProjectsLoading: false }),
+      setLiveProjectsLoading: (liveProjectsLoading) => set({ liveProjectsLoading }),
 
       mapBounds: null,
       setMapBounds: (mapBounds) => set({ mapBounds }),

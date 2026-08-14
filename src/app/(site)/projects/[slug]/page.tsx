@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getProjectBySlug, projects, relatedProjects } from "@/lib/mockData";
+import { getAllProjectSlugs, getProjectBySlug, getRelatedProjects } from "@/lib/projects.server";
 import { SITE_URL } from "@/lib/constants";
 import { ProjectDetailClient } from "@/components/project/ProjectDetailClient";
 
-export function generateStaticParams() {
-  return projects.map((p) => ({ slug: p.slug }));
+export async function generateStaticParams() {
+  const slugs = await getAllProjectSlugs();
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({
@@ -14,7 +15,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const project = getProjectBySlug(slug);
+  const project = await getProjectBySlug(slug);
   if (!project) return {};
   const fromPrice = project.units.length
     ? Math.min(...project.units.map((u) => u.price))
@@ -42,10 +43,10 @@ export default async function ProjectDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const project = getProjectBySlug(slug);
+  const project = await getProjectBySlug(slug);
   if (!project) notFound();
 
-  const related = relatedProjects(project);
+  const related = await getRelatedProjects(project);
   const fromPrice = project.units.length
     ? Math.min(...project.units.map((u) => u.price))
     : null;

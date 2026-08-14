@@ -29,26 +29,34 @@ function formatBytes(bytes: number) {
  * a tiny "error" line in the bottom status bar (easy to miss, no
  * prominent banner), which is exactly what reproduces as "my changes
  * don't save" reports. The existing repair mechanism
- * (`useAdminSessionRepair`'s auto-effect) only reacts to next-auth's own
+ * (`useAdminSessionRepair`'s status) only reacts to next-auth's own
  * cached client-side session status, which does NOT proactively notice
  * a server-side session/cookie loss — confirmed live (Playwright): after
  * clearing the real session cookie while the app still believed it was
  * signed in, an autosave 401'd with no amber "session expired" banner
  * ever appearing, because `useSession()`'s cached status never flipped to
  * "unauthenticated" on its own. This reacts to the actual response
- * instead of a cache: on a 401, re-establish the real session once, then
- * retry the exact same request once. Covers whatever caused the 401
- * (expired JWT, a dev-server restart invalidating it, anything else),
- * not just the one scenario the cached-status check happens to catch. */
-async function fetchWithSessionRetry(
+ * instead of a cache: on a 401, surface the real sign-in prompt
+ * immediately rather than waiting for `useSession()` to notice.
+ *
+ * ⚠️ Used to also silently re-authenticate and retry the request once —
+ * removed as part of the auth-gap closure (see useAdminSessionRepair's
+ * doc comment): that silent retry only worked because "re-authenticate"
+ * meant "sign in with the hardcoded seeded admin credentials," which was
+ * itself the security hole, not a real fix. There is no way to silently
+ * re-establish a specific real admin's own session without their
+ * credentials, so a 401 here is now a real dead end for the in-flight
+ * request — the caller's existing error path surfaces it, and the admin
+ * retries manually once actually reconnected. */
+function fetchWithSessionRetry(
   input: string,
   init: RequestInit | undefined,
-  establishAdminSession: () => Promise<void>
+  onSessionExpired: () => void
 ): Promise<Response> {
-  const res = await fetch(input, init);
-  if (res.status !== 401) return res;
-  await establishAdminSession();
-  return fetch(input, init);
+  return fetch(input, init).then((res) => {
+    if (res.status === 401) onSessionExpired();
+    return res;
+  });
 }
 
 /** Real bug fix (2026-08-14, "resize doesn't save"): a rejected PATCH

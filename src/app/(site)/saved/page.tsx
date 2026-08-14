@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { Bell, Heart, MapPin } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { listings, projects, neighborhoods } from "@/lib/mockData";
+import { neighborhoods } from "@/lib/mockData";
+import { projectUnitListingsFrom } from "@/lib/projects";
 import { ListingCard } from "@/components/results/ListingCard";
 import { ProjectCard } from "@/components/results/ProjectCard";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { useHasMounted } from "@/hooks/useHasMounted";
+import { useLiveListings } from "@/hooks/useLiveListings";
+import { useLiveProjects } from "@/hooks/useLiveProjects";
 import { useT } from "@/lib/i18n/useT";
 
 export default function SavedPage() {
@@ -16,6 +19,10 @@ export default function SavedPage() {
   const saved = useAppStore((s) => s.saved);
   const savedSearches = useAppStore((s) => s.savedSearches);
   const mounted = useHasMounted();
+  const liveListings = useAppStore((s) => s.liveListings);
+  const liveProjects = useAppStore((s) => s.liveProjects);
+  useLiveListings();
+  useLiveProjects();
   const { t } = useT();
 
   if (!mounted) return null;
@@ -36,8 +43,9 @@ export default function SavedPage() {
     );
   }
 
-  const savedListings = listings.filter((l) => saved.listings.includes(l.id));
-  const savedProjects = projects.filter((p) => saved.projects.includes(p.id));
+  const searchableListings = [...(liveListings ?? []), ...projectUnitListingsFrom(liveProjects ?? [])];
+  const savedListings = searchableListings.filter((l) => saved.listings.includes(l.id));
+  const savedProjects = (liveProjects ?? []).filter((p) => saved.projects.includes(p.id));
   const savedNeighborhoods = neighborhoods.filter((n) => saved.neighborhoods.includes(n.id));
 
   const isEmpty =

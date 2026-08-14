@@ -377,6 +377,11 @@ export const ProceduralProjectViewer = forwardRef<ThreeProjectViewerHandle, Thre
       config.autoRotate,
       config.glassPreset,
       config.exposure,
+      // Real per-project tone-mapping curve (2026-08-14 UI-polish pass) —
+      // a plain renderer property right next to exposure above, same
+      // "cheap live update" category — see RenderEngine.ts's own
+      // TONE_MAPPING_MODES doc comment.
+      config.toneMapping,
       config.cameraFovDesktop,
       config.cameraFovMobile,
       // Whole array, same "depend on the caller's own object/array

@@ -1,4 +1,5 @@
-import { projects, projectUnitListings, getNeighborhood } from "./mockData";
+import { getNeighborhood } from "./mockData";
+import { projectUnitListingsFrom } from "./projects";
 import type { FilterState, Listing, Project } from "./types";
 import type { MapBounds } from "./store";
 
@@ -101,19 +102,23 @@ export function sortEntities<T extends { premium: boolean }>(
 
 /**
  * `liveListings` — the real Postgres `Listing` rows fetched by
- * `useLiveListings()` into the store's `liveListings` slice (`null` while
- * that fetch is still in flight or hasn't been triggered on this page).
- * Combined here with `projectUnitListings` (still mock — see the
- * "Rozaris Platform Audit" memory), the one place that combination
- * happens, mirroring the old `mockData.searchableListings` it replaces.
+ * `useLiveListings()` into the store's `liveListings` slice. `liveProjects`
+ * — same, but `useLiveProjects()`/`GET /api/projects`. Both `null` while
+ * their fetch is still in flight or hasn't been triggered on this page.
+ * `projectUnitListingsFrom(liveProjects ?? [])` is the live equivalent of
+ * mockData's `projectUnitListings` — synthetic Listings for each live
+ * project's available units — combined with `liveListings` here, the one
+ * place that combination happens, mirroring the old
+ * `mockData.searchableListings` this replaces.
  */
 export function getVisibleListings(
   f: FilterState,
   bounds: MapBounds | null,
   restrictToBounds: boolean,
-  liveListings: Listing[] | null
+  liveListings: Listing[] | null,
+  liveProjects: Project[] | null
 ): Listing[] {
-  const searchableListings = [...(liveListings ?? []), ...projectUnitListings];
+  const searchableListings = [...(liveListings ?? []), ...projectUnitListingsFrom(liveProjects ?? [])];
   const filtered = searchableListings.filter(
     (l) =>
       matchesListingFilters(l, f) &&
@@ -131,9 +136,10 @@ export function getVisibleListings(
 export function getVisibleProjects(
   f: FilterState,
   bounds: MapBounds | null,
-  restrictToBounds: boolean
+  restrictToBounds: boolean,
+  liveProjects: Project[] | null
 ): Project[] {
-  const filtered = projects.filter(
+  const filtered = (liveProjects ?? []).filter(
     (p) =>
       matchesProjectFilters(p, f) &&
       (!restrictToBounds || inBounds(p.coords, bounds))

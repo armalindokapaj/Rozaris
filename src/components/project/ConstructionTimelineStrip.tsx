@@ -28,6 +28,14 @@ export function ConstructionTimelineStrip({
   const { t, locale } = useT();
   const stageName = (s: ConstructionStage) => STAGE_NAMES[locale][s.order] ?? s.name;
 
+  // A real, live project can genuinely have zero construction stages yet
+  // (freshly admin-created, before that data's been added — see the
+  // "Rozaris Platform Audit" memory's Projects/Units migration, which
+  // surfaced this crashing a real production build for exactly such a
+  // project). mockData's hand-authored fixtures never left this empty, so
+  // nothing below was ever exercised against it before.
+  if (stages.length === 0) return null;
+
   if (compact) {
     const activeStage = stages[activeIndex >= 0 ? activeIndex : stages.length - 1];
     const r = 15;

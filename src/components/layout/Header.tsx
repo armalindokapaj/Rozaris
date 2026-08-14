@@ -2,14 +2,13 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   Calculator,
   ChevronDown,
   ChevronRight,
   Headphones,
   Heart,
-  Menu,
   Pencil,
   SquareStack,
   User,
@@ -24,6 +23,7 @@ import { Logo } from "./Logo";
 import { LanguageCurrencySelector } from "./LanguageCurrencySelector";
 import { AccountMenu } from "./AccountMenu";
 import { MobileNav } from "./MobileNav";
+import { MenuToggleIcon } from "./MenuToggleIcon";
 import { cn } from "@/lib/utils";
 
 function ResourceRow({
@@ -118,13 +118,9 @@ function ResourcesDropdown() {
 
 export function Header() {
   const pathname = usePathname();
-  const router = useRouter();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const compareCount = useAppStore((s) => s.compare.length);
   const savedCount = useAppStore((s) => s.saved.listings.length + s.saved.projects.length);
-  const filters = useAppStore((s) => s.filters);
-  const setFilters = useAppStore((s) => s.setFilters);
-  const setTransaction = useAppStore((s) => s.setTransaction);
   const { hint: compareHint, hintRef: compareHintRef, handleCompareClick } = useCompareHint();
   const { hint: savedHint, hintRef: savedHintRef, handleSavedClick } = useSavedHint();
   const { t } = useT();
@@ -157,45 +153,6 @@ export function Header() {
             {t("nav.aboutUs")}
           </Link>
         </nav>
-
-        {/* Mobile-only: Buy/Rent/New Projects live in the top bar next to
-            the logo instead of their own search-row above the map. */}
-        <div className="ml-1 flex min-w-0 items-center gap-1 lg:hidden">
-          {(
-            [
-              ["buy", "nav.buy"],
-              ["rent", "nav.rent"],
-            ] as const
-          ).map(([txn, labelKey]) => (
-            <button
-              key={txn}
-              onClick={() => {
-                setTransaction(txn);
-                if (pathname !== "/search") router.push("/search");
-              }}
-              className={cn(
-                "shrink-0 rounded-control px-2.5 py-1.5 text-xs font-semibold transition-colors",
-                filters.transaction === txn && !filters.projectsOnly
-                  ? "bg-brand-500 text-white"
-                  : "bg-neutral-100 text-neutral-600"
-              )}
-            >
-              {t(labelKey)}
-            </button>
-          ))}
-          <button
-            onClick={() => {
-              setFilters({ projectsOnly: true });
-              if (pathname !== "/search") router.push("/search");
-            }}
-            className={cn(
-              "shrink truncate rounded-control px-2.5 py-1.5 text-xs font-semibold transition-colors",
-              filters.projectsOnly ? "bg-brand-500 text-white" : "bg-neutral-100 text-neutral-600"
-            )}
-          >
-            {t("nav.newProjects")}
-          </button>
-        </div>
 
         <div className="ml-auto flex items-center gap-1 lg:gap-2">
           <Link
@@ -235,7 +192,7 @@ export function Header() {
             aria-label={t("nav.openMenu")}
             className="rounded-control p-2 text-neutral-700 hover:bg-neutral-100 lg:hidden"
           >
-            <Menu className="h-5 w-5" />
+            <MenuToggleIcon open={mobileNavOpen} />
           </button>
         </div>
       </header>

@@ -741,10 +741,13 @@ model Project3DConfig {
   cameraPresets Json?
   /// Tone-mapping exposure multiplier (renderer.toneMappingExposure) —
   /// also the Sky/Water/Bloom/Clouds "Ocean" tab's Sky "exposure" slider,
-  /// matching webgl_shaders_ocean.html's own GUI exactly. renderer.
-  /// toneMapping itself is fixed to ACESFilmic (not made per-project
-  /// configurable).
+  /// matching webgl_shaders_ocean.html's own GUI exactly.
   exposure      Float @default(1)
+  /// renderer.toneMapping (2026-08-14 UI-polish pass) — real per-project
+  /// choice: none | linear | reinhard | cineon | aces | agx | neutral.
+  /// Defaults to "aces" (renderer.toneMapping's prior hardcoded value) so
+  /// every project predating this column keeps rendering identically.
+  toneMapping   String @default("aces")
 
   // Publish/runtime hardening pass.
   /// Which of the always-on bottom-menu controls (Home/Unit Search/Time

@@ -273,6 +273,40 @@ export function EffectsPanel({
           hardcoded default (see BLOOM_THRESHOLD_DEFAULT in
           RenderEngine.ts). --- */}
 
+      {/* --- Tone Mapping (2026-08-14 UI-polish pass, audit suggestion) —
+          real per-project choice of `renderer.toneMapping`, previously
+          hardcoded to ACES Filmic for every project platform-wide. Every
+          option THREE.*ToneMapping actually has, matching the reference
+          site's (planpoint-webgpu.vercel.app) own debug panel exactly.
+          Placed directly above 3D LUT below since the two compose as one
+          color pipeline — this is the base filmic curve, LUT is the
+          creative grade applied on top of it (see RenderEngine.ts's
+          buildRenderPipeline doc comment for the real application order:
+          tone mapping is a renderer-level output stage, applied after
+          whatever the LUT/post-processing chain produces). Exposure (the
+          brightness multiplier that curve is fed) stays on the Sky/Ocean
+          tabs' own Sky section — unchanged, not duplicated here. --- */}
+      <section className="border-t border-neutral-100 pt-4">
+        <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-neutral-500">
+          {t("admin.sceneToneMappingTitle")}
+        </h3>
+        <SelectField
+          label={t("admin.sceneToneMapping")}
+          value={draft.toneMapping}
+          onChange={(v) => update({ toneMapping: v as Project3DConfig["toneMapping"] }, { commit: true })}
+          options={[
+            ["aces", t("admin.sceneToneMapping_aces")],
+            ["agx", t("admin.sceneToneMapping_agx")],
+            ["neutral", t("admin.sceneToneMapping_neutral")],
+            ["reinhard", t("admin.sceneToneMapping_reinhard")],
+            ["cineon", t("admin.sceneToneMapping_cineon")],
+            ["linear", t("admin.sceneToneMapping_linear")],
+            ["none", t("admin.sceneToneMapping_none")],
+          ]}
+        />
+        <p className="mt-2 text-[11px] text-neutral-400">{t("admin.sceneToneMappingNote")}</p>
+      </section>
+
       {/* --- 3D LUT color grading (webgl_postprocessing_3dlut.html parity)
           — every option the reference demo's own GUI exposes: enabled, a
           9-way preset dropdown, intensity. Moved here from the old

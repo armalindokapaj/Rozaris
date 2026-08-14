@@ -98,6 +98,7 @@ const patchSchema = z.object({
   cameraFovMobile: z.number().min(10).max(120).optional(),
   cameraPresets: z.array(cameraPresetSchema).optional(),
   exposure: z.number().min(0).max(4).optional(),
+  toneMapping: z.enum(["none", "linear", "reinhard", "cineon", "aces", "agx", "neutral"]).optional(),
   viewerUI: viewerUISchema.optional(),
   // Sky/Water/Bloom/Clouds "Ocean" tab — direct sun elevation/azimuth,
   // the only sun model now (the old geographic-sun/HDRI/lensflare/

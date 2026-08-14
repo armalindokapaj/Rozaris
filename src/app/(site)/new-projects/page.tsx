@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { projects } from "@/lib/mockData";
+import { getAllProjects } from "@/lib/projects.server";
 import { NewProjectsClient } from "@/components/project/NewProjectsClient";
 
 export const metadata: Metadata = {
@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: "Shfleto të gjitha projektet e reja në zhvillim në ROZARIS, me njësi ende të disponueshme.",
 };
 
-export default function NewProjectsPage() {
+export default async function NewProjectsPage() {
+  const projects = await getAllProjects();
   return <NewProjectsClient projects={projects} />;
 }

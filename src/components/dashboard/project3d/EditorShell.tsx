@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { ThreeProjectViewer } from "@/components/project/ThreeProjectViewer";
 import type { SectionGizmoMode, ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import type {
@@ -243,6 +244,18 @@ export function EditorShell({
   // Bottom bar's device-preview toggle — real, constrains the viewport
   // column below.
   const [previewWidth, setPreviewWidth] = useState<PreviewWidth>("desktop");
+  // Collapsible rails (suggestion from the 2026-08-14 audit report, now
+  // shipped) — the fixed-320px/380px rails from that same audit fixed the
+  // viewport getting squeezed on wide screens, but a full-window viewport
+  // is occasionally worth reclaiming outright (framing a camera preset,
+  // taking a clean screenshot for e.g. a listing photo) — the same
+  // affordance Blender's N-panel and Figma's sidebar toggle both offer.
+  // Desktop (`lg:`) only — mobile already stacks rails above/below the
+  // viewport instead of beside it, so there's no width to reclaim there.
+  // Session-only (not persisted): defaults open every time the editor is
+  // reopened, same as `activeMode`/`previewWidth` above.
+  const [leftRailOpen, setLeftRailOpen] = useState(true);
+  const [rightRailOpen, setRightRailOpen] = useState(true);
   // Night mode — default light (matches the rest of the platform), opt-in,
   // persisted per-browser. Read from localStorage in an effect (not at
   // render time) since this component's initial render also happens
@@ -523,26 +536,46 @@ export function EditorShell({
         {/* LEFT — building/floor navigation, except the Sections tab
             (first-class Configurator module), which uses this space for
             the sections list + "+ Draw Section" instead — see
-            SectionsListRail.tsx's own doc comment. */}
-        <div className="order-2 flex min-h-0 w-full shrink-0 flex-col border-b border-neutral-200 lg:order-1 lg:h-full lg:w-[320px] lg:border-b-0 lg:border-r">
-          <div className="min-h-0 flex-1 overflow-y-auto scroll-thin p-5">
-            {activeMode === "sections" ? (
-              <SectionsListRail
-                sections={sections}
-                selectedSectionId={selectedSectionId}
-                onSelect={handleSelectSection}
-                onDrawNew={handleDrawSection}
-                drawing={drawingSection}
-                onDuplicate={handleDuplicateSection}
-                onRename={handleRenameSection}
-                onToggleHidden={handleToggleHiddenSection}
-                onDelete={handleDeleteSection}
-                t={t}
-              />
-            ) : (
-              <BuildingNavRail units={project.units} selectedFloor={selectedFloor} setSelectedFloor={setSelectedFloor} t={t} />
+            SectionsListRail.tsx's own doc comment. Collapsible (2026-08-14
+            audit follow-up): the toggle button is a sibling of the
+            width-collapsing inner div, not a child of it, so it stays
+            visible/clickable at `w-0 overflow-hidden` instead of vanishing
+            with the rest of the rail's content. */}
+        <div className="relative order-2 shrink-0 lg:order-1">
+          <div
+            className={cn(
+              "flex min-h-0 w-full flex-col border-b border-neutral-200 transition-[width] duration-200 lg:h-full lg:border-b-0 lg:border-r",
+              leftRailOpen ? "lg:w-[320px]" : "lg:w-0 lg:overflow-hidden lg:border-r-0"
             )}
+          >
+            <div className="min-h-0 flex-1 overflow-y-auto scroll-thin p-5">
+              {activeMode === "sections" ? (
+                <SectionsListRail
+                  sections={sections}
+                  selectedSectionId={selectedSectionId}
+                  onSelect={handleSelectSection}
+                  onDrawNew={handleDrawSection}
+                  drawing={drawingSection}
+                  onDuplicate={handleDuplicateSection}
+                  onRename={handleRenameSection}
+                  onToggleHidden={handleToggleHiddenSection}
+                  onDelete={handleDeleteSection}
+                  t={t}
+                />
+              ) : (
+                <BuildingNavRail units={project.units} selectedFloor={selectedFloor} setSelectedFloor={setSelectedFloor} t={t} />
+              )}
+            </div>
           </div>
+          <button
+            onClick={() => setLeftRailOpen((v) => !v)}
+            aria-label={t(leftRailOpen ? "admin.editorCollapseLeftRail" : "admin.editorExpandLeftRail")}
+            title={t(leftRailOpen ? "admin.editorCollapseLeftRail" : "admin.editorExpandLeftRail")}
+            className="absolute top-1/2 z-10 hidden -translate-y-1/2 rounded-control border border-neutral-200 bg-white p-1 text-neutral-500 shadow-[var(--shadow-1)] hover:bg-neutral-50 hover:text-neutral-700 lg:block"
+            style={{ right: "-13px" }}
+          >
+            {leftRailOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
+          </button>
         </div>
 
         {/* MIDDLE — viewport. `previewWidth` constrains it to simulate a
@@ -568,143 +601,160 @@ export function EditorShell({
           </div>
         </div>
 
-        {/* RIGHT — settings for the active top tab. */}
-        <div className="order-3 flex min-h-0 w-full shrink-0 flex-col border-t border-neutral-200 lg:h-full lg:w-[380px] lg:border-l lg:border-t-0">
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scroll-thin p-5">
-            {activeMode === "model" && (
-              <>
-                <SlotTabStrip
-                  slots={slots}
-                  activeSlotId={activeSlotId}
-                  onSelect={onSelectSlot}
-                  onAdd={onAddSlot}
-                  onRename={onRenameSlot}
-                  onDelete={onDeleteSlot}
-                  t={t}
-                />
-                <ModelPanel
-                  fileInputRef={fileInputRef}
-                  onFile={onDetailFile}
-                  hasDetailModel={hasDetailModel}
-                  activeVersion={activeVersion}
-                  canEditDetail={canEditDetail}
-                  detailBusy={detailBusy}
-                  onDiscardDraft={onDiscardDraft}
-                  onRemoveDetailModel={onRemoveDetailModel}
-                  onDeleteModel={onDeleteModel}
-                  uploadProgress={uploadProgress}
-                  detailError={detailError}
-                  scale={scale}
-                  setScale={setScale}
-                  rotationDeg={rotationDeg}
-                  setRotationDeg={setRotationDeg}
-                  altitudeOffset={altitudeOffset}
-                  setAltitudeOffset={setAltitudeOffset}
-                  detailFlash={detailFlash}
-                  needsReviewCount={needsReviewCount}
-                  matchedCount={matchedCount}
-                  nodeOverrideCount={Object.keys(nodeOverrides).length}
-                  onDetailSave={onDetailSave}
-                  detailLoaded={detailLoaded}
-                  showHistory={showHistory}
-                  setShowHistory={setShowHistory}
-                  versions={versions}
-                  onDetailRollback={onDetailRollback}
-                  onDeleteVersion={onDeleteVersion}
-                  locale={locale}
-                  t={t}
-                />
-              </>
+        {/* RIGHT — settings for the active top tab. Collapsible, mirroring
+            the left rail above (toggle on its left edge this time). */}
+        <div className="relative order-3 shrink-0">
+          <button
+            onClick={() => setRightRailOpen((v) => !v)}
+            aria-label={t(rightRailOpen ? "admin.editorCollapseRightRail" : "admin.editorExpandRightRail")}
+            title={t(rightRailOpen ? "admin.editorCollapseRightRail" : "admin.editorExpandRightRail")}
+            className="absolute top-1/2 z-10 hidden -translate-y-1/2 rounded-control border border-neutral-200 bg-white p-1 text-neutral-500 shadow-[var(--shadow-1)] hover:bg-neutral-50 hover:text-neutral-700 lg:block"
+            style={{ left: "-13px" }}
+          >
+            {rightRailOpen ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
+          </button>
+          <div
+            className={cn(
+              "flex min-h-0 w-full flex-col border-t border-neutral-200 transition-[width] duration-200 lg:h-full lg:border-l lg:border-t-0",
+              rightRailOpen ? "lg:w-[380px]" : "lg:w-0 lg:overflow-hidden lg:border-l-0"
             )}
-            {activeMode === "materials" && (
-              <div className="space-y-5">
-                {hasSceneTree && (
-                  <SceneTreeRail
-                    sceneManifest={sceneManifest}
-                    selectedNodeRzId={selectedNodeRzId}
-                    setSelectedNodeRzId={setSelectedNodeRzId}
-                    nodeOverrides={nodeOverrides}
-                    setNodeOverrides={setNodeOverrides}
-                    linkedMeshNames={linkedMeshNames}
-                    canEditDetail={canEditDetail}
+          >
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scroll-thin p-5">
+              {activeMode === "model" && (
+                <>
+                  <SlotTabStrip
+                    slots={slots}
+                    activeSlotId={activeSlotId}
+                    onSelect={onSelectSlot}
+                    onAdd={onAddSlot}
+                    onRename={onRenameSlot}
+                    onDelete={onDeleteSlot}
                     t={t}
                   />
-                )}
-                <div className={hasSceneTree ? "border-t border-neutral-100 pt-5" : undefined}>
-                  <MaterialsPanel draft={draft} update={update} t={t} />
+                  <ModelPanel
+                    fileInputRef={fileInputRef}
+                    onFile={onDetailFile}
+                    hasDetailModel={hasDetailModel}
+                    activeVersion={activeVersion}
+                    canEditDetail={canEditDetail}
+                    detailBusy={detailBusy}
+                    onDiscardDraft={onDiscardDraft}
+                    onRemoveDetailModel={onRemoveDetailModel}
+                    onDeleteModel={onDeleteModel}
+                    uploadProgress={uploadProgress}
+                    detailError={detailError}
+                    scale={scale}
+                    setScale={setScale}
+                    rotationDeg={rotationDeg}
+                    setRotationDeg={setRotationDeg}
+                    altitudeOffset={altitudeOffset}
+                    setAltitudeOffset={setAltitudeOffset}
+                    detailFlash={detailFlash}
+                    needsReviewCount={needsReviewCount}
+                    matchedCount={matchedCount}
+                    nodeOverrideCount={Object.keys(nodeOverrides).length}
+                    onDetailSave={onDetailSave}
+                    detailLoaded={detailLoaded}
+                    showHistory={showHistory}
+                    setShowHistory={setShowHistory}
+                    versions={versions}
+                    onDetailRollback={onDetailRollback}
+                    onDeleteVersion={onDeleteVersion}
+                    locale={locale}
+                    t={t}
+                  />
+                </>
+              )}
+              {activeMode === "materials" && (
+                <div className="space-y-5">
+                  {hasSceneTree && (
+                    <SceneTreeRail
+                      sceneManifest={sceneManifest}
+                      selectedNodeRzId={selectedNodeRzId}
+                      setSelectedNodeRzId={setSelectedNodeRzId}
+                      nodeOverrides={nodeOverrides}
+                      setNodeOverrides={setNodeOverrides}
+                      linkedMeshNames={linkedMeshNames}
+                      canEditDetail={canEditDetail}
+                      t={t}
+                    />
+                  )}
+                  <div className={hasSceneTree ? "border-t border-neutral-100 pt-5" : undefined}>
+                    <MaterialsPanel draft={draft} update={update} t={t} />
+                  </div>
                 </div>
-              </div>
-            )}
-            {activeMode === "sky" && <SkyPanel draft={draft} update={update} t={t} />}
-            {activeMode === "ocean" && (
-              <OceanPanel
-                draft={draft}
-                update={update}
-                t={t}
-              />
-            )}
-            {activeMode === "camera" && (
-              <CameraPanel
-                draft={draft}
-                update={update}
-                viewerRef={viewerRef}
-                newPresetLabel={newPresetLabel}
-                setNewPresetLabel={setNewPresetLabel}
-                t={t}
-              />
-            )}
-            {activeMode === "sections" &&
-              (displaySection ? (
-                <SectionsPanel
-                  section={displaySection}
-                  update={handleUpdateSection}
-                  gizmoMode={gizmoMode}
-                  setGizmoMode={handleGizmoModeChange}
-                  onSetCamera={handleSetSectionCamera}
-                  cameraSaved={cameraSavedFlash}
-                  onSave={onSaveScene}
-                  saveBusy={configBusy}
-                  savedFlash={savedFlash}
-                  saveError={configError}
+              )}
+              {activeMode === "sky" && <SkyPanel draft={draft} update={update} t={t} />}
+              {activeMode === "ocean" && (
+                <OceanPanel
+                  draft={draft}
+                  update={update}
                   t={t}
                 />
-              ) : (
-                <p className="text-xs text-neutral-400">{t("admin.sectionsSelectPrompt")}</p>
-              ))}
-            {activeMode === "inventory" && (
-              <UnitsPanel
-                units={project.units}
-                detectedNodes={detectedNodes}
-                nodesLoading={nodesLoading}
-                matchedCount={matchedCount}
-                needsReviewCount={needsReviewCount}
-                visibleNodes={visibleNodes}
-                showOnlyNeedsReview={showOnlyNeedsReview}
-                setShowOnlyNeedsReview={setShowOnlyNeedsReview}
-                canEditDetail={canEditDetail}
-                linkSelections={linkSelections}
-                setLinkSelections={setLinkSelections}
-                carriedMeshNames={carriedMeshNames}
-                setCarriedMeshNames={setCarriedMeshNames}
-                draft={draft}
-                update={update}
-                selectedFloor={selectedFloor}
-                setSelectedFloor={setSelectedFloor}
-                t={t}
-              />
-            )}
-            {activeMode === "effects" && (
-              <EffectsPanel
-                draft={draft}
-                update={update}
-                suggestedTier={suggestedTier}
-                advancedOpen={advancedOpen}
-                setAdvancedOpen={setAdvancedOpen}
-                perfStats={perfStats}
-                t={t}
-              />
-            )}
-            {activeMode === "viewer" && <ViewerPanel draft={draft} update={update} t={t} />}
+              )}
+              {activeMode === "camera" && (
+                <CameraPanel
+                  draft={draft}
+                  update={update}
+                  viewerRef={viewerRef}
+                  newPresetLabel={newPresetLabel}
+                  setNewPresetLabel={setNewPresetLabel}
+                  t={t}
+                />
+              )}
+              {activeMode === "sections" &&
+                (displaySection ? (
+                  <SectionsPanel
+                    section={displaySection}
+                    update={handleUpdateSection}
+                    gizmoMode={gizmoMode}
+                    setGizmoMode={handleGizmoModeChange}
+                    onSetCamera={handleSetSectionCamera}
+                    cameraSaved={cameraSavedFlash}
+                    onSave={onSaveScene}
+                    saveBusy={configBusy}
+                    savedFlash={savedFlash}
+                    saveError={configError}
+                    t={t}
+                  />
+                ) : (
+                  <p className="text-xs text-neutral-400">{t("admin.sectionsSelectPrompt")}</p>
+                ))}
+              {activeMode === "inventory" && (
+                <UnitsPanel
+                  units={project.units}
+                  detectedNodes={detectedNodes}
+                  nodesLoading={nodesLoading}
+                  matchedCount={matchedCount}
+                  needsReviewCount={needsReviewCount}
+                  visibleNodes={visibleNodes}
+                  showOnlyNeedsReview={showOnlyNeedsReview}
+                  setShowOnlyNeedsReview={setShowOnlyNeedsReview}
+                  canEditDetail={canEditDetail}
+                  linkSelections={linkSelections}
+                  setLinkSelections={setLinkSelections}
+                  carriedMeshNames={carriedMeshNames}
+                  setCarriedMeshNames={setCarriedMeshNames}
+                  draft={draft}
+                  update={update}
+                  selectedFloor={selectedFloor}
+                  setSelectedFloor={setSelectedFloor}
+                  t={t}
+                />
+              )}
+              {activeMode === "effects" && (
+                <EffectsPanel
+                  draft={draft}
+                  update={update}
+                  suggestedTier={suggestedTier}
+                  advancedOpen={advancedOpen}
+                  setAdvancedOpen={setAdvancedOpen}
+                  perfStats={perfStats}
+                  t={t}
+                />
+              )}
+              {activeMode === "viewer" && <ViewerPanel draft={draft} update={update} t={t} />}
+            </div>
           </div>
         </div>
       </div>

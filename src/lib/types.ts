@@ -203,6 +203,10 @@ export interface Project {
  * (see lib/threeBuilding.ts) since that radius varies per project. */
 /** "3D Experience Phase 1" — see src/lib/viewerPresets.ts. */
 export type RenderingMode = "auto" | "webgpu" | "webgl2";
+/** renderer.toneMapping (2026-08-14 UI-polish pass) — the 7 values
+ * THREE.*ToneMapping actually has (confirmed against constants.js), same
+ * set the reference site's own debug panel exposes. */
+export type ToneMapping = "none" | "linear" | "reinhard" | "cineon" | "aces" | "agx" | "neutral";
 export type QualityPreset = "ultra_desktop" | "high_desktop" | "balanced" | "mobile_high" | "mobile_low";
 export type GlassPreset = "performance" | "standard" | "premium";
 /** Non-glass architectural material presets (Editor UX & Scene Structure
@@ -277,10 +281,16 @@ export interface Project3DConfig {
   cameraPresets: CameraPreset[];
   /** Tone-mapping exposure multiplier (renderer.toneMappingExposure) —
    * also the Sky/Water/Bloom/Clouds "Ocean" tab's Sky "exposure" slider,
-   * matching webgl_shaders_ocean.html's own GUI exactly. renderer.
-   * toneMapping itself is fixed to ACESFilmic, not made per-project
-   * configurable. */
+   * matching webgl_shaders_ocean.html's own GUI exactly. */
   exposure: number;
+  /** Tone-mapping curve (renderer.toneMapping) — real per-project choice
+   * (2026-08-14 UI-polish pass), matching every option the reference site
+   * (planpoint-webgpu.vercel.app) exposes in its own debug panel. Applied
+   * live, no remount needed — same category as `exposure` above (a plain
+   * renderer property, not part of the TSL post-processing node chain).
+   * Defaults to "aces" so every project predating this field keeps
+   * rendering exactly as before. */
+  toneMapping: ToneMapping;
 
   /** Which of the always-on bottom-menu controls show publicly — Xray/
    * Camera Presets aren't included here, they're already conditional on
@@ -810,6 +820,7 @@ export interface ExperienceDocument {
     renderingMode: RenderingMode;
     glassPreset: GlassPreset;
     exposure: number;
+    toneMapping: ToneMapping;
   };
   units: {
     bindings: UnitMeshLink[];

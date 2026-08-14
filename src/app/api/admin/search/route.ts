@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
-import { projects as mockProjects, publishers as mockPublishers } from "@/lib/mockData";
+import { publishers as mockPublishers } from "@/lib/mockData";
 
 /** `kind: "route"` is a real, different page (a project's 3D editor).
  * `kind: "tab"` switches this shell's own local tab state and seeds that
@@ -27,6 +27,13 @@ const LIMIT = 6;
  * a real destination to land on today. Listings/Units don't have a
  * per-record admin detail view yet, so a result for one would have
  * nowhere honest to link — omitted rather than faked.
+ *
+ * ⚠️ Real-data fix (see the "Rozaris Platform Audit" memory's
+ * Projects/Units migration): Projects used to also search mockData's
+ * static array alongside this same Prisma query — every seeded project
+ * showed up twice (once from each source, same id) once `prisma/seed.ts`
+ * started seeding every mockData project into this same table. Postgres
+ * alone covers all of them now.
  */
 export async function GET(request: Request) {
   const gate = await requireAdmin();
@@ -38,10 +45,7 @@ export async function GET(request: Request) {
   }
   const needle = q.toLowerCase();
 
-  const projects: AdminSearchResult[] = mockProjects
-    .filter((p) => p.name.toLowerCase().includes(needle))
-    .slice(0, LIMIT)
-    .map((p) => ({ id: p.id, label: p.name, sublabel: p.city, kind: "route", href: `/admin/3d-experience/${p.id}` }));
+  const projects: AdminSearchResult[] = [];
 
   const publishers: AdminSearchResult[] = mockPublishers
     .filter((p) => p.name.toLowerCase().includes(needle))

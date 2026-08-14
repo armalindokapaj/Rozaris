@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
-import { projects as mockProjects, listings as mockListings } from "@/lib/mockData";
 
 /**
  * "Top Locations" for the Dashboard — deliberately labeled *by Inventory*,
  * not *by Views*: no page-view/analytics-event table exists anywhere in
  * this schema (confirmed — grepped for `views`/`viewCount`/`pageview`,
  * nothing tracks it), so a "views" ranking would have to be fabricated.
- * City counts of real, live inventory (Project + Listing, mock + real,
- * same combine convention as the rest of this console) is the closest
+ * City counts of real, live inventory (Project + Listing) is the closest
  * honest equivalent: it answers the same underlying question ("where is
  * the platform's activity concentrated") with data that's actually real.
+ *
+ * ⚠️ Real-data fix (see the "Rozaris Platform Audit" memory's
+ * Projects/Units migration): this used to also count mockData's static
+ * arrays alongside these same Prisma queries — a double-count once
+ * `prisma/seed.ts` started seeding every mockData project/listing into
+ * these same tables (kept 1:1 on every seed run). Real Postgres now
+ * covers every row on its own.
  */
 export async function GET() {
   const gate = await requireAdmin();
@@ -23,9 +28,6 @@ export async function GET() {
     if (!key) return;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   };
-
-  mockProjects.forEach((p) => bump(p.city));
-  mockListings.forEach((l) => bump(l.city));
 
   const [realProjects, realListings] = await Promise.all([
     prisma.project.findMany({ where: { deletedAt: null }, select: { city: true } }),

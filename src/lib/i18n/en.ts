@@ -57,7 +57,7 @@ const en = {
     aboutUs: "About Us",
     contact: "Contact",
     listCardTitle: "List Your Property",
-    listCardBody: "Reach thousands of potential buyers and renters.",
+    listCardBody: "Reach thousands.",
     becomeAPublisher: "Become a Publisher",
     signOut: "Sign out",
     publisherDashboard: "Publisher dashboard",
@@ -128,6 +128,7 @@ const en = {
     viewMode: "View mode",
     fullMap: "Full map",
     smallMap: "Small map",
+    featuredDevelopments: "Featured Developments",
   },
   landing: {
     heroTitle: "Explore Property Differently",
@@ -739,6 +740,9 @@ const en = {
     consoleTitle: "Admin console",
     signInRequired: "Admin sign-in required",
     signInAsAdmin: "Sign in as Admin (demo)",
+    checkingAccess: "Checking your admin access…",
+    notAuthorizedTitle: "Admin access required",
+    notAuthorizedBody: "This account doesn't have Admin permissions. Sign in with an Admin account to continue.",
     sessionExpiredNote: "Admin write session expired — uploads, deletes, and publishing will fail until you reconnect.",
     sessionReconnect: "Reconnect",
     sessionReconnecting: "Reconnecting…",
@@ -860,6 +864,13 @@ const en = {
     editorPreviewExperience: "Preview as Customer",
     editorNightMode: "Switch to night mode",
     editorLightMode: "Switch to light mode",
+    // Collapsible rails (2026-08-14 UI-polish pass, audit suggestion) —
+    // one toggle per rail, reclaims the full window for camera framing or
+    // a screenshot.
+    editorCollapseLeftRail: "Collapse left panel",
+    editorExpandLeftRail: "Expand left panel",
+    editorCollapseRightRail: "Collapse right panel",
+    editorExpandRightRail: "Expand right panel",
     // Left rail (Inventory/Floors mockup pass) — real Unit.buildingName/
     // Unit.floor grouping, not a mock. Floor label reuses
     // detailModelFloorLabel below.
@@ -989,6 +1000,16 @@ const en = {
     sceneBloomStrength: "Strength",
     sceneBloomRadius: "Radius",
     sceneBloomNote: "Real HDR bloom — only available on desktop-oriented quality tiers.",
+    sceneToneMappingTitle: "Tone Mapping",
+    sceneToneMapping: "Curve",
+    sceneToneMapping_aces: "ACES Filmic",
+    sceneToneMapping_agx: "AgX",
+    sceneToneMapping_neutral: "Neutral",
+    sceneToneMapping_reinhard: "Reinhard",
+    sceneToneMapping_cineon: "Cineon",
+    sceneToneMapping_linear: "Linear (none)",
+    sceneToneMapping_none: "Off (raw HDR)",
+    sceneToneMappingNote: "How the renderer compresses HDR light into displayable color. ACES Filmic was this platform's only option until now; AgX is three.js's newer recommended default and tends to hold highlight detail better.",
     sceneLutEnabled: "3D LUT color grading",
     sceneLutPreset: "Preset",
     sceneLutIntensity: "Intensity",

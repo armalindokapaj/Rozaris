@@ -2,11 +2,13 @@
 
 import { useMemo, useRef, useState } from "react";
 import { Search, MapPin, Building2, LandPlot, X } from "lucide-react";
-import { neighborhoods, projects, publishers, CITY } from "@/lib/mockData";
+import { neighborhoods, publishers, CITY } from "@/lib/mockData";
 import { defaultFilters, useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
+import { useLiveProjects } from "@/hooks/useLiveProjects";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
+import type { Project } from "@/lib/types";
 
 type Suggestion = {
   id: string;
@@ -16,7 +18,11 @@ type Suggestion = {
   target?: { lat: number; lng: number; zoom?: number };
 };
 
-function buildSuggestions(query: string, t: ReturnType<typeof useT>["t"]): Suggestion[] {
+function buildSuggestions(
+  query: string,
+  t: ReturnType<typeof useT>["t"],
+  projects: Project[]
+): Suggestion[] {
   const q = query.trim().toLowerCase();
   const all: Suggestion[] = [
     {
@@ -77,8 +83,13 @@ export function SearchBar({
   const location = useAppStore((s) => s.filters.location);
   const { t } = useT();
   useClickOutside(ref, () => setOpen(false), open);
+  const liveProjects = useAppStore((s) => s.liveProjects);
+  useLiveProjects();
 
-  const suggestions = useMemo(() => buildSuggestions(query, t), [query, t]);
+  const suggestions = useMemo(
+    () => buildSuggestions(query, t, liveProjects ?? []),
+    [query, t, liveProjects]
+  );
 
   function selectSuggestion(s: Suggestion) {
     setQuery(s.label);

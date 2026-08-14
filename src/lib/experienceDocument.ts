@@ -71,6 +71,7 @@ export function buildExperienceDocument(
       renderingMode: config.renderingMode,
       glassPreset: config.glassPreset,
       exposure: config.exposure,
+      toneMapping: config.toneMapping,
     },
     units: {
       bindings: version.unitLinks,

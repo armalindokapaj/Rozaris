@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db";
-import { projects as mockProjects, listings as mockListings } from "@/lib/mockData";
 
 export interface InventoryStatusCounts {
   available: number;
@@ -8,28 +7,24 @@ export interface InventoryStatusCounts {
 }
 
 /**
- * Unit counts by commercial status — PRD §8.1 "Inventory Overview" — summed
- * across both the seeded mock catalog (`lib/mockData.ts`, still the public
- * site's live browse catalog — see the schema-header note on why) and real
- * Unit rows (the newer publisher-submission pipeline). Same combine
- * convention already used everywhere else in the admin console (e.g.
- * Viewer3DTab's `[...projects, ...customProjects]`).
+ * Unit counts by commercial status — PRD §8.1 "Inventory Overview".
+ *
+ * ⚠️ Real-data fix (see the "Rozaris Platform Audit" memory's
+ * Projects/Units migration): this used to sum `lib/mockData.ts`'s static
+ * `projects` *and* real Postgres `Unit` rows as if they were two disjoint
+ * inventories. They stopped being disjoint the moment `prisma/seed.ts`
+ * started seeding every mockData project's units into this same table
+ * (kept 1:1 with mockData on every seed run) — the old code was silently
+ * double-counting every seeded unit, once from the mock array and once
+ * again from this same `groupBy`. One real query now.
  *
  * `coming_soon`/`unavailable` from PRD §8.1's full status list are
- * deliberately absent here — neither the mock nor the real Unit model
- * tracks those states today, and inventing zero-valued buckets for states
- * nothing can ever populate would be its own dishonesty.
+ * deliberately absent here — the Unit model doesn't track those states
+ * today, and inventing zero-valued buckets for states nothing can ever
+ * populate would be its own dishonesty.
  */
 export async function getCombinedUnitStatusCounts(): Promise<InventoryStatusCounts> {
   const counts: InventoryStatusCounts = { available: 0, reserved: 0, sold: 0 };
-
-  for (const p of mockProjects) {
-    for (const u of p.units) {
-      if (u.status === "available") counts.available++;
-      else if (u.status === "reserved") counts.reserved++;
-      else if (u.status === "sold") counts.sold++;
-    }
-  }
 
   const realUnits = await prisma.unit.groupBy({
     by: ["status"],
@@ -61,25 +56,18 @@ const TOLERANCE = 0.05;
  * Intelligence dashboard" describes a fuller comparable-set model that also
  * tracks price-change-YoY and "changed recently", both of which need a
  * price-history table this schema doesn't have. This computes only what's
- * honestly derivable today: every active-for-sale mock + real unit/listing's
+ * honestly derivable today: every active-for-sale real unit/listing's
  * €/m², grouped by neighborhood, classified against that neighborhood's own
  * average. The route calling this returns YoY/"changed recently" as
  * explicitly unavailable rather than fabricating a number (PRD §20.2 "never
  * show 0 when a data source failed").
+ *
+ * Real-data fix (same as `getCombinedUnitStatusCounts` above): no longer
+ * sums mockData's static arrays alongside the real tables that now contain
+ * the same rows — real Postgres is the only source.
  */
 export async function getPriceIntelligence(): Promise<PriceIntelligence> {
   const pricesPerSqm: { neighborhoodId: string; pricePerSqm: number }[] = [];
-
-  for (const p of mockProjects) {
-    for (const u of p.units) {
-      if (u.status !== "available" || u.transaction !== "sale" || !u.area) continue;
-      pricesPerSqm.push({ neighborhoodId: p.neighborhoodId, pricePerSqm: u.price / u.area });
-    }
-  }
-  for (const l of mockListings) {
-    if (l.status !== "active" || l.transaction !== "sale" || !l.area) continue;
-    pricesPerSqm.push({ neighborhoodId: l.neighborhoodId, pricePerSqm: l.price / l.area });
-  }
 
   const realUnits = await prisma.unit.findMany({
     where: { deletedAt: null, status: "available", transaction: "sale" },

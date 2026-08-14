@@ -29,8 +29,9 @@ import {
   Table,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { projectsByDeveloper, getPublisherById, DEMO_PUBLISHER } from "@/lib/mockData";
+import { getPublisherById, DEMO_PUBLISHER } from "@/lib/mockData";
 import { usePublisherListings } from "@/hooks/usePublisherListings";
+import { usePublisherProjects } from "@/hooks/usePublisherProjects";
 import { publisherNotifications } from "@/lib/mockActivity";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
@@ -47,7 +48,7 @@ import { ConstructionTab } from "@/components/dashboard/business/ConstructionTab
 import { ThreeDExperiencesTab } from "@/components/dashboard/business/ThreeDExperiencesTab";
 import { CompanyProfileTab } from "@/components/dashboard/business/CompanyProfileTab";
 import { cn } from "@/lib/utils";
-import type { Listing, Publisher } from "@/lib/types";
+import type { Listing, Project, Publisher } from "@/lib/types";
 
 const TABS = [
   { id: "overview", labelKey: "dashboard.tabOverview", icon: LayoutDashboard },
@@ -109,7 +110,7 @@ function BusinessPublisherDashboard({ publisher }: { publisher: Publisher }) {
   const { t } = useT();
 
   const { listings: myListings, refresh: refreshListings, deleteListing } = usePublisherListings(publisher.id);
-  const myProjects = projectsByDeveloper(publisher.id);
+  const myProjects = usePublisherProjects(publisher.id) ?? [];
 
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row lg:px-8">
@@ -358,7 +359,7 @@ function ListingsTab({
   );
 }
 
-function ProjectsTab({ projects }: { projects: ReturnType<typeof projectsByDeveloper> }) {
+function ProjectsTab({ projects }: { projects: Project[] }) {
   const { t } = useT();
   return (
     <div className="space-y-4">
@@ -380,7 +381,7 @@ function ProjectsTab({ projects }: { projects: ReturnType<typeof projectsByDevel
   );
 }
 
-function ProjectRow({ project: p }: { project: ReturnType<typeof projectsByDeveloper>[number] }) {
+function ProjectRow({ project: p }: { project: Project }) {
   const { t } = useT();
   const live = useProjectConstruction(p);
   const timelineRequests = useAppStore((s) => s.timelineRequests);
@@ -471,7 +472,7 @@ function AnalyticsStat({
   );
 }
 
-function AnalyticsProjectCard({ project }: { project: ReturnType<typeof projectsByDeveloper>[number] }) {
+function AnalyticsProjectCard({ project }: { project: Project }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const metrics = analyticsFor(project.id);
@@ -538,7 +539,7 @@ function AnalyticsTab({
   projects,
 }: {
   listings: Listing[];
-  projects: ReturnType<typeof projectsByDeveloper>;
+  projects: Project[];
 }) {
   const { t } = useT();
   const priceFmt = usePriceFormat();

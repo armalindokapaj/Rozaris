@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { normalizeListing } from "@/lib/listings";
-import { projectUnitListings } from "@/lib/mockData";
+import { getAllProjects } from "@/lib/projects.server";
+import { projectUnitListingsFrom } from "@/lib/projects";
 import type { Listing } from "@/lib/types";
 
 /**
@@ -14,10 +15,13 @@ import type { Listing } from "@/lib/types";
 export async function getListingDetail(
   slug: string
 ): Promise<{ listing: Listing; related: Listing[] } | null> {
-  const row = await prisma.listing.findFirst({
-    where: { slug, deletedAt: null },
-    include: { publisher: true },
-  });
+  const [row, projectUnitListings] = await Promise.all([
+    prisma.listing.findFirst({
+      where: { slug, deletedAt: null },
+      include: { publisher: true },
+    }),
+    getAllProjects().then(projectUnitListingsFrom),
+  ]);
   const listing: Listing | undefined =
     (row && normalizeListing(row)) ?? projectUnitListings.find((l) => l.slug === slug);
 
@@ -34,22 +38,40 @@ export async function getListingDetail(
     take: 4,
     orderBy: { createdAt: "desc" },
   });
-  const mockNeighbors = projectUnitListings.filter(
+  const liveUnitNeighbors = projectUnitListings.filter(
     (l) => l.neighborhoodId === listing.neighborhoodId && l.id !== listing.id
   );
-  const related = [...liveNeighbors.map(normalizeListing), ...mockNeighbors].slice(0, 4);
+  const related = [...liveNeighbors.map(normalizeListing), ...liveUnitNeighbors].slice(0, 4);
 
   return { listing, related };
 }
 
 /** Every slug worth pre-rendering at build time — real listings plus the
- * still-mock project-unit listings. Live listings created after a
- * deployment simply aren't in this list; `dynamicParams` (Next's default,
- * unchanged here) renders those on demand instead of 404ing. */
+ * synthetic listings for each live project's available units. Live
+ * listings/projects created after a deployment simply aren't in this
+ * list; `dynamicParams` (Next's default, unchanged here) renders those on
+ * demand instead of 404ing. */
 export async function getAllListingSlugs(): Promise<string[]> {
+  const [rows, projects] = await Promise.all([
+    prisma.listing.findMany({
+      where: { status: "active", deletedAt: null },
+      select: { slug: true },
+    }),
+    getAllProjects(),
+  ]);
+  return [...rows.map((r) => r.slug), ...projectUnitListingsFrom(projects).map((l) => l.slug)];
+}
+
+/** A publisher's real public listings — active, not soft-deleted — for the
+ * public `/developer/[slug]` profile page. Deliberately narrower than
+ * `GET /api/listings?publisherId=` (that route is the *owning* publisher's
+ * own dashboard feed, every status included; this is what any visitor may
+ * see about someone else's inventory). */
+export async function getActiveListingsByPublisher(publisherId: string): Promise<Listing[]> {
   const rows = await prisma.listing.findMany({
-    where: { status: "active", deletedAt: null },
-    select: { slug: true },
+    where: { publisherId, status: "active", deletedAt: null },
+    include: { publisher: true },
+    orderBy: { createdAt: "desc" },
   });
-  return [...rows.map((r) => r.slug), ...projectUnitListings.map((l) => l.slug)];
+  return rows.map(normalizeListing);
 }

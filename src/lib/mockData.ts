@@ -415,7 +415,7 @@ export const projects: Project[] = [
       en: "Compact-footprint tower with efficient one and two-bedroom units designed for young professionals near the university campus.",
       sq: "Kullë me gjurmë kompakte dhe njësi funksionale me një ose dy dhoma gjumi, të projektuara për profesionistë të rinj pranë kampusit universitar.",
     },
-    buildings: ["Tower 1"],
+    buildings: ["T1"],
     amenities: ["elevator", "parking", "balcony"],
     premium: false,
     completionLabel: "Q1 2027",

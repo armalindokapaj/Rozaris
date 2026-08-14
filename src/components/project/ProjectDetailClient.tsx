@@ -42,7 +42,8 @@ import { useProjectConstruction } from "@/hooks/useProjectConstruction";
 import { useT } from "@/lib/i18n/useT";
 import en from "@/lib/i18n/en";
 import sq from "@/lib/i18n/sq";
-import { getListingForUnit, getNeighborhood } from "@/lib/mockData";
+import { getNeighborhood } from "@/lib/mockData";
+import { getListingForUnit } from "@/lib/projects";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { PublisherCard } from "@/components/listing/PublisherCard";
 import { ShareButton } from "@/components/listing/ShareButton";
@@ -571,25 +572,31 @@ export function ProjectDetailClient({
             )}
           </section>
 
-          {/* Construction Progress — PRD §16, reuses the existing full strip */}
-          <section id="construction" ref={(el: HTMLElement | null) => { sectionRefs.current.construction = el; }} className="scroll-mt-32">
-            <h2 className="font-serif text-xl text-neutral-900">{t("projectDetail.constructionTitle")}</h2>
-            <div className="mt-3 grid gap-4 lg:grid-cols-[1fr_320px]">
-              <ConstructionTimelineStrip stages={construction.stages} overallPercent={construction.progressPercent} />
-              <div className="relative aspect-[4/3] overflow-hidden rounded-panel lg:aspect-auto">
-                <PlaceholderImage seed={`${project.slug}-construction`} kind="facade" className="h-full w-full" watermark />
+          {/* Construction Progress — PRD §16, reuses the existing full strip.
+              Whole section skipped, not just the strip, for a project with
+              no construction-stage data yet (a real admin-created project
+              before that's been added) — a lone heading over an empty gap
+              would read as broken, not "not applicable yet". */}
+          {construction.stages.length > 0 && (
+            <section id="construction" ref={(el: HTMLElement | null) => { sectionRefs.current.construction = el; }} className="scroll-mt-32">
+              <h2 className="font-serif text-xl text-neutral-900">{t("projectDetail.constructionTitle")}</h2>
+              <div className="mt-3 grid gap-4 lg:grid-cols-[1fr_320px]">
+                <ConstructionTimelineStrip stages={construction.stages} overallPercent={construction.progressPercent} />
+                <div className="relative aspect-[4/3] overflow-hidden rounded-panel lg:aspect-auto">
+                  <PlaceholderImage seed={`${project.slug}-construction`} kind="facade" className="h-full w-full" watermark />
+                </div>
               </div>
-            </div>
-            <Link
-              href={`/project/${project.slug}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 hover:underline"
-            >
-              <Box className="h-4 w-4" />
-              {t("projectDetail.viewConstructionIn3d")}
-            </Link>
-          </section>
+              <Link
+                href={`/project/${project.slug}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 hover:underline"
+              >
+                <Box className="h-4 w-4" />
+                {t("projectDetail.viewConstructionIn3d")}
+              </Link>
+            </section>
+          )}
 
           {/* Amenities — PRD §18 */}
           {project.amenities.length > 0 && (

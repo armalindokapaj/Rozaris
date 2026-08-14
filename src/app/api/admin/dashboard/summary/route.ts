@@ -60,19 +60,25 @@ export async function GET() {
   const reportsFlagsCount = [mockListings[2], mockListings[5], mockProjects[1]].filter(Boolean).length;
 
   const summary: Record<string, KpiValue> = {
+    // ⚠️ Real-data fix (see the "Rozaris Platform Audit" memory's
+    // Projects/Units migration): this used to add mockData's static array
+    // length on top of the real Postgres count — a double-count once
+    // `prisma/seed.ts` started seeding every mockData project/listing into
+    // those same tables (kept 1:1 on every seed run). The live count
+    // already includes every seeded row; there's nothing left to add.
     projectsLive: {
-      value: mockProjects.length + realActiveProjects,
+      value: realActiveProjects,
       newThisWeek: realNewActiveProjects,
-      source: "mixed",
+      source: "real",
     },
     listingsLive: {
-      value: mockListings.length + realActiveListings,
+      value: realActiveListings,
       newThisWeek: realNewActiveListings,
-      source: "mixed",
+      source: "real",
     },
-    unitsAvailable: { value: unitCounts.available, newThisWeek: null, source: "mixed" },
-    unitsReserved: { value: unitCounts.reserved, newThisWeek: null, source: "mixed" },
-    unitsSold: { value: unitCounts.sold, newThisWeek: null, source: "mixed" },
+    unitsAvailable: { value: unitCounts.available, newThisWeek: null, source: "real" },
+    unitsReserved: { value: unitCounts.reserved, newThisWeek: null, source: "real" },
+    unitsSold: { value: unitCounts.sold, newThisWeek: null, source: "real" },
     pendingApprovals: {
       value: realPendingProjects + realPendingListings,
       newThisWeek: realNewPendingProjects + realNewPendingListings,

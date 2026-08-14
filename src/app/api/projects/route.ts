@@ -1,8 +1,26 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { auth } from "@/auth";
+import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
+import { getAllProjects, getProjectsByPublisherAnyStatus } from "@/lib/projects.server";
+
+/** Public project catalog — the client-side equivalent of
+ * `projects.server.ts`'s `getAllProjects()` for consumers that can't be a
+ * server component (SearchBar, MapView, the admin console's own project
+ * pickers). No auth gate, same convention as every other public GET in
+ * this app (`GET /api/listings`, `GET /api/publishers`).
+ *
+ * `?publisherId=` switches to that publisher's own projects for their
+ * dashboard — any `approvalStatus`, mirroring `GET /api/listings`'s same
+ * `?publisherId=` distinction. */
+export async function GET(request: Request) {
+  const publisherId = new URL(request.url).searchParams.get("publisherId");
+  const projects = publisherId
+    ? await getProjectsByPublisherAnyStatus(publisherId)
+    : await getAllProjects();
+  return NextResponse.json(projects);
+}
 
 const projectSchema = z.object({
   id: z.string().min(1),
@@ -28,18 +46,21 @@ const projectSchema = z.object({
 });
 
 /**
- * Creates a real Postgres row for a project — needed the moment Admin wants
- * to attach anything Postgres-backed to it (a "3D Map Control" GLB, a
- * Project3DConfig) and it isn't one of the seeded mockData.ts projects
- * (prisma/seed.ts). Called right after NewProjectModal.tsx's `addProject()`
- * (Zustand, still the source of truth for what's *displayed* — see the
- * "rozaris-backend-plan" memory on why the public catalog stays on
- * mockData.ts for now) so the two don't drift apart.
+ * Creates/updates a real Postgres row for a project — the public catalog
+ * (`GET` above) reads straight from this table now (see the "Rozaris
+ * Platform Audit" memory's Projects/Units migration), so this is a real
+ * publish action, not just plumbing for the 3D pipeline as the old comment
+ * here said.
  *
- * ⚠️ Same known gap as the other write routes in this app: no auth check
- * yet (real auth isn't wired into the UI). Add one the moment it is.
+ * Both real callers (NewProjectModal.tsx, the `/admin/projects/new` wizard)
+ * are admin-only surfaces, so this is `requireAdmin()`-gated like every
+ * other admin write route (src/lib/adminAuth.ts) — closes the same class
+ * of impersonation gap already fixed on `POST /api/listings`.
  */
 export async function POST(request: Request) {
+  const gate = await requireAdmin();
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = projectSchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -90,15 +111,10 @@ export async function POST(request: Request) {
       create: { ...data, slug, publisherId, approvalStatus: "active" },
     });
 
-    // Soft (not required) session read — this route still has no real
-    // auth gate (see the doc comment above), so `actor` falls back to an
-    // honest "unattributed" label rather than fabricating one; Before/
-    // After tracking is still real either way (previousState/newState).
-    const session = await auth().catch(() => null);
-    const actor = session?.user?.email ?? session?.user?.name ?? "unattributed (no auth gate on this route)";
+    const actor = gate.user?.email ?? gate.user?.name ?? "unattributed";
     await logAuditEvent({
       actor,
-      actorId: session?.user?.id,
+      actorId: gate.user?.id,
       action: existingById ? "Project updated" : "Project created",
       entityType: "Project",
       entityId: project.id,

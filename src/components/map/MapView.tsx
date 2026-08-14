@@ -5,14 +5,18 @@ import mapboxgl from "mapbox-gl";
 import { useAppStore } from "@/lib/store";
 import { SELECTED_UNIT_ZOOM } from "@/lib/constants";
 import { useLiveListings } from "@/hooks/useLiveListings";
+import { useLiveProjects } from "@/hooks/useLiveProjects";
 import { getVisibleListings, getVisibleProjects } from "@/lib/filtering";
-import { getNeighborhood, projectUnitListings, projects, CITY_CENTER } from "@/lib/mockData";
+import { getNeighborhood, CITY_CENTER } from "@/lib/mockData";
+import { projectUnitListingsFrom } from "@/lib/projects";
+import type { Project } from "@/lib/types";
 import {
   buildClusterMarker,
   buildListingMarker,
   buildProjectMarker,
 } from "./markerFactory";
 import { ProjectModelLayer, type MapModelEntry } from "./ProjectModelLayer";
+import { computeProjectMassing } from "@/lib/threeBuilding";
 import { BuildingHider, type BuildingFootprint } from "./BuildingHider";
 import { MapControls } from "./MapControls";
 import { MapFallback } from "./MapFallback";
@@ -120,7 +124,21 @@ export function MapView({
   const mapBounds = useAppStore((s) => s.mapBounds);
   const mapAreaSearchBounds = useAppStore((s) => s.mapAreaSearchBounds);
   const liveListings = useAppStore((s) => s.liveListings);
+  const liveProjects = useAppStore((s) => s.liveProjects);
   useLiveListings();
+  useLiveProjects();
+  // The map-init effect below (`[token]` deps, runs once) closes over
+  // `onPick` at mount time — `liveProjects` starts `null` and only
+  // populates once `GET /api/projects` resolves, so a stale closure would
+  // permanently see `null`. mockData's `projects` this replaced was a
+  // static immutable array, so the same stale-closure pattern was
+  // harmless there; a ref keeps that effect from needing to re-run (which
+  // would tear down and rebuild the whole Mapbox instance) while still
+  // reading the latest value.
+  const liveProjectsRef = useRef<Project[] | null>(null);
+  useEffect(() => {
+    liveProjectsRef.current = liveProjects;
+  }, [liveProjects]);
   const setMapBounds = useAppStore((s) => s.setMapBounds);
   const selectedListingId = useAppStore((s) => s.selectedListingId);
   const selectedProjectId = useAppStore((s) => s.selectedProjectId);
@@ -142,12 +160,19 @@ export function MapView({
   // Bounds affect the dataset only after the visitor explicitly commits the
   // visible area with Search here; ordinary panning remains exploratory.
   const visibleListings = useMemo(
-    () => getVisibleListings(filters, mapAreaSearchBounds ?? mapBounds, !!mapAreaSearchBounds, liveListings),
-    [filters, mapBounds, mapAreaSearchBounds, liveListings]
+    () =>
+      getVisibleListings(
+        filters,
+        mapAreaSearchBounds ?? mapBounds,
+        !!mapAreaSearchBounds,
+        liveListings,
+        liveProjects
+      ),
+    [filters, mapBounds, mapAreaSearchBounds, liveListings, liveProjects]
   );
   const visibleProjects = useMemo(
-    () => getVisibleProjects(filters, mapAreaSearchBounds ?? mapBounds, !!mapAreaSearchBounds),
-    [filters, mapBounds, mapAreaSearchBounds]
+    () => getVisibleProjects(filters, mapAreaSearchBounds ?? mapBounds, !!mapAreaSearchBounds, liveProjects),
+    [filters, mapBounds, mapAreaSearchBounds, liveProjects]
   );
 
   // --- Initialize map once ---
@@ -192,7 +217,7 @@ export function MapView({
       // flat pins (see ProjectModelLayer.ts doc comment).
       const modelLayer = new ProjectModelLayer({
         onPick: (projectId) => {
-          const project = projects.find((p) => p.id === projectId);
+          const project = liveProjectsRef.current?.find((p) => p.id === projectId);
           if (project) window.open(`/project/${project.slug}`, "_blank", "noopener");
         },
         onLoadError: (projectId, error) => {
@@ -243,27 +268,57 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // --- 3D Map Control: reconcile which projects' GLBs are placed on the map ---
+  // --- 3D Map Control: reconcile which projects render as a real 3D volume ---
+  // Every visible project gets one now, not just ones with an Admin-uploaded
+  // GLB (T1 of the platform audit's roadmap — putting the 3D map layer on
+  // by default; see the "Rozaris Platform Audit" memory): a real GLB wins
+  // when one's published, otherwise a data-driven procedural massing box
+  // (threeBuilding.ts's computeProjectMassing) stands in — a real building
+  // volume instead of a flat pin, using nothing but the project's own real
+  // unit/floor data. Gated to the two non-cluster tiers: at "cluster" zoom
+  // a project is already a single pin among many neighborhoods, too small
+  // on screen for a 3D volume to read as anything but noise, and skipping
+  // it there avoids rebuilding/holding geometry for every project in the
+  // city at once.
   const mapModelEntries = useMemo<MapModelEntry[]>(() => {
-    return visibleProjects.flatMap((p) => {
+    if (tier === "cluster") return [];
+    return visibleProjects.flatMap((p): MapModelEntry[] => {
       const model = projectMapModels[p.id];
-      if (!model?.enabled || !model.glbUrl) return [];
-      return [
-        {
-          projectId: p.id,
-          glbUrl: model.glbUrl,
-          // The model's own (possibly Admin-dragged) position — previously
-          // hardcoded to the project's own coordinates, which silently
-          // ignored any repositioning Admin did.
-          lng: model.lng,
-          lat: model.lat,
-          scale: model.scale,
-          rotationDeg: model.rotationDeg,
-          altitudeOffset: model.altitudeOffset,
-        },
-      ];
+      if (model?.enabled && model.glbUrl) {
+        return [
+          {
+            projectId: p.id,
+            glbUrl: model.glbUrl,
+            // The model's own (possibly Admin-dragged) position — previously
+            // hardcoded to the project's own coordinates, which silently
+            // ignored any repositioning Admin did.
+            lng: model.lng,
+            lat: model.lat,
+            scale: model.scale,
+            rotationDeg: model.rotationDeg,
+            altitudeOffset: model.altitudeOffset,
+          },
+        ];
+      }
+      const massing = computeProjectMassing(p);
+      // No computable massing (e.g. a project with no unit/floor data yet)
+      // — skip the entry entirely rather than adding an empty one, so this
+      // project's flat pin (below) isn't suppressed for nothing.
+      if (massing.length === 0) return [];
+      return [{
+        projectId: p.id,
+        massing,
+        lng: p.coords.lng,
+        lat: p.coords.lat,
+        // The massing geometry is already built in real meters (see
+        // computeProjectMassing) — scale 1 lets applyTransform's own
+        // meters->Mercator conversion apply directly, unmodified.
+        scale: 1,
+        rotationDeg: 0,
+        altitudeOffset: 0,
+      }];
     });
-  }, [visibleProjects, projectMapModels]);
+  }, [visibleProjects, projectMapModels, tier]);
 
   const buildingHideTargets = useMemo(() => {
     return visibleProjects.flatMap((p) => {
@@ -490,7 +545,7 @@ export function MapView({
 
   // --- Popup positioning (tracks camera moves while a popup is open) ---
   const activeProject = selectedProjectId
-    ? projects.find((p) => p.id === selectedProjectId) ?? null
+    ? (liveProjects ?? []).find((p) => p.id === selectedProjectId) ?? null
     : null;
   // A building with multiple independent (non-project) listings — excludes
   // project units explicitly, even though those never set buildingListingCount
@@ -510,7 +565,7 @@ export function MapView({
   // (rather than falling back to the generic project overview popup).
   const activeProjectUnit =
     !activeProject && !activeBuildingListing && selectedListingId
-      ? projectUnitListings.find(
+      ? projectUnitListingsFrom(liveProjects ?? []).find(
           (l) => l.id === selectedListingId && l.fromProjectSlug
         ) ?? null
       : null;

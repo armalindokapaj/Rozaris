@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import {
-  getPublisherBySlug,
-  listingsByPublisher,
-  projectsByDeveloper,
-  publishers,
-} from "@/lib/mockData";
+import { getPublisherBySlug, publishers } from "@/lib/mockData";
+import { getProjectsByDeveloper } from "@/lib/projects.server";
+import { getActiveListingsByPublisher } from "@/lib/listings.server";
 import { SITE_URL } from "@/lib/constants";
 import { DeveloperProfileClient } from "@/components/developers/DeveloperProfileClient";
 
@@ -36,8 +33,15 @@ export default async function DeveloperPage({
   const publisher = getPublisherBySlug(slug);
   if (!publisher) notFound();
 
-  const projects = projectsByDeveloper(publisher.id);
-  const listings = listingsByPublisher(publisher.id);
+  // Publisher identity itself is still mockData (see the "Rozaris Platform
+  // Audit" memory — Publishers weren't part of this or the T0 migration),
+  // but its ids are 1:1 with the real Postgres rows `prisma/seed.ts` seeds
+  // from the same mockData, so looking up real projects/listings by
+  // `publisher.id` is correct today regardless.
+  const [projects, listings] = await Promise.all([
+    getProjectsByDeveloper(publisher.id),
+    getActiveListingsByPublisher(publisher.id),
+  ]);
 
   const jsonLd = {
     "@context": "https://schema.org",

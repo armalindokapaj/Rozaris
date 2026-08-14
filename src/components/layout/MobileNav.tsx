@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   Building2,
   ChevronDown,
@@ -13,11 +13,9 @@ import {
   Heart,
   Info,
   LogOut,
-  Plus,
   Scale,
   Search,
   User,
-  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store";
@@ -25,6 +23,7 @@ import { useT } from "@/lib/i18n/useT";
 import { useSavedHint } from "@/hooks/useSavedHint";
 import { CompareHint } from "@/components/compare/CompareHint";
 import { LanguageCurrencySelector } from "./LanguageCurrencySelector";
+import { MenuToggleIcon } from "./MenuToggleIcon";
 import { cn } from "@/lib/utils";
 
 /**
@@ -50,8 +49,8 @@ function NavRow({
   const content = (
     <>
       <Icon className={cn("h-5 w-5 shrink-0", active ? "text-brand-600" : "text-neutral-500")} />
-      <span className={cn("flex-1 text-[15px]", active ? "font-bold text-brand-700" : "font-medium text-neutral-800")}>{label}</span>
-      {trailing ?? <ChevronRight className={cn("h-4 w-4 shrink-0", active ? "text-brand-400" : "text-neutral-300")} />}
+      <span className={cn("flex-1 text-[15px] font-bold", active ? "text-brand-700" : "text-neutral-800")}>{label}</span>
+      {trailing ?? <ChevronRight className="h-4 w-4 shrink-0 text-accent" />}
     </>
   );
   const className = cn(
@@ -79,7 +78,6 @@ export function MobileNav({
   open: boolean;
   onClose: () => void;
 }) {
-  const router = useRouter();
   const pathname = usePathname();
   const { auth, openSignIn, signOut, compare, setMode } = useAppStore();
   const savedCount = useAppStore((s) => s.saved.listings.length + s.saved.projects.length);
@@ -87,61 +85,82 @@ export function MobileNav({
   const { t } = useT();
   const { hint: savedHint, hintRef: savedHintRef, handleSavedClick } = useSavedHint();
 
-  // Entrance-only animation: starts translated off-screen/transparent,
-  // then flips to its resting state one frame after mount so the browser
-  // actually has two distinct frames to transition between (setting both
-  // in the same frame wouldn't animate at all). `setVisible` only ever
-  // runs inside the rAF callback or this effect's cleanup, never
-  // synchronously in the effect body itself. Closing is instant, same as
-  // the drawer this replaces — an exit animation would need tracking a
-  // third "still closing, not yet unmounted" state, not worth it here.
-  const [visible, setVisible] = useState(false);
-
+  // Always mounted (no conditional unmount, no local animation state) —
+  // every class below is driven straight off the `open` prop, so the same
+  // DOM node transitions in *and* out symmetrically via plain CSS. The
+  // previous version unmounted on `!open`, which meant open had a real
+  // slide/fade transition (a freshly-mounted node animating to its
+  // resting state) while close was an instant cut (unmounting mid-CSS-
+  // transition doesn't let it finish) — this fixes that asymmetry.
+  // `inert` (not just `aria-hidden`) keeps the closed drawer's links and
+  // buttons out of tab order and unclickable without needing
+  // `pointer-events-none` sprinkled on every interactive child.
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
-    if (!open) return;
-    const id = requestAnimationFrame(() => setVisible(true));
     return () => {
-      cancelAnimationFrame(id);
-      setVisible(false);
+      document.body.style.overflow = "";
     };
   }, [open]);
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal>
+    <div
+      className="fixed inset-0 z-50 lg:hidden"
+      role="dialog"
+      aria-modal={open}
+      aria-hidden={!open}
+      inert={!open}
+    >
       {/* Dimmed backdrop over the ~30% of the screen the drawer doesn't
-          cover — click closes, same as the X button. */}
+          cover — click closes, same as the X button. Fades independently
+          of the panel's slide (see below) — the dim is what should fade,
+          not the drawer itself. */}
       <button
         aria-label={t("nav.closeMenu")}
         onClick={onClose}
-        className={cn("absolute inset-0 bg-neutral-900/45 transition-opacity duration-300 ease-[var(--ease-rz)]", visible ? "opacity-100" : "opacity-0")}
+        className={cn("absolute inset-0 bg-neutral-900/45 transition-opacity duration-300 ease-[var(--ease-rz)]", open ? "opacity-100" : "opacity-0")}
       />
 
-      {/* The drawer itself — ~72% width, slides in from the right. */}
+      {/* The drawer itself — ~72% width, a pure slide: fully opaque the
+          entire time, only `transform` animates, right to left on open and
+          straight back out to the right on close (the same motion in
+          reverse, not a different close effect). Deliberately no opacity
+          transition on this panel — a solid card fading while it also
+          moves reads as flimsy/glitchy; fading was tried and cut for
+          exactly that reason. `duration-[420ms]` + `--ease-rz`'s strong
+          deceleration (cubic-bezier(0.2,0,0,1), fast start / hard settle,
+          no bounce) is what actually reads as "premium" here — a snappier
+          300ms felt utilitarian, a spring/overshoot would feel playful
+          rather than premium for a real-estate app. `will-change-transform`
+          keeps 72%-width repaint smooth on mid-tier phones. */}
       <div
         className={cn(
-          "absolute inset-y-0 right-0 flex w-[72%] max-w-sm flex-col bg-white shadow-2xl transition-transform duration-300 ease-[var(--ease-rz)]",
-          visible ? "translate-x-0" : "translate-x-full"
+          "absolute inset-y-0 right-0 flex w-[72%] max-w-sm flex-col bg-white shadow-2xl transition-transform duration-[420ms] ease-[var(--ease-rz)] will-change-transform",
+          open ? "translate-x-0" : "translate-x-full"
         )}
       >
-        <div className="flex shrink-0 items-center justify-between px-5 pb-4 pt-5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-50 font-serif text-lg font-bold text-brand-600">
-              R
-            </span>
-            <div>
-              <p className="font-serif text-base font-bold tracking-[0.1em] text-neutral-900">ROZARIS</p>
-              <p className="text-xs text-neutral-500">{t("nav.tagline")}</p>
-            </div>
-          </div>
+        {/* Same bar as the Front Page header (MobileLandingHero) — wordmark
+            left, toggle right, identical height/padding/border — so the
+            close button lands in exactly the position the hamburger that
+            opened this drawer occupies, and the hamburger→X morph
+            (MenuToggleIcon) reads as one continuous motion in place rather
+            than two different-looking buttons swapping. Wordmark is a real
+            link to the front page here too, same as the Front Page's own
+            header — not just decorative text. */}
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-neutral-200 px-5">
+          <Link
+            href="/"
+            onClick={onClose}
+            className="font-serif text-lg font-bold tracking-[0.24em] text-neutral-900"
+            aria-label={`ROZARIS — ${t("nav.home")}`}
+          >
+            ROZARIS
+          </Link>
           <button
             onClick={onClose}
             aria-label={t("nav.closeMenu")}
-            className="rounded-control p-2 text-neutral-500 hover:bg-neutral-100"
+            className="-mr-2.5 rounded-control p-2.5 text-neutral-900 transition-colors hover:bg-neutral-100 active:bg-neutral-100"
           >
-            <X className="h-5 w-5" />
+            <MenuToggleIcon open={open} />
           </button>
         </div>
 
@@ -186,15 +205,15 @@ export function MobileNav({
               className="flex items-center gap-3.5 rounded-xl px-3 py-3 text-left hover:bg-neutral-50"
             >
               <FileText className="h-5 w-5 shrink-0 text-neutral-500" />
-              <span className="flex-1 text-[15px] font-medium text-neutral-800">{t("nav.resources")}</span>
-              <ChevronDown className={cn("h-4 w-4 shrink-0 text-neutral-400 transition-transform duration-150", resourcesOpen && "rotate-180")} />
+              <span className="flex-1 text-[15px] font-bold text-neutral-800">{t("nav.resources")}</span>
+              <ChevronDown className={cn("h-4 w-4 shrink-0 text-accent transition-transform duration-150", resourcesOpen && "rotate-180")} />
             </button>
             {resourcesOpen && (
               <div className="ml-11 flex flex-col gap-0.5 border-l border-neutral-100 pl-3">
-                <Link href="/resources/mortgage-calculator" onClick={onClose} className="rounded-lg px-2 py-2 text-sm text-neutral-600 hover:bg-neutral-100">
+                <Link href="/resources/mortgage-calculator" onClick={onClose} className="rounded-lg px-2 py-2 text-sm font-bold text-neutral-600 hover:bg-neutral-100">
                   {t("nav.mortgageCalculator")}
                 </Link>
-                <Link href="/resources/redo-unit-design" onClick={onClose} className="rounded-lg px-2 py-2 text-sm text-neutral-600 hover:bg-neutral-100">
+                <Link href="/resources/redo-unit-design" onClick={onClose} className="rounded-lg px-2 py-2 text-sm font-bold text-neutral-600 hover:bg-neutral-100">
                   {t("nav.redoUnitDesign")}
                 </Link>
               </div>
@@ -207,25 +226,16 @@ export function MobileNav({
           <Link
             href="/dashboard"
             onClick={onClose}
-            className="mt-3 flex items-center gap-3 rounded-card bg-brand-50 p-4"
+            className="mt-3 flex items-center gap-2.5 rounded-card bg-brand-50 px-3.5 py-2.5"
           >
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-brand-500">
-              <Crown className="h-5 w-5" />
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-brand-500">
+              <Crown className="h-4 w-4" />
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-bold text-neutral-900">{t("nav.listCardTitle")}</span>
-              <span className="block text-xs leading-snug text-neutral-500">{t("nav.listCardBody")}</span>
+              <span className="block text-xs font-bold text-neutral-500">{t("nav.listCardBody")}</span>
             </span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" />
-          </Link>
-
-          <Link
-            href="/dashboard"
-            onClick={onClose}
-            className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white transition-colors duration-100 hover:bg-brand-700"
-          >
-            <Plus className="h-4 w-4" />
-            {t("nav.addPropertyProject")}
+            <ChevronRight className="h-4 w-4 shrink-0 text-accent" />
           </Link>
 
           <div className="my-3 border-t border-neutral-100" />
@@ -248,10 +258,10 @@ export function MobileNav({
               )}
             >
               <Heart className={cn("h-5 w-5 shrink-0", pathname === "/saved" ? "text-brand-600" : "text-neutral-500")} />
-              <span className={cn("flex-1 text-[15px]", pathname === "/saved" ? "font-bold text-brand-700" : "font-medium text-neutral-800")}>
+              <span className={cn("flex-1 text-[15px] font-bold", pathname === "/saved" ? "text-brand-700" : "text-neutral-800")}>
                 {t("nav.saved")}
               </span>
-              <ChevronRight className={cn("h-4 w-4 shrink-0", pathname === "/saved" ? "text-brand-400" : "text-neutral-300")} />
+              <ChevronRight className="h-4 w-4 shrink-0 text-accent" />
             </Link>
             <NavRow
               icon={Scale}
@@ -264,23 +274,26 @@ export function MobileNav({
                 compare.length > 0 ? (
                   <span className="rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-bold text-white">{compare.length}</span>
                 ) : (
-                  <ChevronRight className="h-4 w-4 shrink-0 text-neutral-300" />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-accent" />
                 )
               }
             />
-            <NavRow
-              icon={User}
-              label={t("nav.myAccount")}
-              active={pathname === "/buyer/dashboard"}
-              onClick={() => {
-                if (auth.signedIn) {
-                  router.push("/buyer/dashboard");
-                } else {
-                  openSignIn();
-                }
-                onClose();
-              }}
-            />
+            {/* Signed-in only — last item, directly above the Language
+                footer, always highlighted (brand-tinted, not just when
+                `pathname` happens to match) since this is the one row
+                whose whole point is "go to your account", not a page
+                among peers. */}
+            {auth.signedIn && (
+              <Link
+                href="/buyer/dashboard"
+                onClick={onClose}
+                className="flex items-center gap-3.5 rounded-xl bg-brand-50 px-3 py-3 text-left transition-colors duration-100 hover:bg-brand-100"
+              >
+                <User className="h-5 w-5 shrink-0 text-brand-600" />
+                <span className="flex-1 text-[15px] font-bold text-brand-700">{t("nav.myAccount")}</span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-accent" />
+              </Link>
+            )}
           </nav>
         </div>
 
@@ -291,7 +304,7 @@ export function MobileNav({
             doesn't regress into being mobile-unreachable. */}
         <div className="shrink-0 border-t border-neutral-100 px-5 py-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-neutral-500">{t("nav.language")}</span>
+            <span className="text-xs font-bold text-neutral-500">{t("nav.language")}</span>
             <LanguageCurrencySelector openUpward />
           </div>
         </div>
@@ -303,7 +316,7 @@ export function MobileNav({
                 signOut();
                 onClose();
               }}
-              className="flex w-full items-center gap-3.5 rounded-xl px-3 py-3 text-left text-[15px] font-medium text-danger hover:bg-red-50"
+              className="flex w-full items-center gap-3.5 rounded-xl px-3 py-3 text-left text-[15px] font-bold text-danger hover:bg-red-50"
             >
               <LogOut className="h-5 w-5 shrink-0" />
               {t("nav.signOut")}
@@ -314,7 +327,7 @@ export function MobileNav({
                 openSignIn();
                 onClose();
               }}
-              className="flex w-full items-center justify-center rounded-xl bg-neutral-900 py-3 text-sm font-semibold text-white"
+              className="flex w-full items-center justify-center rounded-xl bg-neutral-900 py-3 text-sm font-bold text-white"
             >
               {t("common.signIn")}
             </button>

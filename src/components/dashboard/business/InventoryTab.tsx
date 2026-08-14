@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useT } from "@/lib/i18n/useT";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
-import { getListingForUnit } from "@/lib/mockData";
+import { getListingForUnit } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 import type { Project, Unit, UnitMeshLink } from "@/lib/types";
 

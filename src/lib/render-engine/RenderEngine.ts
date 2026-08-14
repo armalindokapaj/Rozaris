@@ -67,7 +67,16 @@ import {
   SECTION_INDICATOR_COLOR,
   SECTION_MAX_DIMENSION_M,
 } from "./sections";
-import type { CameraPreset, Project, Project3DConfig, ProjectDetailModel, Section, Unit, UnitMeshLink } from "@/lib/types";
+import type {
+  CameraPreset,
+  Project,
+  Project3DConfig,
+  ProjectDetailModel,
+  Section,
+  ToneMapping,
+  Unit,
+  UnitMeshLink,
+} from "@/lib/types";
 
 export type AvailabilityFilter = "all" | Unit["status"];
 
@@ -91,6 +100,21 @@ const MOBILE_VIEWPORT_BREAKPOINT = 768; // matches Tailwind's `md` — used for 
  * exposes those two). Was previously a per-project `bloomThreshold`
  * field; fixed back to the same 0.85 the demo hardcodes. */
 const BLOOM_THRESHOLD_DEFAULT = 0.85;
+/** renderer.toneMapping (2026-08-14 UI-polish pass) — real per-project
+ * choice, matching every option the reference site (planpoint-webgpu.
+ * vercel.app) exposes in its own debug panel. A plain renderer property
+ * (confirmed against constants.js), same "cheap live update, no pipeline
+ * rebuild" category as `toneMappingExposure` right next to it in both
+ * mount() and applyLiveUpdate() below. */
+const TONE_MAPPING_MODES: Record<ToneMapping, THREE.ToneMapping> = {
+  none: THREE.NoToneMapping,
+  linear: THREE.LinearToneMapping,
+  reinhard: THREE.ReinhardToneMapping,
+  cineon: THREE.CineonToneMapping,
+  aces: THREE.ACESFilmicToneMapping,
+  agx: THREE.AgXToneMapping,
+  neutral: THREE.NeutralToneMapping,
+};
 
 export interface RenderEngineCallbacks {
   /** i18n — only used for the WebGPU-unavailable message. */
@@ -1372,7 +1396,7 @@ export class RenderEngine {
     renderer.domElement.style.height = "100%";
     renderer.shadowMap.enabled = config.shadowsEnabled;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMapping = TONE_MAPPING_MODES[config.toneMapping];
     renderer.toneMappingExposure = config.exposure;
     container.appendChild(renderer.domElement);
     this.renderer = renderer;
@@ -2159,7 +2183,10 @@ export class RenderEngine {
       this.applyGlassPreset(root, config.glassPreset, config.environmentIntensity);
       this.applyNodeOverrides(root, model);
     }
-    if (this.renderer) this.renderer.toneMappingExposure = config.exposure;
+    if (this.renderer) {
+      this.renderer.toneMappingExposure = config.exposure;
+      this.renderer.toneMapping = TONE_MAPPING_MODES[config.toneMapping];
+    }
 
     // Sky/Water/Bloom/Clouds pass — wave-look and bloom-look sliders are
     // real live `UniformNode<float>`s on the already-constructed

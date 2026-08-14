@@ -36,7 +36,8 @@ import {
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
-import { listings, projects } from "@/lib/mockData";
+import { useAdminProjects } from "@/hooks/useAdminProjects";
+import { listings } from "@/lib/mockData";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
@@ -152,7 +153,7 @@ interface Me {
  */
 function AdminPageInner() {
   const auth = useAppStore((s) => s.auth);
-  const signIn = useAppStore((s) => s.signIn);
+  const openSignIn = useAppStore((s) => s.openSignIn);
   const signOutMock = useAppStore((s) => s.signOut);
   const logAudit = useAppStore((s) => s.logAudit);
   const router = useRouter();
@@ -194,17 +195,51 @@ function AdminPageInner() {
   // full-page 3D editors use the same hook.
   const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
 
+  // SECURITY: this used to be `boolean | null` and the console below
+  // rendered the instant Zustand's mock `auth.signedIn` flag was true —
+  // front-end-only, and easily true for a signed-in buyer/publisher with
+  // no admin role at all. `/api/admin/me` is itself gated by the real
+  // `requireAdmin()` (src/lib/adminAuth.ts), so a successful response is
+  // the actual authority here; everything below now waits for it instead
+  // of trusting the mock. See useAdminSessionRepair's doc comment for the
+  // matching fix to how a stale session gets reconnected.
+  // "idle" doubles as "still checking" while `auth.signedIn` is true and
+  // the fetch below hasn't resolved yet — no synchronous setState at the
+  // top of the effect (the linter's react-hooks/set-state-in-effect
+  // correctly flags that as a footgun), only ever inside the promise
+  // callbacks, same pattern as the pre-existing `setMe` fetch this
+  // replaces.
+  const [meStatus, setMeStatus] = useState<"idle" | "ok" | "unauthorized">("idle");
+
   useEffect(() => {
+    // No reset-to-"idle" branch here: the render gate below independently
+    // re-checks `auth.signedIn` on every render, so a stale "ok" from a
+    // previous sign-in can never leak the console after a sign-out — it
+    // just gets recomputed the moment `auth.signedIn` flips back to true.
     if (!auth.signedIn) return;
     fetch("/api/admin/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then(setMe);
+      .then(async (r) => {
+        if (!r.ok) {
+          setMe(null);
+          setMeStatus("unauthorized");
+          return;
+        }
+        setMe(await r.json());
+        setMeStatus("ok");
+      })
+      .catch(() => {
+        setMe(null);
+        setMeStatus("unauthorized");
+      });
   }, [auth.signedIn]);
 
   // Real pending Listings, merged into the same Queue tab the mock
-  // project_update/publisher_verification items still render in.
+  // project_update/publisher_verification items still render in. Tied to
+  // `meStatus === "ok"` (confirmed real admin), not the Zustand mock —
+  // this route is `requireAdmin()`-gated server-side anyway, but there's
+  // no reason to even fire it for a signed-in non-admin.
   useEffect(() => {
-    if (!auth.signedIn) return;
+    if (meStatus !== "ok") return;
     fetch("/api/admin/listings?status=pending")
       .then((r) => (r.ok ? r.json() : []))
       .then((rows: { id: string; title: string; publisherName: string }[]) => {
@@ -222,29 +257,36 @@ function AdminPageInner() {
         ]);
       })
       .catch(() => {});
-  }, [auth.signedIn]);
+  }, [meStatus]);
 
-  // In this frontend prototype, any signed-in demo account may preview the
-  // Admin console — a real deployment gates this behind the Admin role.
-  if (!auth.signedIn) {
+  // Admin console — real role check, not front-end visibility. A
+  // signed-in buyer/publisher (auth.signedIn true, meStatus "unauthorized")
+  // gets turned away here rather than seeing the console shell at all.
+  if (!auth.signedIn || meStatus === "idle") {
     return (
       <div className="mx-auto flex h-full min-h-0 max-w-md flex-col items-center justify-center gap-4 px-4 text-center">
         <ShieldCheck className="h-10 w-10 text-brand-500" />
         <h1 className="font-serif text-xl text-neutral-900">{t("admin.signInRequired")}</h1>
-        <button
-          onClick={async () => {
-            signIn("Admin", "admin");
-            // Also establishes a REAL Auth.js session (src/auth.ts) in
-            // parallel — the versioned 3D pipeline's write routes
-            // (src/lib/adminAuth.ts's requireAdmin()) check this, not the
-            // Zustand mock above. Every other dashboard/gate in the app is
-            // untouched and still reads only the Zustand `auth` slice.
-            await establishAdminSession();
-          }}
-          className="rounded-control bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white"
-        >
-          {t("admin.signInAsAdmin")}
-        </button>
+        {auth.signedIn ? (
+          <p className="text-sm text-neutral-500">{t("admin.checkingAccess")}</p>
+        ) : (
+          <button
+            onClick={openSignIn}
+            className="rounded-control bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white"
+          >
+            {t("admin.signInAsAdmin")}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (meStatus === "unauthorized") {
+    return (
+      <div className="mx-auto flex h-full min-h-0 max-w-md flex-col items-center justify-center gap-4 px-4 text-center">
+        <ShieldAlert className="h-10 w-10 text-red-500" />
+        <h1 className="font-serif text-xl text-neutral-900">{t("admin.notAuthorizedTitle")}</h1>
+        <p className="text-sm text-neutral-500">{t("admin.notAuthorizedBody")}</p>
       </div>
     );
   }
@@ -548,6 +590,7 @@ function TimelineTab() {
   const overrides = useAppStore((s) => s.projectConstructionOverrides);
   const approveTimelineRequest = useAppStore((s) => s.approveTimelineRequest);
   const rejectTimelineRequest = useAppStore((s) => s.rejectTimelineRequest);
+  const liveProjects = useAdminProjects();
 
   const pending = timelineRequests.filter((r) => r.status === "pending");
   const decided = timelineRequests.filter((r) => r.status !== "pending");
@@ -555,7 +598,7 @@ function TimelineTab() {
   function livePercentFor(projectId: string) {
     const override = overrides[projectId];
     if (override) return override.progressPercent;
-    return projects.find((p) => p.id === projectId)?.progressPercent ?? 0;
+    return liveProjects.find((p) => p.id === projectId)?.progressPercent ?? 0;
   }
 
   return (
@@ -695,6 +738,7 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
   const { t } = useT();
   const router = useRouter();
   const customProjects = useAppStore((s) => s.customProjects);
+  const liveProjects = useAdminProjects();
   const [editingUnits, setEditingUnits] = useState<Project | null>(null);
   const [creating, setCreating] = useState(false);
   // Real Postgres rows per project (src/app/api/map-models/[id]/versions,
@@ -715,7 +759,7 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
   const [projectStatus, setProjectStatus] = useState<Record<string, ProjectStatus>>({});
   const [statusReload, setStatusReload] = useState(0);
 
-  const allProjects = [...projects, ...customProjects];
+  const allProjects = [...liveProjects, ...customProjects];
   const projectIds = allProjects.map((p) => p.id).join(",");
 
   useEffect(() => {
@@ -1099,14 +1143,15 @@ function ProjectVisibilityMenu({
 function ContentTab() {
   const { t } = useT();
   const priceFmt = usePriceFormat();
+  const liveProjects = useAdminProjects();
   return (
     <div className="space-y-4">
       <h1 className="font-serif text-xl text-neutral-900">{t("admin.contentTitle")}</h1>
       <p className="text-sm text-neutral-500">
-        {t("admin.contentSubtitle", { listings: listings.length, projects: projects.length })}
+        {t("admin.contentSubtitle", { listings: listings.length, projects: liveProjects.length })}
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {projects.map((p) => (
+        {liveProjects.map((p) => (
           <div key={p.id} className="rounded-card border border-neutral-200 bg-white p-3.5">
             <p className="text-sm font-semibold text-neutral-900">{p.name}</p>
             <p className="text-xs text-neutral-500">

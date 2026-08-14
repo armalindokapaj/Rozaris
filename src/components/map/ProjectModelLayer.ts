@@ -3,25 +3,49 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import mapboxgl from "mapbox-gl";
 import { DRACO_DECODER_PATH } from "@/lib/gltfDecoder";
+import type { MassingBox } from "@/lib/threeBuilding";
 
 export interface MapModelEntry {
   projectId: string;
-  glbUrl: string;
   lng: number;
   lat: number;
   scale: number;
   rotationDeg: number;
   altitudeOffset: number;
+  /** A real admin-uploaded GLB (Blob URL) — mutually exclusive with
+   * `massing` below; when present, this always wins. */
+  glbUrl?: string;
+  /** Data-driven procedural building volumes (see
+   * `threeBuilding.ts`'s `computeProjectMassing`) — the map's default 3D
+   * hero for a project with no `glbUrl` yet (T1 of the platform audit's
+   * roadmap; see the "Rozaris Platform Audit" memory). Real meters,
+   * Y-up — built directly with `THREE.BoxGeometry`, no network load. */
+  massing?: MassingBox[];
+}
+
+/** Cheap stable identity for an entry's geometry — whichever of `glbUrl`/
+ * `massing` is present — so `upsertEntry` can tell "just a placement
+ * change" (reapply the transform only) from "the geometry itself changed"
+ * (reload/rebuild) without caring which kind of entry it is. */
+function geometrySignature(entry: MapModelEntry): string {
+  return entry.glbUrl ?? JSON.stringify(entry.massing ?? []);
 }
 
 interface LoadedModel {
   root: THREE.Group;
   entry: MapModelEntry;
+  signature: string;
   /** Real terrain height (meters, post-exaggeration) last baked into this
    * model's matrix — see `applyTransform`'s doc comment for why this is
    * tracked instead of always assuming ground = sea level. */
   lastGroundElevation: number;
 }
+
+/** Warm architectural gray — a deliberately neutral placeholder so a
+ * procedural massing box reads as "real building, no photo yet" rather
+ * than competing with an actual admin-uploaded model's own materials. */
+const MASSING_COLOR = 0xb9b2a6;
+const MASSING_EDGE_COLOR = 0x6b6558;
 
 /** Re-querying terrain elevation is cheap (an in-memory DEM lookup, not a
  * network call), but rebuilding a model's full transform matrix every frame
@@ -137,32 +161,43 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
 
   private upsertEntry(entry: MapModelEntry) {
     const existing = this.loaded.get(entry.projectId);
-    if (existing && existing.entry.glbUrl === entry.glbUrl) {
-      // Same file — just a placement (scale/rotation/altitude) change.
+    const signature = geometrySignature(entry);
+    if (existing && existing.signature === signature) {
+      // Same geometry (same GLB file, or the same computed massing) — just
+      // a placement (scale/rotation/altitude) change.
       existing.entry = entry;
       this.applyTransform(existing, this.queryGroundElevation(entry, existing.lastGroundElevation));
       return;
     }
-    // New project, or Admin replaced the file — (re)load the geometry.
+    // New project, the geometry itself changed (Admin replaced the GLB, or
+    // the project's own unit data changed its computed massing) — (re)build.
     if (existing) {
       this.scene.remove(existing.root);
       disposeObject3D(existing.root);
       this.loaded.delete(entry.projectId);
     }
+
+    if (entry.massing) {
+      // Synchronous, no network round trip — commits immediately.
+      this.pendingUrls.delete(entry.projectId);
+      const root = this.buildMassingGroup(entry.projectId, entry.massing);
+      this.commitLoaded(entry, root, signature);
+      return;
+    }
+    if (!entry.glbUrl) return;
+
     if (this.pendingUrls.get(entry.projectId) === entry.glbUrl) return;
     this.pendingUrls.set(entry.projectId, entry.glbUrl);
+    const glbUrl = entry.glbUrl;
 
     this.loader.load(
-      entry.glbUrl,
+      glbUrl,
       (gltf) => {
         // The entry may have moved on (or been removed) while this request
         // was in flight — only commit if it's still current.
-        if (this.pendingUrls.get(entry.projectId) !== entry.glbUrl) return;
+        if (this.pendingUrls.get(entry.projectId) !== glbUrl) return;
         this.pendingUrls.delete(entry.projectId);
         const root = gltf.scene;
-        // Manual matrix control (see applyTransform) — Three.js must not
-        // recompute this from position/quaternion/scale on its own.
-        root.matrixAutoUpdate = false;
         root.traverse((child) => {
           child.userData.projectId = entry.projectId;
           // Three.js's automatic per-mesh frustum culling derives its
@@ -208,18 +243,62 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
             });
           }
         });
-        this.scene.add(root);
-        const loaded: LoadedModel = { root, entry, lastGroundElevation: 0 };
-        this.loaded.set(entry.projectId, loaded);
-        this.applyTransform(loaded, this.queryGroundElevation(entry, 0));
-        this.map?.triggerRepaint();
+        this.commitLoaded(entry, root, signature);
       },
       undefined,
       (error) => {
         this.pendingUrls.delete(entry.projectId);
-        this.onLoadError?.(entry.projectId, error, entry.glbUrl);
+        this.onLoadError?.(entry.projectId, error, glbUrl);
       }
     );
+  }
+
+  private commitLoaded(entry: MapModelEntry, root: THREE.Group, signature: string) {
+    // Manual matrix control (see applyTransform) — Three.js must not
+    // recompute this from position/quaternion/scale on its own.
+    root.matrixAutoUpdate = false;
+    this.scene.add(root);
+    const loaded: LoadedModel = { root, entry, signature, lastGroundElevation: 0 };
+    this.loaded.set(entry.projectId, loaded);
+    this.applyTransform(loaded, this.queryGroundElevation(entry, 0));
+    this.map?.triggerRepaint();
+  }
+
+  /**
+   * The map's default 3D hero for a project with no admin-uploaded GLB —
+   * one extruded box per building, sized in real meters from
+   * `threeBuilding.ts`'s `computeProjectMassing` (real unit/floor data, not
+   * a fixed placeholder size). Built Y-up, same convention a GLTF export
+   * uses, so it flows through `applyTransform`'s existing Y-up→Mercator
+   * conversion — including its winding flip — unchanged; `DoubleSide`
+   * below is what keeps every face visible after that flip, same reason
+   * the GLB path forces it above.
+   */
+  private buildMassingGroup(projectId: string, boxes: MassingBox[]): THREE.Group {
+    const root = new THREE.Group();
+    const material = new THREE.MeshStandardMaterial({
+      color: MASSING_COLOR,
+      roughness: 0.9,
+      metalness: 0,
+      side: THREE.DoubleSide,
+    });
+    for (const box of boxes) {
+      const geometry = new THREE.BoxGeometry(box.widthM, box.heightM, box.depthM);
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(box.offsetXM, box.heightM / 2, box.offsetZM);
+      mesh.frustumCulled = false;
+      mesh.userData.projectId = projectId;
+      root.add(mesh);
+
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geometry),
+        new THREE.LineBasicMaterial({ color: MASSING_EDGE_COLOR })
+      );
+      edges.position.copy(mesh.position);
+      edges.frustumCulled = false;
+      root.add(edges);
+    }
+    return root;
   }
 
   /**
