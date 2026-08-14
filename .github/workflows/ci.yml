@@ -1,0 +1,64 @@
+name: CI
+
+# Runs on every push and PR, from any contributor or automated agent
+# (several agents/sessions push directly to `main` on this repo with no
+# branch protection) — the goal is a fast, always-green-or-honestly-red
+# signal that a change compiles and type-checks before it lands, since
+# right now nothing stands between a typo and a broken production deploy.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-typecheck:
+    name: Lint + Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    # `next build` runs generateStaticParams on several routes
+    # (listing/[slug], project/[slug], projects/[slug], developer/[slug]),
+    # which hits the real database at build time — this job needs
+    # DATABASE_URL / AUTH_SECRET / BLOB_READ_WRITE_TOKEN / NEXT_PUBLIC_MAPBOX_TOKEN
+    # added as repo secrets (Settings -> Secrets and variables -> Actions)
+    # to actually run. Until they're added it's skipped (not red) rather
+    # than failing on every push.
+    if: ${{ vars.CI_BUILD_ENABLED == 'true' || secrets.DATABASE_URL != '' }}
+    needs: lint-and-typecheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+          NEXT_PUBLIC_MAPBOX_TOKEN: ${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN }}
