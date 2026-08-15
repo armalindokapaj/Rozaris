@@ -353,6 +353,56 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
     }
   }
 
+  /** Real permanent(-ish) delete, any status — distinct from
+   * `handleRemoveModel` above (soft — archives a published version, stays
+   * in history/rollback-able) and `handleDiscardDraft` (already soft-
+   * delete, but only ever reachable for a draft). This is the one "Delete
+   * Model" action that works regardless of the active version's state —
+   * same shape as Project3DConfigEditor.tsx's identical `handleDeleteModel`
+   * for the 3D Experience side, added for parity (real user report: no way
+   * to delete a 3D Map Control model at all beyond discarding a draft). */
+  async function handleDeleteModel() {
+    if (!activeVersion) return;
+    if (!window.confirm(t("admin.mapModelDeleteModelConfirm"))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/map-models/${project.id}/versions/${activeVersion.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      if (localPreviewUrl) {
+        URL.revokeObjectURL(localPreviewUrl);
+        setLocalPreviewUrl(null);
+      }
+      await refresh();
+      setPicking(false);
+      setRelocating(false);
+      setFlash(t("admin.mapModelDeleted"));
+      setTimeout(() => setFlash(null), 2500);
+    } catch {
+      setError(t("admin.mapModelDeleteFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Per-history-row permanent(-ish) delete for an old (non-active)
+   * version — same DELETE route as `handleDeleteModel`, just targeting a
+   * specific version id from the history list instead of the active one. */
+  async function handleDeleteVersion(version: VersionRow) {
+    if (!window.confirm(t("admin.versionDeleteConfirm", { version: String(version.version) }))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/map-models/${project.id}/versions/${version.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      await refresh();
+    } catch {
+      setError(t("admin.mapModelDeleteFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleRollback(versionId: string) {
     setBusy(true);
     setError(null);
@@ -507,6 +557,18 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
                           </button>
                         )
                       )}
+                      {/* Real permanent delete, any status — distinct from
+                          the soft icon-only actions above (discard-draft /
+                          archive-published), which stay as-is. */}
+                      <button
+                        onClick={handleDeleteModel}
+                        disabled={busy}
+                        title={t("admin.mapModelDeleteModel")}
+                        className="flex items-center gap-1 rounded-control border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:opacity-40"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {t("admin.mapModelDeleteModel")}
+                      </button>
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
@@ -732,13 +794,24 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
                         </p>
                       </div>
                       {v.publicationStatus === "archived" && (
-                        <button
-                          onClick={() => handleRollback(v.id)}
-                          disabled={busy}
-                          className="flex shrink-0 items-center gap-1 rounded-control border border-neutral-200 px-2 py-1 font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
-                        >
-                          <RotateCcw className="h-3 w-3" /> {t("admin.rollback")}
-                        </button>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            onClick={() => handleRollback(v.id)}
+                            disabled={busy}
+                            className="flex items-center gap-1 rounded-control border border-neutral-200 px-2 py-1 font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+                          >
+                            <RotateCcw className="h-3 w-3" /> {t("admin.rollback")}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteVersion(v)}
+                            disabled={busy}
+                            aria-label={t("admin.mapModelDeleteModel")}
+                            title={t("admin.mapModelDeleteModel")}
+                            className="rounded-control border border-red-200 p-1 text-red-500 hover:bg-red-50 disabled:opacity-40"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
                       )}
                     </div>
                   ))}

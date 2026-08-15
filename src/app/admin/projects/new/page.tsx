@@ -8,6 +8,7 @@ import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
 import { useStoreHydrated } from "@/hooks/useStoreHydrated";
+import { useLocations } from "@/hooks/useLocations";
 import { CITY_CENTER, DEMO_PUBLISHER, stageTemplate } from "@/lib/mockData";
 import type { Project } from "@/lib/types";
 
@@ -91,7 +92,25 @@ export default function NewAdminProjectPage() {
 
   // --- Step 1: Create Project ---
   const [name, setName] = useState("");
-  const [city, setCity] = useState("Tirana");
+  // Real Canonical Location System (see MEMORY note
+  // "rozaris-controlled-taxonomy-spec") — `POST /api/projects` now derives
+  // `city` server-side from a real `neighborhoodId` and rejects anything
+  // that doesn't resolve, same as NewProjectModal/EditProjectModal already
+  // send. This page used to send a hardcoded `neighborhoodId: "custom"`
+  // with a freeform `city` string the server silently ignored, so every
+  // project created here 400'd with `Unknown location "custom"` — a real
+  // bug found live (reported as "can't put a city name to create a
+  // project"). Fixed by picking a real neighborhood instead of typing a
+  // city, exactly like the other two creation surfaces.
+  const neighborhoods = useLocations("neighborhood");
+  const [neighborhoodIdChoice, setNeighborhoodIdChoice] = useState("");
+  // Derived, not effect-synced (avoids a setState-in-effect render
+  // cascade): defaults to the first loaded neighborhood until the admin
+  // actually picks one — `useLocations` starts empty, so this naturally
+  // resolves once the real `/api/locations` fetch lands.
+  const neighborhoodId = neighborhoodIdChoice || neighborhoods[0]?.id || "";
+  const setNeighborhoodId = setNeighborhoodIdChoice;
+  const selectedNeighborhood = neighborhoods.find((n) => n.id === neighborhoodId);
   const [publishers, setPublishers] = useState<PublisherOption[]>([]);
   const [publisherId, setPublisherId] = useState(DEMO_PUBLISHER.id);
   const [creating, setCreating] = useState(false);
@@ -117,7 +136,7 @@ export default function NewAdminProjectPage() {
     };
   }, []);
 
-  const canSubmit = name.trim().length > 0 && !creating;
+  const canSubmit = name.trim().length > 0 && !!neighborhoodId && !creating;
 
   async function handleCreate() {
     if (!canSubmit) return;
@@ -132,9 +151,12 @@ export default function NewAdminProjectPage() {
       developer: { ...DEMO_PUBLISHER, id: developer.id, name: developer.name },
       status: "coming_soon",
       progressPercent: 0,
-      coords: CITY_CENTER,
-      neighborhoodId: "custom",
-      city: city.trim() || "Tirana",
+      coords:
+        selectedNeighborhood?.latitude != null && selectedNeighborhood?.longitude != null
+          ? { lat: selectedNeighborhood.latitude, lng: selectedNeighborhood.longitude }
+          : CITY_CENTER,
+      neighborhoodId,
+      city: selectedNeighborhood?.cityName ?? "Tirana",
       setting: "residential_complex",
       propertyType: "apartment",
       availableUnits: 0,
@@ -337,31 +359,50 @@ export default function NewAdminProjectPage() {
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="mb-1.5 block text-xs font-medium text-neutral-500">
-                {t("admin.newProjectCity")}
-              </span>
-              <input
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-neutral-500">
-                {t("admin.newProjectDeveloper")}
+                {t("admin.newProjectNeighborhood")}
               </span>
               <select
-                value={publisherId}
-                onChange={(e) => setPublisherId(e.target.value)}
+                value={neighborhoodId}
+                onChange={(e) => setNeighborhoodId(e.target.value)}
                 className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
               >
-                {(publishers.length > 0 ? publishers : [DEMO_PUBLISHER]).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
+                {neighborhoods.length === 0 && <option value="">…</option>}
+                {neighborhoods.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.officialName}
                   </option>
                 ))}
               </select>
             </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-neutral-500">
+                {t("admin.newProjectCity")}
+              </span>
+              <input
+                value={selectedNeighborhood?.cityName ?? ""}
+                readOnly
+                title={t("admin.newProjectCityDerived")}
+                className="w-full cursor-not-allowed rounded-control border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500 focus:outline-none"
+              />
+            </label>
           </div>
+
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-neutral-500">
+              {t("admin.newProjectDeveloper")}
+            </span>
+            <select
+              value={publisherId}
+              onChange={(e) => setPublisherId(e.target.value)}
+              className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+            >
+              {(publishers.length > 0 ? publishers : [DEMO_PUBLISHER]).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <div className="block">
             <span className="mb-1.5 block text-xs font-medium text-neutral-500">

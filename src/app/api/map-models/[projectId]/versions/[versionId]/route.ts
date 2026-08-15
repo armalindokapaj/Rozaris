@@ -64,10 +64,15 @@ export async function PATCH(
 }
 
 /**
- * Discards a draft — Super Admin control/audit pass: soft-delete only
- * (`deletedAt`/`deletedBy`, Blob file left alone), no longer a real
- * `prisma.delete()`. Restorable from the Recycle Bin; permanently gone
- * (Postgres row + Blob object) only via a Super Admin hard-delete.
+ * Soft-deletes a version — Postgres row marked `deletedAt`/`deletedBy`,
+ * stored blob left alone (Super Admin control/audit pass; restorable from
+ * the Recycle Bin, permanently gone only via a Super Admin hard-delete).
+ * Both MapModelEditor.tsx's "Delete Model" button (any status, including
+ * the currently published version) and its per-version history delete
+ * call this — no "cannot delete published" guard, matching the identical
+ * detail-model route (see that route's own doc comment for why: "Remove"
+ * already covers the softer "take it off the map but keep it in history"
+ * case via /unpublish, so this one is deliberately unconditional).
  */
 export async function DELETE(
   _request: Request,
@@ -80,12 +85,6 @@ export async function DELETE(
   const version = await prisma.mapModelVersion.findUnique({ where: { id: versionId } });
   if (!version || version.projectId !== projectId || version.deletedAt) {
     return NextResponse.json({ error: "Version not found." }, { status: 404 });
-  }
-  if (version.publicationStatus === "published") {
-    return NextResponse.json(
-      { error: "Cannot discard the published version — publish a different one first." },
-      { status: 409 }
-    );
   }
 
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
