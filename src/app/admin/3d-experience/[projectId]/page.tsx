@@ -8,6 +8,7 @@ import { useT } from "@/lib/i18n/useT";
 import { useAdminProject } from "@/hooks/useAdminProject";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
 import { useStoreHydrated } from "@/hooks/useStoreHydrated";
+import { useDeleteProject } from "@/hooks/useDeleteProject";
 import { Project3DConfigEditor } from "@/components/dashboard/Project3DConfigEditor";
 
 /**
@@ -29,6 +30,15 @@ export default function Admin3DExperiencePage() {
   // no repair path — every upload/delete/publish silently 401'd while the
   // page still looked "signed in as Admin" (the Zustand mock flag below).
   const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
+  const { deleteProject, deleting: deletingProject } = useDeleteProject();
+
+  async function handleDeleteProject() {
+    if (!project) return;
+    if (!window.confirm(t("admin.projectDeleteConfirm", { name: project.name }))) return;
+    const reason = window.prompt(t("admin.projectDeleteReasonPrompt"), "");
+    const ok = await deleteProject(project.id, reason ?? undefined);
+    if (ok) router.push("/admin?tab=experience");
+  }
   // Real bug fix — "can't access Configure 3D Experience" on a fresh load
   // (hard refresh / new tab / bookmark): `auth` is a persisted Zustand
   // slice with `skipHydration: true`, so it reads its default
@@ -83,6 +93,8 @@ export default function Admin3DExperiencePage() {
       <Project3DConfigEditor
         project={project}
         onClose={() => router.push("/admin?tab=experience")}
+        onDeleteProject={handleDeleteProject}
+        deletingProject={deletingProject}
       />
     </>
   );

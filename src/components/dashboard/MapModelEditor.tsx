@@ -75,7 +75,20 @@ function formatBytes(bytes: number) {
  * exact coordinates — see MapModelMapPreview.tsx and BuildingHider.ts for
  * the mechanics.
  */
-export function MapModelEditor({ project, onClose }: { project: Project; onClose: () => void }) {
+export function MapModelEditor({
+  project,
+  onClose,
+  onDeleteProject,
+  deletingProject = false,
+}: {
+  project: Project;
+  onClose: () => void;
+  // Real "delete a Project" from inside the editor itself — optional so
+  // this component still works standalone without every call site needing
+  // to wire it up (mirrors Project3DConfigEditor.tsx's identical prop).
+  onDeleteProject?: () => void;
+  deletingProject?: boolean;
+}) {
   const { t, locale } = useT();
 
   const [versions, setVersions] = useState<VersionRow[]>([]);
@@ -489,10 +502,22 @@ export function MapModelEditor({ project, onClose }: { project: Project; onClose
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h2 className="text-base font-bold text-neutral-900">{t("admin.mapModelTitle")}</h2>
             <p className="truncate text-xs text-neutral-500">{project.name}</p>
           </div>
+          {/* Real "delete a Project" from inside the editor itself, not
+              just the admin grid's kebab menu — same audit-logged Recycle
+              Bin route, see useDeleteProject.ts. */}
+          <button
+            onClick={onDeleteProject ?? (() => {})}
+            disabled={deletingProject}
+            title={t("admin.deleteProjectAction")}
+            aria-label={t("admin.deleteProjectAction")}
+            className="shrink-0 rounded-control border border-red-200 p-2 text-red-500 hover:bg-red-50 disabled:opacity-40"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
         </div>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scroll-thin p-5">

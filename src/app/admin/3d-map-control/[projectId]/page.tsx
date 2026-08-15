@@ -8,6 +8,7 @@ import { useT } from "@/lib/i18n/useT";
 import { useAdminProject } from "@/hooks/useAdminProject";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
 import { useStoreHydrated } from "@/hooks/useStoreHydrated";
+import { useDeleteProject } from "@/hooks/useDeleteProject";
 import { MapModelEditor } from "@/components/dashboard/MapModelEditor";
 
 /**
@@ -27,6 +28,15 @@ export default function Admin3DMapControlPage() {
   const project = useAdminProject(params.projectId);
   const { t } = useT();
   const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
+  const { deleteProject, deleting: deletingProject } = useDeleteProject();
+
+  async function handleDeleteProject() {
+    if (!project) return;
+    if (!window.confirm(t("admin.projectDeleteConfirm", { name: project.name }))) return;
+    const reason = window.prompt(t("admin.projectDeleteReasonPrompt"), "");
+    const ok = await deleteProject(project.id, reason ?? undefined);
+    if (ok) router.push("/admin?tab=mapControl");
+  }
   // Same real bug fix as ../../3d-experience/[projectId]/page.tsx — see
   // useStoreHydrated's own doc comment for the full "fresh load bounces
   // back to /admin" root cause.
@@ -73,6 +83,8 @@ export default function Admin3DMapControlPage() {
         key={project.id}
         project={project}
         onClose={() => router.push("/admin?tab=mapControl")}
+        onDeleteProject={handleDeleteProject}
+        deletingProject={deletingProject}
       />
     </>
   );

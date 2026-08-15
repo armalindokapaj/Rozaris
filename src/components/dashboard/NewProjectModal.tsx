@@ -61,10 +61,14 @@ export function NewProjectModal({
   const selectedNeighborhood = neighborhoods.find((n) => n.id === neighborhoodId);
   const city = selectedNeighborhood?.cityName ?? "Tirana";
 
-  const canSubmit = name.trim().length > 0;
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const canSubmit = name.trim().length > 0 && !creating;
 
-  function handleCreate() {
+  async function handleCreate() {
     if (!canSubmit) return;
+    setCreating(true);
+    setCreateError(null);
     const buildings = buildingsInput
       .split(",")
       .map((b) => b.trim())
@@ -97,42 +101,56 @@ export function NewProjectModal({
       units: [],
       constructionStages: stageTemplate(0),
     };
-    addProject(project);
-    onCreated(project);
 
-    // Fire-and-forget: gives the project a real Postgres row so it can take
-    // a "3D Map Control" GLB or 3D Experience config right away, without
-    // blocking the (already-optimistic) local creation on the network.
-    fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: project.id,
-        slug: project.slug,
-        name: project.name,
-        publisherId: project.developer.id,
-        status: project.status,
-        progressPercent: project.progressPercent,
-        lat: project.coords.lat,
-        lng: project.coords.lng,
-        neighborhoodId: project.neighborhoodId,
-        city: project.city,
-        setting: project.setting,
-        propertyType: project.propertyType,
-        heroImage: project.heroImage,
-        gallery: project.gallery,
-        descriptionEn: project.description.en,
-        descriptionSq: project.description.sq,
-        buildings: project.buildings,
-        amenities: project.amenities,
-        premium: project.premium,
-        completionLabel: project.completionLabel,
-      }),
-    }).catch(() => {
-      // Non-fatal here — Admin can still browse/edit the project locally;
-      // attaching a map model/3D config will just 404 until this succeeds
-      // on a retry (no retry loop yet, see "rozaris-backend-plan" memory).
-    });
+    // Real, awaited creation — this used to be fire-and-forget ("gives the
+    // project a real Postgres row... without blocking the optimistic local
+    // creation"), which meant a failed POST (a network hiccup, or a stale
+    // `neighborhoodId` from before the Canonical Location System required
+    // one) left a phantom project that only ever existed in this browser's
+    // localStorage: it showed up in the admin grid and was clickable, but
+    // every 3D Map Control / 3D Experience upload against it 404'd forever
+    // since there was no real row to attach to — the confirmed root cause
+    // of a real "can't upload a GLB" report. Now the project only ever
+    // becomes real (added locally, handed to the caller, navigated to)
+    // once the server has actually confirmed it exists.
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: project.id,
+          slug: project.slug,
+          name: project.name,
+          publisherId: project.developer.id,
+          status: project.status,
+          progressPercent: project.progressPercent,
+          lat: project.coords.lat,
+          lng: project.coords.lng,
+          neighborhoodId: project.neighborhoodId,
+          city: project.city,
+          setting: project.setting,
+          propertyType: project.propertyType,
+          heroImage: project.heroImage,
+          gallery: project.gallery,
+          descriptionEn: project.description.en,
+          descriptionSq: project.description.sq,
+          buildings: project.buildings,
+          amenities: project.amenities,
+          premium: project.premium,
+          completionLabel: project.completionLabel,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(typeof body?.error === "string" ? body.error : t("admin.newProjectCreateFailed"));
+      }
+      addProject(project);
+      onCreated(project);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : t("admin.newProjectCreateFailed"));
+    } finally {
+      setCreating(false);
+    }
   }
 
   return (
@@ -245,12 +263,13 @@ export function NewProjectModal({
         </div>
 
         <div className="border-t border-neutral-100 p-4">
+          {createError && <p className="mb-2 text-xs text-red-600">{createError}</p>}
           <button
             onClick={handleCreate}
             disabled={!canSubmit}
             className="w-full rounded-control bg-brand-500 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
           >
-            {t("admin.newProjectCreate")}
+            {creating ? t("admin.newProjectCreating") : t("admin.newProjectCreate")}
           </button>
         </div>
       </div>

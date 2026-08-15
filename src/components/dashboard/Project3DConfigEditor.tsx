@@ -153,9 +153,17 @@ function detailModelFromVersion(version: DetailVersionRow): ProjectDetailModel {
 export function Project3DConfigEditor({
   project,
   onClose,
+  onDeleteProject,
+  deletingProject = false,
 }: {
   project: Project;
   onClose: () => void;
+  // Real "delete a Project" from inside the editor itself — optional so
+  // this component still works standalone (e.g. any future embedding that
+  // doesn't want the action available) without every call site needing to
+  // wire it up.
+  onDeleteProject?: () => void;
+  deletingProject?: boolean;
 }) {
   const [configLoaded, setConfigLoaded] = useState(false);
   const [configBusy, setConfigBusy] = useState(false);
@@ -871,6 +879,8 @@ export function Project3DConfigEditor({
     <EditorShell
       project={effectiveProject}
       onClose={onClose}
+      onDeleteProject={onDeleteProject ?? (() => {})}
+      deletingProject={deletingProject}
       t={t}
       locale={locale}
       draft={draft}

@@ -1315,6 +1315,7 @@ const en = {
     projectDeleteConfirm: "Delete \"{name}\"? It moves to the Recycle Bin and can be restored by a Super Admin — it isn't gone forever.",
     projectReasonRequired: "A reason is required.",
     projectInRecycleBinNote: "In the Recycle Bin — restore it from Super Admin to change its visibility again.",
+    deleteProjectAction: "Delete project",
     projectVisibilityActionFailed: "That didn't work — please try again.",
 
     saveDraft: "Save Draft",

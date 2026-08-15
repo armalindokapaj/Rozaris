@@ -1,7 +1,6 @@
 "use client";
 
-import { useAppStore } from "@/lib/store";
-import { useLiveProjects } from "@/hooks/useLiveProjects";
+import { useAdminProjects } from "@/hooks/useAdminProjects";
 import type { Project } from "@/lib/types";
 
 /**
@@ -10,18 +9,25 @@ import type { Project } from "@/lib/types";
  * — the same lookup `Viewer3DTab` (admin/page.tsx) already did inline
  * before those editors were modals opened from project cards there.
  *
- * Real Postgres now (see the "Rozaris Platform Audit" memory's
- * Projects/Units migration) — `prisma/seed.ts` seeds every mockData
- * project into the same table `POST /api/projects` writes to, so
- * `liveProjects` alone covers both. `customProjects` (Zustand-only) stays
- * as the fallback for a project created this session before its own
- * `GET /api/projects` refetch has caught up — same reasoning
- * `CustomProjectPreview.tsx` documents.
+ * Real, confirmed bug fix: this used to resolve against `liveProjects`
+ * (the *public* catalog — active-approval-status projects only, via
+ * `useLiveProjects`/`GET /api/projects`), falling back to the Zustand-only
+ * `customProjects` for anything not found there. That fallback was meant
+ * to cover the brief window between an optimistic local project create and
+ * its real Postgres row landing — but `customProjects` is persisted to
+ * localStorage, so a project that was later soft-deleted (or whose create
+ * silently failed server-side — see NewProjectModal.tsx's now-fixed
+ * fire-and-forget POST) kept resolving as if real *forever*, letting
+ * Admin navigate straight into a working-looking editor for a project
+ * with no actual Postgres row underneath — every upload/slot-create then
+ * 404'd. `useAdminProjects()` (`GET /api/admin/projects`) is the same
+ * complete, always-fresh, admin-scoped list the project grid itself
+ * already uses (pending/active/archived, never a deleted or phantom row),
+ * so this hook now agrees with the grid instead of trusting stale local
+ * state ahead of it.
  */
 export function useAdminProject(projectId: string | undefined): Project | null {
-  const customProjects = useAppStore((s) => s.customProjects);
-  const liveProjects = useAppStore((s) => s.liveProjects);
-  useLiveProjects();
+  const { projects } = useAdminProjects();
   if (!projectId) return null;
-  return [...(liveProjects ?? []), ...customProjects].find((p) => p.id === projectId) ?? null;
+  return projects.find((p) => p.id === projectId) ?? null;
 }

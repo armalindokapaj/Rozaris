@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ExternalLink, Moon, Redo2, RotateCcw, Sun, Undo2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Moon, Redo2, RotateCcw, Sun, Trash2, Undo2 } from "lucide-react";
 import type { DetailVersionRow } from "./types";
 import type { Translate } from "./editorTypes";
 
@@ -35,11 +35,15 @@ export function EditorHeader({
   detailBusy,
   detailLoaded,
   activeVersion,
+  onDeleteProject,
+  deletingProject,
   t,
 }: {
   projectName: string;
   projectSlug: string;
   onClose: () => void;
+  onDeleteProject: () => void;
+  deletingProject: boolean;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -72,6 +76,19 @@ export function EditorHeader({
         <h1 className="truncate text-base font-bold text-neutral-900">{projectName}</h1>
         <p className="text-xs text-neutral-500">{t("admin.viewer3DTitle")}</p>
       </div>
+
+      {/* Real "delete a Project" from inside the editor itself, not just
+          the admin grid's kebab menu — same audit-logged Recycle Bin
+          route, see useDeleteProject.ts. */}
+      <button
+        onClick={onDeleteProject}
+        disabled={deletingProject}
+        title={t("admin.deleteProjectAction")}
+        aria-label={t("admin.deleteProjectAction")}
+        className="shrink-0 rounded-control border border-red-200 p-2 text-red-500 hover:bg-red-50 disabled:opacity-40"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
 
       {configError && <p className="shrink-0 text-xs font-medium text-red-600">{configError}</p>}
       {savedFlash && (

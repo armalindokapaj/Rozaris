@@ -434,6 +434,12 @@ interface AppState {
   // static module-level constant, not store state.
   customProjects: Project[];
   addProject: (project: Project) => void;
+  // Real "delete everything I create" pass — strips a local-only project
+  // (created before its real Postgres row existed, or one already deleted
+  // server-side) out of persisted state so it stops resurrecting itself
+  // across reloads. Safe no-op for an id that was never in `customProjects`
+  // (e.g. a fully real project whose only representation is the server).
+  removeProject: (projectId: string) => void;
   addProjectUnit: (projectId: string, unit: Unit) => void;
   removeProjectUnit: (projectId: string, unitId: string) => void;
   // Edits a unit's fields in place, `id` untouched — unlike delete-then-
@@ -791,6 +797,8 @@ export const useAppStore = create<AppState>()(
       customProjects: [],
       addProject: (project) =>
         set((s) => ({ customProjects: [...s.customProjects, project] })),
+      removeProject: (projectId) =>
+        set((s) => ({ customProjects: s.customProjects.filter((p) => p.id !== projectId) })),
       addProjectUnit: (projectId, unit) =>
         set((s) => ({
           customProjects: s.customProjects.map((p) =>

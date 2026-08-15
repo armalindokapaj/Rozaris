@@ -77,6 +77,8 @@ const PREVIEW_WIDTH_STYLE: Record<PreviewWidth, string | undefined> = {
 export function EditorShell({
   project,
   onClose,
+  onDeleteProject,
+  deletingProject,
   t,
   locale,
   draft,
@@ -153,6 +155,8 @@ export function EditorShell({
 }: {
   project: Project;
   onClose: () => void;
+  onDeleteProject: () => void;
+  deletingProject: boolean;
   t: Translate;
   locale: Locale;
   draft: Project3DConfig;
@@ -490,6 +494,8 @@ export function EditorShell({
         projectName={project.name}
         projectSlug={project.slug}
         onClose={onClose}
+        onDeleteProject={onDeleteProject}
+        deletingProject={deletingProject}
         undo={undo}
         redo={redo}
         canUndo={canUndo}

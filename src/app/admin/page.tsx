@@ -502,7 +502,7 @@ function TimelineTab() {
   const overrides = useAppStore((s) => s.projectConstructionOverrides);
   const approveTimelineRequest = useAppStore((s) => s.approveTimelineRequest);
   const rejectTimelineRequest = useAppStore((s) => s.rejectTimelineRequest);
-  const liveProjects = useAdminProjects();
+  const { projects: liveProjects } = useAdminProjects();
 
   const pending = timelineRequests.filter((r) => r.status === "pending");
   const decided = timelineRequests.filter((r) => r.status !== "pending");
@@ -650,7 +650,8 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
   const { t } = useT();
   const router = useRouter();
   const customProjects = useAppStore((s) => s.customProjects);
-  const liveProjects = useAdminProjects();
+  const removeProject = useAppStore((s) => s.removeProject);
+  const { projects: liveProjects, loaded: liveProjectsLoaded } = useAdminProjects();
   const [editingUnits, setEditingUnits] = useState<Project | null>(null);
   const [creating, setCreating] = useState(false);
   // Real Postgres rows per project (src/app/api/map-models/[id]/versions,
@@ -671,7 +672,24 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
   const [projectStatus, setProjectStatus] = useState<Record<string, ProjectStatus>>({});
   const [statusReload, setStatusReload] = useState(0);
 
-  const allProjects = [...liveProjects, ...customProjects];
+  // Dedupe by id (a `customProjects` entry whose real Postgres row has
+  // since landed would otherwise render twice), and self-heal any
+  // `customProjects` ghost left over from before project creation became a
+  // real, awaited round trip (see NewProjectModal.tsx / useAdminProject.ts)
+  // — once `liveProjects` has actually loaded, a `customProjects` entry
+  // that still isn't in it is either a stale phantom (a create that
+  // silently failed server-side) or a project deleted since, not a
+  // legitimate in-flight one, so it's dropped from local storage rather
+  // than kept resolvable forever.
+  const liveProjectIds = new Set(liveProjects.map((p) => p.id));
+  useEffect(() => {
+    if (!liveProjectsLoaded) return;
+    for (const p of customProjects) {
+      if (!liveProjectIds.has(p.id)) removeProject(p.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveProjectsLoaded, liveProjects.length]);
+  const allProjects = [...liveProjects, ...customProjects.filter((p) => !liveProjectIds.has(p.id))];
   const projectIds = allProjects.map((p) => p.id).join(",");
 
   useEffect(() => {
@@ -915,6 +933,7 @@ function ProjectVisibilityMenu({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const removeProject = useAppStore((s) => s.removeProject);
 
   useEffect(() => {
     if (!open) return;
@@ -980,7 +999,21 @@ function ProjectVisibilityMenu({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entityType: "project", entityId: project.id, reason: reason?.trim() || undefined }),
       });
+      // A 404 here means this card was never (or is no longer) a real
+      // Postgres row — a local-only "ghost" from before project creation
+      // became a real awaited round trip (see NewProjectModal.tsx),
+      // or one already removed some other way. "Delete" on a ghost has
+      // nothing server-side to do, so treat it as success and just clear
+      // the local copy — matching the "delete everything I create" ask
+      // rather than leaving an undeletable phantom card stuck in the grid.
+      if (res.status === 404) {
+        removeProject(project.id);
+        onChanged();
+        setOpen(false);
+        return;
+      }
       if (!res.ok) throw new Error(await readError(res));
+      removeProject(project.id);
       onChanged();
       setOpen(false);
     } catch (err) {
