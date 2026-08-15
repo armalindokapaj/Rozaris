@@ -5,7 +5,11 @@ import { logAuditEvent } from "@/lib/audit";
 import { normalizeListing } from "@/lib/listings";
 import { slugify } from "@/lib/utils";
 import { neighborhoods } from "@/lib/mockData";
+import { resolveLocation } from "@/lib/locations";
 import { requirePublisherSession } from "@/lib/publisherAuth";
+import { isPublisherIdle } from "@/lib/moderation";
+import { isFeatureEnabled } from "@/lib/featureFlags";
+import { AMENITY_KEYS } from "@/lib/constants";
 
 /**
  * The public marketplace's first real read AND write surface for `Listing`
@@ -28,8 +32,16 @@ export async function GET(request: Request) {
   const rows = await prisma.listing.findMany({
     where: publisherId
       ? { publisherId, deletedAt: null }
-      : { status: "active", deletedAt: null },
-    include: { publisher: true },
+      : {
+          status: "active",
+          deletedAt: null,
+          // A listing an admin has taken temporarily offline
+          // (`idleUntil`) stays out of the public catalog while that
+          // window is still running — same "not enforced by a background
+          // job, checked on the way out" pattern as lib/moderation.ts.
+          OR: [{ idleUntil: null }, { idleUntil: { lt: new Date() } }],
+        },
+    include: { publisher: true, property: true },
     orderBy: { createdAt: "desc" },
   });
 
@@ -53,7 +65,13 @@ const listingSchema = z.object({
   totalFloors: z.number().int().optional(),
   yearBuilt: z.number().int().optional(),
   condition: z.enum(["new", "renovated", "good", "needs_renovation"]),
-  amenities: z.array(z.string()).optional().default([]),
+  // Controlled taxonomy (spec item 11 — see MEMORY note
+  // "rozaris-controlled-taxonomy-spec"): publishers pick from the real
+  // `Amenity` list, they don't type new ones. Was `z.array(z.string())`
+  // (unconstrained) — nothing stopped a direct API call from injecting
+  // "Car Park"/"Private parking"/"Parking" as three different values for
+  // what the UI's own checkbox list treats as one.
+  amenities: z.array(z.enum(AMENITY_KEYS as [string, ...string[]])).optional().default([]),
   neighborhoodId: z.string().min(1),
   images: z.array(z.string()).optional().default([]),
   floorPlanImage: z.string().optional(),
@@ -67,6 +85,15 @@ const listingSchema = z.object({
   descriptionSq: z.string().min(1),
   premium: z.boolean().optional().default(false),
   publisherId: z.string().min(1),
+  // The "location drop" requirement (see the "Rozaris Platform Audit"
+  // memory) — `lat`/`lng` from a real LocationPicker pin, distinct from
+  // the neighborhood centroid fallback below. `locationConfirmed: false`
+  // (the default — an old client that's never seen this field, or one
+  // that skipped the picker) forces `draft` status regardless of what a
+  // publisher requested; only an admin session can bypass that.
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+  locationConfirmed: z.boolean().optional().default(false),
 });
 
 export async function POST(request: Request) {
@@ -77,7 +104,29 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { publisherId, neighborhoodId, ...data } = parsed.data;
+  // Property/Listing split (see MEMORY note "rozaris-controlled-taxonomy-
+  // spec") — everything physical about the unit itself goes onto a new
+  // `Property` row; everything else (price, media, copy) stays the
+  // advertisement's own `Listing` fields.
+  const {
+    publisherId,
+    neighborhoodId,
+    lat,
+    lng,
+    locationConfirmed,
+    propertyType,
+    area,
+    landArea,
+    buildingPermit,
+    bedrooms,
+    bathrooms,
+    floor,
+    totalFloors,
+    yearBuilt,
+    condition,
+    amenities,
+    ...data
+  } = parsed.data;
 
   // A publisher session may only create listings under its own Publisher
   // row; an admin session may act on any (same "admin outranks" pattern
@@ -93,20 +142,32 @@ export async function POST(request: Request) {
       { status: 404 }
     );
   }
-  if (publisher.restricted) {
+  if (isPublisherIdle(publisher)) {
     return NextResponse.json(
       { error: "This account is restricted from publishing new listings." },
       { status: 403 }
     );
   }
 
-  // Neighborhoods are still a fixed reference list (mockData.ts), not a
-  // Postgres table — there's no Neighborhood entity in the schema to look
-  // this up against for real. Its centroid stands in for a real map-pin
-  // drop until the create form gets one.
+  // Canonical Location System — validates against the real `locations`
+  // table (scripts/seed-locations.ts gives every mockData.neighborhoods id
+  // a matching row) instead of trusting client-submitted text. The
+  // mockData lookup is kept only as a lat/lng centroid fallback for
+  // locations that predate real coordinates — see resolveLocation()'s doc
+  // comment.
+  const location = await resolveLocation(neighborhoodId);
+  if (!location) {
+    return NextResponse.json({ error: `Unknown location "${neighborhoodId}".` }, { status: 400 });
+  }
   const neighborhood = neighborhoods.find((n) => n.id === neighborhoodId);
-  if (!neighborhood) {
-    return NextResponse.json({ error: `Unknown neighborhood "${neighborhoodId}".` }, { status: 400 });
+  const fallbackCoords = location.lat != null && location.lng != null
+    ? { lat: location.lat, lng: location.lng }
+    : neighborhood?.coords;
+  if (!fallbackCoords) {
+    return NextResponse.json(
+      { error: `Location "${neighborhoodId}" has no coordinates to fall back to.` },
+      { status: 400 }
+    );
   }
 
   let slug = slugify(data.title);
@@ -116,23 +177,76 @@ export async function POST(request: Request) {
     suffix++;
   }
 
+  // Real, confirmed coordinates win; the neighborhood centroid is only a
+  // fallback (still needed either way — `city` always comes from it, and
+  // it keeps a draft listing at a sane default point on the map for the
+  // rare admin preview before a location's ever set).
+  const hasRealLocation = locationConfirmed && lat != null && lng != null;
+
   // Falls into ListingStatus's own default ("pending") rather than forcing
   // "active" — this is the submit -> admin approve -> publish pipeline the
   // schema header describes, not a direct-to-live publish. It goes live
   // (and starts showing up in `GET /api/listings`'s public catalog) once
   // an admin approves it from the Queue tab, via the pre-existing
   // `PATCH /api/admin/listings/[listingId]/publication` route.
-  const listing = await prisma.listing.create({
-    data: {
-      ...data,
-      slug,
-      neighborhoodId,
-      city: neighborhood.city,
-      lat: neighborhood.coords.lat,
-      lng: neighborhood.coords.lng,
-      publisherId,
-    },
-    include: { publisher: true },
+  //
+  // Without a confirmed location, this drops to `draft` regardless of the
+  // request — invisible everywhere except the publisher's own dashboard —
+  // unless the acting session is an admin explicitly choosing to approve
+  // it without one (the "location drop" rule's one exception), or unless
+  // a Super Admin has switched the `location_drop_required` flag off.
+  const locationRuleActive = await isFeatureEnabled("location_drop_required");
+  const status =
+    hasRealLocation || gate.user.role === "admin" || !locationRuleActive ? "pending" : "draft";
+
+  // Property/Listing split — the physical unit gets its own row first (see
+  // MEMORY note "rozaris-controlled-taxonomy-spec"); the ad then points at
+  // it. Two `create()`s in one transaction rather than a nested write so
+  // both halves stay simple `Unchecked*CreateInput`s — Prisma's generated
+  // union type for a nested-relation-plus-scalar-FK mix here doesn't
+  // narrow cleanly — while still committing (or failing) atomically.
+  const listing = await prisma.$transaction(async (tx) => {
+    const property = await tx.property.create({
+      data: {
+        propertyType,
+        area,
+        landArea,
+        buildingPermit,
+        bedrooms,
+        bathrooms,
+        floor,
+        totalFloors,
+        yearBuilt,
+        condition,
+        amenities,
+        neighborhoodId,
+        city: location.cityName,
+        locationId: location.id,
+        lat: hasRealLocation ? lat! : fallbackCoords.lat,
+        lng: hasRealLocation ? lng! : fallbackCoords.lng,
+        locationConfirmed: hasRealLocation,
+      },
+    });
+
+    const created = await tx.listing.create({
+      data: {
+        ...data,
+        slug,
+        status,
+        publisherId,
+        propertyId: property.id,
+      },
+      include: { publisher: true, property: true },
+    });
+
+    // Price history's first point — spec item 31 (see MEMORY note
+    // "rozaris-controlled-taxonomy-spec"). Every later change goes through
+    // `PATCH /api/listings/[listingId]`'s own entry.
+    await tx.priceHistoryEntry.create({
+      data: { listingId: created.id, price: created.price, currency: created.currency },
+    });
+
+    return created;
   });
 
   await logAuditEvent({

@@ -7,6 +7,7 @@ import { Building2, Calculator, ChevronRight, CircleDollarSign, Home, KeyRound, 
 import { Header } from "@/components/layout/Header";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { DesktopBannerAds } from "./DesktopBannerAds";
 import { HeroWallpaper } from "./HeroWallpaper";
 import { LandingSearchCard } from "./LandingSearchCard";
 import { MobileLandingHero } from "./MobileLandingHero";
@@ -97,7 +98,18 @@ export function LandingHero() {
           <HeroWallpaper />
 
           <main className="relative z-10">
-            <section className="mx-auto grid max-w-[88rem] grid-cols-1 items-center gap-10 px-5 py-8 sm:px-8 lg:grid-cols-2 lg:gap-14 lg:px-12 lg:py-12">
+            {/* `items-stretch` (not the previous `items-center`) is
+                deliberate: it's what makes the right column's height
+                match the left column's exactly, top edge to bottom edge —
+                a CSS grid row's height comes from its tallest item's
+                natural content size regardless of `align-items`, and
+                stretch is what then makes the *other* column's box fill
+                that same height instead of collapsing to its own (empty)
+                intrinsic size. `DesktopBannerAds` below has `h-full`, so
+                it fills exactly that stretched box: same top line as the
+                badge above the heading, same bottom line as the search
+                card, same halves either side of the column gap. */}
+            <section className="mx-auto grid max-w-[88rem] grid-cols-1 items-stretch gap-10 px-5 py-8 sm:px-8 lg:grid-cols-2 lg:gap-14 lg:px-12 lg:py-12">
               <div>
                 <span className="inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-brand-100 bg-white px-4 py-1.5 text-sm font-semibold text-brand-700 shadow-[0_2px_10px_rgba(17,24,39,0.06)]">
                   <Sparkles className="h-4 w-4 text-accent" />
@@ -144,13 +156,14 @@ export function LandingHero() {
                 </div>
               </div>
 
-              {/* Right column is intentionally empty — the wallpaper itself is
-                  a fixed full-page backdrop (see HeroWallpaper below the
-                  header), so this column just reserves the split without
-                  re-boxing it into a panel. Hidden below lg since there's
-                  nothing to show there and the space is better spent on the
-                  search card at narrower widths. */}
-              <div aria-hidden="true" className="hidden lg:block" />
+              {/* Right column mirrors the left: the same ad-slot carousel
+                  shown on mobile (MobileBannerAds), resized to fill this
+                  column edge-to-edge instead of a fixed card height.
+                  Hidden below lg — same reasoning as before, the space is
+                  better spent on the search card alone at narrower widths. */}
+              <div className="hidden h-full lg:block">
+                <DesktopBannerAds />
+              </div>
             </section>
 
             <section className="mx-auto max-w-[88rem] px-5 pb-8 sm:px-8 lg:px-12 lg:pb-12">

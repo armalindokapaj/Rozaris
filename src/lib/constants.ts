@@ -61,6 +61,16 @@ export const AMENITY_LABELS: Record<Locale, Record<Amenity, string>> = {
   },
 };
 
+/// Controlled taxonomy — spec item 11 ("Publishers check boxes. They
+/// cannot create duplicates like 'Car Park'/'Private parking'/'Parking'.")
+/// See MEMORY note "rozaris-controlled-taxonomy-spec". Derived from
+/// `AMENITY_LABELS.en`'s own keys rather than hand-duplicated, so it can
+/// never drift from the canonical `Amenity` list — the one place server
+/// routes (`POST`/`PATCH /api/listings`) import from to reject any
+/// non-canonical value a direct API call might submit, not just what the
+/// UI's own checkbox list happens to offer.
+export const AMENITY_KEYS = Object.keys(AMENITY_LABELS.en) as Amenity[];
+
 export const POI_LABELS: Record<Locale, Record<EssentialPOI, string>> = {
   en: {
     school: "School",

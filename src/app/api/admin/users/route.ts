@@ -42,6 +42,7 @@ export async function GET(request: Request) {
       status: true,
       superAdmin: true,
       adminScopes: true,
+      statusUntil: true,
       createdAt: true,
     },
     take: 100,

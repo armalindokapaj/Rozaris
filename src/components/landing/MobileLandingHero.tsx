@@ -11,7 +11,9 @@ import {
   MapPin,
   Wallet,
 } from "lucide-react";
+import { MobileBannerAds } from "./MobileBannerAds";
 import { MobilePromoBanner } from "./MobilePromoBanner";
+import { AdBannerStrip } from "./AdBannerStrip";
 import { Button } from "@/components/ui/Button";
 import { PROPERTY_TYPES } from "@/components/search/FiltersForm";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
@@ -162,7 +164,7 @@ export function MobileLandingHero({
             scroller, which is exactly the "empty space on the right,
             everything drags sideways" bug this fixes. */}
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div className="flex min-h-full flex-col justify-start pt-4 pb-5">
+        <div className="flex min-h-full flex-col justify-start pt-4">
           <h1 className="text-2xl font-extrabold leading-[1.15] text-neutral-900">
             Find <TypewriterWord words={CYCLE_WORDS} className="text-brand-600" />
             <br />
@@ -264,6 +266,23 @@ export function MobileLandingHero({
           </div>
 
           <MobilePromoBanner />
+          <div className="mt-3">
+            <AdBannerStrip />
+          </div>
+          {/* Two equal `flex-1` spacers straddling the ad carousel, not a
+              fixed margin — the tools bar below is pinned to the true
+              bottom of the screen (a deliberate earlier decision, see
+              memory), which on most phones leaves leftover vertical space
+              after this short a content column. A fixed top margin alone
+              left that entire leftover pooled into one gap right above the
+              tools bar. These two zero-basis flex items split whatever's
+              left 50/50, so the gap above the ad carousel and the gap
+              below it end up equal on any device, while `MobileBannerAds`'
+              own `my-3.5` still guarantees a minimum gap even when there's
+              no leftover space to split (content tall enough to scroll). */}
+          <div className="flex-1" aria-hidden="true" />
+          <MobileBannerAds />
+          <div className="flex-1" aria-hidden="true" />
         </div>
         </div>
 
@@ -274,7 +293,7 @@ export function MobileLandingHero({
             texture as the search area above it. Reuses desktop's `tools`
             content (icon + title only — description doesn't fit a
             segment this narrow). */}
-        <div className="shrink-0 px-5 pb-[max(0.9rem,env(safe-area-inset-bottom))] pt-2">
+        <div className="shrink-0 px-5 pb-[max(0.9rem,env(safe-area-inset-bottom))]">
           <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_4px_16px_rgba(17,24,39,0.06)]">
             <div className="grid grid-cols-3 divide-x divide-neutral-100">
               {tools.map((item) => {

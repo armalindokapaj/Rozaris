@@ -4,10 +4,12 @@ import "./globals.css";
 import { StoreHydration } from "@/components/providers/StoreHydration";
 import { AuthSessionProvider } from "@/components/providers/AuthSessionProvider";
 import { AuthSessionSync } from "@/components/providers/AuthSessionSync";
+import { AccountDataSync } from "@/components/providers/AccountDataSync";
 import { CompareOverlay } from "@/components/compare/CompareOverlay";
 import { CompareReplaceModal } from "@/components/compare/CompareReplaceModal";
 import { SignInModal } from "@/components/layout/SignInModal";
 import { SkipLink } from "@/components/common/SkipLink";
+import { getPageSeoRaw } from "@/lib/pageSeo";
 
 const nunitoSans = Nunito_Sans({
   variable: "--font-nunito-sans",
@@ -24,14 +26,20 @@ const roboto = Roboto({
   weight: ["400", "500", "600", "700"],
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: "ROZARIS — Zbulo Pronën Ndryshe",
-    template: "%s | ROZARIS",
-  },
-  description:
-    "ROZARIS është një platformë zbulimi pronash që vendos 3D-në në radhë të parë. Rrotullo qytetin, eksploro zonat dhe zbulo listime të verifikuara dhe zhvillime të reja në Tiranë, Shqipëri.",
-};
+// Platform CMS's "SEO titles / descriptions" (see src/lib/pageSeo.ts) —
+// the site-wide default/fallback title (`template` still applies to every
+// page below that doesn't set its own `title`), admin-overridable via the
+// "home" key without a deploy.
+export async function generateMetadata(): Promise<Metadata> {
+  const seo = await getPageSeoRaw("home");
+  return {
+    title: {
+      default: seo.title,
+      template: "%s | ROZARIS",
+    },
+    description: seo.description,
+  };
+}
 
 export default function RootLayout({
   children,
@@ -45,6 +53,7 @@ export default function RootLayout({
         <StoreHydration />
         <AuthSessionProvider>
           <AuthSessionSync />
+          <AccountDataSync />
           {children}
           <CompareOverlay />
           <CompareReplaceModal />

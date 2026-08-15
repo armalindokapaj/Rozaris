@@ -6,6 +6,7 @@ import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { useLiveListings } from "@/hooks/useLiveListings";
 import { useLiveProjects } from "@/hooks/useLiveProjects";
+import { useSearchRankingWeights } from "@/hooks/useSearchRankingWeights";
 import { getVisibleListings, getVisibleProjects } from "@/lib/filtering";
 import { ListingCard } from "./ListingCard";
 import { ProjectCard } from "./ProjectCard";
@@ -50,6 +51,7 @@ export function ResultsList({
   const liveProjects = useAppStore((s) => s.liveProjects);
   useLiveListings();
   useLiveProjects();
+  const rankWeights = useSearchRankingWeights();
   const [page, setPage] = useState(1);
   const { t } = useT();
 
@@ -84,9 +86,10 @@ export function ResultsList({
         restrictToBounds ? mapAreaSearchBounds : mapBounds,
         restrictToBounds,
         liveListings,
-        liveProjects
+        liveProjects,
+        rankWeights
       ),
-    [filters, mapBounds, mapAreaSearchBounds, restrictToBounds, liveListings, liveProjects]
+    [filters, mapBounds, mapAreaSearchBounds, restrictToBounds, liveListings, liveProjects, rankWeights]
   );
   const projectResults = useMemo(
     () =>

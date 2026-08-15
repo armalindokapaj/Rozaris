@@ -24,6 +24,10 @@ export type PropertyType =
 export type Condition = "new" | "renovated" | "good" | "needs_renovation";
 
 export type ListingStatus =
+  // No confirmed location yet (see Prisma's Listing.locationConfirmed) —
+  // never shown publicly. Added with the "location drop" requirement (see
+  // the "Rozaris Platform Audit" memory).
+  | "draft"
   // Submitted, awaiting admin approval — not yet live anywhere. Matches
   // Prisma's `ListingStatus` enum default; added when `POST /api/listings`
   // became real (see the "Rozaris Platform Audit" memory) since every
@@ -34,7 +38,10 @@ export type ListingStatus =
   | "rented"
   | "expired"
   | "suspended"
-  | "archived";
+  | "archived"
+  // Approval Center's "Reject" verdict on a `pending` submission — see the
+  // matching doc comment on Prisma's `ListingStatus` enum.
+  | "rejected";
 
 export type PublisherType = "private_owner" | "agency" | "developer";
 
@@ -120,6 +127,12 @@ export interface Listing {
   premium: boolean;
   status: ListingStatus;
   createdAt: string;
+  /** Last time the publisher confirmed this listing is still current (a
+   * "Renew" action, not every silent edit) — the basis for the >90-day
+   * "needs an update" staleness flag (see the "Rozaris Platform Audit"
+   * memory). Absent on the still-mock `projectUnitListings` synthetic
+   * rows, which never go stale the same way. */
+  lastRenewedAt?: string;
   buildingListingCount?: number;
   /** Set only on listings synthesized from a new-development project's
    * units, so the unit's own detail page can link back to the project's

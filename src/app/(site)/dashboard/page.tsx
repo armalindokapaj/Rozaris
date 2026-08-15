@@ -30,6 +30,9 @@ import {
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { getPublisherById, DEMO_PUBLISHER } from "@/lib/mockData";
+import { AnalyticsSummaryInline } from "@/components/common/AnalyticsSummaryInline";
+import { isListingStale } from "@/lib/moderation";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { usePublisherListings } from "@/hooks/usePublisherListings";
 import { usePublisherProjects } from "@/hooks/usePublisherProjects";
 import { publisherNotifications } from "@/lib/mockActivity";
@@ -236,6 +239,7 @@ function OverviewTab({
 }
 
 const LISTING_STATUS_STYLE: Record<Listing["status"], string> = {
+  draft: "bg-neutral-100 text-neutral-500",
   pending: "bg-amber-100 text-amber-700",
   active: "bg-green-100 text-green-700",
   archived: "bg-neutral-100 text-neutral-500",
@@ -243,6 +247,7 @@ const LISTING_STATUS_STYLE: Record<Listing["status"], string> = {
   rented: "bg-neutral-100 text-neutral-500",
   expired: "bg-neutral-100 text-neutral-500",
   suspended: "bg-red-100 text-red-700",
+  rejected: "bg-red-100 text-red-700",
 };
 
 function ListingsTab({
@@ -258,6 +263,7 @@ function ListingsTab({
 }) {
   const priceFmt = usePriceFormat();
   const { t } = useT();
+  const flags = useFeatureFlags();
   const [formOpen, setFormOpen] = useState(false);
   const [savedMessage, setSavedMessage] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -267,6 +273,10 @@ function ListingsTab({
       ? t("dashboard.statusPublished")
       : status === "pending"
       ? t("dashboard.statusPendingReview")
+      : status === "draft"
+      ? t("dashboard.statusDraft")
+      : status === "rejected"
+      ? t("dashboard.statusRejected")
       : t("dashboard.statusArchived");
 
   async function handleDelete(id: string) {
@@ -274,6 +284,15 @@ function ListingsTab({
     setDeletingId(id);
     await onDelete(id);
     setDeletingId(null);
+  }
+
+  async function handleRenew(id: string) {
+    await fetch(`/api/listings/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ renew: true }),
+    }).catch(() => {});
+    onChanged();
   }
 
   return (
@@ -317,13 +336,14 @@ function ListingsTab({
               <th className="px-4 py-2.5 font-medium">{t("dashboard.colListing")}</th>
               <th className="px-4 py-2.5 font-medium">{t("dashboard.colPrice")}</th>
               <th className="px-4 py-2.5 font-medium">{t("dashboard.colStatus")}</th>
+              <th className="px-4 py-2.5 font-medium">{t("dashboard.colActivity")}</th>
               <th className="px-4 py-2.5 font-medium" />
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {listings.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-neutral-400">
+                <td colSpan={5} className="px-4 py-8 text-center text-neutral-400">
                   {t("dashboard.noListingsYet")}
                 </td>
               </tr>
@@ -340,6 +360,17 @@ function ListingsTab({
                   <span className={cn("rounded-full px-2 py-1 text-xs font-semibold", LISTING_STATUS_STYLE[l.status])}>
                     {statusLabel(l.status)}
                   </span>
+                  {flags.listing_staleness_nudge && isListingStale(l) && (
+                    <div className="mt-1">
+                      <span className="mr-1.5 text-[11px] font-medium text-warning">{t("dashboard.staleNotice")}</span>
+                      <button onClick={() => handleRenew(l.id)} className="text-[11px] font-semibold text-brand-600 hover:underline">
+                        {t("dashboard.confirmStillAvailable")}
+                      </button>
+                    </div>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <AnalyticsSummaryInline entityType="listing" entityId={l.id} />
                 </td>
                 <td className="px-4 py-3 text-right">
                   <button

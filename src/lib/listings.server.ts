@@ -18,7 +18,7 @@ export async function getListingDetail(
   const [row, projectUnitListings] = await Promise.all([
     prisma.listing.findFirst({
       where: { slug, deletedAt: null },
-      include: { publisher: true },
+      include: { publisher: true, property: true },
     }),
     getAllProjects().then(projectUnitListingsFrom),
   ]);
@@ -27,14 +27,17 @@ export async function getListingDetail(
 
   if (!listing) return null;
 
+  // Property/Listing split (see MEMORY note "rozaris-controlled-taxonomy-
+  // spec") — `neighborhoodId` now lives on the related Property row, not
+  // Listing itself.
   const liveNeighbors = await prisma.listing.findMany({
     where: {
-      neighborhoodId: listing.neighborhoodId,
+      property: { neighborhoodId: listing.neighborhoodId },
       status: "active",
       deletedAt: null,
       id: { not: listing.id },
     },
-    include: { publisher: true },
+    include: { publisher: true, property: true },
     take: 4,
     orderBy: { createdAt: "desc" },
   });
@@ -70,7 +73,7 @@ export async function getAllListingSlugs(): Promise<string[]> {
 export async function getActiveListingsByPublisher(publisherId: string): Promise<Listing[]> {
   const rows = await prisma.listing.findMany({
     where: { publisherId, status: "active", deletedAt: null },
-    include: { publisher: true },
+    include: { publisher: true, property: true },
     orderBy: { createdAt: "desc" },
   });
   return rows.map(normalizeListing);

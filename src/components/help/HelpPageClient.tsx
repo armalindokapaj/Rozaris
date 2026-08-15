@@ -78,6 +78,24 @@ export function HelpPageClient() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // Next's default Link scroll behavior only resets to the top when the
+  // incoming page isn't already "visible" in the viewport — with the
+  // sticky Header persisting across navigation, that check almost always
+  // passes, so arriving here from a scrolled position on another page left
+  // this page rendered mid-scroll instead of at the top. Take scroll
+  // position into our own hands on mount: honor a real #id in the URL
+  // (offset for the sticky header), otherwise force the top.
+  useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    const target = hash ? document.getElementById(hash) : null;
+    if (target) {
+      const top = target.getBoundingClientRect().top + window.scrollY - 80;
+      window.scrollTo({ top });
+    } else {
+      window.scrollTo({ top: 0 });
+    }
+  }, []);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return FAQ_ITEMS.filter((item) => {
@@ -185,7 +203,10 @@ export function HelpPageClient() {
               </div>
             )}
 
-            <div className="mt-6 flex flex-col gap-5 overflow-hidden rounded-panel bg-brand-50 p-5 sm:flex-row sm:items-center">
+            <div
+              id="about"
+              className="mt-6 flex flex-col gap-5 overflow-hidden rounded-panel bg-brand-50 p-5 sm:flex-row sm:items-center"
+            >
               <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-card bg-brand-100 text-brand-600">
                 <ShieldCheck className="h-6 w-6" />
               </span>
@@ -193,7 +214,7 @@ export function HelpPageClient() {
                 <h3 className="font-serif text-lg text-neutral-900">{t("helpPage.aboutTitle")}</h3>
                 <p className="mt-1 text-sm leading-relaxed text-neutral-600">{t("helpPage.aboutBody")}</p>
                 <Link
-                  href="/"
+                  href="/about"
                   className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-brand-600 hover:underline"
                 >
                   {t("helpPage.learnMoreAboutUs")} <ArrowRight className="h-3.5 w-3.5" />

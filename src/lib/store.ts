@@ -29,6 +29,7 @@ import type {
   ViewMode,
 } from "./types";
 import { DEMO_PUBLISHER, seedConversations } from "./mockData";
+import { accountApi } from "./accountApi";
 
 /** Recently Viewed is bounded, not infinite storage (PRD_User §8.3/§20.7). */
 const RECENTLY_VIEWED_MAX = 50;
@@ -219,6 +220,10 @@ export interface AuthState {
   /** The mock Publisher record (src/lib/mockData.ts) this identity's
    * listings/projects are drawn from. */
   publisherId?: string;
+  /** §8 "Business Teams" — "owner" or the real `OrganizationRole` an
+   * accepted membership carries; UI-only gating (client convenience), the
+   * real enforcement is server-side in `requireOrgRole()`. */
+  orgRole?: string;
 }
 
 interface SavedState {
@@ -291,13 +296,22 @@ interface AppState {
   compareOverlayOpen: boolean;
   setCompareOverlayOpen: (open: boolean) => void;
 
-  // Saved content (BR-019: requires signed-in)
+  // Saved content (BR-019: requires signed-in). Real Postgres-backed as of
+  // the Account & Profile System PRD's "User utility" phase — the
+  // toggle/add/remove actions below optimistically update local state AND
+  // (when signed in) fire the matching /api/account/* write; `hydrate*`
+  // setters overwrite local state with the real server list once
+  // `AccountDataSync` fetches it on sign-in, same "always refetched"
+  // pattern as `liveListings`/`liveProjects` above.
   saved: SavedState;
   toggleSavedListing: (id: string) => void;
   toggleSavedProject: (id: string) => void;
   toggleSavedNeighborhood: (id: string) => void;
+  hydrateSaved: (saved: SavedState) => void;
   savedSearches: SavedSearch[];
   addSavedSearch: (search: SavedSearch) => void;
+  removeSavedSearch: (id: string) => void;
+  hydrateSavedSearches: (searches: SavedSearch[]) => void;
 
   // Auth — `auth` is a read-mostly mirror of the real Auth.js session,
   // kept in sync by `AuthSessionSync` (mounted once in app/layout.tsx)
@@ -320,7 +334,13 @@ interface AppState {
   /** The one real write path — syncs `auth` from the actual Auth.js
    * session. `null` means signed out. */
   setAuthFromSession: (
-    session: { name?: string | null; role?: string; orgType?: string; publisherId?: string } | null
+    session: {
+      name?: string | null;
+      role?: string;
+      orgType?: string;
+      publisherId?: string;
+      orgRole?: string;
+    } | null
   ) => void;
   signInModalOpen: boolean;
   openSignIn: () => void;
@@ -332,12 +352,14 @@ interface AppState {
   following: FollowState;
   toggleFollowProject: (id: string) => void;
   toggleFollowDeveloper: (id: string) => void;
+  hydrateFollowing: (following: FollowState) => void;
 
   // Recently Viewed (PRD_User §8) — bounded history, newest first.
   recentlyViewed: RecentlyViewedEntry[];
   trackView: (kind: RecentlyViewedKind, id: string) => void;
   removeRecentlyViewed: (kind: RecentlyViewedKind, id: string) => void;
   clearRecentlyViewed: () => void;
+  hydrateRecentlyViewed: (entries: RecentlyViewedEntry[]) => void;
 
   // Notifications (PRD_User §13, PRD_Business_Publisher §22, PRD_Private_Publisher §10.4)
   // — the notification *content* is generated per-session from mockActivity.ts;
@@ -514,7 +536,7 @@ export const useAppStore = create<AppState>()(
       setCompareOverlayOpen: (compareOverlayOpen) => set({ compareOverlayOpen }),
 
       saved: { listings: [], projects: [], neighborhoods: [] },
-      toggleSavedListing: (id) =>
+      toggleSavedListing: (id) => {
         set((s) => ({
           saved: {
             ...s.saved,
@@ -522,8 +544,10 @@ export const useAppStore = create<AppState>()(
               ? s.saved.listings.filter((x) => x !== id)
               : [...s.saved.listings, id],
           },
-        })),
-      toggleSavedProject: (id) =>
+        }));
+        if (get().auth.signedIn) accountApi.toggleSaved("listing", id);
+      },
+      toggleSavedProject: (id) => {
         set((s) => ({
           saved: {
             ...s.saved,
@@ -531,8 +555,10 @@ export const useAppStore = create<AppState>()(
               ? s.saved.projects.filter((x) => x !== id)
               : [...s.saved.projects, id],
           },
-        })),
-      toggleSavedNeighborhood: (id) =>
+        }));
+        if (get().auth.signedIn) accountApi.toggleSaved("project", id);
+      },
+      toggleSavedNeighborhood: (id) => {
         set((s) => ({
           saved: {
             ...s.saved,
@@ -540,10 +566,26 @@ export const useAppStore = create<AppState>()(
               ? s.saved.neighborhoods.filter((x) => x !== id)
               : [...s.saved.neighborhoods, id],
           },
-        })),
+        }));
+        if (get().auth.signedIn) accountApi.toggleSaved("neighborhood", id);
+      },
+      hydrateSaved: (saved) => set({ saved }),
       savedSearches: [],
-      addSavedSearch: (search) =>
-        set((s) => ({ savedSearches: [search, ...s.savedSearches] })),
+      addSavedSearch: (search) => {
+        set((s) => ({ savedSearches: [search, ...s.savedSearches] }));
+        if (get().auth.signedIn) {
+          accountApi.createSavedSearch({
+            name: search.name,
+            filtersSummary: search.filtersSummary,
+            cadence: search.cadence,
+          });
+        }
+      },
+      removeSavedSearch: (id) => {
+        set((s) => ({ savedSearches: s.savedSearches.filter((x) => x.id !== id) }));
+        if (get().auth.signedIn) accountApi.deleteSavedSearch(id);
+      },
+      hydrateSavedSearches: (savedSearches) => set({ savedSearches }),
 
       auth: { signedIn: false, name: null, role: "visitor" },
       signIn: (name, role = "visitor", orgType, publisherId) =>
@@ -561,6 +603,7 @@ export const useAppStore = create<AppState>()(
                 role: (session.role as AuthState["role"]) ?? "buyer",
                 orgType: session.orgType as PublisherType | undefined,
                 publisherId: session.publisherId,
+                orgRole: session.orgRole,
               }
             : { signedIn: false, name: null, role: "visitor" },
         }),
@@ -569,7 +612,7 @@ export const useAppStore = create<AppState>()(
       closeSignIn: () => set({ signInModalOpen: false }),
 
       following: { projects: [], developers: [] },
-      toggleFollowProject: (id) =>
+      toggleFollowProject: (id) => {
         set((s) => ({
           following: {
             ...s.following,
@@ -577,8 +620,10 @@ export const useAppStore = create<AppState>()(
               ? s.following.projects.filter((x) => x !== id)
               : [...s.following.projects, id],
           },
-        })),
-      toggleFollowDeveloper: (id) =>
+        }));
+        if (get().auth.signedIn) accountApi.toggleFollow("project", id);
+      },
+      toggleFollowDeveloper: (id) => {
         set((s) => ({
           following: {
             ...s.following,
@@ -586,20 +631,31 @@ export const useAppStore = create<AppState>()(
               ? s.following.developers.filter((x) => x !== id)
               : [...s.following.developers, id],
           },
-        })),
+        }));
+        if (get().auth.signedIn) accountApi.toggleFollow("developer", id);
+      },
+      hydrateFollowing: (following) => set({ following }),
 
       recentlyViewed: [],
-      trackView: (kind, id) =>
+      trackView: (kind, id) => {
         set((s) => {
           const withoutThis = s.recentlyViewed.filter((e) => !(e.kind === kind && e.id === id));
           const next = [{ kind, id, viewedAt: new Date().toISOString() }, ...withoutThis];
           return { recentlyViewed: next.slice(0, RECENTLY_VIEWED_MAX) };
-        }),
-      removeRecentlyViewed: (kind, id) =>
+        });
+        if (get().auth.signedIn) accountApi.trackView(kind, id);
+      },
+      removeRecentlyViewed: (kind, id) => {
         set((s) => ({
           recentlyViewed: s.recentlyViewed.filter((e) => !(e.kind === kind && e.id === id)),
-        })),
-      clearRecentlyViewed: () => set({ recentlyViewed: [] }),
+        }));
+        if (get().auth.signedIn) accountApi.removeRecentlyViewed(kind, id);
+      },
+      clearRecentlyViewed: () => {
+        set({ recentlyViewed: [] });
+        if (get().auth.signedIn) accountApi.clearRecentlyViewed();
+      },
+      hydrateRecentlyViewed: (recentlyViewed) => set({ recentlyViewed }),
 
       readNotificationIds: [],
       markNotificationRead: (id) =>

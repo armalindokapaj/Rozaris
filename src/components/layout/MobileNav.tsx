@@ -219,7 +219,7 @@ export function MobileNav({
               </div>
             )}
 
-            <NavRow href="/help#about" icon={Info} label={t("nav.aboutUs")} active={false} onClick={onClose} />
+            <NavRow href="/about" icon={Info} label={t("nav.aboutUs")} active={pathname === "/about"} onClick={onClose} />
             <NavRow href="/help" icon={Headphones} label={t("nav.helpCenter")} active={pathname === "/help"} onClick={onClose} />
           </nav>
 

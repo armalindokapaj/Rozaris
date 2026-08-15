@@ -23,12 +23,14 @@ import { getNeighborhood } from "@/lib/mockData";
 import { Gallery } from "@/components/listing/Gallery";
 import { PublisherCard } from "@/components/listing/PublisherCard";
 import { ShareButton } from "@/components/listing/ShareButton";
+import { ReportButton } from "@/components/common/ReportButton";
 import { AdBanner } from "@/components/listing/AdBanner";
 import { MortgageCalculator } from "@/components/listing/MortgageCalculator";
 import { InsuranceCalculator } from "@/components/listing/InsuranceCalculator";
 import { StaticContextMap } from "@/components/map/StaticContextMap";
 import { MobileBottomTabBar } from "@/components/layout/MobileBottomTabBar";
 import { ListingCard } from "@/components/results/ListingCard";
+import { useTrackView } from "@/hooks/useTrackEvent";
 import { AMENITY_LABELS, CONDITION_LABELS, PROPERTY_TYPE_LABELS, SITE_URL } from "@/lib/constants";
 import {
   formatArea,
@@ -48,6 +50,7 @@ export function ListingDetailClient({
   related: Listing[];
 }) {
   const neighborhood = getNeighborhood(listing.neighborhoodId);
+  useTrackView("listing", listing.id);
   const auth = useAppStore((s) => s.auth);
   const saved = useAppStore((s) => s.saved.listings.includes(listing.id));
   const toggleSaved = useAppStore((s) => s.toggleSavedListing);
@@ -179,6 +182,7 @@ export function ListingDetailClient({
                 title={listing.title}
                 className="flex-1 lg:flex-none"
               />
+              <ReportButton entityType="listing" entityId={listing.id} className="ml-1 hidden lg:block" />
             </div>
 
             {/* Mobile only: WhatsApp/Call live here too, right under the
@@ -290,6 +294,7 @@ export function ListingDetailClient({
               whatsappMessage={`Hi, I'm interested in "${listing.title}"`}
               contentTitle={listing.title}
               contentUrl={`${SITE_URL}/listing/${listing.slug}`}
+              trackEntity={{ type: "listing", id: listing.id }}
             />
           </div>
           {listing.fromProjectSlug && (

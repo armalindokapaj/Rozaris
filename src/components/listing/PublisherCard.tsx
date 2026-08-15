@@ -5,6 +5,7 @@ import Link from "next/link";
 import { BadgeCheck, MessageCircle, Phone } from "lucide-react";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { useT } from "@/lib/i18n/useT";
+import { useTrackEvent } from "@/hooks/useTrackEvent";
 import { cn, telHref, whatsappHref } from "@/lib/utils";
 import type { Publisher } from "@/lib/types";
 
@@ -20,6 +21,7 @@ export function PublisherCard({
   contentTitle,
   contentUrl,
   bare = false,
+  trackEntity,
 }: {
   publisher: Publisher;
   whatsappMessage: string;
@@ -27,8 +29,13 @@ export function PublisherCard({
   contentUrl: string;
   /** Skip the card's own border/background — for nesting inside a parent panel that already provides one. */
   bare?: boolean;
+  /** The listing/project this contact card belongs to — real WhatsApp/call
+   * click tracking (see the "Rozaris Platform Audit" memory) fires here
+   * when set; omitted call sites (if any) just don't track, same as before. */
+  trackEntity?: { type: "listing" | "project"; id: string };
 }) {
   const { t } = useT();
+  const track = useTrackEvent();
   // The number reads first so people can see who they're about to reach;
   // clicking it (which also fires the tel: link) swaps the label to "Call".
   const [phoneClicked, setPhoneClicked] = useState(false);
@@ -61,6 +68,7 @@ export function PublisherCard({
           target="_blank"
           rel="noopener noreferrer"
           data-analytics="whatsapp_clicked"
+          onClick={() => trackEntity && track(trackEntity.type, trackEntity.id, "whatsapp_click")}
           className="flex items-center justify-center gap-1.5 rounded-control bg-[#25D366] py-2.5 text-sm font-semibold text-white hover:brightness-95"
         >
           <MessageCircle className="h-4 w-4" />
@@ -69,7 +77,10 @@ export function PublisherCard({
         <a
           href={telHref(publisher.phone)}
           data-analytics="phone_clicked"
-          onClick={() => setPhoneClicked(true)}
+          onClick={() => {
+            setPhoneClicked(true);
+            if (trackEntity) track(trackEntity.type, trackEntity.id, "call_click");
+          }}
           className="flex items-center justify-center gap-1.5 rounded-control border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
         >
           <Phone className="h-4 w-4 shrink-0" />

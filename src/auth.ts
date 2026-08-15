@@ -4,6 +4,25 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 
+/** Shared by `authorize()` (initial sign-in) and the `jwt` callback's
+ * `trigger === "update"` branch (re-resolve after a write that changes
+ * publisher affiliation, e.g. accepting an org invitation, without
+ * forcing a full sign-out/sign-in). See `authorize()` below for the
+ * "owning it directly vs. an active OrganizationMembership" rule. */
+async function resolvePublisherContext(userId: string, role: string) {
+  const ownedPublisher =
+    role === "publisher" ? await prisma.publisher.findUnique({ where: { ownerUserId: userId } }) : null;
+  const membership =
+    role === "publisher" && !ownedPublisher
+      ? await prisma.organizationMembership.findFirst({
+          where: { userId, status: "active" },
+          include: { publisher: true },
+        })
+      : null;
+  const publisher = ownedPublisher ?? membership?.publisher ?? null;
+  return { publisherId: publisher?.id, orgType: publisher?.type, orgRole: ownedPublisher ? "owner" : membership?.role };
+}
+
 /**
  * Real auth (Auth.js v5). Wired into the UI as of the real-auth-to-UI pass
  * (see the "Rozaris Platform Audit" memory): SignInModal/JoinMenu/buyer
@@ -54,13 +73,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // sign-in UI concern, out of scope for this pass.
         if (user.status === "suspended" || user.status === "disabled") return null;
 
-        // A publisher-role user owns exactly one Publisher row (real auth
-        // to UI pass — see the "Rozaris Platform Audit" memory). Resolved
-        // once here rather than on every gated route/session read.
-        const publisher =
-          user.role === "publisher"
-            ? await prisma.publisher.findUnique({ where: { ownerUserId: user.id } })
-            : null;
+        // A publisher-role user resolves to exactly one Publisher row one
+        // of two ways (Account & Profile System PRD v1.0 §8 "Business
+        // Teams" — additive on top of the original real-auth-to-UI pass):
+        // owning it directly, or holding an active OrganizationMembership
+        // into someone else's. Resolved once here rather than on every
+        // gated route/session read.
+        const orgContext = await resolvePublisherContext(user.id, user.role);
 
         return {
           id: user.id,
@@ -70,8 +89,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           status: user.status,
           superAdmin: user.superAdmin,
           adminScopes: user.adminScopes,
-          publisherId: publisher?.id,
-          orgType: publisher?.type,
+          ...orgContext,
         };
       },
     }),
@@ -86,7 +104,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // re-querying User on every gated route. publisherId/orgType (real
     // auth to UI pass) follow the same pattern for requirePublisherSession()
     // and the client's session->Zustand `auth` mirror.
-    jwt: ({ token, user }) => {
+    jwt: async ({ token, user, trigger }) => {
       if (user) {
         token.id = user.id;
         token.role = user.role;
@@ -95,6 +113,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.adminScopes = user.adminScopes;
         token.publisherId = user.publisherId;
         token.orgType = user.orgType;
+        token.orgRole = user.orgRole;
+      } else if (trigger === "update" && typeof token.id === "string" && typeof token.role === "string") {
+        // A client-side `useSession().update()` call — used right after a
+        // write that changes role/publisher affiliation (accepting an org
+        // invitation) — re-resolves from the DB instead of forcing a full
+        // sign-out/sign-in to see the new session shape.
+        const dbUser = await prisma.user.findUnique({ where: { id: token.id } });
+        if (dbUser) {
+          token.role = dbUser.role;
+          token.status = dbUser.status;
+          const orgContext = await resolvePublisherContext(dbUser.id, dbUser.role);
+          token.publisherId = orgContext.publisherId;
+          token.orgType = orgContext.orgType;
+          token.orgRole = orgContext.orgRole;
+        }
       }
       return token;
     },
@@ -114,6 +147,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.adminScopes = token.adminScopes as string[] | undefined;
         session.user.publisherId = token.publisherId as string | undefined;
         session.user.orgType = token.orgType as string | undefined;
+        session.user.orgRole = token.orgRole as string | undefined;
       }
       return session;
     },

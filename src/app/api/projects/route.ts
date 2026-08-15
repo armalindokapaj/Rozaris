@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { getAllProjects, getProjectsByPublisherAnyStatus } from "@/lib/projects.server";
+import { resolveLocation } from "@/lib/locations";
 
 /** Public project catalog — the client-side equivalent of
  * `projects.server.ts`'s `getAllProjects()` for consumers that can't be a
@@ -104,11 +105,31 @@ export async function POST(request: Request) {
     );
   }
 
+  // Canonical Location System — hard validation, same rule `POST
+  // /api/listings` already enforces. Both real callers (NewProjectModal,
+  // EditProjectModal — see MEMORY note "rozaris-controlled-taxonomy-spec")
+  // now derive `neighborhoodId` from a real Location dropdown and `city`
+  // from that selection, so any request reaching this route with an
+  // unresolvable id is either a stale client or a direct API call, not a
+  // legitimate admin edit — reject rather than silently store a
+  // non-canonical location.
+  const location = await resolveLocation(data.neighborhoodId);
+  if (!location) {
+    return NextResponse.json({ error: `Unknown location "${data.neighborhoodId}".` }, { status: 400 });
+  }
+
   try {
     const project = await prisma.project.upsert({
       where: { id: data.id },
-      update: { ...data, slug, publisherId },
-      create: { ...data, slug, publisherId, approvalStatus: "active" },
+      update: { ...data, slug, publisherId, city: location.cityName, locationId: location.id },
+      create: {
+        ...data,
+        slug,
+        publisherId,
+        approvalStatus: "active",
+        city: location.cityName,
+        locationId: location.id,
+      },
     });
 
     const actor = gate.user?.email ?? gate.user?.name ?? "unattributed";

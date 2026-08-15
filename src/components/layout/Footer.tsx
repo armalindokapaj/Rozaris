@@ -23,10 +23,13 @@ export function Footer() {
       <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 text-sm text-neutral-500 sm:flex-row sm:justify-between">
         <p>© {year} ROZARIS</p>
         <nav className="flex items-center gap-5" aria-label={t("footer.legalNav")}>
-          <Link href="/help" className="hover:text-neutral-900">
+          <Link href="/about" className="hover:text-neutral-900">
+            {t("nav.aboutUs")}
+          </Link>
+          <Link href="/privacy" className="hover:text-neutral-900">
             {t("footer.privacyPolicy")}
           </Link>
-          <Link href="/help" className="hover:text-neutral-900">
+          <Link href="/terms" className="hover:text-neutral-900">
             {t("footer.termsOfUse")}
           </Link>
           <Link href="/help#contact" className="hover:text-neutral-900">

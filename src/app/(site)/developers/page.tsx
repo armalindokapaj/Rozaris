@@ -3,11 +3,11 @@ import { publishers } from "@/lib/mockData";
 import { getProjectsByDeveloper } from "@/lib/projects.server";
 import { getActiveListingsByPublisher } from "@/lib/listings.server";
 import { DevelopersDirectoryClient } from "@/components/developers/DevelopersDirectoryClient";
+import { getPageSeo } from "@/lib/pageSeo";
 
-export const metadata: Metadata = {
-  title: "Zhvillues & agjenci të verifikuara",
-  description: "Shfleto zhvilluesit dhe agjencitë e verifikuara të pasurive të paluajtshme në ROZARIS.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return getPageSeo("developers");
+}
 
 export default async function DevelopersDirectoryPage() {
   // Publisher identity is still mockData (see developer/[slug]/page.tsx's

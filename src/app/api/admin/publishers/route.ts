@@ -29,14 +29,23 @@ export async function GET(request: Request) {
       slug: true,
       name: true,
       type: true,
+      phone: true,
+      whatsapp: true,
+      bio: true,
       verified: true,
       restricted: true,
       restrictedReason: true,
+      restrictedUntil: true,
       // Additive — VerificationTab needs a real signal for "how long has
       // this publisher been waiting", since there's no VerificationRequest
       // entity to carry a real submittedAt. Existing consumers (Account
       // Controls picker, PublishersTab) just ignore the extra field.
       createdAt: true,
+      // Account & Profile System PRD v1.0 §9 — real verification state,
+      // consumed by VerificationTab's business queue.
+      verificationStatus: true,
+      verificationSubmittedAt: true,
+      developerStatus: true,
     },
     take: 100,
   });

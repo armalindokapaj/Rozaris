@@ -149,7 +149,7 @@ export function Header() {
             {t("nav.rentVsBuy")}
           </Link>
           <ResourcesDropdown />
-          <Link href="/help#about" className={navLinkClass}>
+          <Link href="/about" className={activeNavLinkClass(pathname === "/about")}>
             {t("nav.aboutUs")}
           </Link>
         </nav>

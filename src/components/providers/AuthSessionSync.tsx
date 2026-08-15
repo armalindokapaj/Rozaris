@@ -34,6 +34,7 @@ export function AuthSessionSync() {
             role: session.user.role,
             orgType: session.user.orgType,
             publisherId: session.user.publisherId,
+            orgRole: session.user.orgRole,
           }
         : null
     );

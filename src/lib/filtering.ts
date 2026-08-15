@@ -1,5 +1,6 @@
 import { getNeighborhood } from "./mockData";
 import { projectUnitListingsFrom } from "./projects";
+import { computeRankScore, DEFAULT_SEARCH_RANKING_WEIGHTS, type SearchRankingWeights } from "./searchRanking";
 import type { FilterState, Listing, Project } from "./types";
 import type { MapBounds } from "./store";
 
@@ -116,7 +117,12 @@ export function getVisibleListings(
   bounds: MapBounds | null,
   restrictToBounds: boolean,
   liveListings: Listing[] | null,
-  liveProjects: Project[] | null
+  liveProjects: Project[] | null,
+  // Search Engine Control's real ranking weights (`GET /api/search-ranking`,
+  // admin-adjustable in Platform Settings → Search) — only used for the
+  // default "recommended" sort; every other sort is a direct field
+  // comparison via `sortEntities` below, unaffected by this.
+  rankWeights: SearchRankingWeights = DEFAULT_SEARCH_RANKING_WEIGHTS
 ): Listing[] {
   const searchableListings = [...(liveListings ?? []), ...projectUnitListingsFrom(liveProjects ?? [])];
   const filtered = searchableListings.filter(
@@ -124,6 +130,9 @@ export function getVisibleListings(
       matchesListingFilters(l, f) &&
       (!restrictToBounds || inBounds(l.coords, bounds))
   );
+  if (f.sort === "recommended") {
+    return [...filtered].sort((a, b) => computeRankScore(b, rankWeights) - computeRankScore(a, rankWeights));
+  }
   return sortEntities(
     filtered,
     f.sort,

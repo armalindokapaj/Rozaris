@@ -88,10 +88,15 @@ const STAGE_LABEL_KEY: Record<Stage, string> = {
 /** Maps this app's actual Listing.status onto the PRD's fuller lifecycle
  * stepper. `pending` (real since `POST /api/listings` started creating
  * real rows — see the "Rozaris Platform Audit" memory) maps cleanly onto
- * "pendingReview"; there's still no distinct draft/approved status in the
- * data model, so those two stages remain unreachable from a real listing. */
+ * "pendingReview". `draft` (the "location drop" requirement — a listing
+ * with no confirmed location stays here until the publisher adds one and
+ * resubmits, or an admin approves it without one) is now real too; there's
+ * still no distinct "approved" status in the data model, so that one stage
+ * remains unreachable from a real listing. */
 function stageForStatus(status: Listing["status"]): Stage {
   switch (status) {
+    case "draft":
+      return "draft";
     case "pending":
       return "pendingReview";
     case "active":
@@ -99,6 +104,7 @@ function stageForStatus(status: Listing["status"]): Stage {
     case "rented":
       return "published";
     case "suspended":
+    case "rejected":
       return "changesRequested";
     case "expired":
     case "archived":

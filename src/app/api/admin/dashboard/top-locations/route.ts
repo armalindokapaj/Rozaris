@@ -29,12 +29,15 @@ export async function GET() {
     counts.set(key, (counts.get(key) ?? 0) + 1);
   };
 
+  // `city` moved off Listing onto its related Property row in the
+  // Property/Listing split (see MEMORY note "rozaris-controlled-taxonomy-
+  // spec").
   const [realProjects, realListings] = await Promise.all([
     prisma.project.findMany({ where: { deletedAt: null }, select: { city: true } }),
-    prisma.listing.findMany({ where: { deletedAt: null }, select: { city: true } }),
+    prisma.listing.findMany({ where: { deletedAt: null }, select: { property: { select: { city: true } } } }),
   ]);
   realProjects.forEach((p) => bump(p.city));
-  realListings.forEach((l) => bump(l.city));
+  realListings.forEach((l) => bump(l.property.city));
 
   const items = Array.from(counts.entries())
     .map(([city, count]) => ({ city, count }))

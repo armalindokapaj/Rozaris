@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { getAllProjects } from "@/lib/projects.server";
 import { NewProjectsClient } from "@/components/project/NewProjectsClient";
+import { getPageSeo } from "@/lib/pageSeo";
 
-export const metadata: Metadata = {
-  title: "Projekte të Reja",
-  description: "Shfleto të gjitha projektet e reja në zhvillim në ROZARIS, me njësi ende të disponueshme.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return getPageSeo("newProjects");
+}
 
 export default async function NewProjectsPage() {
   const projects = await getAllProjects();

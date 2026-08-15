@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { InteriorDesignPageClient } from "@/components/resources/InteriorDesignPageClient";
+import { getPageSeo } from "@/lib/pageSeo";
 
-export const metadata: Metadata = {
-  title: "Dizajn interior — Vega Interiors Studio",
-  description: "Pse të zgjedhësh një studio dizajni interior, plus një vlerësues kostosh për projektin ose të gjithë njësinë.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return getPageSeo("interiorDesign");
+}
 
 export default function InteriorDesignPage() {
   return <InteriorDesignPageClient />;

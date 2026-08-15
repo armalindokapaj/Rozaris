@@ -4,7 +4,10 @@ import { useState } from "react";
 import { useT } from "@/lib/i18n/useT";
 import { CONDITION_LABELS, AMENITY_LABELS, PROPERTY_TYPE_LABELS } from "@/lib/constants";
 import { mainFieldsFor } from "@/lib/propertyTypeFields";
-import { neighborhoods } from "@/lib/mockData";
+import { LocationPicker } from "@/components/common/LocationPicker";
+import { STALE_LISTING_DAYS } from "@/lib/moderation";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { useLocations } from "@/hooks/useLocations";
 import { cn } from "@/lib/utils";
 import type { Amenity, Condition, PropertyType, Locale } from "@/lib/types";
 
@@ -122,6 +125,8 @@ export function NewListingForm({
   onCancel: () => void;
 }) {
   const { t, locale } = useT();
+  const flags = useFeatureFlags();
+  const neighborhoods = useLocations("neighborhood");
   const propertyTypeLabels = PROPERTY_TYPE_LABELS[locale];
   const conditionLabels = CONDITION_LABELS[locale];
   const amenityLabels = AMENITY_LABELS[locale];
@@ -129,6 +134,7 @@ export function NewListingForm({
   const [title, setTitle] = useState("");
   const [propertyType, setPropertyType] = useState<PropertyType | null>(null);
   const [neighborhoodId, setNeighborhoodId] = useState("");
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [price, setPrice] = useState<number | "">("");
   const [bedrooms, setBedrooms] = useState<number | "">("");
   const [bathrooms, setBathrooms] = useState<number | "">("");
@@ -185,6 +191,7 @@ export function NewListingForm({
     setTotalFloors("");
     setYearBuilt("");
     setNegotiable(false);
+    setLocation(null);
     setSaveError(null);
   }
 
@@ -221,6 +228,9 @@ export function NewListingForm({
           descriptionEn: description,
           descriptionSq: description,
           publisherId,
+          lat: location?.lat,
+          lng: location?.lng,
+          locationConfirmed: location !== null,
         }),
       });
       if (!res.ok) {
@@ -239,6 +249,11 @@ export function NewListingForm({
   return (
     <div className="space-y-5 rounded-panel border border-neutral-200 bg-white p-5">
       <h2 className="text-sm font-bold text-neutral-900">{t("dashboard.newListingFormTitle")}</h2>
+      {flags.listing_staleness_nudge && (
+        <p className="rounded-control bg-brand-50 px-3.5 py-2.5 text-xs leading-relaxed text-brand-700">
+          {t("dashboard.staleReminderOnCreate", { days: STALE_LISTING_DAYS })}
+        </p>
+      )}
 
       {/* Fields appear one by one, in the order a publisher fills them in. */}
       <TextField label={t("dashboard.titleLabel")} value={title} onChange={setTitle} required />
@@ -254,9 +269,6 @@ export function NewListingForm({
         </div>
       </div>
 
-      {/* Stands in for a real map-pin drop until the create form gets one —
-          the listing's coordinates/city are the chosen neighborhood's
-          centroid (see POST /api/listings). */}
       <label className="block">
         <RequiredLabel>{t("compareFields.neighborhood")}</RequiredLabel>
         <select
@@ -269,11 +281,25 @@ export function NewListingForm({
           </option>
           {neighborhoods.map((n) => (
             <option key={n.id} value={n.id}>
-              {n.name}
+              {n.officialName}
             </option>
           ))}
         </select>
       </label>
+
+      {/* The "location drop" requirement — a listing submitted without a
+          confirmed pin still saves, but stays in `draft` (invisible to
+          buyers) until either the publisher adds one or an admin
+          explicitly approves it without one. Not required for `canSave`
+          on purpose — the neighborhood alone is enough to submit; this is
+          what unlocks going live. */}
+      <div>
+        <span className="mb-1.5 block text-xs font-medium text-neutral-500">{t("dashboard.exactLocationLabel")}</span>
+        <LocationPicker value={location} onChange={setLocation} />
+        {!location && (
+          <p className="mt-1.5 text-xs text-warning">{t("dashboard.noLocationDraftWarning")}</p>
+        )}
+      </div>
 
       {!propertyType ? (
         <p className="text-xs text-neutral-400">{t("dashboard.selectPropertyTypeFirst")}</p>

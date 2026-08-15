@@ -10,14 +10,31 @@ import type { NotificationItem } from "@/lib/types";
 
 /** Shared Notifications list for every dashboard (User/Private Publisher/
  * Business Publisher — PRD_ROZARIS_User_Types §2/§3/§4 all list "Alerts /
- * Notifications" as a nav item). Notification *content* is generated
- * per-session by src/lib/mockActivity.ts; only read-state persists
- * (`readNotificationIds`), matching the existing store's doc comment. */
-export function NotificationsList({ items }: { items: NotificationItem[] }) {
+ * Notifications" as a nav item). Publisher dashboards still pass
+ * session-local content from `src/lib/mockActivity.ts` with read-state in
+ * the Zustand `readNotificationIds` slice (default behavior, unchanged);
+ * the buyer dashboard (Account & Profile System PRD v1.0 §13) passes real
+ * `readIds`/`onMarkRead`/`onMarkAllRead` sourced from
+ * `GET/PATCH /api/account/notifications` instead — see
+ * `buyer/dashboard/page.tsx`'s `AlertsTab`. */
+export function NotificationsList({
+  items,
+  readIds: readIdsProp,
+  onMarkRead,
+  onMarkAllRead,
+}: {
+  items: NotificationItem[];
+  readIds?: string[];
+  onMarkRead?: (id: string) => void;
+  onMarkAllRead?: (ids: string[]) => void;
+}) {
   const { t, locale } = useT();
-  const readIds = useAppStore((s) => s.readNotificationIds);
-  const markRead = useAppStore((s) => s.markNotificationRead);
-  const markAllRead = useAppStore((s) => s.markAllNotificationsRead);
+  const storeReadIds = useAppStore((s) => s.readNotificationIds);
+  const storeMarkRead = useAppStore((s) => s.markNotificationRead);
+  const storeMarkAllRead = useAppStore((s) => s.markAllNotificationsRead);
+  const readIds = readIdsProp ?? storeReadIds;
+  const markRead = onMarkRead ?? storeMarkRead;
+  const markAllRead = onMarkAllRead ?? storeMarkAllRead;
 
   const unreadCount = items.filter((n) => !readIds.includes(n.id)).length;
 

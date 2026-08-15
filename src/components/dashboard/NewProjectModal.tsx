@@ -4,8 +4,9 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
-import { DEMO_PUBLISHER, CITY_CENTER, neighborhoods, stageTemplate } from "@/lib/mockData";
+import { DEMO_PUBLISHER, CITY_CENTER, stageTemplate } from "@/lib/mockData";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
+import { useLocations } from "@/hooks/useLocations";
 import type { Project, ProjectSetting, PropertyType } from "@/lib/types";
 
 const PROPERTY_TYPES: PropertyType[] = ["apartment", "villa", "studio", "commercial", "office"];
@@ -37,13 +38,28 @@ export function NewProjectModal({
   const addProject = useAppStore((s) => s.addProject);
   const { t, locale } = useT();
   const propertyTypeLabels = PROPERTY_TYPE_LABELS[locale];
+  const neighborhoods = useLocations("neighborhood");
 
   const [name, setName] = useState("");
-  const [city, setCity] = useState("Tirana");
-  const [neighborhoodId, setNeighborhoodId] = useState(neighborhoods[0]?.id ?? "");
+  const [neighborhoodIdInput, setNeighborhoodIdInput] = useState("");
   const [propertyType, setPropertyType] = useState<PropertyType>("apartment");
   const [setting, setSetting] = useState<ProjectSetting>("residential_complex");
   const [buildingsInput, setBuildingsInput] = useState("A");
+
+  // Defaults to the first canonical neighborhood once the real list has
+  // loaded (`useLocations` starts empty — see its own doc comment) — same
+  // "pick the first option" behavior the old `neighborhoods[0]?.id`
+  // mockData default had. Derived at render time (not a synced-in-effect
+  // setState) so there's no cascading-render round trip while waiting on
+  // the fetch.
+  const neighborhoodId = neighborhoodIdInput || neighborhoods[0]?.id || "";
+  const setNeighborhoodId = setNeighborhoodIdInput;
+
+  // City is derived from the selected canonical neighborhood, never
+  // free-typed — the "no custom location field" rule from the Canonical
+  // Location System spec (see MEMORY note "rozaris-controlled-taxonomy-spec").
+  const selectedNeighborhood = neighborhoods.find((n) => n.id === neighborhoodId);
+  const city = selectedNeighborhood?.cityName ?? "Tirana";
 
   const canSubmit = name.trim().length > 0;
 
@@ -53,7 +69,6 @@ export function NewProjectModal({
       .split(",")
       .map((b) => b.trim())
       .filter(Boolean);
-    const neighborhood = neighborhoods.find((n) => n.id === neighborhoodId);
 
     const project: Project = {
       id: `custom-${Date.now()}`,
@@ -62,7 +77,10 @@ export function NewProjectModal({
       developer: DEMO_PUBLISHER,
       status: "coming_soon",
       progressPercent: 0,
-      coords: neighborhood?.coords ?? CITY_CENTER,
+      coords:
+        selectedNeighborhood?.latitude != null && selectedNeighborhood?.longitude != null
+          ? { lat: selectedNeighborhood.latitude, lng: selectedNeighborhood.longitude }
+          : CITY_CENTER,
       neighborhoodId: neighborhoodId || "custom",
       city,
       setting,
@@ -155,8 +173,9 @@ export function NewProjectModal({
               </span>
               <input
                 value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+                readOnly
+                title={t("admin.newProjectCityDerived")}
+                className="w-full cursor-not-allowed rounded-control border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500 focus:outline-none"
               />
             </label>
             <label className="block">
@@ -170,7 +189,7 @@ export function NewProjectModal({
               >
                 {neighborhoods.map((n) => (
                   <option key={n.id} value={n.id}>
-                    {n.name}
+                    {n.officialName}
                   </option>
                 ))}
               </select>

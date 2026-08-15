@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { RentVsBuyClient } from "@/components/tools/RentVsBuyClient";
+import { getPageSeo } from "@/lib/pageSeo";
 
 // PRD_Rent_vs_Buy.pdf §18: indexable public route, unique title/description.
-export const metadata: Metadata = {
-  title: "Rent vs Buy",
-  description:
-    "Compare the true long-term cost of renting versus buying in Tirana. A transparent, assumption-driven calculator — not financial advice.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return getPageSeo("rentVsBuy");
+}
 
 export default function RentVsBuyPage() {
   return (

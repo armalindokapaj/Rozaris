@@ -78,13 +78,16 @@ export async function getPriceIntelligence(): Promise<PriceIntelligence> {
     pricesPerSqm.push({ neighborhoodId: u.project.neighborhoodId, pricePerSqm: u.price / u.area });
   }
 
+  // `area`/`neighborhoodId` moved off Listing onto its related Property row
+  // in the Property/Listing split (see MEMORY note
+  // "rozaris-controlled-taxonomy-spec").
   const realListings = await prisma.listing.findMany({
     where: { deletedAt: null, status: "active", transaction: "sale" },
-    select: { price: true, area: true, neighborhoodId: true },
+    select: { price: true, property: { select: { area: true, neighborhoodId: true } } },
   });
   for (const l of realListings) {
-    if (!l.area) continue;
-    pricesPerSqm.push({ neighborhoodId: l.neighborhoodId, pricePerSqm: l.price / l.area });
+    if (!l.property.area || !l.property.neighborhoodId) continue;
+    pricesPerSqm.push({ neighborhoodId: l.property.neighborhoodId, pricePerSqm: l.price / l.property.area });
   }
 
   if (pricesPerSqm.length === 0) {

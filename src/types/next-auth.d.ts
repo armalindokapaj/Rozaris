@@ -21,6 +21,13 @@ declare module "next-auth" {
       // for buyer/admin sessions.
       publisherId?: string;
       orgType?: string;
+      // Account & Profile System PRD v1.0 §8 "Business Teams" — "owner" for
+      // a Publisher's owning account, otherwise the real
+      // `OrganizationRole` an accepted `OrganizationMembership` carries.
+      // Absent for buyer/admin sessions and for a publisher session that
+      // somehow resolved neither (shouldn't happen — requirePublisherSession()
+      // already requires `publisherId` too).
+      orgRole?: string;
     } & DefaultSession["user"];
   }
 
@@ -32,6 +39,7 @@ declare module "next-auth" {
     adminScopes?: string[];
     publisherId?: string;
     orgType?: string;
+    orgRole?: string;
   }
 }
 
@@ -44,5 +52,6 @@ declare module "next-auth/jwt" {
     adminScopes?: string[];
     publisherId?: string;
     orgType?: string;
+    orgRole?: string;
   }
 }

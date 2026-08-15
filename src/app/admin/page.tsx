@@ -11,9 +11,9 @@ import {
   Boxes,
   BarChart3,
   LineChart,
+  TrendingUp,
   Check,
   X,
-  MessageSquare,
   HardHat,
   Plus,
   Map as MapIcon,
@@ -26,6 +26,7 @@ import {
   HeartPulse,
   Trash2,
   Gem,
+  Megaphone,
   ChevronDown,
   LogOut,
   MoreVertical,
@@ -37,12 +38,14 @@ import {
 import { useAppStore } from "@/lib/store";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
 import { useAdminProjects } from "@/hooks/useAdminProjects";
+import { useAdminPublishers } from "@/hooks/useAdminPublishers";
 import { listings } from "@/lib/mockData";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { NewProjectModal } from "@/components/dashboard/NewProjectModal";
+import { EditProjectModal } from "@/components/dashboard/admin/EditProjectModal";
 import { ProjectUnitsEditor } from "@/components/dashboard/ProjectUnitsEditor";
 import { AdminTopBar } from "@/components/dashboard/admin/AdminTopBar";
 import { AdminDashboardTab } from "@/components/dashboard/admin/AdminDashboardTab";
@@ -50,6 +53,11 @@ import { Admin3DHealthTab } from "@/components/dashboard/admin/Admin3DHealthTab"
 import { AdminAnalyticsTab } from "@/components/dashboard/admin/AdminAnalyticsTab";
 import { UsersTab } from "@/components/dashboard/admin/UsersTab";
 import { PublishersTab } from "@/components/dashboard/admin/PublishersTab";
+import { ListingsManagementTab } from "@/components/dashboard/admin/ListingsManagementTab";
+import { ApprovalCenterTab } from "@/components/dashboard/admin/ApprovalCenterTab";
+import { ReportsTab } from "@/components/dashboard/admin/ReportsTab";
+import { AdvertisingTab } from "@/components/dashboard/admin/AdvertisingTab";
+import { MarketDataTab } from "@/components/dashboard/admin/MarketDataTab";
 import { VerificationTab } from "@/components/dashboard/admin/VerificationTab";
 import { ModerationTab } from "@/components/dashboard/admin/ModerationTab";
 import { SuperAdminTab, type SectionId } from "@/components/dashboard/admin/superadmin/SuperAdminTab";
@@ -67,6 +75,7 @@ import type { Project } from "@/lib/types";
 const TABS = [
   { id: "dashboard", labelKey: "admin.tabDashboard", icon: LayoutDashboard, group: "overview" },
   { id: "content", labelKey: "admin.tabContent", icon: Box, group: "content" },
+  { id: "listings", labelKey: "admin.tabListings", icon: ListChecks, group: "content" },
   { id: "timeline", labelKey: "admin.tabTimeline", icon: HardHat, group: "content" },
   { id: "mapControl", labelKey: "admin.tabMapControl", icon: MapIcon, group: "3d" },
   { id: "experience", labelKey: "admin.tab3DExperience", icon: Boxes, group: "3d" },
@@ -77,6 +86,8 @@ const TABS = [
   { id: "queue", labelKey: "admin.tabQueue", icon: ListChecks, group: "operations" },
   { id: "moderation", labelKey: "admin.tabModeration", icon: Flag, group: "operations" },
   { id: "reports", labelKey: "admin.tabReports", icon: BarChart3, group: "operations" },
+  { id: "advertising", labelKey: "admin.tabAdvertising", icon: Megaphone, group: "commercial" },
+  { id: "marketData", labelKey: "admin.tabMarketData", icon: TrendingUp, group: "data" },
   { id: "analytics", labelKey: "admin.tabAnalytics", icon: LineChart, group: "system" },
   // Was "Audit Log" (mock Zustand feed) — now the real Super Admin control/
   // audit system (Audit Log is its first, default section). Kept the same
@@ -94,45 +105,24 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-const GROUP_ORDER = ["overview", "content", "3d", "people", "operations", "system"] as const;
+// "overview" isn't a real nav group anymore — "dashboard" (its one and
+// only member) moved to the logo/wordmark click instead of its own nav
+// row (see the sidebar header above), so a group header with nothing
+// under it would just be dead space.
+// "commercial" is real but deliberately thin — only "Advertising" lives
+// here today. The fuller Plans/Subscriptions/Premium Placement/Leads/
+// Billing group from the target admin IA isn't built yet; this group name
+// is the honest home to grow it into later rather than a placeholder full
+// of empty tabs (see the "Rozaris Platform Audit" memory).
+const GROUP_ORDER = ["content", "3d", "people", "operations", "commercial", "data", "system"] as const;
 const GROUP_LABEL_KEY: Record<(typeof GROUP_ORDER)[number], string> = {
-  overview: "admin.navGroupOverview",
   content: "admin.navGroupContent",
   "3d": "admin.navGroup3DPlatform",
   people: "admin.navGroupPeople",
   operations: "admin.navGroupOperations",
+  commercial: "admin.navGroupCommercial",
+  data: "admin.navGroupData",
   system: "admin.navGroupSystem",
-};
-
-interface QueueItem {
-  id: string;
-  title: string;
-  type: "listing" | "project_update" | "publisher_verification";
-  submittedBy: string;
-  /** Real Postgres `Listing.id` — set only on rows fetched from
-   * `GET /api/admin/listings?status=pending` (see the effect below).
-   * `decide()` routes these through the real
-   * `PATCH /api/admin/listings/[id]/publication` route instead of the
-   * mock-only path the remaining project_update/publisher_verification
-   * seed items still use (that migration is separate, out of scope here —
-   * see the "Rozaris Platform Audit" memory). */
-  realListingId?: string;
-}
-
-// The "listing" seed entry is gone — real pending Listing rows (created via
-// the Business/Private Publisher dashboards' NewListingForm) now populate
-// that slot for real, fetched below. project_update/publisher_verification
-// stay mock until their own submission pipelines exist.
-const seedQueue: QueueItem[] = [
-  { id: "q2", title: "Marina Residence — Unit B-212 price change", type: "project_update", submittedBy: "ALBA Construction" },
-  { id: "q3", title: "Vega Real Estate — verification documents", type: "publisher_verification", submittedBy: "Vega Real Estate" },
-  { id: "q4", title: "Don Bosko Heights — construction progress evidence", type: "project_update", submittedBy: "Skyline Developers" },
-];
-
-const QUEUE_TYPE_LABEL_KEY: Record<QueueItem["type"], string> = {
-  listing: "admin.typeListing",
-  project_update: "admin.typeProjectUpdate",
-  publisher_verification: "admin.typePublisherVerification",
 };
 
 interface Me {
@@ -155,7 +145,6 @@ function AdminPageInner() {
   const auth = useAppStore((s) => s.auth);
   const openSignIn = useAppStore((s) => s.openSignIn);
   const signOutMock = useAppStore((s) => s.signOut);
-  const logAudit = useAppStore((s) => s.logAudit);
   const router = useRouter();
   const searchParams = useSearchParams();
   // AC-01/§3.1: the Dashboard is the default Admin landing page — falls
@@ -181,7 +170,7 @@ function AdminPageInner() {
     setPendingQuery(query);
     if (TABS.some((tb) => tb.id === tabId)) setTab(tabId as TabId);
   }
-  const [queue, setQueue] = useState(seedQueue);
+  const [queueCount, setQueueCount] = useState(0);
   const pendingTimelineCount = useAppStore(
     (s) => s.timelineRequests.filter((r) => r.status === "pending").length
   );
@@ -233,31 +222,19 @@ function AdminPageInner() {
       });
   }, [auth.signedIn]);
 
-  // Real pending Listings, merged into the same Queue tab the mock
-  // project_update/publisher_verification items still render in. Tied to
-  // `meStatus === "ok"` (confirmed real admin), not the Zustand mock —
-  // this route is `requireAdmin()`-gated server-side anyway, but there's
-  // no reason to even fire it for a signed-in non-admin.
+  // Sidebar badge count for the Approval Center — the real inbox
+  // (`ApprovalCenterTab`) fetches its own full list when the tab is open;
+  // this is just the count so the nav row shows how many are waiting
+  // without mounting that whole tab. Tied to `meStatus === "ok"` (confirmed
+  // real admin), not the Zustand mock — the route is `requireAdmin()`-
+  // gated server-side anyway, but there's no reason to fire it early.
   useEffect(() => {
     if (meStatus !== "ok") return;
-    fetch("/api/admin/listings?status=pending")
+    fetch("/api/admin/approval-center")
       .then((r) => (r.ok ? r.json() : []))
-      .then((rows: { id: string; title: string; publisherName: string }[]) => {
-        setQueue((q) => [
-          ...rows.map(
-            (r): QueueItem => ({
-              id: `listing-${r.id}`,
-              title: `${r.title} — new submission`,
-              type: "listing",
-              submittedBy: r.publisherName,
-              realListingId: r.id,
-            })
-          ),
-          ...q.filter((i) => i.type !== "listing"),
-        ]);
-      })
+      .then((rows: unknown[]) => setQueueCount(rows.length))
       .catch(() => {});
-  }, [meStatus]);
+  }, [meStatus, tab]);
 
   // Admin console — real role check, not front-end visibility. A
   // signed-in buyer/publisher (auth.signedIn true, meStatus "unauthorized")
@@ -291,25 +268,6 @@ function AdminPageInner() {
     );
   }
 
-  function decide(id: string, action: "approved" | "rejected" = "approved") {
-    const item = queue.find((i) => i.id === id);
-    setQueue((q) => q.filter((i) => i.id !== id));
-    if (!item) return;
-    if (item.realListingId) {
-      // Real approve/reject — no ListingStatus enum value means "rejected
-      // before ever going live", so a reject archives it (distinct from a
-      // legitimately-expired listing via the reason on the audit trail).
-      fetch(`/api/admin/listings/${item.realListingId}/publication`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: action === "approved" ? "active" : "archived",
-          reason: action === "rejected" ? "Rejected during listing review." : undefined,
-        }),
-      }).catch(() => {});
-    }
-    logAudit(action === "approved" ? "Approved" : "Rejected", item.title);
-  }
 
   async function signOutAdmin() {
     setProfileOpen(false);
@@ -349,9 +307,11 @@ function AdminPageInner() {
         )}
 
         <aside className="rz-admin-sidebar flex shrink-0 flex-col lg:h-full lg:w-64 lg:overflow-y-auto">
-          <div
-            className="flex items-center gap-2 px-4 py-4"
+          <button
+            onClick={() => goTo("dashboard")}
+            className="flex items-center gap-2 px-4 py-4 text-left"
             style={{ borderBottom: "1px solid var(--sidebar-border)" }}
+            aria-label={t("admin.tabDashboard")}
           >
             <Gem className="h-5 w-5 shrink-0 text-brand-400" />
             <div className="min-w-0">
@@ -362,7 +322,7 @@ function AdminPageInner() {
                 {me?.superAdmin ? t("admin.roleSuperAdmin") : t("admin.roleAdmin")}
               </p>
             </div>
-          </div>
+          </button>
 
           <nav className="flex gap-1 overflow-x-auto scroll-thin px-2 py-2 lg:flex-1 lg:flex-col lg:gap-0 lg:overflow-visible lg:px-3 lg:pb-4">
             {GROUP_ORDER.map((group) => (
@@ -373,6 +333,11 @@ function AdminPageInner() {
                 >
                   {t(GROUP_LABEL_KEY[group])}
                 </p>
+                {/* "dashboard" stays a real, routable tab (clicking the
+                    logo/wordmark above goes there) — just no longer listed
+                    as its own nav row. Its `group: "overview"` no longer
+                    appears in GROUP_ORDER at all, so it's already excluded
+                    here with no extra check needed. */}
                 {TABS.filter((tb) => tb.group === group).map(({ id, labelKey, icon: Icon }) => {
                   const active = tab === id;
                   return (
@@ -394,9 +359,9 @@ function AdminPageInner() {
                     >
                       <Icon className="h-4 w-4" />
                       {t(labelKey)}
-                      {id === "queue" && queue.length > 0 && (
+                      {id === "queue" && queueCount > 0 && (
                         <span className="ml-auto rounded-full bg-danger px-1.5 text-[10px] font-bold text-white">
-                          {queue.length}
+                          {queueCount}
                         </span>
                       )}
                       {id === "timeline" && pendingTimelineCount > 0 && (
@@ -449,53 +414,7 @@ function AdminPageInner() {
           <div className="min-h-0 flex-1 px-4 py-6 lg:overflow-y-auto lg:px-8 lg:py-8">
             {tab === "dashboard" && <AdminDashboardTab onNavigate={goTo} />}
 
-            {tab === "queue" && (
-              <div className="space-y-4">
-                <div>
-                  <h1 className="font-serif text-xl text-neutral-900">{t("admin.queueTitle")}</h1>
-                  <p className="text-sm text-neutral-500">{t("admin.queueSubtitle")}</p>
-                </div>
-                {queue.length === 0 ? (
-                  <p className="rounded-panel border border-dashed border-neutral-300 bg-white p-8 text-center text-sm text-neutral-400">
-                    {t("admin.queueClear")}
-                  </p>
-                ) : (
-                  <div className="space-y-2.5">
-                    {queue.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-neutral-200 bg-white p-4"
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-neutral-900">{item.title}</p>
-                          <p className="text-xs text-neutral-500">
-                            {t(QUEUE_TYPE_LABEL_KEY[item.type])} ·{" "}
-                            {t("admin.submittedBy", { name: item.submittedBy })}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => decide(item.id)}
-                            className="flex items-center gap-1.5 rounded-control bg-green-600 px-3 py-2 text-xs font-semibold text-white hover:bg-green-700"
-                          >
-                            <Check className="h-3.5 w-3.5" /> {t("admin.approve")}
-                          </button>
-                          <button className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50">
-                            <MessageSquare className="h-3.5 w-3.5" /> {t("admin.requestChanges")}
-                          </button>
-                          <button
-                            onClick={() => decide(item.id, "rejected")}
-                            className="flex items-center gap-1.5 rounded-control border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
-                          >
-                            <X className="h-3.5 w-3.5" /> {t("admin.reject")}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {tab === "queue" && <ApprovalCenterTab />}
 
             {tab === "timeline" && <TimelineTab />}
 
@@ -505,7 +424,7 @@ function AdminPageInner() {
 
             {tab === "health3d" && <Admin3DHealthTab />}
 
-            {tab === "users" && <UsersTab initialQuery={pendingQuery} />}
+            {tab === "users" && <UsersTab initialQuery={pendingQuery} isSuperAdmin={me?.superAdmin} />}
 
             {tab === "publishers" && <PublishersTab initialQuery={pendingQuery} />}
 
@@ -514,18 +433,11 @@ function AdminPageInner() {
             {tab === "moderation" && <ModerationTab />}
 
             {tab === "content" && <ContentTab />}
+            {tab === "listings" && <ListingsManagementTab />}
+            {tab === "advertising" && <AdvertisingTab />}
+            {tab === "marketData" && <MarketDataTab />}
 
-            {tab === "reports" && (
-              <div className="space-y-4">
-                <h1 className="font-serif text-xl text-neutral-900">{t("admin.reportsTitle")}</h1>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <ReportStat label={t("admin.reportApprovalSla")} value="6.2h" />
-                  <ReportStat label={t("admin.reportContentQuality")} value="100%" />
-                  <ReportStat label={t("admin.reportDuplicateFlags")} value="3" />
-                  <ReportStat label={t("admin.reportUptime")} value="99.98%" />
-                </div>
-              </div>
-            )}
+            {tab === "reports" && <ReportsTab />}
 
             {tab === "analytics" && <AdminAnalyticsTab />}
 
@@ -1143,7 +1055,18 @@ function ProjectVisibilityMenu({
 function ContentTab() {
   const { t } = useT();
   const priceFmt = usePriceFormat();
-  const liveProjects = useAdminProjects();
+  const [liveProjects, setLiveProjects] = useState<Project[]>([]);
+  const [editing, setEditing] = useState<Project | null>(null);
+  const { publishers } = useAdminPublishers("");
+
+  function refreshProjects() {
+    fetch("/api/admin/projects")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setLiveProjects)
+      .catch(() => {});
+  }
+  useEffect(refreshProjects, []);
+
   return (
     <div className="space-y-4">
       <h1 className="font-serif text-xl text-neutral-900">{t("admin.contentTitle")}</h1>
@@ -1152,24 +1075,35 @@ function ContentTab() {
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {liveProjects.map((p) => (
-          <div key={p.id} className="rounded-card border border-neutral-200 bg-white p-3.5">
-            <p className="text-sm font-semibold text-neutral-900">{p.name}</p>
-            <p className="text-xs text-neutral-500">
-              {p.developer.name} ·{" "}
-              {priceFmt(Math.min(...p.units.map((u) => u.price)), { compact: true })}+
-            </p>
+          <div key={p.id} className="flex items-start justify-between gap-2 rounded-card border border-neutral-200 bg-white p-3.5">
+            <div>
+              <p className="text-sm font-semibold text-neutral-900">{p.name}</p>
+              <p className="text-xs text-neutral-500">
+                {p.developer.name} ·{" "}
+                {p.units.length > 0 ? `${priceFmt(Math.min(...p.units.map((u) => u.price)), { compact: true })}+` : t("admin.noUnitsYet")}
+              </p>
+            </div>
+            <button
+              onClick={() => setEditing(p)}
+              className="shrink-0 text-xs font-semibold text-brand-600 hover:underline"
+            >
+              {t("admin.manage")}
+            </button>
           </div>
         ))}
       </div>
-    </div>
-  );
-}
 
-function ReportStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-card border border-neutral-200 bg-white p-4">
-      <p className="text-xl font-bold text-neutral-900">{value}</p>
-      <p className="text-xs text-neutral-500">{label}</p>
+      {editing && (
+        <EditProjectModal
+          project={editing}
+          publishers={publishers}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            refreshProjects();
+          }}
+        />
+      )}
     </div>
   );
 }

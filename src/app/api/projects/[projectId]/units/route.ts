@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
+import { notifyNewUnit } from "@/lib/notify";
 
 const unitSchema = z.object({
   // Client-supplied, not server-generated: ProjectUnitsEditor.tsx already
@@ -86,6 +87,11 @@ export async function POST(
     entityId: unit.id,
     entityLabel: `${project.name} · ${unit.code}`,
   });
+
+  // Real notification producer (Account & Profile System PRD v1.0 §5.3 —
+  // see src/lib/notify.ts) — every real `Follow` (kind: project) on this
+  // project gets a real Notification row.
+  await notifyNewUnit({ id: project.id, slug: project.slug, name: project.name });
 
   return NextResponse.json(unit);
 }

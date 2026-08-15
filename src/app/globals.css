@@ -168,6 +168,13 @@ body {
   overscroll-behavior-y: none;
 }
 
+/* The site Header is sticky at h-16 (64px). Without this, hash-anchor
+   navigation (native <a href="#id"> and Next's Link scrollIntoView) lands
+   targets right at the viewport top, hidden behind the header. */
+html {
+  scroll-padding-top: 80px;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

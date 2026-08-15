@@ -26,3 +26,22 @@ export async function requirePublisherSession() {
   }
   return session;
 }
+
+/**
+ * §8 "Business Teams, Roles & Permissions" — layered on top of
+ * `requirePublisherSession()` for the two team-management surfaces
+ * (`/api/business/organization` PATCH, `/api/business/team` writes) that
+ * only an Owner or Org Admin may touch, not every team member. An admin
+ * session still outranks this, same convention as the base gate. Read
+ * access to those same routes stays on `requirePublisherSession()` alone —
+ * any team member can view the roster/company profile, just not edit it.
+ */
+export async function requireOrgRole() {
+  const gate = await requirePublisherSession();
+  if (gate instanceof NextResponse) return gate;
+  if (gate.user?.role === "admin") return gate;
+  if (gate.user?.orgRole !== "owner" && gate.user?.orgRole !== "admin") {
+    return NextResponse.json({ error: "Owner or Org Admin permission required." }, { status: 403 });
+  }
+  return gate;
+}

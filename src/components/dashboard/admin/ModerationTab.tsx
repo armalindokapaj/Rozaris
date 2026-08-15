@@ -1,13 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Flag, Check, X } from "lucide-react";
-import { useAppStore } from "@/lib/store";
-import { listings, projects } from "@/lib/mockData";
 import { useT } from "@/lib/i18n/useT";
 import { formatRelativeDate } from "@/lib/utils";
-import type { ModerationCase, ModerationCaseType } from "@/lib/types";
+import type { ModerationCaseType } from "@/lib/types";
 
 const TYPE_LABEL_KEY: Record<ModerationCaseType, string> = {
   duplicate: "moderation.typeDuplicate",
@@ -19,44 +17,47 @@ const TYPE_LABEL_KEY: Record<ModerationCaseType, string> = {
   user_report: "moderation.typeUserReport",
 };
 
-const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
-
-function seedCases(): ModerationCase[] {
-  const seeds: { type: ModerationCaseType; evidenceKey: string }[] = [
-    { type: "suspicious_price", evidenceKey: "moderation.evidencePrice" },
-    { type: "misleading_media", evidenceKey: "moderation.evidenceMedia" },
-    { type: "duplicate", evidenceKey: "moderation.evidenceDuplicate" },
-  ];
-  const targets = [listings[2], listings[5], projects[1]].filter(Boolean);
-  return targets.map((target, i) => {
-    const isListing = "title" in target;
-    return {
-      id: `mod-${i}`,
-      entityLabel: isListing ? (target as (typeof listings)[number]).title : (target as (typeof projects)[number]).name,
-      entityHref: isListing
-        ? `/listing/${(target as (typeof listings)[number]).slug}`
-        : `/project/${(target as (typeof projects)[number]).slug}`,
-      caseType: seeds[i % seeds.length].type,
-      reportedAt: daysAgo(i + 1),
-      status: "pending" as const,
-      evidence: seeds[i % seeds.length].evidenceKey,
-    };
-  });
+interface ReportRow {
+  id: string;
+  entityType: "listing" | "project";
+  entityId: string;
+  caseType: ModerationCaseType;
+  note: string | null;
+  status: "pending" | "actioned" | "dismissed";
+  createdAt: string;
+  entityLabel: string;
+  entityHref: string | null;
 }
 
-/** Admin's Moderation queue (PRD_ROZARIS_User_Types §5 "Verification &
- * moderation") — duplicates, suspicious pricing, misleading media, wrong
- * location, spam/fraud, copyright and user reports. Session-local seed
- * data, same convention as the Approvals Queue and Verification tabs. */
+/**
+ * Admin's Moderation queue (PRD_ROZARIS_User_Types §5 "Verification &
+ * moderation") — real user-submitted reports (`ModerationReport`, see
+ * `ReportButton` on the listing/project detail pages for where these come
+ * from), replacing the previous hardcoded `seedCases()` mock data.
+ */
 export function ModerationTab() {
-  const { t, locale } = useT();
-  const logAudit = useAppStore((s) => s.logAudit);
-  const [cases, setCases] = useState<ModerationCase[]>(seedCases);
+  const { t } = useT();
+  const [reports, setReports] = useState<ReportRow[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  function decide(id: string, status: "dismissed" | "actioned") {
-    const item = cases.find((c) => c.id === id);
-    setCases((c) => c.filter((i) => i.id !== id));
-    if (item) logAudit(`Moderation case ${status}`, item.entityLabel);
+  function load() {
+    fetch("/api/admin/moderation?status=pending")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setReports)
+      .catch(() => {});
+  }
+
+  useEffect(load, []);
+
+  async function decide(id: string, status: "actioned" | "dismissed") {
+    setBusyId(id);
+    await fetch(`/api/admin/moderation/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    setReports((r) => r.filter((c) => c.id !== id));
+    setBusyId(null);
   }
 
   return (
@@ -66,13 +67,13 @@ export function ModerationTab() {
         <p className="text-sm text-neutral-500">{t("admin.moderationSubtitle")}</p>
       </div>
 
-      {cases.length === 0 ? (
+      {reports.length === 0 ? (
         <p className="rounded-panel border border-dashed border-neutral-300 bg-white p-8 text-center text-sm text-neutral-400">
           {t("admin.moderationClear")}
         </p>
       ) : (
         <div className="space-y-2.5">
-          {cases.map((item) => (
+          {reports.map((item) => (
             <div
               key={item.id}
               className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-neutral-200 bg-white p-4"
@@ -88,20 +89,23 @@ export function ModerationTab() {
                     <p className="text-sm font-semibold text-neutral-900">{item.entityLabel}</p>
                   )}
                   <p className="text-xs text-neutral-500">
-                    {t(TYPE_LABEL_KEY[item.caseType])} · {t(item.evidence)} · {formatRelativeDate(item.reportedAt, locale)}
+                    {t(TYPE_LABEL_KEY[item.caseType])}
+                    {item.note ? ` · “${item.note}”` : ""} · {formatRelativeDate(item.createdAt)}
                   </p>
                 </div>
               </div>
               <div className="flex gap-2">
                 <button
+                  disabled={busyId === item.id}
                   onClick={() => decide(item.id, "actioned")}
-                  className="flex items-center gap-1.5 rounded-control bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
+                  className="flex items-center gap-1.5 rounded-control bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-40"
                 >
                   <Check className="h-3.5 w-3.5" /> {t("admin.moderationAction")}
                 </button>
                 <button
+                  disabled={busyId === item.id}
                   onClick={() => decide(item.id, "dismissed")}
-                  className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                  className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
                 >
                   <X className="h-3.5 w-3.5" /> {t("admin.moderationDismiss")}
                 </button>

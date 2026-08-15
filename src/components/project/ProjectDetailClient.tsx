@@ -44,9 +44,11 @@ import en from "@/lib/i18n/en";
 import sq from "@/lib/i18n/sq";
 import { getNeighborhood } from "@/lib/mockData";
 import { getListingForUnit } from "@/lib/projects";
+import { useTrackView } from "@/hooks/useTrackEvent";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { PublisherCard } from "@/components/listing/PublisherCard";
 import { ShareButton } from "@/components/listing/ShareButton";
+import { ReportButton } from "@/components/common/ReportButton";
 import { ConstructionTimelineStrip } from "@/components/project/ConstructionTimelineStrip";
 import { ProjectShowcaseRow } from "@/components/project/ProjectShowcaseRow";
 import { StaticContextMap } from "@/components/map/StaticContextMap";
@@ -131,6 +133,7 @@ export function ProjectDetailClient({
 }) {
   const { t, locale } = useT();
   const priceFmt = usePriceFormat();
+  useTrackView("project", project.id);
   const auth = useAppStore((s) => s.auth);
   const saved = useAppStore((s) => s.saved.projects.includes(project.id));
   const toggleSaved = useAppStore((s) => s.toggleSavedProject);
@@ -315,6 +318,7 @@ export function ProjectDetailClient({
             <Heart className={cn("h-4 w-4", saved && "fill-red-500 text-red-500")} />
             {saved ? t("projectDetail.saved") : t("projectDetail.save")}
           </button>
+          <ReportButton entityType="project" entityId={project.id} />
           <Link
             href={`/project/${project.slug}`}
             target="_blank"
@@ -642,6 +646,7 @@ export function ProjectDetailClient({
                 whatsappMessage={`Hi, I'm interested in ${project.name}`}
                 contentTitle={project.name}
                 contentUrl={`${SITE_URL}/projects/${project.slug}`}
+                trackEntity={{ type: "project", id: project.id }}
               />
               {(project.developer.foundedYear || project.developer.awardsCount) && (
                 <div className="mt-4 flex flex-wrap gap-4 border-t border-neutral-100 pt-4 text-xs text-neutral-500">

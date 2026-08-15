@@ -42,6 +42,24 @@ enum PublisherType {
   developer
 }
 
+/// §9.1 "Business — Not submitted / Pending / Verified / Rejected /
+/// Reverify required". `reverify_required` is set automatically when a
+/// verified organization's legal identity changes (§9.3
+/// "Re-verification triggers"), not by an admin action.
+enum PublisherVerificationStatus {
+  not_submitted
+  pending
+  verified
+  rejected
+  reverify_required
+}
+
+enum DeveloperStatus {
+  not_applicable
+  pending
+  verified
+}
+
 /// Account-level access state, enforced at real sign-in (src/auth.ts's
 /// authorize()) — Super Admin control/audit pass. `restricted` is reserved
 /// for a future lighter-touch state; only suspended/disabled currently
@@ -51,6 +69,18 @@ enum UserStatus {
   restricted
   suspended
   disabled
+}
+
+/// Account & Profile System PRD v1.0 §9.1 "Internal verification
+/// dimensions — Identity". `not_required` (not `unverified`) is the
+/// default so an ordinary buyer who never asked for a "Verified
+/// Publisher" badge doesn't read as having failed anything.
+enum IdentityVerificationStatus {
+  not_required
+  pending
+  verified
+  failed
+  expired
 }
 
 model User {
@@ -74,6 +104,13 @@ model User {
   statusReason    String?
   statusChangedAt DateTime?
   statusChangedBy String?
+  /// Time-bound "idle" — an admin-set restriction (e.g. `status:
+  /// "restricted"`) that auto-expires instead of needing a second admin
+  /// action to lift. `null` means whatever `status` is set to is
+  /// indefinite (the original behavior, unchanged). Checked, not enforced
+  /// by a background job — `isUserIdle()` (src/lib/moderation.ts) compares
+  /// against `now()` on every write-gated request.
+  statusUntil     DateTime?
   superAdmin      Boolean    @default(false)
   adminScopes     String[]   @default([])
   deletedAt       DateTime?
@@ -83,11 +120,53 @@ model User {
   accounts Account[]
   sessions Session[]
 
+  // --- Account & Profile System PRD v1.0 (2026-08-15) §4 "Standard User
+  // Profile" / §5 "Personalization" / §10 "Privacy, Security & Consent" ---
+  // Additive onto the existing `name`/`email`/`phone` — `name` stays as the
+  // legacy display value every pre-existing read site (messaging, admin
+  // tables, seed data) still relies on; firstName/lastName are the new
+  // structured identity fields, kept in sync from account settings only.
+  // Whether each of these is required at all is NOT hardcoded here — it's
+  // governed by the admin-configurable `FieldPolicy` table (see
+  // src/lib/fieldPolicies.ts), enforced server-side in
+  // /api/account/profile's PATCH handler.
+  firstName              String?
+  lastName               String?
+  country                String?
+  preferredLanguage      String?
+  preferredCurrency      String?
+  preferredContactMethod String?
+  cityLocationId         String?
+  cityLocation           Location? @relation("UserCityLocation", fields: [cityLocationId], references: [id], onDelete: SetNull)
+  phoneVerifiedAt        DateTime?
+  /// §10.2 "Marketing consent — Explicit, revocable, versioned."
+  marketingConsent       Boolean   @default(false)
+  marketingConsentAt     DateTime?
+  termsAcceptedAt        DateTime?
+  termsVersion           String?
+
+  // §9 "Verification & Trust — Identity" — no real document-upload/KYC
+  // provider in this environment (same "no paid third-party" constraint
+  // noted on phone OTP in src/auth.ts), so this is a real self-service
+  // request + real admin manual review workflow, not automated
+  // verification. `identityNote` is a free-text declaration the requester
+  // submits for the admin to review against, not a stored document.
+  identityVerificationStatus IdentityVerificationStatus @default(not_required)
+  identitySubmittedAt        DateTime?
+  identityReviewedAt         DateTime?
+  identityReviewedBy         String?
+  identityRejectionReason    String?
+  identityNote               String?
+
   // Buyer-side profile fields (PRD_User) — null for publisher/admin accounts.
   buyerPreferences Json?
 
-  // A publisher-role user owns exactly one Publisher org record.
-  publisher Publisher?
+  // A publisher-role user owns exactly one Publisher org record. A
+  // publisher-role user who does NOT own one instead belongs to someone
+  // else's via `organizationMemberships` (§8) — resolved into the same
+  // session `publisherId` either way, see src/auth.ts's authorize().
+  publisher               Publisher?
+  organizationMemberships OrganizationMembership[]
 
   savedItems               SavedItem[]
   savedSearches            SavedSearch[]
@@ -140,6 +219,85 @@ model VerificationToken {
 }
 
 // ---------------------------------------------------------------------------
+// Canonical Location System — user's explicit 2026-08-15 requirement: every
+// Albanian location has one official name and one permanent ID; nothing in
+// ROZARIS stores a location as free text. See MEMORY note "rozaris-
+// controlled-taxonomy-spec" for the full spec this schema is the first slice
+// of. Self-referential hierarchy: Country -> County -> Municipality ->
+// City/Town -> Administrative Unit -> Neighborhood/Area (villages/
+// settlements are real Locations too, not just the 7 Tirana neighborhoods
+// mockData.ts already hardcodes).
+//
+// Rollout note: `Project.locationId` sits alongside the existing
+// `city`/`neighborhoodId` string columns (Project hasn't gone through the
+// Property/Listing/Transaction split below — it's still one flat row).
+// `Listing`'s own location fields moved off it entirely in that split —
+// see the schema-header note above `Property` further down. Seeded from
+// mockData.neighborhoods by scripts/seed-locations.ts, which gives the
+// seeded Location rows the SAME ids mockData already uses (`n-blloku` etc.)
+// so existing data lines up with zero drift. The public catalog itself
+// still reads mockData.ts (see this file's header) — real Listing/Project
+// rows are the publisher-submit -> admin-approve pipeline only, not yet
+// merged into public search.
+// ---------------------------------------------------------------------------
+
+enum LocationType {
+  country
+  county
+  municipality
+  city
+  administrative_unit
+  neighborhood
+}
+
+model Location {
+  id               String       @id
+  parentId         String?
+  type             LocationType
+  /// The one official name — what publishers/admins see in the dropdown
+  /// and what every display surface renders. Never user-editable free text.
+  officialName     String
+  slug             String       @unique
+  latitude         Float?
+  longitude        Float?
+  /// GeoJSON Polygon/MultiPolygon — lets map filtering (and someday
+  /// coordinate-inside-boundary validation) be geometric instead of
+  /// relying on text/point matching alone.
+  boundaryGeometry Json?
+  isActive         Boolean      @default(true)
+  sortOrder        Int          @default(0)
+  createdAt        DateTime     @default(now())
+
+  parent   Location?       @relation("LocationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children Location[]      @relation("LocationHierarchy")
+  aliases  LocationAlias[]
+
+  projects          Project[]
+  usersWithThisCity User[]     @relation("UserCityLocation")
+  properties        Property[]
+
+  @@index([parentId])
+  @@index([type])
+  @@map("locations")
+}
+
+/// Search-matching only — "Tiran"/"Tiranë"/"Tirona" all resolve to
+/// `CITY-TIRANA` here, but the value ROZARIS ever stores against a
+/// Listing/Project is always the canonical `locationId`, never the alias
+/// text itself.
+model LocationAlias {
+  id         String @id @default(cuid())
+  alias      String
+  locationId String
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([alias, locationId])
+  @@index([alias])
+  @@map("location_aliases")
+}
+
+// ---------------------------------------------------------------------------
 // Publishers, Listings, Projects — the "submit -> admin approve -> publish"
 // pipeline (public browse still reads mockData.ts; see file header).
 // ---------------------------------------------------------------------------
@@ -155,12 +313,47 @@ model Publisher {
   whatsapp String?
   bio      String?
 
+  // Account & Profile System PRD v1.0 §9 "Business Publisher &
+  // Organization Profile" — additive fields the original Publisher model
+  // (a listing/project owner, not yet a real company profile) never had.
+  // `Publisher` doubles as the PRD's "Organization" entity rather than a
+  // parallel model — renaming it would touch every Listing/Project/LeadItem
+  // read site for no functional gain; a `type: private_owner` row simply
+  // never populates these.
+  legalName          String?
+  registrationNumber String?
+  businessAddress    String?
+  companyEmail       String?
+  website            String?
+
+  // §9.1 "Business" + "Developer status" verification dimensions.
+  // `verified` (above) is kept as the single DERIVED public flag every
+  // pre-existing read site (badges, PublishersTab, the old VerificationTab
+  // queue) already reads — it's set true only when `verificationStatus`
+  // transitions to `verified` (see /api/admin/publishers/[id] PATCH and
+  // /api/business/organization PATCH's re-verification trigger), so none
+  // of those existing sites needed to change for this to be real instead
+  // of a bare admin-toggled boolean.
+  verificationStatus          PublisherVerificationStatus @default(not_submitted)
+  verificationSubmittedAt     DateTime?
+  verificationReviewedAt      DateTime?
+  verificationReviewedBy      String?
+  verificationRejectionReason String?
+  /// Only meaningful when `type: developer` — separate from generic
+  /// business verification per §9.1's own "Developer status — Not
+  /// applicable / Pending / Verified — Separate from generic business
+  /// verification".
+  developerStatus             DeveloperStatus             @default(not_applicable)
+
   /// "Restrict publishing" (PRD §6 Publisher Admin actions) — prevents new
   /// publication while preserving traceability. Distinct from the owning
   /// User's `status` (that blocks sign-in entirely); this blocks only new
   /// publish actions.
   restricted       Boolean   @default(false)
   restrictedReason String?
+  /// Time-bound restriction — same pattern as `User.statusUntil`. `null`
+  /// with `restricted: true` means indefinite (the original behavior).
+  restrictedUntil  DateTime?
   deletedAt        DateTime?
   deletedBy        String?
 
@@ -171,12 +364,84 @@ model Publisher {
   projects Project[]
   leads    LeadItem[]
 
+  // §8 "Business Teams, Roles & Permissions" — every member is its own
+  // real ROZARIS account (never a shared login), joined via an
+  // email-addressed invitation. The owner itself is represented by
+  // `ownerUserId` above, not a membership row — resolving "who can act as
+  // this Publisher" is `ownerUserId` UNION active `memberships`.
+  memberships OrganizationMembership[]
+  invitations OrganizationInvitation[]
+
   createdAt DateTime @default(now())
 
   @@map("publishers")
 }
 
+/// §8.2 "Recommended business roles" — deliberately a bounded enum (not a
+/// free-text scope string like `User.adminScopes`) since these gate real
+/// per-route permission checks (`requireOrgRole()`), not just UI labels.
+/// Collapsed from the PRD's 7-row table to the distinctions that actually
+/// change behavior today: `owner`/`admin` can manage the team + company
+/// profile, everyone else can't — `project_manager`/`sales_manager` (scoped
+/// to assigned inventory) is real future work, not yet enforced anywhere.
+enum OrganizationRole {
+  owner
+  admin
+  agent
+  content_editor
+  viewer
+}
+
+/// §8 "Business Teams, Roles & Permissions" — one real ROZARIS account
+/// (`userId`) with scoped access into one `Publisher` (never a shared
+/// login). `status` follows §8.3's "Invited / Active / Suspended /
+/// Removed" — a row is only ever created once an invitation is accepted
+/// (see `OrganizationInvitation`), so it starts `active`, not `invited`.
+model OrganizationMembership {
+  id          String           @id @default(cuid())
+  publisherId String
+  userId      String
+  role        OrganizationRole
+  status      String           @default("active")
+  invitedBy   String?
+  createdAt   DateTime         @default(now())
+
+  publisher Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([publisherId, userId])
+  @@map("organization_memberships")
+}
+
+/// §14.4 "Business invitation" flow — email-addressed (not user-id
+/// addressed, since the invitee may not have a ROZARIS account yet).
+/// `status: pending` rows are what `GET /api/account/invitations` matches
+/// against the signed-in user's own verified email; accepting converts one
+/// into an `OrganizationMembership` row (see
+/// `POST /api/account/invitations/[id]/accept`).
+model OrganizationInvitation {
+  id          String           @id @default(cuid())
+  publisherId String
+  email       String
+  role        OrganizationRole
+  status      String           @default("pending")
+  invitedBy   String
+  createdAt   DateTime         @default(now())
+  respondedAt DateTime?
+
+  publisher Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+
+  @@unique([publisherId, email])
+  @@map("organization_invitations")
+}
+
 enum ListingStatus {
+  /// No confirmed location (see `Listing.locationConfirmed`) — the
+  /// publisher never dropped a real pin, and no admin has chosen to
+  /// approve it without one. Never shown publicly; the publisher's own
+  /// dashboard is the only place a draft appears, with a prompt to add a
+  /// location and resubmit.
+  draft
   pending // submitted, awaiting admin approval — not yet live anywhere
   active
   sold
@@ -184,32 +449,34 @@ enum ListingStatus {
   expired
   suspended
   archived
+  /// Approval Center's "Reject" verdict on a `pending` submission —
+  /// distinct from `suspended` (was live, taken down) and `archived`
+  /// (force-unpublished by an admin action). Always carries a `reason`
+  /// (enforced in the publication route, same rule as `suspended`). The
+  /// publisher can still see and edit it from their dashboard, unlike a
+  /// hard delete.
+  rejected
 }
 
+/// The advertisement — "this publisher is advertising that Property" (see
+/// the schema-header note above `Property` below for the full split). Every
+/// physical/canonical attribute (area, bedrooms, condition, amenities,
+/// location...) lives on `Property` now; this model keeps only what's
+/// actually about THIS publisher's ad of it — price, media, copy,
+/// moderation/lifecycle state. Two different agencies advertising the same
+/// physical unit would eventually be two Listings pointing at the same
+/// Property (dedup isn't implemented yet — every submission still creates
+/// its own Property row — but the shape now supports it without another
+/// migration).
 model Listing {
   id             String        @id @default(cuid())
   slug           String        @unique
   title          String
   transaction    String
   rentSubtype    String?
-  propertyType   String
   price          Float
   currency       String        @default("EUR")
   negotiable     Boolean       @default(false)
-  area           Float
-  landArea       Float?
-  buildingPermit Boolean?
-  bedrooms       Int
-  bathrooms      Int
-  floor          Int?
-  totalFloors    Int?
-  yearBuilt      Int?
-  condition      String
-  amenities      String[]
-  lat            Float
-  lng            Float
-  neighborhoodId String
-  city           String
   images         String[]
   floorPlanImage String?
   facadeImage    String?
@@ -220,6 +487,23 @@ model Listing {
   status         ListingStatus @default(pending)
   createdAt      DateTime      @default(now())
   reviewedAt     DateTime?
+  /// Bumped every time the publisher confirms/edits the listing is still
+  /// current (a "Renew" action, not every silent admin edit) — the basis
+  /// for the "needs an update" staleness flag once it's >90 days old.
+  lastRenewedAt  DateTime      @default(now())
+  /// Admin can take one specific listing offline for N days without
+  /// touching the publisher's whole account — distinct from
+  /// `Publisher.restricted*` (that blocks every future listing) and from
+  /// `status: "suspended"` (indefinite, requires a second admin action to
+  /// reverse).
+  idleUntil      DateTime?
+  idleReason     String?
+  /// Admin "Mark duplicate" action (Listings Control) — a free-text
+  /// pointer to another listing's id/slug, not a foreign key: the target
+  /// may itself get deleted later, and this is a moderation note, not a
+  /// referential relationship the schema needs to enforce. Set together
+  /// with `status: "suspended"` by the admin route.
+  duplicateOfId  String?
 
   /// Super Admin recycle bin — see the schema-header note on Listing: no
   /// route has ever written a real row here yet (public catalog is still
@@ -231,9 +515,128 @@ model Listing {
   publisherId String
   publisher   Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
 
+  /// Property/Listing/Transaction split — see the schema-header note above
+  /// `Property` below. Required: every Listing advertises exactly one
+  /// Property, created alongside it (`POST /api/listings` does both in one
+  /// transaction) even though nothing dedupes physical units across
+  /// separate submissions yet.
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  transactions Transaction[]
+  priceHistory PriceHistoryEntry[]
+
   leads LeadItem[]
 
   @@map("listings")
+}
+
+// ---------------------------------------------------------------------------
+// Property/Listing/Transaction split — user's 2026-08-15 spec: "separate the
+// physical property from the advertisement." `Property` is the one
+// real-world apartment/land/villa/shop — every field describing the
+// physical thing itself (specs, condition, amenities, location) now lives
+// here, not on `Listing`; `Listing` (above) is one publisher's advertisement
+// of it (several agencies can eventually list the same Property, though
+// dedup detection isn't implemented yet — every submission still creates
+// its own row); each sale/rental/reservation event against it is a
+// `Transaction`. See MEMORY note "rozaris-controlled-taxonomy-spec".
+// ---------------------------------------------------------------------------
+
+model Property {
+  id                String    @id @default(cuid())
+  /// Canonical Location System FK — see the schema-header note above
+  /// `Location`. Nullable at the schema level (a Property could
+  /// theoretically predate a resolvable location) but `POST
+  /// /api/listings` always resolves and sets it for real.
+  locationId        String?
+  location          Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  /// Denormalized alongside `locationId` — same convention `Listing`/
+  /// `Project` already use elsewhere in this schema (a raw reference id +
+  /// a display string, not just the FK), so read paths that only ever
+  /// needed "which neighborhood/city" don't need to join through
+  /// `Location` for it.
+  neighborhoodId    String?
+  city              String?
+  lat               Float?
+  lng               Float?
+  /// True once the publisher has actually dropped a pin on the map
+  /// (LocationPicker) — `lat`/`lng` are always populated regardless (a
+  /// neighborhood-centroid fallback when this is false), so this is the
+  /// real signal, not "are lat/lng non-null". Required to leave `draft`
+  /// status unless an admin explicitly approves without one.
+  locationConfirmed Boolean   @default(false)
+  propertyType      String?
+  area              Float?
+  landArea          Float?
+  buildingPermit    Boolean?
+  bedrooms          Int?
+  bathrooms         Int?
+  floor             Int?
+  totalFloors       Int?
+  yearBuilt         Int?
+  condition         String?
+  amenities         String[]
+  createdAt         DateTime  @default(now())
+
+  listings Listing[]
+
+  @@map("properties")
+}
+
+enum TransactionType {
+  sale
+  long_term_rent
+  short_term_rent
+  reservation
+}
+
+enum TransactionStatus {
+  pending
+  completed
+  cancelled
+}
+
+model Transaction {
+  id                String            @id @default(cuid())
+  listingId         String
+  type              TransactionType
+  status            TransactionStatus @default(pending)
+  price             Float?
+  currency          String            @default("EUR")
+  occurredAt        DateTime          @default(now())
+  createdAt         DateTime          @default(now())
+  /// Market Data Engine's "allow incorrect/outlier transactions to be
+  /// excluded from statistics" (PRD_ROZARIS_Admin §12) — a real completed
+  /// transaction stays in the table (it's still a fact that happened),
+  /// just excluded from the €/m² aggregate `GET /api/admin/market-data`
+  /// computes.
+  excludedFromStats Boolean           @default(false)
+  excludedReason    String?
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("transactions")
+}
+
+/// Spec item 31 ("Price history") — user's 2026-08-15 requirement: "never
+/// overwrite a price silently... keep €220,000 — Jan, €210,000 — Mar,
+/// €199,000 — Aug... then show 'Price reduced 9.5%'." Distinct from
+/// `Transaction`: that's the real sale/rental EVENT (written once, when a
+/// listing actually sells); this is every price POINT over the listing's
+/// life, including the very first one at creation. See MEMORY note
+/// "rozaris-controlled-taxonomy-spec".
+model PriceHistoryEntry {
+  id         String   @id @default(cuid())
+  listingId  String
+  price      Float
+  currency   String
+  recordedAt DateTime @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId, recordedAt])
+  @@map("price_history_entries")
 }
 
 enum ProjectStatus {
@@ -259,6 +662,10 @@ model Project {
   lng             Float
   neighborhoodId  String
   city            String
+  /// Canonical Location System — same additive/nullable transition as
+  /// Listing.locationId above.
+  locationId      String?
+  location        Location?             @relation(fields: [locationId], references: [id], onDelete: SetNull)
   setting         String
   propertyType    String
   heroImage       String?
@@ -278,6 +685,11 @@ model Project {
   /// restorable from the Recycle Bin" action.
   deletedAt DateTime?
   deletedBy String?
+
+  /// Same "take this one specific listing offline for N days" mechanism
+  /// as `Listing.idleUntil` — see that field's doc comment.
+  idleUntil  DateTime?
+  idleReason String?
 
   publisherId String
   publisher   Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
@@ -509,17 +921,17 @@ model Project3DConfig {
   /// Water/Bloom/Clouds). "infinite" is the only style available in GLB
   /// mode; "disc" stays procedural-mode-only, unchanged — deliberately
   /// scoped so no existing GLB project gains an unrequested ground.
-  groundStyle       String  @default("disc")
+  groundStyle                   String  @default("disc")
   /// Applies regardless of groundStyle — default matches the exact hex
   /// the ground was hardcoded to before this column existed.
-  groundColor       String  @default("#d8d6e6")
+  groundColor                   String  @default("#d8d6e6")
   /// Real "ground fog" — a circular radial color fade on the ground
   /// mesh's own material around world origin (0,0,0), distinct from
   /// fogEnabled/fogColor's camera-relative THREE.FogExp2 above. Off by
   /// default.
-  groundFogEnabled  Boolean @default(false)
+  groundFogEnabled              Boolean @default(false)
   /// World-space distance from (0,0,0) — admin-entered directly.
-  groundFogRadius   Float   @default(300)
+  groundFogRadius               Float   @default(300)
   cameraStartDistanceMultiplier Float   @default(1)
   cameraMinDistanceMultiplier   Float   @default(0.4)
   cameraMaxDistanceMultiplier   Float   @default(2.5)
@@ -539,13 +951,13 @@ model Project3DConfig {
 
   // "3D Experience Phase 1" — rendering foundation, quality presets, glass.
   // See src/lib/viewerPresets.ts.
-  renderingMode        String  @default("auto") // auto | webgpu | webgl2
-  qualityPreset        String  @default("high_desktop")
+  renderingMode        String @default("auto") // auto | webgpu | webgl2
+  qualityPreset        String @default("high_desktop")
   // ultra_desktop | high_desktop | balanced | mobile_high | mobile_low
-  glassPreset          String  @default("standard") // performance | standard | premium
-  environmentIntensity Float   @default(1)
-  cameraFovDesktop     Int     @default(38)
-  cameraFovMobile      Int     @default(48)
+  glassPreset          String @default("standard") // performance | standard | premium
+  environmentIntensity Float  @default(1)
+  cameraFovDesktop     Int    @default(38)
+  cameraFovMobile      Int    @default(48)
 
   /// Sky/Water/Bloom/Clouds "Ocean" tab (webgl_shaders_ocean.html parity)
   /// — direct sun elevation/azimuth feeding the physical SkyMesh, matching
@@ -583,18 +995,18 @@ model Project3DConfig {
   /// dome — see RenderEngine.ts's rebuildEnvironment. Default true: zero
   /// behavior change for any existing project (the physical sky dome was
   /// already the unconditional backdrop before this column existed).
-  skyEnabled          Boolean @default(true)
-  skyTurbidity        Float   @default(4)
-  skyRayleigh         Float   @default(2.4)
-  skyMieCoefficient   Float   @default(0.004)
-  skyMieDirectionalG  Float   @default(0.78)
+  skyEnabled         Boolean @default(true)
+  skyTurbidity       Float   @default(4)
+  skyRayleigh        Float   @default(2.4)
+  skyMieCoefficient  Float   @default(0.004)
+  skyMieDirectionalG Float   @default(0.78)
 
   // Full-configurator pass — Fog, per-project unit status colors, and
   // per-project post-processing overrides (ANDed with, not replacing,
   // QUALITY_TIERS' own tier-level flags — see viewerPresets.ts).
-  fogEnabled Boolean @default(false)
-  fogColor   String  @default("#c9d6e0")
-  fogDensity Float   @default(0.015)
+  fogEnabled    Boolean @default(false)
+  fogColor      String  @default("#c9d6e0")
+  fogDensity    Float   @default(0.015)
   /// When true, fog color is derived live from the resolved sky color
   /// instead of the authored `fogColor` above — the "seamless horizon"
   /// technique from three.js's webgl_geometry_terrain example. Default
@@ -715,12 +1127,12 @@ model Project3DConfig {
   // is per-availability-status (causticsIntensity*), and scale/speed are
   // the real tunable caustics properties. Off by default: zero behavior
   // change for any existing project.
-  causticsEnabled           Boolean @default(false)
-  causticsScale             Float   @default(0.5)
-  causticsSpeed             Float   @default(0.15)
-  causticsIntensityAvailable Float  @default(1)
-  causticsIntensityReserved  Float  @default(0.4)
-  causticsIntensitySold      Float  @default(0)
+  causticsEnabled            Boolean @default(false)
+  causticsScale              Float   @default(0.5)
+  causticsSpeed              Float   @default(0.15)
+  causticsIntensityAvailable Float   @default(1)
+  causticsIntensityReserved  Float   @default(0.4)
+  causticsIntensitySold      Float   @default(0)
 
   /// shadowsEnabled/antialiasEnabled are real and functional. ssrEnabled/
   /// gtaoEnabled (screen-space reflections/ambient occlusion) used to be
@@ -742,7 +1154,7 @@ model Project3DConfig {
   /// Tone-mapping exposure multiplier (renderer.toneMappingExposure) —
   /// also the Sky/Water/Bloom/Clouds "Ocean" tab's Sky "exposure" slider,
   /// matching webgl_shaders_ocean.html's own GUI exactly.
-  exposure      Float @default(1)
+  exposure      Float  @default(1)
   /// renderer.toneMapping (2026-08-14 UI-polish pass) — real per-project
   /// choice: none | linear | reinhard | cineon | aces | agx | neutral.
   /// Defaults to "aces" (renderer.toneMapping's prior hardcoded value) so
@@ -1099,6 +1511,129 @@ model ApiErrorLog {
   @@map("admin_api_error_log")
 }
 
+/// Platform Settings' "Feature Flags" (PRD_ROZARIS_Admin §15) — real
+/// DB-backed switches read server-side wherever a route/component actually
+/// branches on them (see each flag's own `checkedBy` note below). Only
+/// global on/off for now — no per-user or percentage rollout, since
+/// nothing in the app has audience segmentation to hang that off of yet.
+/// `key` is free-text (not an enum) so ops can add a flag without a
+/// migration; each read site treats an unknown/missing key as `enabled`
+/// (fail open to current behavior) via `isFeatureEnabled()`.
+model FeatureFlag {
+  key         String   @id
+  enabled     Boolean  @default(true)
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+
+  @@map("feature_flags")
+}
+
+/// Account & Profile System PRD v1.0 §"Admin can edit everything from the
+/// console panel; can make some fields 'Must fill' or 'Only by choice'" —
+/// admin-configurable per-field Required/Optional override for account
+/// profile forms. Same fail-open/override convention as `FeatureFlag`: the
+/// authoritative default per key lives in `src/lib/fieldPolicies.ts`
+/// (`FIELD_POLICIES`), a row here only exists once an admin has actually
+/// changed a field away from its default, and a missing row falls back to
+/// that default (never "not required" by omission). `key` is free-text
+/// (e.g. "standard_user.phone", "business_publisher.website") so a new
+/// field can be added to the registry without a migration.
+model FieldPolicy {
+  key       String   @id
+  required  Boolean
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@map("field_policies")
+}
+
+/// Platform CMS's "SEO titles / SEO descriptions" (PRD_ROZARIS_Admin §14)
+/// — a real override read by `generateMetadata()` on a curated set of
+/// marketing pages (see `src/lib/pageSeo.ts` for the registry of which
+/// `page` keys exist and what each page's own hardcoded fallback is). A
+/// missing row means "use the page's own hardcoded `<title>`/description",
+/// same fail-open convention as `FeatureFlag`.
+model PageSeoOverride {
+  page        String   @id
+  title       String?
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+
+  @@map("page_seo_overrides")
+}
+
+/// Search Engine Control's "search ranking weights" (PRD_ROZARIS_Admin
+/// §13) — a single-row config (`id: "default"`) admin-adjustable without a
+/// deploy, applied by `src/lib/searchRanking.ts`'s `computeRankScore()` to
+/// real `Listing` fields wherever the "recommended" sort is used
+/// (`getVisibleListings` in `src/lib/filtering.ts`). Every weight here maps
+/// to a real, computable signal — no "reported" weight, since nothing in
+/// the app produces a real per-listing report yet (ModerationTab is still
+/// seeded from mock cases); adding a weight with nothing real behind it
+/// would just be a fake control.
+model SearchRankingConfig {
+  id                      String   @id @default("default")
+  premiumWeight           Int      @default(30)
+  freshListingWeight      Int      @default(8)
+  verifiedPublisherWeight Int      @default(10)
+  completeInfoWeight      Int      @default(5)
+  threeDProjectWeight     Int      @default(6)
+  poorDataWeight          Int      @default(-10)
+  updatedAt               DateTime @updatedAt
+  updatedBy               String?
+
+  @@map("search_ranking_config")
+}
+
+// ---------------------------------------------------------------------------
+// Moderation — real user-submitted reports, replacing ModerationTab's
+// hardcoded seedCases() (3 mock cases pointed at fixed mockData rows).
+// `reporterUserId` is deliberately a bare string, no `@relation` to User —
+// same "reference id, not a foreign key" convention `Listing.duplicateOfId`
+// already uses, so this doesn't need a matching relation field on User.
+// ---------------------------------------------------------------------------
+
+enum ModerationEntityType {
+  listing
+  project
+}
+
+enum ModerationCaseType {
+  duplicate
+  suspicious_price
+  misleading_media
+  wrong_location
+  spam_fraud
+  copyright
+  user_report
+}
+
+enum ModerationStatus {
+  pending
+  actioned
+  dismissed
+}
+
+model ModerationReport {
+  id             String               @id @default(cuid())
+  entityType     ModerationEntityType
+  entityId       String
+  caseType       ModerationCaseType
+  note           String?
+  status         ModerationStatus     @default(pending)
+  reporterUserId String?
+  createdAt      DateTime             @default(now())
+  resolvedAt     DateTime?
+  resolvedBy     String?
+  resolution     String?
+
+  @@index([entityType, entityId])
+  @@index([status])
+  @@map("moderation_reports")
+}
+
 // ---------------------------------------------------------------------------
 // Publisher leads
 // ---------------------------------------------------------------------------
@@ -1149,4 +1684,49 @@ model PlatformSettings {
   updatedAt    DateTime @updatedAt
 
   @@map("platform_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Analytics events — one generic append-only log, not per-entity counter
+// columns. A counter column can only ever answer "how many total"; a real
+// event row (with a timestamp) also answers "how many this week", "on
+// which day", trends over time — real analytics, not just a number.
+// Reused for both content (Listing/Project view + WhatsApp/call clicks —
+// visible to that post's owner and Admin) and Advertisement (impression/
+// click tracking for the Admin Advertising dashboard) rather than two
+// near-identical tables.
+// ---------------------------------------------------------------------------
+
+model AnalyticsEvent {
+  id         String   @id @default(cuid())
+  entityType String // "listing" | "project" | "ad"
+  entityId   String
+  eventType  String // "view" | "whatsapp_click" | "call_click" | "impression" | "click"
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId, eventType])
+  @@index([entityType, entityId, createdAt])
+  @@map("analytics_events")
+}
+
+// ---------------------------------------------------------------------------
+// Advertising — a small, fixed set of front-page banner slots Admin can
+// point at any image + destination URL. Deliberately NOT a general N-slot
+// system: 3 fixed named positions, matching what was actually asked for.
+// ---------------------------------------------------------------------------
+
+model Advertisement {
+  id        String   @id @default(cuid())
+  /// "front_page_banner_1" | "front_page_banner_2" | "front_page_banner_3"
+  /// — one row per position; @unique so a save is a real upsert-by-slot,
+  /// never a second competing row for the same banner.
+  position  String   @unique
+  title     String // Admin's own reference label — never shown to visitors.
+  imageUrl  String
+  linkUrl   String
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@map("advertisements")
 }

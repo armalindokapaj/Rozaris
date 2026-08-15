@@ -67,7 +67,10 @@ export async function PATCH(
   try {
     const updated = await prisma.project.update({
       where: { id: projectId },
-      data: { approvalStatus: parsed.data.approvalStatus },
+      // Real "reviewed" timestamp — see the matching note on the Listing
+      // publication route; this is what makes an approval-SLA report real
+      // instead of a fabricated number.
+      data: { approvalStatus: parsed.data.approvalStatus, reviewedAt: new Date() },
     });
 
     const actor = gate.user?.email ?? gate.user?.name ?? "admin";
