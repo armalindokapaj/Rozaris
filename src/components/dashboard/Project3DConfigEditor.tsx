@@ -357,16 +357,25 @@ export function Project3DConfigEditor({
     }
   }
 
+  /** Refetches one slot's version history — factored out of
+   * `refreshActiveSlot` below so `handleDetailFile` can refresh the slot it
+   * just lazily created (see `ensureActiveSlotId`) without waiting on a
+   * `setActiveSlotId` state update to land first (React state set inside
+   * the same function call isn't visible to that call's own closure). */
+  async function refreshSlotVersions(slotId: string): Promise<DetailVersionRow[]> {
+    const res = await fetch(`/api/detail-models/${project.id}/slots/${slotId}/versions`);
+    const rows: DetailVersionRow[] = res.ok ? await res.json() : [];
+    setVersionsBySlot((prev) => ({ ...prev, [slotId]: rows }));
+    hydrateFocusedFrom(rows[0] ?? null);
+    return rows;
+  }
+
   /** Refetches just the focused slot's version history — every mutation
    * handler below calls this after its own write, same role the old
    * single-model `refresh()` played. */
   async function refreshActiveSlot(): Promise<DetailVersionRow[]> {
     if (!activeSlotId) return [];
-    const res = await fetch(`/api/detail-models/${project.id}/slots/${activeSlotId}/versions`);
-    const rows: DetailVersionRow[] = res.ok ? await res.json() : [];
-    setVersionsBySlot((prev) => ({ ...prev, [activeSlotId]: rows }));
-    hydrateFocusedFrom(rows[0] ?? null);
-    return rows;
+    return refreshSlotVersions(activeSlotId);
   }
 
   function handleSelectSlot(slotId: string) {
@@ -491,8 +500,39 @@ export function Project3DConfigEditor({
   const isDraftActive = activeVersion?.publicationStatus === "draft";
   const canEditDetail = isDraftActive;
 
+  /** Real, confirmed bug fix: a brand-new project has zero
+   * `DetailModelSlot` rows (no auto-creation on project create — see
+   * `slots/route.ts`'s own doc comment), so `activeSlotId` starts `null`
+   * and stays that way until one is added via the "+" pill in
+   * `SlotTabStrip`. `handleDetailFile` below used to just `return` in that
+   * case — no error, no upload, nothing — so clicking the empty-state
+   * "Upload" button and picking a file silently did nothing at all,
+   * reported as "can't click Choose Files to upload a 3D model" on a
+   * freshly created project. Mirrors the MVP `admin/projects/new` pipe's
+   * own `ensureDetailSlotId`, which already had to solve this same
+   * problem, folded into the same state updates `handleAddSlot` uses so
+   * the new "Building" slot shows up in the tab strip immediately.
+   */
+  async function ensureActiveSlotId(): Promise<string> {
+    if (activeSlotId) return activeSlotId;
+    const res = await fetchWithSessionRetry(
+      `/api/detail-models/${project.id}/slots`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Building" }),
+      },
+      establishAdminSession
+    );
+    if (!res.ok) throw new Error(await res.text());
+    const slot: DetailModelSlot = await res.json();
+    setSlots((prev) => [...prev, slot]);
+    setVersionsBySlot((prev) => ({ ...prev, [slot.id]: [] }));
+    setActiveSlotId(slot.id);
+    return slot.id;
+  }
+
   async function handleDetailFile(file: File) {
-    if (!activeSlotId) return;
     setDetailError(null);
     if (!file.name.toLowerCase().endsWith(".glb")) {
       setDetailError(t("admin.detailModelInvalidFile"));
@@ -508,7 +548,8 @@ export function Project3DConfigEditor({
     setUploadProgress(0);
     setDetectedNodes(null);
     try {
-      const blob = await upload(`project-detail-models/${project.id}-${activeSlotId}-${file.name}`, file, {
+      const slotId = await ensureActiveSlotId();
+      const blob = await upload(`project-detail-models/${project.id}-${slotId}-${file.name}`, file, {
         access: "public",
         handleUploadUrl: "/api/blob/upload",
         onUploadProgress: (p) => setUploadProgress(p.percentage),
@@ -517,7 +558,7 @@ export function Project3DConfigEditor({
         multipart: true,
       });
       const res = await fetchWithSessionRetry(
-        `/api/detail-models/${project.id}/slots/${activeSlotId}/versions`,
+        `/api/detail-models/${project.id}/slots/${slotId}/versions`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -526,7 +567,7 @@ export function Project3DConfigEditor({
         establishAdminSession
       );
       if (!res.ok) throw new Error(await res.text());
-      await refreshActiveSlot();
+      await refreshSlotVersions(slotId);
     } catch (err) {
       // "Not authorized" is what /api/blob/upload throws when the real
       // Auth.js admin session (separate from the Zustand "signed in as
