@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Phone, MessageSquare, Home, Box } from "lucide-react";
-import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
-import { buildDemoLeads } from "@/lib/mockActivity";
+import { usePublisherLeads } from "@/hooks/usePublisherLeads";
 import { formatRelativeDate } from "@/lib/utils";
 import type { LeadItem, LeadSource, LeadStatus, Listing, Project } from "@/lib/types";
 
@@ -37,28 +36,18 @@ const SOURCE_ICON: Record<LeadSource, typeof Phone> = {
 
 /** Business Publisher's unified lead inbox (PRD_ROZARIS_User_Types §4
  * "Leads") — pipeline New→Contacted→Qualified→Viewing→Negotiation→Won→Lost.
- * Lead *content* is still generated per-session from mockActivity.ts (no
- * real lead-capture backend yet); status and notes are the one part that
- * persists, via the existing leadStatusOverrides/leadNotes Zustand slices
- * so they survive a tab switch or reload. */
+ * Real `LeadItem` rows via `usePublisherLeads()`/`GET /api/business/leads`
+ * — was `buildDemoLeads()`, which fabricated a fresh batch of fake leads
+ * every session; see the launch-readiness audit that found this. Leads
+ * are only ever real today from a phone/WhatsApp click on this
+ * publisher's content (`POST /api/analytics/track`'s producer), so this
+ * starts empty until that actually happens — no `listing_inquiry`/
+ * `digital_twin_inquiry` producer exists yet. */
 export function LeadsTab({ listings, projects }: { listings: Listing[]; projects: Project[] }) {
   const { t, locale } = useT();
-  const publisherId = useAppStore((s) => s.auth.publisherId) ?? "demo";
-  const overrides = useAppStore((s) => s.leadStatusOverrides);
-  const notes = useAppStore((s) => s.leadNotes);
-  const setLeadStatus = useAppStore((s) => s.setLeadStatus);
-  const setLeadNotes = useAppStore((s) => s.setLeadNotes);
+  const { leads, setStatus: setLeadStatus, setNotes: setLeadNotes } = usePublisherLeads();
   const [openId, setOpenId] = useState<string | null>(null);
-
-  const leads = useMemo(
-    () =>
-      buildDemoLeads(
-        publisherId,
-        listings.map((l) => l.id),
-        projects.map((p) => p.id)
-      ),
-    [publisherId, listings, projects]
-  );
+  const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
 
   function targetFor(lead: LeadItem): { title: string; href: string } | null {
     if (lead.listingId) {
@@ -86,7 +75,7 @@ export function LeadsTab({ listings, projects }: { listings: Listing[]; projects
       ) : (
         <div className="flex gap-3 overflow-x-auto scroll-thin pb-2">
           {PIPELINE.map((stage) => {
-            const stageLeads = leads.filter((l) => (overrides[l.id] ?? l.status) === stage);
+            const stageLeads = leads.filter((l) => l.status === stage);
             return (
               <div key={stage} className="w-64 shrink-0 space-y-2">
                 <div className="flex items-center justify-between px-1">
@@ -124,7 +113,7 @@ export function LeadsTab({ listings, projects }: { listings: Listing[]; projects
                         </div>
 
                         <select
-                          value={overrides[lead.id] ?? lead.status}
+                          value={lead.status}
                           onChange={(e) => setLeadStatus(lead.id, e.target.value as LeadStatus)}
                           className="mt-2 w-full rounded-control border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-[11px] font-medium text-neutral-700"
                         >
@@ -144,8 +133,9 @@ export function LeadsTab({ listings, projects }: { listings: Listing[]; projects
 
                         {isOpen && (
                           <textarea
-                            value={notes[lead.id] ?? ""}
-                            onChange={(e) => setLeadNotes(lead.id, e.target.value)}
+                            value={draftNotes[lead.id] ?? lead.notes ?? ""}
+                            onChange={(e) => setDraftNotes((d) => ({ ...d, [lead.id]: e.target.value }))}
+                            onBlur={(e) => setLeadNotes(lead.id, e.target.value)}
                             placeholder={t("leads.notesPlaceholder")}
                             rows={2}
                             className="mt-1.5 w-full resize-none rounded-control border border-neutral-200 px-2 py-1.5 text-[11px] text-neutral-700 focus:border-brand-400 focus:outline-none"

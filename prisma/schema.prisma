@@ -1638,13 +1638,20 @@ model ModerationReport {
 // Publisher leads
 // ---------------------------------------------------------------------------
 
+/// PRD_ROZARIS_User_Types §4 "Leads" pipeline — New→Contacted→Qualified→
+/// Viewing→Negotiation→Won→Lost. Corrected from a stale 6-value enum
+/// (new/contacted/viewing/negotiating/closed/archived) that never matched
+/// the pipeline the Leads tab UI/i18n actually implements — found wiring
+/// the tab onto real data for the first time (0 real rows existed yet, so
+/// nothing was migrated away from).
 enum LeadStatus {
   new
   contacted
+  qualified
   viewing
   negotiating
-  closed
-  archived
+  won
+  lost
 }
 
 model LeadItem {
@@ -1654,6 +1661,11 @@ model LeadItem {
   projectId   String?
   source      String
   status      LeadStatus @default(new)
+  /// Free-text follow-up notes an assignee leaves (PRD_ROZARIS_User_Types
+  /// §4 "Lead detail supports notes, assignment and follow-up") — was
+  /// Zustand-local only (lost on a different device/browser); now a real
+  /// column so the Leads tab's notes persist like everything else.
+  notes       String?
   createdAt   DateTime   @default(now())
 
   publisher Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)

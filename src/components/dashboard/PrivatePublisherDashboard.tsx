@@ -19,8 +19,9 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
+import { useUrlTab } from "@/hooks/useUrlTab";
 import { usePublisherListings } from "@/hooks/usePublisherListings";
-import { publisherNotifications } from "@/lib/mockActivity";
+import { useAccountNotifications } from "@/hooks/useAccountNotifications";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
@@ -159,7 +160,7 @@ function listingCompleteness(listing: Listing): number {
  * real, separate component tree (not the business dashboard with items
  * hidden) per the PRD's "Final Platform Rule". */
 export function PrivatePublisherDashboard({ publisher }: { publisher: Publisher }) {
-  const [tab, setTab] = useState<TabId>("overview");
+  const [tab, setTab] = useUrlTab<TabId>("/dashboard", TABS.map((tb) => tb.id), "overview");
   const { t } = useT();
   // Single-listing rule (PRD §3): whichever real listing landed on this
   // publisher is treated as "the" listing; any further ones stay in the
@@ -237,7 +238,12 @@ function OverviewTab({
 }) {
   const { t, locale } = useT();
   const priceFmt = usePriceFormat();
-  const notifications = useMemo(() => publisherNotifications("private_owner").slice(0, 3), []);
+  // Real `Notification` rows for the signed-in account, same as the
+  // buyer/business dashboards — replaces `publisherNotifications()`,
+  // which regenerated fake notifications every session (launch-readiness
+  // audit finding).
+  const { notifications: allNotifications, readIds, markRead, markAllRead } = useAccountNotifications();
+  const notifications = useMemo(() => allNotifications.slice(0, 3), [allNotifications]);
   const perf = listing ? performanceFor(listing.id) : null;
 
   return (
@@ -292,7 +298,7 @@ function OverviewTab({
 
       <div>
         <h2 className="mb-2 text-sm font-bold text-neutral-900">{t("dashboard.notificationsTitle")}</h2>
-        <NotificationsList items={notifications} />
+        <NotificationsList items={notifications} readIds={readIds} onMarkRead={markRead} onMarkAllRead={markAllRead} />
       </div>
     </div>
   );

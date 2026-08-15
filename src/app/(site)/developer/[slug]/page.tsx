@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getPublisherBySlug, publishers } from "@/lib/mockData";
+import { getAllPublishers, getPublisherBySlug } from "@/lib/publishers.server";
 import { getProjectsByDeveloper } from "@/lib/projects.server";
 import { getActiveListingsByPublisher } from "@/lib/listings.server";
 import { SITE_URL } from "@/lib/constants";
 import { DeveloperProfileClient } from "@/components/developers/DeveloperProfileClient";
 
-export function generateStaticParams() {
+export async function generateStaticParams() {
+  const publishers = await getAllPublishers();
   return publishers.map((p) => ({ slug: p.slug }));
 }
 
@@ -16,7 +17,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const publisher = getPublisherBySlug(slug);
+  const publisher = await getPublisherBySlug(slug);
   if (!publisher) return {};
   return {
     title: publisher.name,
@@ -30,14 +31,12 @@ export default async function DeveloperPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const publisher = getPublisherBySlug(slug);
+  // Real Postgres `Publisher` row — was hardcoded `mockData.publishers`,
+  // meaning a real signed-up, admin-verified developer could never get a
+  // profile page here. See the launch-readiness audit that found this.
+  const publisher = await getPublisherBySlug(slug);
   if (!publisher) notFound();
 
-  // Publisher identity itself is still mockData (see the "Rozaris Platform
-  // Audit" memory — Publishers weren't part of this or the T0 migration),
-  // but its ids are 1:1 with the real Postgres rows `prisma/seed.ts` seeds
-  // from the same mockData, so looking up real projects/listings by
-  // `publisher.id` is correct today regardless.
   const [projects, listings] = await Promise.all([
     getProjectsByDeveloper(publisher.id),
     getActiveListingsByPublisher(publisher.id),

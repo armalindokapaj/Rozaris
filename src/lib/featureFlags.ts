@@ -8,9 +8,11 @@ import { prisma } from "@/lib/db";
  * behind it.
  */
 export const FEATURE_FLAGS = {
-  /** Gates whether `<AdBannerStrip>` renders on the front page at all —
-   * checked in `src/app/(site)/page.tsx`. */
-  ads_banner: "Front-page ad banners",
+  /** Gates whether `/api/ads` returns any real ads at all — off means
+   * `<MobileBannerAds>`/`<DesktopBannerAds>` fall back to the "Your AD can
+   * be put here" placeholder everywhere (Front Page + Search Page, both
+   * devices) instead of each caller needing to know to hide it. */
+  ads_banner: "Ad banners (Front Page + Search Page)",
   /** Gates the "location drop" rule (`POST /api/listings`): when off, a
    * listing without a confirmed pin still goes straight to `pending`
    * instead of falling into `draft`. */

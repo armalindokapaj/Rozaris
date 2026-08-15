@@ -99,7 +99,7 @@ export interface RawListingRow {
   property: RawPropertyRow;
 }
 
-function normalizePublisher(p: RawPublisherRow): Publisher {
+export function normalizePublisher(p: RawPublisherRow): Publisher {
   return {
     id: p.id,
     slug: p.slug,

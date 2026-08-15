@@ -19,7 +19,8 @@ import { BottomSheet, type SheetSnap } from "@/components/common/BottomSheet";
 import { cn } from "@/lib/utils";
 import { ListingPreviewPanel } from "@/components/results/ListingPreviewPanel";
 import { ListingCard } from "@/components/results/ListingCard";
-import { searchableListings } from "@/lib/mockData";
+import { MobileBannerAds } from "@/components/landing/MobileBannerAds";
+import { DesktopBannerAds } from "@/components/landing/DesktopBannerAds";
 
 export default function SearchPage() {
   const mode = useAppStore((s) => s.mode);
@@ -29,6 +30,13 @@ export default function SearchPage() {
   const selectedListingId = useAppStore((s) => s.selectedListingId);
   const selectListing = useAppStore((s) => s.selectListing);
   const mapAreaSearchBounds = useAppStore((s) => s.mapAreaSearchBounds);
+  // Real Postgres listings (populated by `useLiveListings()` in
+  // `MapView`/`ResultsList`, both mounted above this lookup) — was reading
+  // `mockData.searchableListings` here, whose ids never match the real
+  // `cuid()` ids `selectListing()` is actually called with, so this panel
+  // silently failed to open for every real listing. See the launch-
+  // readiness audit that found this.
+  const liveListings = useAppStore((s) => s.liveListings);
 
   const [listingsSnap, setListingsSnap] = useState<SheetSnap>("preview");
   const [filtersSnap, setFiltersSnap] = useState<SheetSnap>("expanded");
@@ -37,7 +45,7 @@ export default function SearchPage() {
   const [searchMapCamera, setSearchMapCamera] = useState<MapCamera | null>(null);
   const [restoreMapToken, setRestoreMapToken] = useState(0);
   const { t } = useT();
-  const selectedListing = selectedListingId ? searchableListings.find((listing) => listing.id === selectedListingId) : null;
+  const selectedListing = selectedListingId ? (liveListings ?? []).find((listing) => listing.id === selectedListingId) ?? null : null;
 
   // Note: mobile vs. desktop chrome below is switched with Tailwind's `lg:`
   // breakpoint classes (both trees are always in the DOM), not a JS media
@@ -101,6 +109,9 @@ export default function SearchPage() {
             <div className="space-y-3 pb-2 pt-1">
               <CategoryQuickFilters onMore={() => setMobileSheet("filters")} />
               <PopularAreasRow />
+              <div className="mx-4">
+                <MobileBannerAds category="search_page" />
+              </div>
               <div className="mx-4 h-px bg-neutral-100" />
               <ResultsList layout="panel" restrictToBounds={!!mapAreaSearchBounds} />
             </div>
@@ -166,6 +177,9 @@ export default function SearchPage() {
                     <ModeSwitch />
                   </div>
                   <TopFilterBar />
+                  <div className="mt-4 h-24">
+                    <DesktopBannerAds category="search_page" />
+                  </div>
                 </div>
               }
             />}

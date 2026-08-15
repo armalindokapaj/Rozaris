@@ -142,7 +142,12 @@ export function SignInModal() {
             {t("signInModal.demoAccounts")}
           </p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {DEMO_ACCOUNTS.map((a) => (
+            {/* Admin is deliberately excluded from this public one-click
+                list — a real visitor's sign-in form must never be able to
+                log in as admin with a single click. Still listed in the
+                admin-only UsersTab reference view. See the launch-
+                readiness audit that found this. */}
+            {DEMO_ACCOUNTS.filter((a) => a.typeLabel !== "Admin").map((a) => (
               <button
                 key={a.email}
                 type="button"

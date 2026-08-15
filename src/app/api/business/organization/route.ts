@@ -22,6 +22,7 @@ export async function GET() {
     where: { id: gate.user.publisherId },
     select: {
       id: true,
+      slug: true,
       name: true,
       type: true,
       verified: true,

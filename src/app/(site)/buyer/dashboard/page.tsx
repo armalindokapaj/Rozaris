@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 import {
@@ -20,6 +20,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
+import { useUrlTab } from "@/hooks/useUrlTab";
 import { useT } from "@/lib/i18n/useT";
 import { useLiveListings } from "@/hooks/useLiveListings";
 import { useLiveProjects } from "@/hooks/useLiveProjects";
@@ -98,6 +99,16 @@ function matchesPreferences(listing: Listing, prefs: BuyerPreferences): boolean 
  * (`useAccountNotifications`, see Account & Profile System PRD v1.0
  * §13), not a store slice. */
 export default function BuyerDashboardPage() {
+  // Suspense boundary: reads the active tab from `?tab=` via `useUrlTab`,
+  // and `useSearchParams()` requires one per Next.js.
+  return (
+    <Suspense fallback={null}>
+      <BuyerDashboardPageInner />
+    </Suspense>
+  );
+}
+
+function BuyerDashboardPageInner() {
   const auth = useAppStore((s) => s.auth);
   const openSignIn = useAppStore((s) => s.openSignIn);
   const buyerProfile = useAppStore((s) => s.buyerProfile);
@@ -116,7 +127,7 @@ export default function BuyerDashboardPage() {
   );
   const mounted = useHasMounted();
   const { t } = useT();
-  const [tab, setTab] = useState<TabId>("overview");
+  const [tab, setTab] = useUrlTab<TabId>("/buyer/dashboard", TABS.map((tb) => tb.id), "overview");
 
   const isBuyer = auth.signedIn && auth.role === "buyer" && buyerProfile;
   const { notifications, readIds: notificationReadIds, unreadCount, markRead, markAllRead } =

@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { MobileBannerAds } from "./MobileBannerAds";
 import { MobilePromoBanner } from "./MobilePromoBanner";
-import { AdBannerStrip } from "./AdBannerStrip";
 import { Button } from "@/components/ui/Button";
 import { PROPERTY_TYPES } from "@/components/search/FiltersForm";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
@@ -266,9 +265,6 @@ export function MobileLandingHero({
           </div>
 
           <MobilePromoBanner />
-          <div className="mt-3">
-            <AdBannerStrip />
-          </div>
           {/* Two equal `flex-1` spacers straddling the ad carousel, not a
               fixed margin — the tools bar below is pinned to the true
               bottom of the screen (a deliberate earlier decision, see

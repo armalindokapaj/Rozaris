@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import {
   Bell,
@@ -29,13 +29,14 @@ import {
   Table,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { getPublisherById, DEMO_PUBLISHER } from "@/lib/mockData";
+import { useUrlTab } from "@/hooks/useUrlTab";
 import { AnalyticsSummaryInline } from "@/components/common/AnalyticsSummaryInline";
 import { isListingStale } from "@/lib/moderation";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { usePublisherListings } from "@/hooks/usePublisherListings";
+import { usePublisherProfile } from "@/hooks/usePublisherProfile";
 import { usePublisherProjects } from "@/hooks/usePublisherProjects";
-import { publisherNotifications } from "@/lib/mockActivity";
+import { useAccountNotifications } from "@/hooks/useAccountNotifications";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useProjectConstruction } from "@/hooks/useProjectConstruction";
@@ -80,11 +81,28 @@ type TabId = (typeof TABS)[number]["id"];
  * "Final Platform Rule" — so this is a real branch to a different component
  * tree, not a conditional inside a shared one. */
 export default function DashboardPage() {
+  // Suspense boundary: `BusinessPublisherDashboard`/`PrivatePublisherDashboard`
+  // below read the active tab from `?tab=` via `useUrlTab`, and
+  // `useSearchParams()` requires one per Next.js.
+  return (
+    <Suspense fallback={null}>
+      <DashboardPageInner />
+    </Suspense>
+  );
+}
+
+function DashboardPageInner() {
   const auth = useAppStore((s) => s.auth);
   const openSignIn = useAppStore((s) => s.openSignIn);
   const { t } = useT();
+  const isPublisher = auth.signedIn && auth.role === "publisher";
+  // Real Postgres row for the signed-in org, replacing the old
+  // `getPublisherById(auth.publisherId) ?? DEMO_PUBLISHER` mock lookup —
+  // that silently showed the seed demo publisher's data to any real
+  // signed-up publisher, since real ids are never in mockData.publishers.
+  const { publisher, loading, error } = usePublisherProfile(isPublisher);
 
-  if (!auth.signedIn || auth.role !== "publisher") {
+  if (!isPublisher) {
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-24 text-center">
         <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.signInTitle")}</h1>
@@ -99,8 +117,18 @@ export default function DashboardPage() {
     );
   }
 
-  const publisher: Publisher =
-    (auth.publisherId ? getPublisherById(auth.publisherId) : undefined) ?? DEMO_PUBLISHER;
+  if (loading) {
+    return <div className="mx-auto max-w-md px-4 py-24 text-center text-sm text-neutral-500">{t("dashboard.loadingOrg")}</div>;
+  }
+
+  if (error || !publisher) {
+    return (
+      <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-24 text-center">
+        <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.loadOrgErrorTitle")}</h1>
+        <p className="text-sm text-neutral-500">{t("dashboard.loadOrgErrorBody")}</p>
+      </div>
+    );
+  }
 
   if (auth.orgType === "private_owner") {
     return <PrivatePublisherDashboard publisher={publisher} />;
@@ -109,7 +137,7 @@ export default function DashboardPage() {
 }
 
 function BusinessPublisherDashboard({ publisher }: { publisher: Publisher }) {
-  const [tab, setTab] = useState<TabId>("overview");
+  const [tab, setTab] = useUrlTab<TabId>("/dashboard", TABS.map((tb) => tb.id), "overview");
   const { t } = useT();
 
   const { listings: myListings, refresh: refreshListings, deleteListing } = usePublisherListings(publisher.id);
@@ -694,12 +722,17 @@ function BillingTab() {
 
 function NotificationsTab() {
   const { t } = useT();
-  const orgType = useAppStore((s) => s.auth.orgType);
-  const items = useMemo(() => publisherNotifications(orgType), [orgType]);
+  // Real `Notification` rows for the signed-in account (same
+  // `useAccountNotifications`/`/api/account/notifications` the buyer
+  // dashboard uses — it's keyed by `session.user.id`, not role, so it
+  // works unchanged for a signed-in publisher). Replaces
+  // `publisherNotifications()`, which regenerated a fresh batch of fake
+  // notifications every session — see the launch-readiness audit.
+  const { notifications, readIds, markRead, markAllRead } = useAccountNotifications();
   return (
     <div className="space-y-4">
       <h1 className="font-serif text-xl text-neutral-900">{t("dashboard.notificationsTitle")}</h1>
-      <NotificationsList items={items} />
+      <NotificationsList items={notifications} readIds={readIds} onMarkRead={markRead} onMarkAllRead={markAllRead} />
     </div>
   );
 }

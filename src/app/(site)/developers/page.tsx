@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { publishers } from "@/lib/mockData";
+import { getAllPublishers } from "@/lib/publishers.server";
 import { getProjectsByDeveloper } from "@/lib/projects.server";
 import { getActiveListingsByPublisher } from "@/lib/listings.server";
 import { DevelopersDirectoryClient } from "@/components/developers/DevelopersDirectoryClient";
@@ -10,10 +10,11 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function DevelopersDirectoryPage() {
-  // Publisher identity is still mockData (see developer/[slug]/page.tsx's
-  // own note on why), but real project/listing counts per publisher —
-  // same "Rozaris Platform Audit" Projects/Units migration as everywhere
-  // else on this page's siblings.
+  // Real Postgres `Publisher` rows (any real signed-up, admin-verified
+  // publisher now appears here too — was hardcoded `mockData.publishers`,
+  // see the launch-readiness audit that found this), with real
+  // project/listing counts per publisher.
+  const publishers = await getAllPublishers();
   const publishersWithCounts = await Promise.all(
     publishers.map(async (p) => {
       const [projects, listings] = await Promise.all([

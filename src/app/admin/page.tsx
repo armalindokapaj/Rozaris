@@ -138,8 +138,9 @@ interface Me {
  * (`/admin/3d-experience/[id]`, `/admin/3d-map-control/[id]`) can link
  * `?tab=experience`/`?tab=mapControl` on their "Back" action and land
  * Admin on the same tab they came from, instead of always resetting to the
- * first tab — the tab switcher itself still only writes to local state,
- * not the URL, on every click.
+ * first tab — every tab switch (via `goTo`) now also mirrors into `?tab=`
+ * (`router.replace`, no history spam), so a hard refresh stays on
+ * whichever tab you were looking at instead of resetting to "dashboard".
  */
 function AdminPageInner() {
   const auth = useAppStore((s) => s.auth);
@@ -168,7 +169,15 @@ function AdminPageInner() {
   function goTo(tabId: string, section?: string, query?: string) {
     if (section) setSuperAdminSection(section as SectionId);
     setPendingQuery(query);
-    if (TABS.some((tb) => tb.id === tabId)) setTab(tabId as TabId);
+    if (TABS.some((tb) => tb.id === tabId)) {
+      setTab(tabId as TabId);
+      // Mirror the tab into `?tab=` so a hard refresh (or a bookmark/share)
+      // lands back on this same tab instead of always resetting to
+      // "dashboard" — `replace` (not `push`) so tab-switching doesn't
+      // spam browser history. Was previously read-only: `?tab=` set the
+      // *initial* tab above but clicking around never wrote it back.
+      router.replace(`/admin?tab=${tabId}`, { scroll: false });
+    }
   }
   const [queueCount, setQueueCount] = useState(0);
   const pendingTimelineCount = useAppStore(

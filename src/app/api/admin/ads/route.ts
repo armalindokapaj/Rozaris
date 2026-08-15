@@ -4,12 +4,24 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 
-export const AD_POSITIONS = ["front_page_banner_1", "front_page_banner_2", "front_page_banner_3"] as const;
+export const AD_CATEGORIES = ["front_page", "search_page"] as const;
+export const AD_DEVICES = ["mobile", "desktop"] as const;
+const SLOTS_PER_GROUP = 3;
+
+/** `${category}_${device}_banner_${n}`, e.g. "front_page_mobile_banner_1" —
+ * 2 categories × 2 devices × 3 slots = 12 positions total. `position` is a
+ * plain unique string column (no DB enum), so this list is the only source
+ * of truth for what's valid; widening it is a code change, not a migration. */
+export const AD_POSITIONS = AD_CATEGORIES.flatMap((category) =>
+  AD_DEVICES.flatMap((device) =>
+    Array.from({ length: SLOTS_PER_GROUP }, (_, i) => `${category}_${device}_banner_${i + 1}` as const)
+  )
+);
 
 /** Every ad slot, one row per position (including empty/unconfigured ones
- * as `null`) — the admin Advertising tab always shows exactly 3 rows to
- * fill in, matching "3 banners" (see the "Rozaris Platform Audit" memory),
- * not however many happen to exist in the table yet. */
+ * as `null`) — the admin Advertising tab always shows exactly 12 rows to
+ * fill in (Front Page × Mobile/Desktop, Search Page × Mobile/Desktop, 3
+ * slots each), not however many happen to exist in the table yet. */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;
@@ -20,7 +32,7 @@ export async function GET() {
 }
 
 const bodySchema = z.object({
-  position: z.enum(AD_POSITIONS),
+  position: z.enum(AD_POSITIONS as [string, ...string[]]),
   title: z.string().min(1),
   imageUrl: z.string().min(1),
   linkUrl: z.string().min(1),
