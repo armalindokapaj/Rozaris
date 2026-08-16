@@ -36,6 +36,12 @@ export function useProject3DConfig(projectId: string): Project3DConfig {
                 cameraPresets: row.cameraPresets ?? [],
                 viewerUI: row.viewerUI ?? defaultProject3DConfig.viewerUI,
                 sections: row.sections ?? [],
+                // Environment → Sun & Sky's solarAnchors (PRD §9) — same
+                // nullable-Json?-column pattern as the three above; every
+                // row saved before this migration has it as real `null`.
+                solarAnchors: row.solarAnchors ?? [],
+                // Lighting tab's artificialLights (PRD §20) — same pattern.
+                artificialLights: row.artificialLights ?? [],
               }
             : defaultProject3DConfig
         );

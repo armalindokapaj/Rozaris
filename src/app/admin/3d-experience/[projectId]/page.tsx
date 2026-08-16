@@ -9,7 +9,7 @@ import { useAdminProject } from "@/hooks/useAdminProject";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
 import { useStoreHydrated } from "@/hooks/useStoreHydrated";
 import { useDeleteProject } from "@/hooks/useDeleteProject";
-import { Project3DConfigEditor } from "@/components/dashboard/Project3DConfigEditor";
+import { ExperienceEditor } from "@/components/dashboard/experience-editor/ExperienceEditor";
 
 /**
  * Full-page "Configure 3D Experience" editor — was a modal opened from a
@@ -22,7 +22,7 @@ export default function Admin3DExperiencePage() {
   const params = useParams<{ projectId: string }>();
   const router = useRouter();
   const auth = useAppStore((s) => s.auth);
-  const project = useAdminProject(params.projectId);
+  const { project, loading: projectLoading } = useAdminProject(params.projectId);
   const { t } = useT();
   // Confirmed root cause of "3D Experience upload always fails": this route
   // is reachable directly by URL, bypassing admin/page.tsx's session-repair
@@ -61,6 +61,15 @@ export default function Admin3DExperiencePage() {
   if (!hydrated) return null;
   if (!auth.signedIn) return null;
 
+  if (projectLoading) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+        <ShieldCheck className="h-8 w-8 animate-pulse text-neutral-300" />
+        <p className="text-sm text-neutral-500">{t("admin.loading")}</p>
+      </div>
+    );
+  }
+
   if (!project) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
@@ -90,7 +99,7 @@ export default function Admin3DExperiencePage() {
           </button>
         </div>
       )}
-      <Project3DConfigEditor
+      <ExperienceEditor
         project={project}
         onClose={() => router.push("/admin?tab=experience")}
         onDeleteProject={handleDeleteProject}

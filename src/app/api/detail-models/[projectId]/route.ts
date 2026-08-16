@@ -55,7 +55,24 @@ export async function GET(
           scale: version.scale,
           rotationDeg: version.rotationDeg,
           altitudeOffset: version.altitudeOffset,
-          enabled: version.publicationStatus === "published",
+          // Experience Editor v2, Scene tab (PRD §5) fields — a real bug
+          // this fixes: these were added to ProjectDetailModel/the DB
+          // schema in Phase 1 but this route (the PUBLIC-facing one,
+          // unlike the admin editor's own .../slots/.../versions route)
+          // was never updated to include them, so the public viewer's
+          // RenderEngine received `undefined` for positionX/positionZ —
+          // THREE.Vector3.set(undefined, ..., undefined) silently
+          // produces NaN, rendering the model invisible with no error.
+          positionX: version.positionX,
+          positionZ: version.positionZ,
+          rotationXDeg: version.rotationXDeg,
+          rotationZDeg: version.rotationZDeg,
+          enabled: version.publicationStatus === "published" && version.modelEnabled,
+          visible: version.modelVisible,
+          castShadow: version.castShadow,
+          receiveShadow: version.receiveShadow,
+          selectable: version.selectable,
+          transformLocked: version.transformLocked,
           updatedAt: version.updatedAt,
           unitLinks: version.unitLinks.map((l) => ({ meshName: l.meshName, unitId: l.unitId })),
           sceneManifest: version.sceneManifest ?? [],

@@ -30,9 +30,62 @@ const viewerUISchema = z.object({
   // Sections module — same optional/defaults-true pattern as the three
   // toggles above.
   sectionsEnabled: z.boolean().optional(),
+  sunPresetEnabled: z.boolean().optional(),
+  // Experience Editor v2, Interaction tab (PRD §39) additions — same
+  // optional/defaults-true pattern.
+  unitInteractionEnabled: z.boolean().optional(),
+  highlightEnabled: z.boolean().optional(),
+  statusColorsEnabled: z.boolean().optional(),
+  isolationEnabled: z.boolean().optional(),
+  floorIsolationEnabled: z.boolean().optional(),
+  unitPageLinkEnabled: z.boolean().optional(),
+  filtersEnabled: z.boolean().optional(),
+  filterFloorEnabled: z.boolean().optional(),
+  filterAvailabilityEnabled: z.boolean().optional(),
+  filterBedroomsEnabled: z.boolean().optional(),
+  filterTypeEnabled: z.boolean().optional(),
+  filterPriceEnabled: z.boolean().optional(),
+  resetEnabled: z.boolean().optional(),
+  fullscreenEnabled: z.boolean().optional(),
+  shotsMenuEnabled: z.boolean().optional(),
+  screenshotEnabled: z.boolean().optional(),
+  shareEnabled: z.boolean().optional(),
 });
 
 const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Expected a #rrggbb hex color");
+
+// Environment → Sun & Sky's Manual Time + Sun system (PRD §9) — mirrors
+// the `SolarAnchor` TS interface (src/lib/sunPosition.ts) field-for-field.
+const solarAnchorSchema = z.object({
+  id: z.string().min(1),
+  timeHours: z.number().min(0).max(24),
+  elevationDeg: z.number().min(-90).max(90),
+  azimuthDeg: z.number().min(0).max(360),
+});
+
+// Lighting → Artificial Lights (PRD §20) — mirrors the `ArtificialLight`
+// TS interface (src/lib/types.ts) field-for-field.
+const artificialLightSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1).max(80),
+  type: z.enum(["point", "spot", "ies", "rect"]),
+  enabled: z.boolean(),
+  shadowsEnabled: z.boolean(),
+  volumetricEnabled: z.boolean(),
+  helperEnabled: z.boolean(),
+  position: vector3Schema,
+  target: vector3Schema,
+  colorHex: hexColorSchema,
+  temperatureK: z.number().min(1000).max(40000).nullable(),
+  intensity: z.number().min(0).max(1000),
+  distance: z.number().min(0).max(2000),
+  decay: z.number().min(0).max(4),
+  angleDeg: z.number().min(0.1).max(89),
+  penumbra: z.number().min(0).max(1),
+  width: z.number().min(0.01).max(500),
+  height: z.number().min(0.01).max(500),
+  iesProfileUrl: z.string().url().nullable(),
+});
 
 // Sections module — mirrors the `Section` TS interface (src/lib/types.ts)
 // field-for-field; same validate-at-the-edge role cameraPresetSchema
@@ -91,11 +144,30 @@ const patchSchema = z.object({
   autoRotate: z.boolean().optional(),
   status: z.enum(["draft", "published"]).optional(),
   renderingMode: z.enum(["auto", "webgpu", "webgl2"]).optional(),
-  qualityPreset: z.enum(["ultra_desktop", "high_desktop", "balanced", "mobile_high", "mobile_low"]).optional(),
+  qualityPreset: z.enum(["ultra_desktop", "high_desktop", "balanced", "mobile_high", "mobile_low", "custom"]).optional(),
+  // Experience Editor v2, Performance tab (PRD §40) additions.
+  customRenderScale: z.number().min(0.1).max(2).nullable().optional(),
+  customDprCap: z.number().min(0.5).max(3).nullable().optional(),
+  adaptiveQualityEnabled: z.boolean().optional(),
+  runtimeQualityReductionEnabled: z.boolean().optional(),
+  interactionQualityReductionEnabled: z.boolean().optional(),
+  deviceDetectionEnabled: z.boolean().optional(),
   glassPreset: z.enum(["performance", "standard", "premium"]).optional(),
   environmentIntensity: z.number().min(0).max(4).optional(),
   cameraFovDesktop: z.number().min(10).max(120).optional(),
   cameraFovMobile: z.number().min(10).max(120).optional(),
+  // Experience Editor v2, Camera tab (PRD §37) additions.
+  cameraNearClip: z.number().min(0.001).max(100).optional(),
+  cameraFarClip: z.number().min(10).max(100_000).optional(),
+  cameraMinAzimuthDeg: z.number().min(-360).max(360).nullable().optional(),
+  cameraMaxAzimuthDeg: z.number().min(-360).max(360).nullable().optional(),
+  cameraOrbitEnabled: z.boolean().optional(),
+  cameraPanEnabled: z.boolean().optional(),
+  cameraZoomEnabled: z.boolean().optional(),
+  cameraDampingEnabled: z.boolean().optional(),
+  cameraAutoFocusEnabled: z.boolean().optional(),
+  cameraHelperEnabled: z.boolean().optional(),
+  cameraSensorWidthMm: z.number().min(1).max(100).optional(),
   cameraPresets: z.array(cameraPresetSchema).optional(),
   exposure: z.number().min(0).max(4).optional(),
   toneMapping: z.enum(["none", "linear", "reinhard", "cineon", "aces", "agx", "neutral"]).optional(),
@@ -106,6 +178,27 @@ const patchSchema = z.object({
   // Project3DConfig's own doc comment in src/lib/types.ts).
   sunAzimuthDeg: z.number().min(0).max(360).optional(),
   sunElevationDeg: z.number().min(-90).max(90).optional(),
+  // Experience Editor v2, Environment → Sun & Sky (PRD §9-10) — the
+  // "ROZARIS Manual Time + Sun System" / "ONE Global Sun". See
+  // Project3DConfig's own doc comment in prisma/schema.prisma.
+  solarControllerEnabled: z.boolean().optional(),
+  solarPathMode: z.enum(["manual", "geographic"]).optional(),
+  viewerTimeControlEnabled: z.boolean().optional(),
+  viewerTimeHours: z.number().min(0).max(24).optional(),
+  viewerTimeStartHours: z.number().min(0).max(24).optional(),
+  viewerTimeEndHours: z.number().min(0).max(24).optional(),
+  viewerTimeStepMinutes: z.number().int().min(1).max(240).optional(),
+  solarAnchors: z.array(solarAnchorSchema).max(24).optional(),
+  geoLatitude: z.number().min(-90).max(90).optional(),
+  geoLongitude: z.number().min(-180).max(180).optional(),
+  simulationDate: z.coerce.date().optional(),
+  northOffsetDeg: z.number().min(-360).max(360).optional(),
+  sunDiscEnabled: z.boolean().optional(),
+  autoSunIntensityEnabled: z.boolean().optional(),
+  autoSunColorEnabled: z.boolean().optional(),
+  manualSunIntensity: z.number().min(0).max(10).optional(),
+  manualSunColorHex: hexColorSchema.optional(),
+  environmentRefreshEnabled: z.boolean().optional(),
   // Standalone "Sky" tab (webgl_shaders_sky.html parity) — ranges mirror
   // the reference demo's own GUI sliders exactly (turbidity 0-20,
   // rayleigh/mieDirectionalG 0-4/0-1, mieCoefficient 0-0.1). `skyEnabled`
@@ -119,6 +212,21 @@ const patchSchema = z.object({
   fogColor: hexColorSchema.optional(),
   fogDensity: z.number().min(0).max(0.1).optional(),
   fogMatchesSky: z.boolean().optional(),
+  // Experience Editor v2, Environment → Fog & Haze (PRD §12).
+  fogHeightBandEnabled: z.boolean().optional(),
+  fogHazeEnabled: z.boolean().optional(),
+  fogNoiseEnabled: z.boolean().optional(),
+  fogMovementEnabled: z.boolean().optional(),
+  fogSunInteractionEnabled: z.boolean().optional(),
+  fogBaseHeight: z.number().min(-500).max(2000).optional(),
+  fogTopHeight: z.number().min(-500).max(2000).optional(),
+  fogHaze: z.number().min(0).max(1).optional(),
+  fogNoiseStrength: z.number().min(0).max(1).optional(),
+  fogNoiseScale: z.number().min(0.0001).max(1).optional(),
+  fogWindDirectionDeg: z.number().min(0).max(360).optional(),
+  fogWindSpeed: z.number().min(0).max(2).optional(),
+  fogFalloff: z.number().min(0.01).max(8).optional(),
+  fogMaxOpacity: z.number().min(0).max(1).optional(),
   unitColorAvailable: hexColorSchema.optional(),
   unitColorReserved: hexColorSchema.optional(),
   unitColorSold: hexColorSchema.optional(),
@@ -145,10 +253,33 @@ const patchSchema = z.object({
   waterEnabled: z.boolean().optional(),
   waterDistortionScale: z.number().min(0).max(8).optional(),
   waterSize: z.number().min(0.1).max(10).optional(),
+  // Experience Editor v2, Environment → Water (PRD §13).
+  waterType: z.enum(["sea", "lake", "pool", "decorative"]).optional(),
+  waterWavesEnabled: z.boolean().optional(),
+  waterMovementEnabled: z.boolean().optional(),
+  waterSunReflectionEnabled: z.boolean().optional(),
+  waterEnvReflectionEnabled: z.boolean().optional(),
+  waterNormalMapEnabled: z.boolean().optional(),
+  waterHeight: z.number().min(-500).max(500).optional(),
+  waterColor: hexColorSchema.optional(),
+  waterDeepColor: hexColorSchema.optional(),
   cloudsEnabled: z.boolean().optional(),
   cloudCoverage: z.number().min(0).max(1).optional(),
   cloudDensity: z.number().min(0).max(1).optional(),
   cloudElevation: z.number().min(0).max(1).optional(),
+  // Experience Editor v2, Environment → Clouds (PRD §11).
+  cloudMovementEnabled: z.boolean().optional(),
+  cloudSunLightingEnabled: z.boolean().optional(),
+  cloudShadowsEnabled: z.boolean().optional(),
+  cloudHeight: z.number().min(0).max(2000).optional(),
+  cloudThickness: z.number().min(1).max(1000).optional(),
+  cloudThreshold: z.number().min(0).max(1).optional(),
+  cloudOpacity: z.number().min(0).max(1).optional(),
+  cloudSoftness: z.number().min(0.01).max(1).optional(),
+  cloudScale: z.number().min(0.0001).max(1).optional(),
+  cloudWindSpeed: z.number().min(0).max(2).optional(),
+  cloudWindDirectionDeg: z.number().min(0).max(360).optional(),
+  cloudRaymarchSteps: z.number().int().min(1).max(24).optional(),
   shadowSoftness: z.number().min(0).max(10).optional(),
   // 3D LUT (webgl_postprocessing_3dlut.html parity) — lutPreset is
   // validated against the real vendored preset list (all 9 of the
@@ -162,6 +293,59 @@ const patchSchema = z.object({
   depthOfFieldEnabled: z.boolean().optional(),
   depthOfFieldFocalLength: z.number().min(0.1).max(200).optional(),
   depthOfFieldBokehScale: z.number().min(0).max(5).optional(),
+  // Experience Editor v2, Lighting tab (PRD §14-21).
+  sunLightEnabled: z.boolean().optional(),
+  sunTemperatureK: z.number().int().min(1000).max(40000).optional(),
+  csmEnabled: z.boolean().optional(),
+  csmCascades: z.number().int().min(1).max(4).optional(),
+  csmMaxDistance: z.number().min(10).max(2000).optional(),
+  csmResolution: z.number().int().min(256).max(4096).optional(),
+  csmSplitMode: z.enum(["practical", "uniform", "logarithmic"]).optional(),
+  csmMargin: z.number().min(0).max(1000).optional(),
+  softShadowsEnabled: z.boolean().optional(),
+  contactShadowsEnabled: z.boolean().optional(),
+  contactShadowBlur: z.number().min(0).max(2).optional(),
+  contactShadowDarkness: z.number().min(0).max(1).optional(),
+  contactShadowOpacity: z.number().min(0).max(1).optional(),
+  contactShadowRange: z.number().min(0.02).max(5).optional(),
+  transmittedShadowsEnabled: z.boolean().optional(),
+  coloredShadowsEnabled: z.boolean().optional(),
+  transmittedShadowStrength: z.number().min(0).max(1).optional(),
+  giEnabled: z.boolean().optional(),
+  giIndirectEnabled: z.boolean().optional(),
+  giAOEnabled: z.boolean().optional(),
+  giBackfaceLighting: z.boolean().optional(),
+  giTemporalFiltering: z.boolean().optional(),
+  giScreenSpaceSampling: z.boolean().optional(),
+  giIntensity: z.number().min(0).max(50).optional(),
+  giAOIntensity: z.number().min(0).max(4).optional(),
+  giRadius: z.number().min(0.5).max(50).optional(),
+  giSliceCount: z.number().int().min(1).max(4).optional(),
+  giStepCount: z.number().int().min(1).max(32).optional(),
+  giExpFactor: z.number().min(0.5).max(6).optional(),
+  giThickness: z.number().min(0.05).max(10).optional(),
+  giLinearThickness: z.boolean().optional(),
+  artificialLights: z.array(artificialLightSchema).max(64).optional(),
+  volumetricLightingEnabled: z.boolean().optional(),
+  sunShaftsEnabled: z.boolean().optional(),
+  lightVolumesEnabled: z.boolean().optional(),
+  volumetricRaymarchSteps: z.number().int().min(8).max(120).optional(),
+  volumetricDensity: z.number().min(0).max(2).optional(),
+  volumetricMaxDensity: z.number().min(0).max(2).optional(),
+  volumetricDistanceAtten: z.number().min(0).max(10).optional(),
+  // Experience Editor v2, Rendering tab (PRD §22-33) — Reflections (real
+  // vendored SSRNode, single-bounce mirror+roughness-blur mode). Lens
+  // Flare/Motion Blur are the other 2 genuinely new feature groups;
+  // Anti-Aliasing/Bloom/DOF/Color reuse pre-existing fields above.
+  ssrEnabled: z.boolean().optional(),
+  ssrIntensity: z.number().min(0).max(3).optional(),
+  ssrMaxDistance: z.number().min(1).max(200).optional(),
+  ssrThickness: z.number().min(0.01).max(5).optional(),
+  ssrQuality: z.number().min(0).max(1).optional(),
+  lensFlareEnabled: z.boolean().optional(),
+  lensFlareIntensity: z.number().min(0).max(3).optional(),
+  motionBlurEnabled: z.boolean().optional(),
+  motionBlurIntensity: z.number().min(0).max(2).optional(),
 });
 
 export async function GET(
@@ -208,6 +392,11 @@ export async function PATCH(
     cameraPresets: parsed.data.cameraPresets as unknown as Prisma.InputJsonValue,
     viewerUI: parsed.data.viewerUI as unknown as Prisma.InputJsonValue,
     sections: parsed.data.sections as unknown as Prisma.InputJsonValue,
+    // Environment → Sun & Sky's solarAnchors (PRD §9) — same nullable-Json
+    // cast pattern as the three above.
+    solarAnchors: parsed.data.solarAnchors as unknown as Prisma.InputJsonValue,
+    // Lighting → Artificial Lights (PRD §20) — same pattern.
+    artificialLights: parsed.data.artificialLights as unknown as Prisma.InputJsonValue,
   };
   const updated = await prisma.project3DConfig.upsert({
     where: { projectId },

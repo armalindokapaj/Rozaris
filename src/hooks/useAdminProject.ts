@@ -25,9 +25,22 @@ import type { Project } from "@/lib/types";
  * already uses (pending/active/archived, never a deleted or phantom row),
  * so this hook now agrees with the grid instead of trusting stale local
  * state ahead of it.
+ *
+ * Real, confirmed bug fix (live-reported: "Project not found even though
+ * the project loads"): `useAdminProjects()` starts with `projects: []`
+ * before its own fetch resolves, and `loaded` is exactly what
+ * distinguishes "still fetching" from "fetched, genuinely empty" (see its
+ * own doc comment) — this hook used to collapse both into a plain
+ * `Project | null` return, so every caller's `!project` check fired
+ * during that brief loading window too, on every single navigation from
+ * the admin console (client-side routing mounts this hook fresh, with no
+ * warm cache). Now returns `loading` alongside `project` so callers can
+ * show a real loading state instead of a false "not found" — see
+ * `/admin/3d-experience/[projectId]/page.tsx` and
+ * `/admin/3d-map-control/[projectId]/page.tsx`.
  */
-export function useAdminProject(projectId: string | undefined): Project | null {
-  const { projects } = useAdminProjects();
-  if (!projectId) return null;
-  return projects.find((p) => p.id === projectId) ?? null;
+export function useAdminProject(projectId: string | undefined): { project: Project | null; loading: boolean } {
+  const { projects, loaded } = useAdminProjects();
+  const project = projectId ? (projects.find((p) => p.id === projectId) ?? null) : null;
+  return { project, loading: !loaded };
 }

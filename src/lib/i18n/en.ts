@@ -916,6 +916,7 @@ const en = {
     configure3DMapControl: "Configure 3D Map Control",
     projectNotFound: "Project not found.",
     backToAdminConsole: "Back to admin console",
+    loading: "Loading…",
     viewer3DTitle: "3D Experience",
     sceneGroundTitle: "Ground / platform",
     viewer3DGround: "Ground / platform",

@@ -1,112 +1,113 @@
 import * as THREE from "three/webgpu";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
-import {
-  pass,
-  positionWorld,
-  length as tslLength,
-  smoothstep,
-  mix,
-  uniform,
-  texture3D,
-  uv,
-  vec3,
-  vec4,
-  color as tslColor,
-  mx_fractal_noise_float,
-} from "three/tsl";
-import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
-import { lut3D } from "three/examples/jsm/tsl/display/Lut3DNode.js";
-import { dof } from "three/examples/jsm/tsl/display/DepthOfFieldNode.js";
-import { LUTCubeLoader } from "three/examples/jsm/loaders/LUTCubeLoader.js";
-import { LUT3dlLoader } from "three/examples/jsm/loaders/LUT3dlLoader.js";
-import { LUTImageLoader } from "three/examples/jsm/loaders/LUTImageLoader.js";
-import { smaa } from "three/examples/jsm/tsl/display/SMAANode.js";
-// Sky/Water/Bloom/Clouds "Ocean" tab — WebGPU-native counterparts of
-// webgl_shaders_ocean.html's classic `Sky`/`Water` (those two are
-// WebGLRenderer-only, per their own source doc comments; `SkyMesh`/
-// `WaterMesh` are the TSL/NodeMaterial ports for this app's
-// WebGPURenderer pipeline). `SkyMesh` already ships the demo's "Clouds"
-// GUI folder baked in as 3 more uniforms on the same shader — no separate
-// cloud object exists in either version.
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+// Environment tab (PRD §7-13) — SkyMesh/WaterMesh are the real TSL/
+// NodeMaterial ports of webgl_shaders_sky.html/webgl_shaders_ocean.html's
+// classic Sky/Water for this app's WebGPURenderer pipeline (vendored
+// directly in three.js's own examples/jsm, not re-derived) — restored
+// near-verbatim from the pre-rebuild engine's proven usage.
 import { SkyMesh } from "three/examples/jsm/objects/SkyMesh.js";
 import { WaterMesh } from "three/examples/jsm/objects/WaterMesh.js";
-import { buildCausticsUnitEmissiveNode, loadCausticsTexture, type CausticsUnitUniforms } from "./caustics";
-// webgl_shadowmap_viewer.html parity — the WebGPU-native port
-// (ShadowMapViewerGPU.js), not the classic WebGLRenderer-only
-// ShadowMapViewer.js (see this app's WebGPURenderer-first architecture).
-import { ShadowMapViewer } from "three/examples/jsm/utils/ShadowMapViewerGPU.js";
-import { computeProjectLayout, type UnitBox } from "@/lib/threeBuilding";
+import { length as tslLength, mix as tslMix, positionWorld, smoothstep as tslSmoothstep, uniform } from "three/tsl";
+import { buildCloudSystem, cloudShadowFactor, type CloudSystem } from "./clouds";
+import { buildFogSystem, type FogSystem } from "./fog";
+import { geographicSunPosition, sunColorForElevation, sunDirectionVector, sunPositionForAnchors } from "@/lib/sunPosition";
+import { applyTransmittedShadows, buildCSMSystem, setShadowMapTransmitted, type CSMSystem } from "./shadows";
+import { buildScenePostPipeline, computeScenePostSignature, type ScenePostPipeline } from "./postProcessing";
+import { ensureLutLoading } from "./lut";
+import { ArtificialLightSystem } from "./artificialLights";
 import { DRACO_DECODER_PATH } from "@/lib/gltfDecoder";
-import { applyUnitBoxMaterial, disposeGlbObject3D } from "@/lib/glbUnitNodes";
-import { sunColorForElevation, sunDirectionVector } from "@/lib/sunPosition";
-import {
-  ADAPTIVE_DOWNGRADE_ORDER,
-  FOG_SKY_HORIZON_COLOR,
-  GLASS_NODE_PATTERN,
-  GLASS_TIERS,
-  GROUND_INFINITE_SIZE,
-  LUT_PRESETS,
-  MATERIAL_PRESETS,
-  QUALITY_TIERS,
-  SELECTED_COLOR,
-  SKY_DOME_SCALE,
-  UNIT_BOX_COLOR,
-  UNIT_BOX_OPACITY,
-  UNIT_BOX_SELECTED_OPACITY,
-  WATER_PLANE_SIZE,
-  type QualityTierSettings,
-} from "@/lib/viewerPresets";
-import {
-  buildSectionCapGeometry,
-  buildSectionPlanes,
-  NO_ACTIVE_SECTION_PLANES,
-  sectionFromDragPoints,
-  SECTION_INDICATOR_COLOR,
-  SECTION_MAX_DIMENSION_M,
-} from "./sections";
-import type {
-  CameraPreset,
-  Project,
-  Project3DConfig,
-  ProjectDetailModel,
-  Section,
-  ToneMapping,
-  Unit,
-  UnitMeshLink,
-} from "@/lib/types";
+import { FOG_SKY_HORIZON_COLOR, GROUND_INFINITE_SIZE, QUALITY_TIERS, SKY_DOME_SCALE, UNIT_BOX_COLOR, UNIT_BOX_OPACITY, WATER_PLANE_SIZE } from "@/lib/viewerPresets";
+import { buildSectionCapGeometry, buildSectionPlanes, NO_ACTIVE_SECTION_PLANES, SECTION_INDICATOR_COLOR } from "./sections";
+import type { CameraPreset, EnvironmentConfig, LightingConfig, NodeOverride, Project3DConfig, ProjectDetailModel, RenderingConfig, Section, SceneManifestNode, Unit, UnitMeshLink } from "@/lib/types";
 
-export type AvailabilityFilter = "all" | Unit["status"];
+export const DEFAULT_ENVIRONMENT_CONFIG: EnvironmentConfig = {
+  solarControllerEnabled: false,
+  solarPathMode: "manual",
+  viewerTimeHours: 12,
+  solarAnchors: [],
+  geoLatitude: 41.3275,
+  geoLongitude: 19.8187,
+  simulationDate: "2025-01-01T00:00:00.000Z",
+  northOffsetDeg: 0,
+  sunDiscEnabled: true,
+  autoSunIntensityEnabled: true,
+  autoSunColorEnabled: true,
+  manualSunIntensity: 1.2,
+  manualSunColorHex: "#ffffff",
+  environmentRefreshEnabled: true,
+  sunAzimuthDeg: 180,
+  sunElevationDeg: 45,
+  skyEnabled: true,
+  skyTurbidity: 4,
+  skyRayleigh: 2.4,
+  skyMieCoefficient: 0.004,
+  skyMieDirectionalG: 0.78,
+  environmentIntensity: 1,
+  cloudsEnabled: false,
+  cloudCoverage: 0.4,
+  cloudDensity: 0.5,
+  cloudElevation: 0.5,
+  cloudMovementEnabled: true,
+  cloudSunLightingEnabled: true,
+  cloudShadowsEnabled: false,
+  cloudHeight: 220,
+  cloudThickness: 50,
+  cloudThreshold: 0.45,
+  cloudOpacity: 0.85,
+  cloudSoftness: 0.35,
+  cloudScale: 0.01,
+  cloudWindSpeed: 0.02,
+  cloudWindDirectionDeg: 45,
+  cloudRaymarchSteps: 16,
+  fogEnabled: false,
+  fogColor: "#c9d6e0",
+  fogDensity: 0.015,
+  fogMatchesSky: false,
+  fogHeightBandEnabled: false,
+  fogHazeEnabled: false,
+  fogNoiseEnabled: false,
+  fogMovementEnabled: true,
+  fogSunInteractionEnabled: true,
+  fogBaseHeight: 0,
+  fogTopHeight: 40,
+  fogHaze: 0.3,
+  fogNoiseStrength: 0.3,
+  fogNoiseScale: 0.05,
+  fogWindDirectionDeg: 0,
+  fogWindSpeed: 0.02,
+  fogFalloff: 1,
+  fogMaxOpacity: 0.85,
+  waterEnabled: false,
+  waterDistortionScale: 3.7,
+  waterSize: 1,
+  waterType: "decorative",
+  waterWavesEnabled: true,
+  waterMovementEnabled: true,
+  waterSunReflectionEnabled: true,
+  waterEnvReflectionEnabled: true,
+  waterNormalMapEnabled: true,
+  waterHeight: 0,
+  waterColor: "#001e0f",
+  waterDeepColor: "#00131f",
+  groundEnabled: true,
+  groundStyle: "disc",
+  groundColor: "#d8d6e6",
+  groundFogEnabled: false,
+  groundFogRadius: 300,
+};
 
-export interface UnitFilters {
-  status: AvailabilityFilter;
-  bedrooms: number | null;
-  bathrooms: number | null;
-  minArea: number | null;
+function resolveFogColor(config: EnvironmentConfig): string {
+  return config.fogMatchesSky ? FOG_SKY_HORIZON_COLOR : config.fogColor;
 }
 
-interface GlbUnitBoxEntry {
-  node: THREE.Object3D;
-  unitId: string;
-}
-
-const UNIT_NODE_PATTERN = /^Unit_/i;
-const MOBILE_VIEWPORT_BREAKPOINT = 768; // matches Tailwind's `md` — used for FOV/quality only, not a full UA probe
-/** Sky/Water/Bloom/Clouds "Ocean" tab's Bloom group — strength/radius are
- * real per-project sliders, threshold isn't (matches
- * webgl_shaders_ocean.html's own Bloom GUI folder exactly, which only
- * exposes those two). Was previously a per-project `bloomThreshold`
- * field; fixed back to the same 0.85 the demo hardcodes. */
-const BLOOM_THRESHOLD_DEFAULT = 0.85;
-/** renderer.toneMapping (2026-08-14 UI-polish pass) — real per-project
- * choice, matching every option the reference site (planpoint-webgpu.
- * vercel.app) exposes in its own debug panel. A plain renderer property
- * (confirmed against constants.js), same "cheap live update, no pipeline
- * rebuild" category as `toneMappingExposure` right next to it in both
- * mount() and applyLiveUpdate() below. */
-const TONE_MAPPING_MODES: Record<ToneMapping, THREE.ToneMapping> = {
+/** Rendering → Color's tone-mapping curve picker (PRD §31) — every real
+ * THREE.*ToneMapping constant, keyed by Project3DConfig.toneMapping's own
+ * string union. Plain renderer properties (this + toneMappingExposure),
+ * not part of the TSL post-processing node graph — applied directly,
+ * live, no pipeline rebuild needed. */
+const TONE_MAPPING_MAP: Record<RenderingConfig["toneMapping"], THREE.ToneMapping> = {
   none: THREE.NoToneMapping,
   linear: THREE.LinearToneMapping,
   reinhard: THREE.ReinhardToneMapping,
@@ -116,289 +117,465 @@ const TONE_MAPPING_MODES: Record<ToneMapping, THREE.ToneMapping> = {
   neutral: THREE.NeutralToneMapping,
 };
 
-export interface RenderEngineCallbacks {
-  /** i18n — only used for the WebGPU-unavailable message. */
-  t: (key: string) => string;
-  onReady: (ready: boolean) => void;
-  onWebglFail: (reason: string | null) => void;
-  /** Fired when the detail GLB itself fails to load — the caller flips
-   * `usingGlb` off (via `glbLoadFailed` state), which changes `mount()`'s
-   * own params on the next call and naturally falls back to procedural
-   * massing. The engine doesn't decide that fallback itself — same
-   * division of responsibility as the original component (React owns
-   * `usingGlb`, the engine just reports the failure). */
-  onGlbLoadFailed: () => void;
-  /** Fired only when the hovered unit id actually changes — drives React
-   * state (`setHoveredUnit`). Deliberately NOT fired on every pointer
-   * move (see onPointerMove below) — that would mean a full React
-   * re-render per pixel of mouse movement. */
-  onHoverChange: (unit: Unit | null) => void;
-  /** Fired on every pointer move over the canvas, regardless of whether
-   * the hovered unit changed — for imperative (non-React-state) tooltip
-   * positioning, same "avoid a render per pixel" reasoning as above. Only
-   * called while a unit is actually hovered (matches the original's own
-   * `if (tooltipElRef.current && nextHoverId)` guard). */
-  onPointerMove: (clientX: number, clientY: number) => void;
-  onSelectUnit?: (unit: Unit) => void;
-  onPerfStats: (stats: { fps: number; drawCalls: number; triangles: number; dpr: number } | null) => void;
-  /** Sections module — fires continuously while a section gizmo is being
-   * dragged (every "objectChange" tick) so `SectionsPanel`'s numeric
-   * fields stay live without a React round-trip per frame (same reasoning
-   * OrbitControls' camera position isn't itself React state). Optional,
-   * same as `onSelectUnit` — only the admin editor supplies it. */
-  onSectionDraftChange?: (section: Section) => void;
-  /** Real bug fix (Sections audit, 2026-08-13): `onSectionDraftChange`
-   * above only ever drove a local display value (`EditorShell.tsx`'s
-   * `liveSectionOverride`) — nothing wrote a gizmo drag's result back
-   * into `draft.sections`, the actual state `handleSaveScene`/autosave
-   * PATCH. That meant Move/Rotate/Resize/Height gizmo edits were 100%
-   * visual: they looked right in the live preview and the panel's own
-   * numbers while dragging, but "Save" (or autosave) would silently
-   * persist the *pre-drag* section, since nothing else ever changed.
-   * Fired once, from the gizmo's `dragging-changed` listener transitioning
-   * to "not dragging" (`attachSectionGizmo`) — a drag is one discrete
-   * undo/save-worthy edit, not a per-tick stream like the callback above. */
-  onSectionDraftCommit?: (section: Section) => void;
+export const DEFAULT_LIGHTING_CONFIG: LightingConfig = {
+  sunLightEnabled: true,
+  sunTemperatureK: 5500,
+  autoSunIntensityEnabled: true,
+  autoSunColorEnabled: true,
+  manualSunIntensity: 1.2,
+  manualSunColorHex: "#ffffff",
+  csmEnabled: false,
+  csmCascades: 3,
+  csmMaxDistance: 200,
+  csmResolution: 2048,
+  csmSplitMode: "practical",
+  csmMargin: 100,
+  softShadowsEnabled: true,
+  shadowSoftness: 0,
+  shadowsEnabled: true,
+  contactShadowsEnabled: false,
+  contactShadowBlur: 0.5,
+  contactShadowDarkness: 0.6,
+  contactShadowOpacity: 0.8,
+  contactShadowRange: 0.3,
+  transmittedShadowsEnabled: false,
+  coloredShadowsEnabled: false,
+  transmittedShadowStrength: 0.6,
+  giEnabled: false,
+  giIndirectEnabled: true,
+  giAOEnabled: true,
+  giBackfaceLighting: false,
+  giTemporalFiltering: true,
+  giScreenSpaceSampling: true,
+  giIntensity: 10,
+  giAOIntensity: 1,
+  giRadius: 12,
+  giSliceCount: 1,
+  giStepCount: 12,
+  giExpFactor: 2,
+  giThickness: 1,
+  giLinearThickness: false,
+  artificialLights: [],
+  volumetricLightingEnabled: false,
+  sunShaftsEnabled: true,
+  lightVolumesEnabled: false,
+  volumetricRaymarchSteps: 60,
+  volumetricDensity: 0.7,
+  volumetricMaxDensity: 0.5,
+  volumetricDistanceAtten: 2,
+};
+
+export const DEFAULT_RENDERING_CONFIG: RenderingConfig = {
+  ssrEnabled: false,
+  ssrIntensity: 1,
+  ssrMaxDistance: 30,
+  ssrThickness: 0.5,
+  ssrQuality: 0.5,
+  antialiasEnabled: true,
+  bloomEnabled: false,
+  bloomStrength: 1,
+  bloomRadius: 0,
+  lensFlareEnabled: false,
+  lensFlareIntensity: 1,
+  depthOfFieldEnabled: false,
+  depthOfFieldFocalLength: 10,
+  depthOfFieldBokehScale: 1,
+  cameraAutoFocusEnabled: true,
+  motionBlurEnabled: false,
+  motionBlurIntensity: 1,
+  exposure: 1,
+  toneMapping: "aces",
+  lutEnabled: false,
+  lutPreset: "bourbon64",
+  lutIntensity: 1,
+};
+
+/** Performance tab (PRD §40) subset of Project3DConfig. */
+export type QualityConfig = Pick<
+  Project3DConfig,
+  "renderingMode" | "qualityPreset" | "customRenderScale" | "customDprCap" | "adaptiveQualityEnabled" | "runtimeQualityReductionEnabled" | "interactionQualityReductionEnabled"
+>;
+
+const DEFAULT_QUALITY_CONFIG: QualityConfig = {
+  renderingMode: "auto",
+  qualityPreset: "high_desktop",
+  customRenderScale: null,
+  customDprCap: null,
+  adaptiveQualityEnabled: true,
+  runtimeQualityReductionEnabled: true,
+  interactionQualityReductionEnabled: true,
+};
+
+/** The real target renderScale/dprCap for a config — QUALITY_TIERS'
+ * fixed per-preset values, except "custom" which reads the two admin-
+ * entered overrides (falling back to the tier's own default when unset). */
+function resolveQualityTarget(config: QualityConfig): { renderScale: number; dprCap: number } {
+  const tier = QUALITY_TIERS[config.qualityPreset];
+  if (config.qualityPreset === "custom") {
+    return {
+      renderScale: config.customRenderScale ?? tier.renderScale,
+      dprCap: config.customDprCap ?? tier.dprCap,
+    };
+  }
+  return { renderScale: tier.renderScale, dprCap: tier.dprCap };
 }
 
-/** One detail-model slot's currently-relevant model, keyed by its real
- * `DetailModelSlot.id` (Multiple Detail-Model Slots pass) — a project can
- * have several independently-placed/versioned GLBs loaded and rendered
- * simultaneously ("Building", "Surroundings", ...). */
-export interface DetailModelSlotEntry {
+const UNIT_NODE_PATTERN = /^Unit_/i;
+
+/** The Camera-tab subset of Project3DConfig (PRD §37) — a Pick rather
+ * than the full config, so RenderEngine doesn't need to know about
+ * Environment/Lighting/Rendering fields it doesn't consume yet. */
+export type CameraConfig = Pick<
+  Project3DConfig,
+  | "cameraFovDesktop"
+  | "cameraFovMobile"
+  | "cameraNearClip"
+  | "cameraFarClip"
+  | "cameraStartDistanceMultiplier"
+  | "cameraMinDistanceMultiplier"
+  | "cameraMaxDistanceMultiplier"
+  | "cameraMinPolarDeg"
+  | "cameraMaxPolarDeg"
+  | "cameraMinAzimuthDeg"
+  | "cameraMaxAzimuthDeg"
+  | "cameraOrbitEnabled"
+  | "cameraPanEnabled"
+  | "cameraZoomEnabled"
+  | "cameraDampingEnabled"
+  | "autoRotate"
+>;
+
+const DEFAULT_CAMERA_CONFIG: CameraConfig = {
+  cameraFovDesktop: 50,
+  cameraFovMobile: 60,
+  cameraNearClip: 0.1,
+  cameraFarClip: 2000,
+  cameraStartDistanceMultiplier: 1.5,
+  cameraMinDistanceMultiplier: 0.4,
+  cameraMaxDistanceMultiplier: 2.5,
+  cameraMinPolarDeg: 0,
+  cameraMaxPolarDeg: 85,
+  cameraMinAzimuthDeg: null,
+  cameraMaxAzimuthDeg: null,
+  cameraOrbitEnabled: true,
+  cameraPanEnabled: true,
+  cameraZoomEnabled: true,
+  cameraDampingEnabled: true,
+  autoRotate: false,
+};
+
+/**
+ * ROZARIS 3D Experience Editor — Rendering & Authoring Architecture v2.0.
+ *
+ * Ground-up rebuild (2026-08-15) of the previous RenderEngine.ts. See the
+ * "Rozaris 3D Experience Editor v2 rebuild" memory for the full decision
+ * trail.
+ *
+ * Phase 0: GLB loading, camera/controls, one ambient + one directional
+ * light, resize, screenshot, live perf telemetry.
+ * Phase 1 (this pass): full Position/Rotation/Scale + Model switches
+ * (Scene tab, PRD §5), non-destructive Materials node overrides (PRD §6).
+ * Still NOT implemented: Sun&Sky/Clouds/Fog/Water (Phase 2), Shadows/GI/
+ * Artificial/Volumetric Lighting (Phase 3), SSR/TRAA/Bloom/LensFlare/DOF/
+ * MotionBlur/Color/LUT (Phase 4), Sections rework (Phase 5).
+ *
+ * One instance is shared across mount()/dispose() cycles.
+ */
+
+const MOBILE_VIEWPORT_BREAKPOINT = 768;
+
+export interface RenderEngineCallbacks {
+  onWebglFail: () => void;
+  onPerfStats: (
+    stats: {
+      fps: number;
+      frameTimeMs: number;
+      drawCalls: number;
+      triangles: number;
+      textures: number;
+      dpr: number;
+    } | null
+  ) => void;
+}
+
+export interface DetailModelEntry {
   slotId: string;
   model: ProjectDetailModel;
+  /** Unit Mapping's "Status Preview" (PRD §5) — real project Units +
+   * whether to tint Unit_<number> boxes by their linked status. Optional:
+   * the public viewer doesn't pass units yet (Interaction-tab public
+   * status display is later-phase scope), only the admin editor does. */
+  units?: Unit[];
+  statusPreviewEnabled?: boolean;
 }
 
 export interface MountParams {
-  project: Project;
-  config: Project3DConfig;
-  detailModels: DetailModelSlotEntry[];
-  usingGlb: boolean;
-  /** Whatever the component's selection/filter state happens to be at the
-   * moment this particular mount runs — matches the original component's
-   * setup() closing over that render's ENTIRE props/state (not
-   * necessarily today's live values; the very next
-   * `applyLiveUpdate`/`refreshAppearance` call re-applies with fresh ones
-   * once `ready`, same two-pass behavior as before). Also doubles as the
-   * initial `refreshAppearance` call at the end of mount() — see there. */
-  selectedUnitId: string | null;
-  filters: UnitFilters;
-  showUnitBoxes: boolean;
-  /** True for the admin editor's own live preview, false for every
-   * public-facing viewer — see `this.isEditorPreview`'s field doc
-   * comment for what this drives (Sections module cap rendering). */
-  isEditorPreview: boolean;
+  showPerfStats?: boolean;
+  qualityConfig?: QualityConfig;
 }
 
-export interface LiveUpdateParams {
-  project: Project;
-  config: Project3DConfig;
-  detailModels: DetailModelSlotEntry[];
-  usingGlb: boolean;
+function normalizeMaterials(m: THREE.Material | THREE.Material[]): THREE.Material[] {
+  return Array.isArray(m) ? m : [m];
 }
 
-export interface SunEnvironmentParams {
-  config: Project3DConfig;
+/** Applies one NodeOverride's fields onto a fresh clone of a mesh's
+ * original material, upgrading to MeshPhysicalMaterial first if any
+ * Physical/Glass/Emissive-adjacent field needs it — same upgrade pattern
+ * the pre-rebuild engine used (preserves the existing look instead of
+ * setting a property that silently no-ops on MeshStandardMaterial). */
+function buildOverriddenMaterial(original: THREE.Material, override: NodeOverride): THREE.Material {
+  const std = original as THREE.MeshStandardMaterial;
+  const needsPhysical =
+    override.clearcoat != null ||
+    override.clearcoatRoughness != null ||
+    override.iridescence != null ||
+    override.iridescenceIOR != null ||
+    override.transmissionEnabled ||
+    override.anisotropy != null ||
+    override.sheen != null ||
+    override.dispersion != null;
+
+  let mat: THREE.MeshPhysicalMaterial | THREE.MeshStandardMaterial;
+  if (needsPhysical) {
+    mat =
+      original instanceof THREE.MeshPhysicalMaterial
+        ? (original.clone() as THREE.MeshPhysicalMaterial)
+        : new THREE.MeshPhysicalMaterial({
+            color: std.color?.clone(),
+            map: std.map ?? null,
+            normalMap: std.normalMap ?? null,
+            roughnessMap: std.roughnessMap ?? null,
+            metalnessMap: std.metalnessMap ?? null,
+            aoMap: std.aoMap ?? null,
+            emissiveMap: std.emissiveMap ?? null,
+            emissive: std.emissive?.clone(),
+            emissiveIntensity: std.emissiveIntensity,
+            roughness: std.roughness,
+            metalness: std.metalness,
+            opacity: std.opacity,
+            transparent: std.transparent,
+            envMapIntensity: std.envMapIntensity,
+          });
+  } else {
+    mat = std.clone();
+  }
+
+  // --- PBR base ---
+  if (override.colorHex) mat.color?.set(override.colorHex);
+  if (override.baseTextureEnabled === false) mat.map = null;
+  if (override.roughness != null) mat.roughness = override.roughness;
+  if (override.roughnessMapEnabled === false) mat.roughnessMap = null;
+  if (override.metalness != null) mat.metalness = override.metalness;
+  if (override.metalnessMapEnabled === false) mat.metalnessMap = null;
+  if (override.opacity != null) {
+    mat.opacity = override.opacity;
+    mat.transparent = override.opacity < 1;
+  }
+  if (override.normalMapEnabled === false) mat.normalMap = null;
+  if (override.normalStrength != null && mat.normalMap) {
+    mat.normalScale = new THREE.Vector2(override.normalStrength, override.normalStrength);
+  }
+  if (override.aoMapEnabled === false) mat.aoMap = null;
+
+  // --- Emissive ---
+  if (override.emissiveEnabled) {
+    if (override.emissiveColorHex) mat.emissive?.set(override.emissiveColorHex);
+    if (override.emissiveIntensity != null) mat.emissiveIntensity = override.emissiveIntensity;
+  } else if (override.emissiveEnabled === false) {
+    mat.emissive?.set(0x000000);
+    mat.emissiveIntensity = 0;
+  }
+  if (override.emissiveMapEnabled === false) mat.emissiveMap = null;
+
+  // --- Physical-only fields (mat is MeshPhysicalMaterial when set) ---
+  if (mat instanceof THREE.MeshPhysicalMaterial) {
+    if (override.clearcoat != null) mat.clearcoat = override.clearcoat;
+    if (override.clearcoatRoughness != null) mat.clearcoatRoughness = override.clearcoatRoughness;
+    if (override.iridescence != null) mat.iridescence = override.iridescence;
+    if (override.iridescenceIOR != null) mat.iridescenceIOR = override.iridescenceIOR;
+    if (override.anisotropy != null) mat.anisotropy = override.anisotropy;
+    if (override.anisotropyRotation != null) mat.anisotropyRotation = override.anisotropyRotation;
+    if (override.sheen != null) mat.sheen = override.sheen;
+    if (override.sheenColorHex) mat.sheenColor?.set(override.sheenColorHex);
+    if (override.sheenRoughness != null) mat.sheenRoughness = override.sheenRoughness;
+    if (override.dispersion != null) mat.dispersion = override.dispersion;
+    if (override.transmissionEnabled) {
+      mat.transmission = override.transmission ?? 1;
+      if (override.ior != null) mat.ior = override.ior;
+      if (override.thickness != null) mat.thickness = override.thickness;
+      if (override.attenuationEnabled) {
+        if (override.attenuationColorHex) mat.attenuationColor?.set(override.attenuationColorHex);
+        if (override.attenuationDistance != null) mat.attenuationDistance = override.attenuationDistance;
+      }
+    }
+  }
+
+  // --- Texture transform (applies to every present map, shared UV) ---
+  if (override.textureTransformEnabled) {
+    const maps = [mat.map, mat.normalMap, mat.roughnessMap, mat.metalnessMap, mat.aoMap, mat.emissiveMap].filter(
+      (t): t is THREE.Texture => !!t
+    );
+    maps.forEach((tex) => {
+      if (override.mapScaleX != null || override.mapScaleY != null) {
+        tex.repeat.set(override.mapScaleX ?? tex.repeat.x, override.mapScaleY ?? tex.repeat.y);
+      }
+      if (override.mapOffsetX != null || override.mapOffsetY != null) {
+        tex.offset.set(override.mapOffsetX ?? tex.offset.x, override.mapOffsetY ?? tex.offset.y);
+      }
+      if (override.mapRotation != null) tex.rotation = (override.mapRotation * Math.PI) / 180;
+      tex.needsUpdate = true;
+    });
+  }
+
+  return mat;
 }
 
-export interface RefreshAppearanceParams {
-  project: Project;
-  config: Project3DConfig;
-  usingGlb: boolean;
-  selectedUnitId: string | null;
-  filters: UnitFilters;
-  showUnitBoxes: boolean;
-}
-
-/**
- * ROZARIS's 3D Experience render engine — rewrite Track B, Phase 1
- * ("extract a real engine module... React components never directly
- * mutate Three.js scene objects. All mutations flow through engine
- * commands"). This is a faithful extraction of what previously lived as
- * closures/refs directly inside `ProceduralProjectViewer.tsx`: every
- * method here is the same logic that used to be a function or `useEffect`
- * body in that component, moved onto a class instance so React's role is
- * reduced to "construct one engine per mount, call its methods, read its
- * callbacks" — never touching a `THREE.*` object itself.
- *
- * One instance is created per `ProceduralProjectViewer` component instance
- * and lives across `mount()`/`dispose()` cycles (a project switch calls
- * `dispose()` then `mount()` again on the SAME instance) — exactly the
- * same lifecycle the original refs had, since refs also persisted across
- * the setup effect's cleanup+rerun.
- *
- * Deliberately NOT split into GLBManager/MaterialManager/etc. sub-modules
- * yet (unlike the master PRD's aspirational package structure) — that
- * finer decomposition is real future work, not required to fix the
- * specific architectural violation this phase targets (React mutating
- * Three.js directly). One class with clearly-named methods already
- * satisfies "all mutation flows through engine commands."
- */
 export class RenderEngine {
   private callbacks: RenderEngineCallbacks;
+  private mountToken = 0;
 
   private container: HTMLDivElement | null = null;
   private renderer: THREE.WebGPURenderer | null = null;
   private scene: THREE.Scene | null = null;
-  private envScene: THREE.Scene | null = null;
-  private pmrem: InstanceType<typeof THREE.PMREMGenerator> | null = null;
-  private envRenderTarget: { texture: THREE.Texture; dispose: () => void } | null = null;
   private camera: THREE.PerspectiveCamera | null = null;
   private controls: OrbitControls | null = null;
-  private ground: THREE.Mesh | null = null;
-  /** Ground Platform's real "ground fog" (Sky/Water/Bloom/Clouds follow-up)
-   * — 4 live `UniformNode`s feeding `ground`'s `MeshStandardNodeMaterial.
-   * colorNode`, built once per mount in `buildGroundMaterial`. The node
-   * graph's *shape* never changes — `groundFogStrengthUniform` just goes
-   * 0↔1 — so even the `groundFogEnabled` toggle is a cheap live update
-   * (see `applyLiveUpdate`), not a pipeline rebuild. */
-  // Typed by their `.value` shape directly (not `ReturnType<typeof
-  // uniform>`) — that generic collapses `.value` to `unknown` without the
-  // call-site argument type to infer from.
+  private ambient: THREE.AmbientLight | null = null;
+  private sun: THREE.DirectionalLight | null = null;
+  private resizeObserver: ResizeObserver | null = null;
+
+  // Sections module (PRD §34-36) — every "clippable" object (the loaded
+  // GLB roots) lives inside clippingGroup instead of directly under
+  // scene; sectionHelperGroup holds cap/indicator meshes, which must
+  // NEVER themselves be clipped. Restored technique from the pre-rebuild
+  // engine (real production bug fixes already baked into sections.ts —
+  // see its own doc comments), not re-derived from scratch.
+  private clippingGroup: THREE.ClippingGroup | null = null;
+  private sectionHelperGroup: THREE.Group | null = null;
+  private activeSectionId: string | null = null;
+  private sectionFillClippingGroup: THREE.ClippingGroup | null = null;
+  private sectionFillMaterial: THREE.MeshBasicMaterial | null = null;
+  private sectionIndicatorMaterial: THREE.MeshBasicMaterial | null = null;
+  private sectionIndicatorMesh: THREE.Mesh | null = null;
+  private sectionFillMeshes: THREE.Mesh[] = [];
+  private dracoLoader: DRACOLoader | null = null;
+  private loader: GLTFLoader | null = null;
+  private loadedRoots: THREE.Object3D[] = [];
+  private modelRootsBySlot = new Map<string, THREE.Object3D>();
+  /** The last entries passed to syncModels() — a Performance-tab-
+   * triggered remount() (renderingMode change) needs to reload the same
+   * content into the fresh scene afterward; without this, the real bug
+   * this fixes is a blank viewport (Tris 1) after switching Rendering
+   * Mode, since mount() only sets up the renderer/scene/camera, it never
+   * loads any GLB on its own. */
+  private lastSyncEntries: DetailModelEntry[] = [];
+  private loadedGlbUrlBySlot = new Map<string, string>();
+  private originalMaterials = new WeakMap<THREE.Mesh, THREE.Material[]>();
+  /** Guards syncModels() calls that race a slower earlier one (e.g. two
+   * quick Replace clicks) — each call gets its own token, a late-resolving
+   * stale one's GLB load is discarded rather than raced into the scene. */
+  private syncToken = 0;
+
+  private showPerfStats = false;
+  private perfSampleCounter = 0;
+  private frameTimes: number[] = [];
+  private lastFrameAt: number | null = null;
+
+  // Performance tab (PRD §40).
+  private qualityConfig: QualityConfig = DEFAULT_QUALITY_CONFIG;
+  /** The renderScale actually in effect right now — starts at the
+   * config's real target, only ever pushed DOWN by adaptive quality
+   * (never up past the target without a config change/mount, matching
+   * PRD §41's "temporarily reduce... when interaction stops, restore
+   * full quality" for the interaction case, and a real sustained-low-fps
+   * downgrade for the runtime case). */
+  private effectiveRenderScale = 1;
+  private downgradeStep = 0;
+  private isInteracting = false;
+  private interactionRenderScale: number | null = null;
+
+  // Camera tab (PRD §37).
+  private cameraConfig: CameraConfig = DEFAULT_CAMERA_CONFIG;
+  private boundingRadius = 20;
+
+  // Environment tab (PRD §7-13) — see EnvironmentConfig's own doc comment.
+  private environmentConfig: EnvironmentConfig = DEFAULT_ENVIRONMENT_CONFIG;
+  private envScene: THREE.Scene | null = null;
+  private pmrem: THREE.PMREMGenerator | null = null;
+  private envRenderTarget: THREE.RenderTarget | null = null;
+  private skyMesh: InstanceType<typeof SkyMesh> | null = null;
+  private waterMesh: InstanceType<typeof WaterMesh> | null = null;
+  private groundMesh: THREE.Mesh | null = null;
   private groundColorUniform: { value: THREE.Color } | null = null;
   private groundFogColorUniform: { value: THREE.Color } | null = null;
   private groundFogRadiusUniform: { value: number } | null = null;
   private groundFogStrengthUniform: { value: number } | null = null;
-  private sun: THREE.DirectionalLight | null = null;
-  /** Real shadow-map debug HUD (`webgl_shadowmap_viewer.html` parity) —
-   * admin-only debug aid, not a `Project3DConfig` field (same
-   * "not persisted, session-only" category as `showPerfStats`). Lazily
-   * constructed the first frame `this.sun.shadow.map` actually exists
-   * (per `ShadowMapViewerGPU.js`'s own doc comment: a light's shadow map
-   * only initializes after its first render pass with shadows on) —
-   * `shadowMapViewerEnabled` can flip true before that frame happens, the
-   * render loop just waits. Only meaningful in a full-window viewer: the
-   * addon positions/sizes itself in `window.innerWidth`/`innerHeight`
-   * terms internally, not this app's own `container` div, so it's only
-   * wired into the public viewer (a real full-viewport canvas) — the
-   * admin editor's smaller embedded preview panel would place the HUD
-   * using the wrong coordinate basis. */
-  private shadowMapViewer: InstanceType<typeof ShadowMapViewer> | null = null;
-  private shadowMapViewerEnabled = false;
-  /** The scene's bounding-box center, computed once per mount() — `sun.target`
-   * is pointed here once and never moves again, so `applySunAndEnvironment`
-   * needs the same point to offset `sun.position` by; otherwise the sun's
-   * actual direction (position - target) only matches the intended
-   * elevation/azimuth when the scene happens to sit near the world origin. */
-  private sceneCenter: THREE.Vector3 | null = null;
-  /** Real distance (world units) from `sceneCenter` to `sun.position`,
-   * computed once per mount() from that mount's own `boundingRadius` (a
-   * fixed project scales tiny to huge) and reused as-is by
-   * `applySunAndEnvironment` every time it repositions the sun along the
-   * current elevation/azimuth. Root-caused, real bug this field fixes:
-   * before it existed, `applySunAndEnvironment` placed the sun at a
-   * hardcoded 200 units from `sceneCenter` while `sun.shadow.camera.far`
-   * (set once here, in mount()) was only `boundingRadius * 6` — for any
-   * project with `boundingRadius` under ~33 (most procedural-massing
-   * projects; real observed case: boundingRadius ≈ 26), that far plane
-   * (≈156) sat *closer* to the light than the light itself (200 units
-   * out), so the shadow camera's frustum never contained the sun's own
-   * scene-facing side at all — the shadow map allocated a real texture
-   * and rendered every frame, just always empty. No shadow anywhere, on
-   * any object, regardless of `shadowsEnabled`/bias/mapSize — all of
-   * which were individually correct and did nothing, because the
-   * occluders never made it into the depth pass in the first place.
-   * Real-GPU-verified (Playwright + a real WebGPU context, not the
-   * headless software-rasterizer fallback) against a live project before
-   * and after this fix. */
-  private sunDistance = 200;
-  // --- Sky/Water/Bloom/Clouds "Ocean" tab ---
-  /** The physical sky dome — the scene's only backdrop now (live in the
-   * scene like webgl_shaders_ocean.html's `sky`, not painted onto
-   * `scene.background`). Built once per mount(); `null` only before the
-   * first mount()/after dispose(). */
-  private skyMesh: SkyMesh | null = null;
-  /** Last real sun *direction* (unit vector, world space) computed by
-   * `applySunAndEnvironment` — `sun.position` itself is an absolute point
-   * offset from `sceneCenter`, not a direction, so this is kept separately
-   * to feed `skyMesh.sunPosition`/`waterMesh.sunDirection` exactly like
-   * the reference demo's own `sun` Vector3 feeds both. */
+  private groundCloudShadowStrengthUniform: { value: number } | null = null;
+  private groundCloudHeightUniform: { value: number } | null = null;
+  private groundCloudScaleUniform: { value: number } | null = null;
+  private groundCloudCoverageUniform: { value: number } | null = null;
+  private groundCloudWindUniform: { value: THREE.Vector2 } | null = null;
+  private groundSunDirectionUniform: { value: THREE.Vector3 } | null = null;
+  private cloudSystem: CloudSystem | null = null;
+  private fogSystem: FogSystem | null = null;
+  /** The one real Global Sun Vector (PRD §10) — every Environment feature
+   * (Sky/Water/Clouds/Fog/Ground today; Shadows/GI/Volumetrics/Lens Flare
+   * in later phases) reads this SAME field, computed once per
+   * setEnvironmentConfig() call, never independently. */
   private sunDirection = new THREE.Vector3(0, 1, 0);
-  /** The optional water plane (`WaterMesh`) — only constructed when
-   * `config.waterEnabled` (per-project opt-in; most projects have none).
-   * Real click-responsiveness bug fix (2026-08-14, Configurator audit):
-   * this used to be mount()-only, meaning the Ocean tab's "Water Enabled"
-   * checkbox triggered a full engine teardown/rebuild (new WebGPU
-   * renderer + context, every GLB reloaded from the network, PMREM
-   * environment regenerated) just to add one mesh — confirmed with a real
-   * Playwright repro to visibly freeze the Configurator for seconds and
-   * eat the next several clicks (matches the "need to triple-click"
-   * report exactly). `setWaterEnabled` below now adds/removes this one
-   * self-contained mesh live instead, same "cheap update" category as
-   * everything else `applyLiveUpdate` already drags without a remount —
-   * `createWaterMesh` is the shared construction code both it and
-   * mount() call. */
-  private waterMesh: WaterMesh | null = null;
-  /** The bloom node itself (not just a boolean) — `strength`/`radius` are
-   * real `UniformNode<float>`s on this instance (confirmed against
-   * BloomNode.js's own source), so `applyLiveUpdate` can drag those live
-   * without rebuilding the whole post-processing pipeline. `bloomEnabled`
-   * itself used to also force a full engine remount (same over-broad
-   * "structural" categorization `waterEnabled` had — see its own doc
-   * comment above); it's now handled by `applyLiveUpdate` calling
-   * `buildRenderPipeline` again on its own, which was already a cheap,
-   * self-contained node-graph rebuild with no renderer/context/GLB work
-   * in it — the expensive part of a remount was never this. */
-  private bloomNode: ReturnType<typeof bloom> | null = null;
-  /** The currently-loaded LUT's real `Data3DTexture` (whichever of
-   * `LUTCubeLoader`/`LUT3dlLoader`/`LUTImageLoader` its preset's `format`
-   * dispatches to — see `LUT_PRESETS`/`loadLut`) — `null` until `loadLut`
-   * resolves. `lutPresetLoaded` tracks which preset id it corresponds to,
-   * so a redundant reload is skipped. `lutIntensity` is a real live
-   * `UniformNode<float>` (`Lut3DNode`'s own `intensityNode`), draggable
-   * via `applyLiveUpdate` with no rebuild; `lutEnabled`/`lutPreset`
-   * themselves need a fresh mount (structural + a real async texture
-   * load), same category as `bloomEnabled`. */
-  private lutTexture: THREE.Data3DTexture | null = null;
-  private lutPresetLoaded: string | null = null;
-  private lutIntensity: ReturnType<typeof uniform> | null = null;
-  /** Depth of field (`webgl_postprocessing_dof2.html` parity) — 3 real
-   * live `UniformNode<float>`s (`DepthOfFieldNode`'s own constructor just
-   * stores whatever node it's given, unlike `BloomNode`'s auto-uniform-
-   * wrapping, so these are created explicitly here). `dofFocusDistance`
-   * is the odd one out: recomputed
-   * every frame in the render loop (`camera.position.distanceTo(controls.target)`,
-   * real auto-focus) rather than dragged from a config field —
-   * `dofFocalLength`/`dofBokehScale` are the two that `applyLiveUpdate`
-   * drags from real per-project sliders. `depthOfFieldEnabled` itself
-   * needs a fresh mount (structural), same category as `bloomEnabled`. */
-  private dofFocusDistance: ReturnType<typeof uniform> | null = null;
-  private dofFocalLength: ReturnType<typeof uniform> | null = null;
-  private dofBokehScale: ReturnType<typeof uniform> | null = null;
-  /** Loading-screen reveal (`webgl_postprocessing_transition.html`
-   * technique, ported to a real procedural TSL fractal-noise mask instead
-   * of the reference demo's static texture — no extra vendored asset
-   * needed, and this app's own version needs a single reusable mask, not
-   * a per-transition-style picker). NOT a `Project3DConfig` field —
-   * automatic engine behavior, not an admin toggle: plays once for ~1.1s
-   * the moment mount() has its first frame ready to show (see mount()'s
-   * own `revealActive = true` line), then the render loop tears the node
-   * back out of the pipeline entirely (one more `buildRenderPipeline`
-   * call) so it costs nothing on every subsequent frame afterward. */
-  private revealThreshold: ReturnType<typeof uniform> | null = null;
-  private revealActive = false;
-  private revealStartTime = 0;
-  /** Debounces the expensive PMREM rebuild inside `applySunAndEnvironment`
-   * — see `scheduleEnvironmentRebuild`. */
+  private sunDistance = 200;
   private environmentRebuildTimer: ReturnType<typeof setTimeout> | null = null;
-  private ambient: THREE.AmbientLight | null = null;
+  /** environmentRefreshEnabled's "off" state (PRD §9) means the real PMREM
+   * capture never re-runs after this first successful one — tracked so
+   * scheduleEnvironmentRebuild can tell "haven't run yet" (still runs,
+   * even if refresh is off — every project needs at least one real
+   * environment map) from "already ran once, refresh is off, skip". */
+  private hasRebuiltEnvironmentOnce = false;
+  /** Real bug found live: the "freeze" gate below used to key purely off
+   * `hasRebuiltEnvironmentOnce`, which the mount-time call already flips
+   * true using DEFAULT_ENVIRONMENT_CONFIG's placeholder `skyEnabled: true`
+   * — before the real per-project config has even been fetched. For any
+   * project stored with `environmentRefreshEnabled: false` AND
+   * `skyEnabled: false`, that meant the real config's rebuild got gated
+   * out entirely: the cheap live path still flipped `skyMesh.visible =
+   * false` (correct), but the expensive rebuild that would set
+   * `scene.background` to the flat fallback color never ran again, so it
+   * stayed permanently `null` from the placeholder's `skyEnabled: true`
+   * pass — a solid black void wherever the (now-invisible) sky dome used
+   * to be, with nothing else painted behind it. Tracking the `skyEnabled`
+   * a rebuild actually captured lets the gate below force exactly one
+   * more rebuild through when that flag changes, even with refresh off,
+   * without touching the freeze's real intent (skip re-capturing PMREM
+   * for continuous slider tweaks like turbidity/sun color while frozen). */
+  private lastRebuiltSkyEnabled: boolean | null = null;
 
-  private renderPipeline: InstanceType<typeof THREE.RenderPipeline> | null = null;
-  private effectiveTier: QualityTierSettings;
-  private frameTimes: number[] = [];
-  private lastFrameAt: number | null = null;
-  private downgradeStep = 0;
-  private perfSampleCounter = 0;
-  /** Set directly by the component every render (same pattern the
-   * original `showPerfStatsRef.current = showPerfStats` used) so the
-   * animation loop always reads the current prop without needing a
-   * dedicated effect/mount just to toggle a debug overlay. */
-  showPerfStats = false;
+  // Lighting tab (PRD §14-21).
+  private lightingConfig: LightingConfig = DEFAULT_LIGHTING_CONFIG;
+  private csmSystem: CSMSystem | null = null;
+  private artificialLightSystem: ArtificialLightSystem | null = null;
+
+  // Rendering tab (PRD §22-33) — shares the Lighting tab's own post
+  // pipeline (postProcessing.ts's buildScenePostPipeline), not a second
+  // one; see scenePostPipeline's own doc comment below.
+  private renderingConfig: RenderingConfig = DEFAULT_RENDERING_CONFIG;
+  /** The ONE shared post-processing pipeline both Lighting (Contact
+   * Shadows/GI/Sun Shafts) and Rendering (Reflections/Anti-Aliasing/
+   * Bloom/Lens Flare/DOF/Motion Blur/LUT) extend — built/rebuilt from
+   * BOTH configs together (postProcessing.ts's buildScenePostPipeline). */
+  private scenePostPipeline: ScenePostPipeline | null = null;
+  /** Which post-processing effects are structurally active right now —
+   * the pipeline only gets a real rebuild when this changes (which
+   * effects are on, and which MRT channels they need); numeric sliders
+   * inside an already-active effect are cheap uniform updates instead
+   * (postProcessing.ts's computeScenePostSignature/ScenePostPipeline.update). */
+  private scenePostSignature: string | null = null;
+
+  private hasFramedOnce = false;
+  private contentBounds: { min: THREE.Vector3; max: THREE.Vector3; center: THREE.Vector3; size: THREE.Vector3 } | null = null;
+  private cameraHelper: THREE.CameraHelper | null = null;
   private cameraTransition: {
     startPos: THREE.Vector3;
-    startTarget: THREE.Vector3;
     endPos: THREE.Vector3;
+    startTarget: THREE.Vector3;
     endTarget: THREE.Vector3;
     startFov: number;
     endFov: number;
@@ -406,620 +583,759 @@ export class RenderEngine {
     durationMs: number;
   } | null = null;
 
-  // Procedural mode
-  private unitMeshes = new Map<string, THREE.Mesh>();
-  private unitBoxes: UnitBox[] = [];
-  /** Unit-status caustics (`webgpu_caustics.html` parity, see caustics.ts)
-   * — procedural-mode units only. `causticsTexture` is the one real
-   * vendored asset, loaded once per mount; `causticsScaleUniform`/
-   * `causticsSpeedUniform` are shared live `UniformNode`s (one value for
-   * every unit); `causticsUnitUniforms` holds each unit's own real
-   * `color`/`intensity` uniforms (genuinely different per unit by status)
-   * — `applyUnitAppearance` updates those live on every hover/select/
-   * status refresh. `causticsEnabled` itself needs a fresh mount
-   * (structural — upgrades each unit's material to a real NodeMaterial). */
-  private causticsTexture: THREE.Texture | null = null;
-  private causticsScaleUniform: ReturnType<typeof uniform> | null = null;
-  private causticsSpeedUniform: ReturnType<typeof uniform> | null = null;
-  private causticsUnitUniforms = new Map<string, CausticsUnitUniforms>();
-
-  // GLB mode — one root per detail-model slot (Multiple Detail-Model
-  // Slots pass), keyed by slotId. `glbUnitBoxes` keys became
-  // `` `${slotId}:${meshName}` `` (see applyDetailUnitLinks) so two
-  // different slots' GLBs coincidentally sharing a node name can't
-  // collide — `pickable` stays keyed by the real (globally unique)
-  // unitId, no change needed there.
-  private glbRoots = new Map<string, THREE.Group>();
-  private glbUnitBoxes = new Map<string, GlbUnitBoxEntry>();
-
-  private pickable = new Map<string, THREE.Object3D>();
-  private hoveredId: string | null = null;
-  private defaultCamera: { position: THREE.Vector3; target: THREE.Vector3; fov: number } | null = null;
-
-  // Sections module (first-class Configurator module) — manual clipping-
-  // plane authoring/runtime. `clippingGroup` wraps every "clippable"
-  // object (GLB root / procedural ground+shells+unit boxes) — a
-  // `THREE.ClippingGroup` is the WebGPURenderer-only mechanism for this
-  // (encodes clipping into the scene graph); there is no equivalent to
-  // the classic `WebGLRenderer`'s per-material `clippingPlanes` +
-  // `renderer.localClippingEnabled` in this app's unified WebGPURenderer
-  // pipeline (WebGL2 fallback included — both run through the same
-  // renderers/common/* code, confirmed by reading three's own source
-  // rather than assumed). Starts with `clippingPlanes: []` (no clipping)
-  // — every existing project renders unchanged until a section is
-  // actually activated.
-  private clippingGroup: InstanceType<typeof THREE.ClippingGroup> | null = null;
-  // Draw-preview rectangle, gizmo helper, and the active section's cap —
-  // deliberately NOT inside `clippingGroup` (editing chrome must stay
-  // visible regardless of the very clip it's controlling), and hidden
-  // entirely in the public runtime except the one active section's cap.
-  private sectionHelperGroup: THREE.Group | null = null;
-  private sectionDrawPreview: THREE.Line | null = null;
-  private drawSection: { onMove: (e: PointerEvent) => void; onClick: (e: PointerEvent) => void } | null = null;
-  private sectionGizmo: InstanceType<typeof TransformControls> | null = null;
-  private sectionGizmoAnchor: THREE.Object3D | null = null;
-  /** The section currently being live-edited via the gizmo — kept in sync
-   * with the anchor's transform on every "objectChange" tick; read back
-   * by `getLiveSectionDraft()`/streamed via `onSectionDraftChange`. */
-  private liveSection: Section | null = null;
-  /** The translucent, unclipped "clip plane indicator" rectangle —
-   * `fillGapsEnabled: false`, editor-only (see `rebuildSectionCap`'s own
-   * doc comment). Its own dedicated material (`sectionIndicatorMaterial`)
-   * is never toggled/reused for anything else, unlike the old shared
-   * cap material this replaced — see the 2026-08-14 doc note on
-   * `rebuildSectionCap` for why that mattered. */
-  private sectionIndicatorMesh: THREE.Mesh | null = null;
-  private sectionIndicatorMaterial: THREE.MeshBasicMaterial | null = null;
-  /** Real color fill (`fillGapsEnabled: true`) — one mesh per real
-   * clippable object currently in `clippingGroup`, sharing that object's
-   * own geometry (not cloned) and world transform, rendered `BackSide`
-   * only and clipped by the section's own full plane set. All share
-   * `sectionFillMaterial` (color updated in place, no per-mesh material).
-   *
-   * **Real bug fixed 2026-08-14** ("colors the clipper plane instead [of
-   * the clipped model]", the second time — see this field's own history
-   * below): this used to be a stencil-buffer technique (invisible marking
-   * mesh pairs + a stencil-tested flat cap quad, the classic
-   * webgl_clipping_stencil.html approach) — structurally correct
-   * (verified against the actual upstream example source, and against
-   * this app's own `ClippingGroup`/`ClippingContext` consumers, unlike
-   * two earlier bugs in this same area — see the git history/memory for
-   * "rozaris-3d-sections-audit-fix" round 3), but empirically confirmed
-   * BROKEN in a real browser once this session finally opened one: the
-   * cap rendered its fill color across the *entire* screen, not just the
-   * real cut silhouette — the `NotEqualStencilFunc`/ref-0 test was not
-   * gating visibility at all under this app's `THREE.WebGPURenderer`.
-   * Root cause not fully chased down (WebGPU's own stencil pipeline state
-   * plumbing for a plain `MeshBasicMaterial`'s classic stencil properties
-   * is comparatively new/less-traveled code in three.js next to its
-   * mature WebGL backend) — rather than keep debugging an engine-level
-   * stencil gap, this replaces the whole technique with one that doesn't
-   * need a stencil buffer at all: rendering the solid's own *back* faces,
-   * clipped to the section volume, IS a correct, self-contained "what
-   * does the inside of this cut look like" fill — back faces only exist
-   * where the mesh itself does, so there's no separate test to get wrong.
-   * `stencil: true` came back off the `WebGPURenderer` constructor
-   * (mount(), below) since nothing here needs it anymore. */
-  private sectionFillMeshes: THREE.Mesh[] = [];
-  private sectionFillMaterial: THREE.MeshBasicMaterial | null = null;
-  /** Bounds the fill meshes to the section's own clip volume (the exact
-   * same `buildSectionPlanes(section)` the main `clippingGroup` uses) —
-   * without this, a source mesh's back faces would show through
-   * everywhere they're not occluded, not just within the cut. */
-  private sectionFillClippingGroup: THREE.ClippingGroup | null = null;
-  private activeSectionId: string | null = null;
-  /** True for the admin editor's own live preview (`showChrome={false}`),
-   * false for every public-facing viewer — set once at `mount()` from
-   * `MountParams.isEditorPreview`. Drives whether an inactive section's
-   * "clip plane indicator" cap renders at all (editor-only aid) vs. a
-   * real `fillGapsEnabled` fill, which renders in both. */
-  private isEditorPreview = false;
-
-  /** The latest project/config passed to any apply/refresh method — see
-   * the class doc comment on why this is a mutable field rather than a
-   * value frozen at mount() time: it reproduces the original code's
-   * "closures always see the render that last caused their owning effect
-   * to fire" behavior, since every method here is only ever called from
-   * the component's effects. */
-  private project: Project;
-  private config: Project3DConfig;
-  /** id -> Unit, rebuilt every time `project` changes (see `setProject`)
-   * — Phase 3's UnitManager fix: hover/click used to do a linear
-   * `project.units.find(...)` scan on every pointer event; this makes
-   * that O(1). Plain JS Map, no GPU resource, so it needs no explicit
-   * disposal in `dispose()`. */
-  private unitById = new Map<string, Unit>();
-  /** Reused `MeshBasicMaterial`s for GLB unit boxes, keyed by
-   * `(status, selected, hovered, xray)` — Phase 3's UnitManager fix for
-   * `applyUnitBoxMaterial`'s old dispose-and-reallocate-every-call
-   * pattern (see glbUnitNodes.ts's doc comment). Rebuilt per mount()
-   * (fresh project/GLB), disposed in `dispose()`. */
-  private unitMaterialCache = new Map<string, THREE.MeshBasicMaterial>();
-
-  private disposeGeometry: (() => void) | null = null;
-  private dracoLoader: DRACOLoader | null = null;
-  private resizeObserver: ResizeObserver | null = null;
-  private handleMove: ((e: PointerEvent) => void) | null = null;
-  private handleClick: ((e: PointerEvent) => void) | null = null;
-  private handleLeave: (() => void) | null = null;
-  private mountToken = 0;
-
-  constructor(callbacks: RenderEngineCallbacks, initialProject: Project, initialConfig: Project3DConfig) {
-    this.callbacks = callbacks;
-    this.project = initialProject;
-    this.unitById = new Map(initialProject.units.map((u) => [u.id, u]));
-    this.config = initialConfig;
-    this.effectiveTier = QUALITY_TIERS[initialConfig.qualityPreset];
-  }
-
-  /** The one place `this.project` is ever assigned — keeps `unitById` from
-   * ever going stale relative to it. Every prior direct `this.project =`
-   * assignment site (constructor aside, which seeds both fields directly
-   * above) now calls this instead. */
-  private setProject(project: Project) {
-    this.project = project;
-    this.unitById = new Map(project.units.map((u) => [u.id, u]));
-  }
-
-  /** Refreshes the callbacks object (component recreates it every render
-   * with fresh closures over the latest props — e.g. `onSelectUnit`,
-   * `t`). Assigned directly, same "always current, no effect needed"
-   * pattern as `showPerfStats` above. */
-  setCallbacks(callbacks: RenderEngineCallbacks) {
+  constructor(callbacks: RenderEngineCallbacks) {
     this.callbacks = callbacks;
   }
 
-  private matchesFilters(u: Unit, filters: UnitFilters): boolean {
-    if (filters.status !== "all" && u.status !== filters.status) return false;
-    if (filters.bedrooms != null && u.bedrooms < filters.bedrooms) return false;
-    if (filters.bathrooms != null && u.bathrooms < filters.bathrooms) return false;
-    if (filters.minArea != null && u.area < filters.minArea) return false;
-    return true;
+  async mount(container: HTMLDivElement, params: MountParams) {
+    const token = ++this.mountToken;
+    this.container = container;
+    this.showPerfStats = params.showPerfStats ?? false;
+    if (params.qualityConfig) this.qualityConfig = params.qualityConfig;
+    const target = resolveQualityTarget(this.qualityConfig);
+    this.effectiveRenderScale = target.renderScale;
+    this.downgradeStep = 0;
+
+    // renderingMode -> forceWebGL and antialiasEnabled -> antialias are
+    // both renderer-CONSTRUCTION-time flags — "auto"/"webgpu" both let
+    // Three.js probe for WebGPU and fall back to WebGL2 on its own; only
+    // "webgl2" forces the WebGL2 backend outright. `antialias: false`
+    // whenever Rendering → Anti-Aliasing (TRAA) is on, per TRAANode's own
+    // doc note ("MSAA must be disabled when TRAA is in use") — real MSAA
+    // otherwise, matching this engine's pre-Phase-4 always-on behavior.
+    // Changing either after mount needs a real remount (see
+    // setQualityConfig's/setRenderingConfig's own doc comments).
+    const renderer = new THREE.WebGPURenderer({
+      antialias: !this.renderingConfig.antialiasEnabled,
+      forceWebGL: this.qualityConfig.renderingMode === "webgl2",
+    });
+    try {
+      await renderer.init();
+    } catch {
+      if (token === this.mountToken) this.callbacks.onWebglFail();
+      return;
+    }
+    if (token !== this.mountToken) {
+      renderer.dispose();
+      return;
+    }
+
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, target.dprCap));
+    renderer.setSize(container.clientWidth * this.effectiveRenderScale, container.clientHeight * this.effectiveRenderScale, false);
+    renderer.domElement.style.width = "100%";
+    renderer.domElement.style.height = "100%";
+    // Real bug fix (Phase 2) — the Environment tab's physically-based
+    // Sky/Water/Ground shaders all produce genuine HDR output (a physical
+    // sky's luminance routinely exceeds 1.0), and WebGPURenderer's own
+    // default is NoToneMapping (hard-clip above 1.0) — without a real
+    // curve set before the first PMREM sky capture below, the sky dome
+    // renders solid blown-out white instead of a blue gradient. Reads
+    // from `this.renderingConfig` (real Rendering → Color tab fields,
+    // Phase 4) rather than a hardcoded ACES/1 — by the time this runs,
+    // React's setRenderingConfig has already updated the field (same
+    // effect-ordering guarantee applyCameraConfig/applyEnvironmentConfig
+    // already rely on), so this picks up the real per-project value on
+    // first paint, not a default flash.
+    renderer.toneMapping = TONE_MAPPING_MAP[this.renderingConfig.toneMapping];
+    renderer.toneMappingExposure = this.renderingConfig.exposure;
+    container.appendChild(renderer.domElement);
+    this.renderer = renderer;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a20);
+    this.scene = scene;
+
+    // Sections module — see this.clippingGroup's own field doc comment.
+    // Starts at the fixed 6-plane "nothing active" state always (see
+    // NO_ACTIVE_SECTION_PLANES' own doc comment) — every later
+    // activate/deactivate/switch reuses that same plane-count from here
+    // on, never toggling the array's length.
+    const clippingGroup = new THREE.ClippingGroup();
+    clippingGroup.clippingPlanes = NO_ACTIVE_SECTION_PLANES;
+    scene.add(clippingGroup);
+    this.clippingGroup = clippingGroup;
+    const sectionHelperGroup = new THREE.Group();
+    sectionHelperGroup.name = "RZ_SectionHelpers";
+    scene.add(sectionHelperGroup);
+    this.sectionHelperGroup = sectionHelperGroup;
+
+    const isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
+    const cfg = this.cameraConfig;
+    const camera = new THREE.PerspectiveCamera(
+      isMobileViewport ? cfg.cameraFovMobile : cfg.cameraFovDesktop,
+      container.clientWidth / Math.max(1, container.clientHeight),
+      cfg.cameraNearClip,
+      cfg.cameraFarClip
+    );
+    camera.position.set(30, 24, 30);
+    this.camera = camera;
+
+    const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+    sun.position.set(60, 100, 40);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(sun, sun.target, ambient);
+    this.sun = sun;
+    this.ambient = ambient;
+
+    // Lighting tab (PRD §14-21) — real shadow mapping, previously never
+    // enabled at all in this rebuilt engine (renderer.shadowMap.enabled
+    // defaults to false), so every mesh's real castShadow/receiveShadow
+    // flags (already set correctly in syncModels) had nothing to actually
+    // render. `shadowsEnabled` is the pre-existing master field this tab
+    // finally gives a real home to.
+    renderer.shadowMap.enabled = this.lightingConfig.shadowsEnabled;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    setShadowMapTransmitted(renderer, this.lightingConfig.transmittedShadowsEnabled);
+    sun.castShadow = this.lightingConfig.shadowsEnabled;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.radius = this.lightingConfig.shadowSoftness;
+
+    const artificialLightSystem = new ArtificialLightSystem(scene);
+    this.artificialLightSystem = artificialLightSystem;
+
+    // Environment tab (PRD §7-13) — envScene/pmrem are the real shaded-
+    // sky PMREM capture rig (rebuildEnvironment, restored near-verbatim
+    // from the pre-rebuild engine); skyMesh/waterMesh/groundMesh are
+    // always constructed (never conditionally, unlike the pre-rebuild
+    // engine) and just toggle `.visible` — cheaper to manage than
+    // constructing/disposing them on every on/off flip, and the ONE thing
+    // that DOES need a real remount (renderingMode) already tears down
+    // and rebuilds everything anyway.
+    const envScene = new THREE.Scene();
+    this.envScene = envScene;
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    this.pmrem = pmrem;
+
+    const skyMesh = new SkyMesh();
+    skyMesh.scale.setScalar(SKY_DOME_SCALE);
+    scene.add(skyMesh);
+    this.skyMesh = skyMesh;
+
+    const waterNormals = new THREE.TextureLoader().load("/textures/waternormals.jpg", (tex) => {
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    });
+    const waterMesh = new WaterMesh(new THREE.PlaneGeometry(WATER_PLANE_SIZE, WATER_PLANE_SIZE), {
+      waterNormals,
+      sunDirection: this.sunDirection.clone(),
+      sunColor: 0xffffff,
+      waterColor: 0x001e0f,
+      distortionScale: this.environmentConfig.waterDistortionScale,
+      size: this.environmentConfig.waterSize,
+    });
+    waterMesh.rotation.x = -Math.PI / 2;
+    waterMesh.visible = false;
+    scene.add(waterMesh);
+    this.waterMesh = waterMesh;
+
+    const groundMaterial = this.buildGroundMaterial(this.environmentConfig);
+    const groundMesh = new THREE.Mesh(new THREE.CircleGeometry(this.boundingRadius * 1.6, 48), groundMaterial);
+    groundMesh.rotation.x = -Math.PI / 2;
+    groundMesh.receiveShadow = true;
+    groundMesh.visible = this.environmentConfig.groundEnabled;
+    clippingGroup.add(groundMesh);
+    this.groundMesh = groundMesh;
+
+    const cloudSystem = buildCloudSystem();
+    scene.add(cloudSystem.mesh);
+    this.cloudSystem = cloudSystem;
+
+    const fogSystem = buildFogSystem();
+    scene.fogNode = fogSystem.node;
+    this.fogSystem = fogSystem;
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0, 0);
+    this.controls = controls;
+    // A user grabbing the view mid-transition wins immediately, rather
+    // than fighting a saved-Shot transition for its remaining duration.
+    // Also PRD §41's "Interaction Performance Strategy" — real, if scoped
+    // to what exists now (render scale only; SSR/SSGI/volumetric/shadow
+    // sample-count reduction all land with their own Phase 2-4 features).
+    controls.addEventListener("start", () => {
+      this.cameraTransition = null;
+      this.isInteracting = true;
+      if (this.qualityConfig.interactionQualityReductionEnabled) {
+        this.interactionRenderScale = Math.max(0.5, this.effectiveRenderScale * 0.7);
+        this.applyRenderScale();
+      }
+    });
+    controls.addEventListener("end", () => {
+      this.isInteracting = false;
+      this.interactionRenderScale = null;
+      this.applyRenderScale();
+    });
+    this.applyCameraConfig(this.cameraConfig);
+    // Mount-time environment application stays direct/synchronous
+    // (including its PMREM rebuild) — only the hot per-slider-tick path
+    // (setEnvironmentConfig, called from React) debounces the rebuild.
+    this.applyEnvironmentConfig(this.environmentConfig, true);
+    this.applyLightingConfig(this.lightingConfig);
+    this.applyRenderingConfig(this.renderingConfig);
+
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
+    this.dracoLoader = dracoLoader;
+    const loader = new GLTFLoader();
+    loader.setDRACOLoader(dracoLoader);
+    this.loader = loader;
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (!container.clientWidth || !container.clientHeight) return;
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth * this.effectiveRenderScale, container.clientHeight * this.effectiveRenderScale, false);
+    });
+    resizeObserver.observe(container);
+    this.resizeObserver = resizeObserver;
+
+    const samplePerfStats = () => {
+      if (!this.showPerfStats) return;
+      this.perfSampleCounter += 1;
+      if (this.perfSampleCounter % 20 !== 0) return;
+      const frames = this.frameTimes;
+      const avgFrameMs = frames.length ? frames.reduce((a, b) => a + b, 0) / frames.length : 0;
+      this.callbacks.onPerfStats({
+        fps: avgFrameMs > 0 ? Math.round(1000 / avgFrameMs) : 0,
+        frameTimeMs: Math.round(avgFrameMs * 10) / 10,
+        drawCalls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        textures: renderer.info.memory.textures,
+        dpr: renderer.getPixelRatio(),
+      });
+    };
+
+    renderer.setAnimationLoop(() => {
+      const now = performance.now();
+      const last = this.lastFrameAt;
+      this.lastFrameAt = now;
+      const dtSeconds = last != null ? Math.min(0.25, (now - last) / 1000) : 0;
+      if (last != null) {
+        this.frameTimes.push(now - last);
+        if (this.frameTimes.length > 60) this.frameTimes.shift();
+      }
+      controls.update();
+      this.stepCameraTransition(now);
+      this.sampleAdaptiveQuality();
+      this.stepEnvironmentAnimation(dtSeconds);
+      // CSM's cascades track the live camera frustum — must be recomputed
+      // every frame the camera can move (free orbit), per CSMShadowNode's
+      // own doc comment ("call every time you change camera or settings").
+      this.csmSystem?.updateFrustums();
+      // Depth of Field real auto-focus (PRD §26) — the live camera-to-
+      // orbit-target distance, recomputed every frame rather than a
+      // manual distance that would drift out of sync as a visitor orbits.
+      if (this.scenePostPipeline?.dofFocusDistance && this.renderingConfig.cameraAutoFocusEnabled) {
+        this.scenePostPipeline.dofFocusDistance.value = camera.position.distanceTo(controls.target);
+      }
+      if (this.scenePostPipeline) this.scenePostPipeline.pipeline.render();
+      else renderer.render(scene, camera);
+      this.cameraHelper?.update();
+      samplePerfStats();
+    });
   }
 
-  resetCamera() {
-    const controls = this.controls;
-    const camera = this.camera;
-    const start = this.defaultCamera;
-    if (!controls || !camera || !start) return;
-    // An in-flight camera-preset transition would otherwise overwrite this
-    // snap right back toward the preset on the very next animation-loop
-    // tick — Home would appear to silently do nothing if clicked while a
-    // preset was still easing in.
-    this.cameraTransition = null;
-    camera.position.copy(start.position);
-    controls.target.copy(start.target);
-    // A preset can change FOV; Home should restore the project's real
-    // starting FOV too, not just position.
-    camera.fov = start.fov;
+  /** Environment tab (PRD §7-13) — cheap, every-frame CPU-side uniform
+   * writes: advances Fog/Cloud wind offsets (only when their own Movement
+   * toggle is on — a genuinely pausable animation, not just a shader
+   * `time` term nothing can stop) and re-centers the cloud layer on the
+   * camera. Uses the CACHED `this.environmentConfig`/`this.sunDirection`
+   * from the last real `applyEnvironmentConfig` call — recomputing the
+   * Global Sun Vector itself every frame would be wasted work since it
+   * only ever changes when React calls setEnvironmentConfig(). */
+  private stepEnvironmentAnimation(dtSeconds: number) {
+    const { camera, fogSystem, cloudSystem, environmentConfig } = this;
+    if (!camera) return;
+    fogSystem?.update(environmentConfig, this.sunDirection, dtSeconds);
+    cloudSystem?.update(environmentConfig, this.sunDirection, camera.position, dtSeconds);
+  }
+
+  /** Shots (PRD §38) — steps an in-flight flyToPreset() transition. Runs
+   * every frame after controls.update() so it's the authoritative final
+   * camera write for the frame, same ordering the pre-rebuild engine used
+   * (otherwise OrbitControls silently fights/overwrites it mid-flight). */
+  private stepCameraTransition(now: number) {
+    const t = this.cameraTransition;
+    const { camera, controls } = this;
+    if (!t || !camera || !controls) return;
+    const elapsed = now - t.startTime;
+    const p = Math.min(1, elapsed / Math.max(1, t.durationMs));
+    const eased = p * p * (3 - 2 * p); // smoothstep
+    camera.position.lerpVectors(t.startPos, t.endPos, eased);
+    controls.target.lerpVectors(t.startTarget, t.endTarget, eased);
+    camera.fov = t.startFov + (t.endFov - t.startFov) * eased;
     camera.updateProjectionMatrix();
-    controls.update();
+    if (p >= 1) this.cameraTransition = null;
   }
 
-  /** North Sign — rotates the camera to a canonical heading (theta=0)
-   * around the current target. */
-  resetToNorth() {
-    const controls = this.controls;
-    const camera = this.camera;
-    if (!controls || !camera) return;
-    this.cameraTransition = null;
-    const offset = camera.position.clone().sub(controls.target);
-    const spherical = new THREE.Spherical().setFromVector3(offset);
-    spherical.theta = 0;
-    offset.setFromSpherical(spherical);
-    camera.position.copy(controls.target).add(offset);
-    controls.update();
-  }
-
-  /** Starts a smooth eased transition to a saved camera preset ("never
-   * visibly teleport") rather than snapping. Stepped from the animation
-   * loop's stepCameraTransition; cleared early if the user starts
-   * dragging OrbitControls mid-flight. */
-  jumpToCameraPreset(preset: CameraPreset) {
-    const camera = this.camera;
-    const controls = this.controls;
-    if (!camera || !controls) return;
-    this.cameraTransition = {
-      startPos: camera.position.clone(),
-      startTarget: controls.target.clone(),
-      endPos: new THREE.Vector3(preset.position.x, preset.position.y, preset.position.z),
-      endTarget: new THREE.Vector3(preset.target.x, preset.target.y, preset.target.z),
-      startFov: camera.fov,
-      endFov: preset.fov,
-      startTime: performance.now(),
-      durationMs: Math.max(100, preset.durationMs || 900),
-    };
-  }
-
-  captureScreenshot(): string | null {
-    const renderer = this.renderer;
+  /** Adds/updates/removes per-slot content to match `entries` — the ONE
+   * entry point every editing surface (Scene tab transform/switches,
+   * Materials tab overrides, Unit Mapping's status preview) calls after
+   * mount(). Critical distinction from a naive "just re-mount everything"
+   * approach: a slot whose glbUrl hasn't changed gets a CHEAP in-place
+   * update (transform/switches/overrides/unit-boxes reapplied to the
+   * already-loaded root, no network request) — this is what makes every
+   * slider/toggle in the Inspector responsive instead of reloading the
+   * GLB on every drag tick (the exact "needs triple-clicking" class of
+   * bug a prior pass on this codebase had to fix once already). Only a
+   * genuinely new/changed glbUrl, or a slot appearing/disappearing,
+   * touches the network or the scene graph's set of loaded roots. */
+  async syncModels(entries: DetailModelEntry[]) {
+    this.lastSyncEntries = entries;
     const scene = this.scene;
-    const camera = this.camera;
-    if (!renderer || !scene || !camera) return null;
-    // Known Phase-1 gap: WebGPURenderer has no `preserveDrawingBuffer`
-    // equivalent, so this can occasionally return a blank frame on the
-    // WebGPU backend specifically. A real off-screen-render-target capture
-    // is the fix, sequenced separately.
-    if (this.renderPipeline) this.renderPipeline.render();
-    else renderer.render(scene, camera);
-    return renderer.domElement.toDataURL("image/png");
-  }
+    const loader = this.loader;
+    const clippingGroup = this.clippingGroup;
+    if (!scene || !loader || !clippingGroup) return;
+    const token = ++this.syncToken;
 
-  // "Render this" (webgl_renderer_pathtracer.html parity, `renderPathTraceScreenshot`)
-  // — removed entirely 2026-08-14 at the user's explicit request ("remove
-  // this from my platform everywhere"). Was a one-shot photorealistic
-  // path-traced screenshot built on the `three-gpu-pathtracer` npm
-  // dependency (also removed, see package.json) — the isolated
-  // pathTraceScreenshot.ts module this delegated to is deleted, not left
-  // dead.
-
-  /** Toggles the real shadow-map debug HUD (see its own field doc comment
-   * above for the full lifecycle/positioning-scope caveat). Cheap either
-   * way: turning it off just drops the reference so it's lazily rebuilt
-   * from scratch if re-enabled — no owned GPU resources of its own to
-   * dispose (it reads the light's existing `shadow.map.depthTexture`,
-   * never creates one — confirmed against `ShadowMapViewerGPU.js`'s own
-   * source). */
-  setShadowMapViewerEnabled(enabled: boolean) {
-    this.shadowMapViewerEnabled = enabled;
-    if (!enabled) this.shadowMapViewer = null;
-  }
-
-  /** Live compass heading (degrees) — the same `theta` `resetToNorth`
-   * drives to 0, just read instead of written. `0` = camera already at
-   * the canonical "North Sign" heading; the viewer polls this every frame
-   * (cheap: one `atan2`, no allocation beyond a scratch Vector3/Spherical)
-   * to keep a compass needle in sync with orbiting, entirely outside
-   * React state — see ProceduralProjectViewer.tsx's own compass rAF loop
-   * doc comment for why. `null` before the camera/controls exist. */
-  getCameraAzimuthDeg(): number | null {
-    const controls = this.controls;
-    const camera = this.camera;
-    if (!controls || !camera) return null;
-    const offset = camera.position.clone().sub(controls.target);
-    const spherical = new THREE.Spherical().setFromVector3(offset);
-    return THREE.MathUtils.radToDeg(spherical.theta);
-  }
-
-  getCameraState(): { position: { x: number; y: number; z: number }; target: { x: number; y: number; z: number }; fov: number } | null {
-    const camera = this.camera;
-    const controls = this.controls;
-    if (!camera || !controls) return null;
-    return {
-      position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
-      target: { x: controls.target.x, y: controls.target.y, z: controls.target.z },
-      fov: camera.fov,
-    };
-  }
-
-  private applyUnitAppearance(mesh: THREE.Mesh, box: UnitBox, params: { selectedUnitId: string | null; filters: UnitFilters }) {
-    const material = mesh.material as THREE.MeshStandardMaterial;
-    const isSelected = box.unit.id === params.selectedUnitId;
-    const isHovered = box.unit.id === this.hoveredId;
-    const unitColors = this.resolveUnitColors();
-    // `?? unitColors.available`: Postgres's `Unit.status` column is an
-    // unconstrained String (no DB enum) as of the Units read-migration —
-    // this Record lookup would otherwise silently resolve to `undefined`
-    // for any value outside "available"/"reserved"/"sold"/"selected".
-    material.color.setHex(isSelected ? unitColors.selected : unitColors[box.unit.status] ?? unitColors.available);
-    material.emissive.setHex(isSelected ? unitColors.selected : isHovered ? 0x333333 : 0x000000);
-    material.emissiveIntensity = isSelected ? 0.35 : isHovered ? 0.5 : 0;
-    material.roughness = 0.6;
-    material.metalness = 0.05;
-
-    // Unit-status caustics — real per-unit live uniforms (color/intensity
-    // genuinely vary by status), updated on every hover/select/status
-    // refresh same as the rest of this method. No-op (map lookup miss)
-    // when caustics is disabled or this unit's material was never
-    // upgraded — see the mount()-time construction loop.
-    const causticsUniforms = this.causticsUnitUniforms.get(box.unit.id);
-    if (causticsUniforms) {
-      causticsUniforms.color.value.setHex(unitColors[box.unit.status] ?? unitColors.available);
-      causticsUniforms.intensity.value = this.resolveCausticsIntensity(box.unit.status);
-    }
-
-    mesh.visible = this.matchesFilters(box.unit, params.filters);
-  }
-
-  /** Resolves the 4 admin-configurable unit-status colors (added alongside
-   * the full-configurator pass) from `this.config`, defaulting to the
-   * original hardcoded `UNIT_BOX_COLOR`/`SELECTED_COLOR` constants for any
-   * project row saved before these fields existed (same `?? default`
-   * pattern this codebase already established for new config fields —
-   * belt-and-suspenders alongside the Prisma column defaults, since a
-   * stale in-memory `Project3DConfig` object could still be missing them
-   * mid-session). Hex strings are converted once per call via
-   * `THREE.Color` rather than cached — this runs on hover/select/filter
-   * changes, not every frame, so the allocation is cheap enough not to be
-   * worth a cache. */
-  private resolveUnitColors(): Record<Unit["status"], number> & { selected: number } {
-    const c = this.config;
-    const hex = (value: string | undefined, fallback: number) =>
-      value ? new THREE.Color(value).getHex() : fallback;
-    return {
-      available: hex(c?.unitColorAvailable, UNIT_BOX_COLOR.available),
-      reserved: hex(c?.unitColorReserved, UNIT_BOX_COLOR.reserved),
-      sold: hex(c?.unitColorSold, UNIT_BOX_COLOR.sold),
-      selected: hex(c?.unitColorSelected, SELECTED_COLOR),
-    };
-  }
-
-  /** Unit-status caustics — availability half of the "Availability, color,
-   * caustics properties" linkage the feature was built against. Real
-   * admin sliders, not a hardcoded ratio. */
-  private resolveCausticsIntensity(status: Unit["status"]): number {
-    const c = this.config;
-    if (status === "available") return c?.causticsIntensityAvailable ?? 1;
-    if (status === "reserved") return c?.causticsIntensityReserved ?? 0.4;
-    return c?.causticsIntensitySold ?? 0;
-  }
-
-  private refreshGlbUnitBoxAppearance(params: { selectedUnitId: string | null; filters: UnitFilters; showUnitBoxes: boolean }) {
-    const unitColors = this.resolveUnitColors();
-    this.glbUnitBoxes.forEach(({ node, unitId }) => {
-      const unit = this.unitById.get(unitId);
-      if (!unit) {
-        node.visible = false;
-        return;
+    const wantedSlotIds = new Set(entries.filter((e) => e.model.enabled !== false).map((e) => e.slotId));
+    for (const [slotId, root] of this.modelRootsBySlot) {
+      if (!wantedSlotIds.has(slotId)) {
+        clippingGroup.remove(root);
+        this.modelRootsBySlot.delete(slotId);
+        this.loadedGlbUrlBySlot.delete(slotId);
       }
-      const isSelected = unitId === params.selectedUnitId;
-      const isHovered = unitId === this.hoveredId;
-      node.visible = params.showUnitBoxes && this.matchesFilters(unit, params.filters);
-      const color = isSelected ? unitColors.selected : unitColors[unit.status] ?? unitColors.available;
-      const opacity = isSelected || isHovered ? UNIT_BOX_SELECTED_OPACITY : UNIT_BOX_OPACITY;
-      // Color is part of the cache key (not just status|selected|hovered)
-      // — an admin changing a status color mid-session must produce a
-      // fresh cache entry, not silently reuse a stale-colored cached
-      // material. Old-color entries become orphaned in the Map until the
-      // next full mount() rebuild (which already disposes and recreates
-      // the whole cache) — acceptable for a bounded admin editing
-      // session, same trade-off already accepted for the cache's
-      // hover/select dimensions.
-      const cacheKey = `${unit.status}|${isSelected}|${isHovered}|${color}`;
-      applyUnitBoxMaterial(node, color, opacity, this.unitMaterialCache, cacheKey);
-    });
-  }
-
-  /** Re-evaluates per-unit appearance whenever selection, filters,
-   * construction progress or the Unit-Search panel toggle change. Also
-   * remembers `params` so the pointer handlers (hover/click, set up once
-   * in `mount()` and never recreated) can trigger the same refresh with
-   * up-to-date data without needing their own fresh closure — mirrors the
-   * original component's plain-function-in-render-body pattern, where
-   * every call site always saw that render's latest props/state. */
-  refreshAppearance(params: RefreshAppearanceParams) {
-    this.setProject(params.project);
-    this.config = params.config;
-    this.lastRefreshParams = params;
-    if (params.usingGlb) {
-      this.refreshGlbUnitBoxAppearance({
-        selectedUnitId: params.selectedUnitId,
-        filters: params.filters,
-        showUnitBoxes: params.showUnitBoxes,
-      });
-    } else {
-      this.unitBoxes.forEach((box) => {
-        const mesh = this.unitMeshes.get(box.unit.id);
-        if (mesh) {
-          this.applyUnitAppearance(mesh, box, {
-            selectedUnitId: params.selectedUnitId,
-            filters: params.filters,
-          });
-        }
-      });
     }
-  }
 
-  /** Applies a detail model's placement transform to its loaded root —
-   * runs both at initial GLB load and again from `applyLiveUpdate`
-   * whenever Admin's scale/rotation/altitude sliders change, without a
-   * full GLB reload. */
-  private applyDetailTransform(root: THREE.Object3D, scale: number, rotationDeg: number, altitudeOffset: number) {
-    root.scale.setScalar(scale);
-    root.rotation.y = THREE.MathUtils.degToRad(rotationDeg);
-    root.position.y = altitudeOffset;
-  }
+    let loadedSomethingNew = false;
+    for (const { slotId, model, units, statusPreviewEnabled } of entries) {
+      if (model.enabled === false) continue;
+      const existingRoot = this.modelRootsBySlot.get(slotId);
+      const existingUrl = this.loadedGlbUrlBySlot.get(slotId);
 
-  /** Builds the meshName -> unitId map and hides/registers pickable unit
-   * nodes on an already-loaded GLB root. Restores any node that was
-   * linked (and hidden) by a previous call but is no longer linked back to
-   * its normal unlinked-visibility rule first — otherwise toggling a link
-   * off would leave that mesh permanently hidden from the earlier pass. */
-  /** `slotId`-scoped (Multiple Detail-Model Slots pass) — the old
-   * unconditional `.clear()` of `glbUnitBoxes`/`pickable` would wipe out
-   * every OTHER already-processed slot's tracked nodes when this runs in
-   * a per-slot loop; instead only this slot's own previous keys (the
-   * `` `${slotId}:` `` prefix `glbUnitBoxes` entries carry) are removed
-   * before repopulating. */
-  private applyDetailUnitLinks(slotId: string, root: THREE.Object3D, unitLinks: UnitMeshLink[]) {
-    const linkByName = new Map(unitLinks.map((l) => [l.meshName, l.unitId]));
-    const prefix = `${slotId}:`;
-    for (const [key, entry] of Array.from(this.glbUnitBoxes.entries())) {
-      if (!key.startsWith(prefix)) continue;
-      const meshName = key.slice(prefix.length);
-      if (!linkByName.has(meshName)) entry.node.visible = !UNIT_NODE_PATTERN.test(meshName);
-      this.glbUnitBoxes.delete(key);
-      this.pickable.delete(entry.unitId);
-    }
-    root.traverse((child) => {
-      const unitId = linkByName.get(child.name);
-      if (!unitId) {
-        if (UNIT_NODE_PATTERN.test(child.name)) child.visible = false;
-        return;
+      if (existingRoot && existingUrl === model.glbUrl) {
+        // Cheap path — same GLB, just re-apply state.
+        this.applyTransform(existingRoot, model);
+        existingRoot.visible = model.visible !== false;
+        existingRoot.traverse((child) => {
+          const mesh = child as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          mesh.castShadow = model.castShadow !== false;
+          mesh.receiveShadow = model.receiveShadow !== false;
+        });
+        this.applyNodeOverrides(existingRoot, model);
+        this.applyUnitBoxes(existingRoot, model.unitLinks, units ?? [], statusPreviewEnabled ?? true);
+        applyTransmittedShadows(existingRoot, this.lightingConfig);
+        continue;
       }
-      child.visible = false;
-      child.userData.unitId = unitId;
-      this.glbUnitBoxes.set(`${prefix}${child.name}`, { node: child, unitId });
-      this.pickable.set(unitId, child);
-    });
+
+      // New slot, or its GLB changed (Replace) — real (re)load.
+      try {
+        const gltf = await loader.loadAsync(model.glbUrl);
+        if (token !== this.syncToken) return; // superseded by a newer syncModels() call
+        if (existingRoot) clippingGroup.remove(existingRoot);
+        const root = gltf.scene;
+        this.applyTransform(root, model);
+        root.visible = model.visible !== false;
+        root.traverse((child) => {
+          const mesh = child as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          mesh.castShadow = model.castShadow !== false;
+          mesh.receiveShadow = model.receiveShadow !== false;
+        });
+        this.applyNodeOverrides(root, model);
+        this.applyUnitBoxes(root, model.unitLinks, units ?? [], statusPreviewEnabled ?? true);
+        applyTransmittedShadows(root, this.lightingConfig);
+        clippingGroup.add(root);
+        this.modelRootsBySlot.set(slotId, root);
+        this.loadedGlbUrlBySlot.set(slotId, model.glbUrl);
+        loadedSomethingNew = true;
+      } catch (err) {
+        console.error("RenderEngine: GLB load failed", model.glbUrl, err);
+      }
+    }
+
+    if (token !== this.syncToken) return;
+    this.loadedRoots = Array.from(this.modelRootsBySlot.values());
+    // Only reframe the camera when something NEW came in — an in-place
+    // transform/material edit on already-loaded content must never yank
+    // the camera away from wherever the admin currently has it pointed.
+    if (loadedSomethingNew) this.frameLoadedContent();
   }
 
-  /** Replaces every `Glass_*`-named node's material with a real
-   * MeshPhysicalMaterial tuned by the project's `glassPreset` — this is
-   * what makes glazing read as transmissive/reflective instead of flat,
-   * which only looks convincing against a real environment map (see
-   * rebuildEnvironment below). */
-  private applyGlassPreset(root: THREE.Object3D, glassPreset: Project3DConfig["glassPreset"], environmentIntensity: number) {
-    const tier = GLASS_TIERS[glassPreset];
-    root.traverse((child) => {
-      if (!GLASS_NODE_PATTERN.test(child.name)) return;
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      const prevColor =
-        !Array.isArray(mesh.material) && (mesh.material as THREE.MeshStandardMaterial)?.color
-          ? (mesh.material as THREE.MeshStandardMaterial).color.clone()
-          : new THREE.Color(0xdfeaf2);
-      const prev = mesh.material as THREE.Material | THREE.Material[] | undefined;
-      if (Array.isArray(prev)) prev.forEach((m) => m.dispose());
-      else prev?.dispose();
-      mesh.material = new THREE.MeshPhysicalMaterial({
-        color: prevColor,
-        transmission: tier.transmission,
-        roughness: tier.roughness,
-        ior: tier.ior,
-        thickness: tier.thickness,
-        transparent: tier.transmission === 0,
-        opacity: tier.transmission === 0 ? 0.35 : 1,
-        envMapIntensity: environmentIntensity,
-      });
-    });
+  /** Position/Rotation/Scale — PRD §5. Y axis reuses the pre-existing
+   * altitudeOffset/rotationDeg field names (see ProjectDetailModel's own
+   * doc comment); X/Z are the Phase 1 addition. */
+  private applyTransform(root: THREE.Object3D, model: ProjectDetailModel) {
+    root.scale.setScalar(model.scale);
+    root.rotation.set(
+      (model.rotationXDeg * Math.PI) / 180,
+      (model.rotationDeg * Math.PI) / 180,
+      (model.rotationZDeg * Math.PI) / 180
+    );
+    root.position.set(model.positionX, model.altitudeOffset, model.positionZ);
   }
 
-  /** Admin's Scene Explorer classification/material overrides — runs after
-   * applyGlassPreset so it customizes specific nodes on top of their
-   * baseline treatment, not the other way round.
-   * Overrides are stored keyed by rzNodeId; resolving which live Object3D
-   * that refers to is still name-based via a `name -> override` map built
-   * from the fetched sceneManifest — same limitation UnitMeshLink already
-   * has (see rewrite Track B step 4, stable-ID resolution). */
-  private applyNodeOverrides(root: THREE.Object3D, detailModel: ProjectDetailModel | null) {
-    const overrides = detailModel?.nodeOverrides ?? [];
-    const manifest = detailModel?.sceneManifest ?? [];
-    if (overrides.length === 0) return;
+  /** Non-destructive Materials overrides (PRD §6) — every mesh's ORIGINAL
+   * material is cached the first time it's seen and never mutated; every
+   * (re)application clones fresh from that cached original, so toggling
+   * an override off (or "Restore Original") always gets back exactly
+   * what the GLB shipped with, never a drifted copy of a copy. */
+  private applyNodeOverrides(root: THREE.Object3D, model: ProjectDetailModel) {
+    const overrides = model.nodeOverrides ?? [];
+    const manifest = model.sceneManifest ?? [];
     const rzToOverride = new Map(overrides.map((o) => [o.rzNodeId, o]));
-    const nameToOverride = new Map(
-      manifest.flatMap((n) => {
-        const override = rzToOverride.get(n.rzNodeId);
-        return override ? [[n.name, override] as const] : [];
+    const nameToOverride = new Map<string, NodeOverride>(
+      manifest.flatMap((n: SceneManifestNode) => {
+        const o = rzToOverride.get(n.rzNodeId);
+        return o ? [[n.name, o] as const] : [];
       })
     );
-    if (nameToOverride.size === 0) return;
-    const unitBoxNodes = new Set(Array.from(this.glbUnitBoxes.values()).map((e) => e.node));
-    root.traverse((child) => {
-      if (unitBoxNodes.has(child)) return;
-      if (GLASS_NODE_PATTERN.test(child.name)) return;
-      const override = nameToOverride.get(child.name);
-      if (!override) return;
 
-      // Helper nodes (guide/reference geometry a 3D artist left in) are
-      // hidden by default — the one concrete runtime effect classification
-      // gets; Landscape/Interaction are organizational only for now. An
-      // explicit `visible: true` override still wins.
-      if (override.classification === "helper" && override.visible !== true) {
-        child.visible = false;
+    root.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      // Unit_<number> boxes get their own dedicated status-color tinting
+      // (applyUnitBoxes) — Materials-tab overrides don't apply to them,
+      // same exclusion the pre-rebuild engine had.
+      if (UNIT_NODE_PATTERN.test(mesh.name)) return;
+      if (!this.originalMaterials.has(mesh)) {
+        this.originalMaterials.set(mesh, normalizeMaterials(mesh.material));
+      }
+      const originals = this.originalMaterials.get(mesh)!;
+      const override = nameToOverride.get(mesh.name);
+
+      const currentIsOriginal = normalizeMaterials(mesh.material).every((m, i) => m === originals[i]);
+
+      if (!override || override.materialOverrideEnabled === false) {
+        if (!currentIsOriginal) {
+          normalizeMaterials(mesh.material).forEach((m) => m.dispose());
+          mesh.material = originals.length === 1 ? originals[0] : originals;
+        }
+        if (override?.visible === false) mesh.visible = false;
+        return;
       }
 
-      const preset = override.materialPreset ? MATERIAL_PRESETS[override.materialPreset] : null;
-      // webgl_watch.html parity — clearcoat/iridescence only exist on
-      // MeshPhysicalMaterial, not the plain MeshStandardMaterial GLTFLoader
-      // produces for an arbitrary uploaded GLB with no clearcoat/
-      // iridescence glTF extension of its own.
-      const hasClearcoatOverride = override.clearcoat != null || override.clearcoatRoughness != null;
-      const hasIridescenceOverride = override.iridescence != null || override.iridescenceIOR != null;
-      const hasMaterialOverride = !!(
-        preset ||
-        override.colorHex ||
-        override.roughness != null ||
-        override.metalness != null ||
-        override.opacity != null ||
-        hasClearcoatOverride ||
-        hasIridescenceOverride
-      );
-      const mesh = child as THREE.Mesh;
-      if (!hasMaterialOverride || !mesh.isMesh) return;
-      const prevMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      const nextMaterials = prevMaterials.map((mat) => {
-        let std = mat as THREE.MeshStandardMaterial;
-        // Upgrade to a real MeshPhysicalMaterial the same way
-        // applyGlassPreset already does for Glass_* nodes above, preserving
-        // the existing look, rather than setting a property that silently
-        // does nothing on a plain MeshStandardMaterial. Skipped once
-        // already upgraded (re-runs on every applyNodeOverrides call, e.g.
-        // from applyLiveUpdate, not just once) — no repeat allocation.
-        if ((hasClearcoatOverride || hasIridescenceOverride) && !(std instanceof THREE.MeshPhysicalMaterial)) {
-          const upgraded = new THREE.MeshPhysicalMaterial({
-            color: std.color?.clone(),
-            map: std.map ?? null,
-            normalMap: std.normalMap ?? null,
-            roughnessMap: std.roughnessMap ?? null,
-            metalnessMap: std.metalnessMap ?? null,
-            roughness: std.roughness,
-            metalness: std.metalness,
-            opacity: std.opacity,
-            transparent: std.transparent,
-            envMapIntensity: std.envMapIntensity,
-          });
-          std.dispose();
-          std = upgraded;
-        }
-        if (override.colorHex) std.color?.set(override.colorHex);
-        else if (preset) std.color?.setHex(preset.color);
-        if (override.roughness != null) std.roughness = override.roughness;
-        else if (preset && typeof std.roughness === "number") std.roughness = preset.roughness;
-        if (override.metalness != null) std.metalness = override.metalness;
-        else if (preset && typeof std.metalness === "number") std.metalness = preset.metalness;
-        if (override.opacity != null) {
-          std.opacity = override.opacity;
-          std.transparent = override.opacity < 1;
-        }
-        if (std instanceof THREE.MeshPhysicalMaterial) {
-          if (override.clearcoat != null) std.clearcoat = override.clearcoat;
-          if (override.clearcoatRoughness != null) std.clearcoatRoughness = override.clearcoatRoughness;
-          if (override.iridescence != null) std.iridescence = override.iridescence;
-          if (override.iridescenceIOR != null) std.iridescenceIOR = override.iridescenceIOR;
-        }
-        return std;
-      });
-      mesh.material = Array.isArray(mesh.material) ? nextMaterials : nextMaterials[0];
+      if (!currentIsOriginal) normalizeMaterials(mesh.material).forEach((m) => m.dispose());
+      const built = originals.map((orig) => buildOverriddenMaterial(orig, override));
+      mesh.material = built.length === 1 ? built[0] : built;
+      if (override.visible === false) mesh.visible = false;
     });
   }
 
-  /** Fog color when `config.fogMatchesSky` is on — the "seamless horizon"
-   * technique from three.js's webgl_geometry_terrain example (that demo
-   * matches its fog color to the sky/clear color so distant geometry
-   * fades into the backdrop instead of a visible fog-vs-sky seam). The
-   * physical `SkyMesh` (the scene's only backdrop now — see the
-   * Sky/Water/Bloom/Clouds "Ocean" tab's own doc comments) has no cheap
-   * single "horizon color" to derive from its continuous elevation/
-   * azimuth-driven atmosphere without an expensive GPU readback, so this
-   * is one fixed, honest approximation (`FOG_SKY_HORIZON_COLOR`) rather
-   * than a per-project-accurate one. */
-  private resolveFogColor(config: Project3DConfig): string {
-    if (!config.fogMatchesSky) return config.fogColor;
-    return FOG_SKY_HORIZON_COLOR;
+  /** Unit Mapping's "Status Preview — ON/OFF" (PRD §5) — tints every
+   * Unit_<number> box a translucent green/yellow/red by its linked real
+   * Unit's status. Off (or unlinked) restores the GLB's own original
+   * material, same cache-and-clone discipline as applyNodeOverrides. */
+  private applyUnitBoxes(root: THREE.Object3D, unitLinks: UnitMeshLink[], units: Unit[], statusPreviewEnabled: boolean) {
+    const unitById = new Map(units.map((u) => [u.id, u]));
+    const linkByMesh = new Map(unitLinks.map((l) => [l.meshName, l.unitId]));
+
+    root.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || !UNIT_NODE_PATTERN.test(mesh.name)) return;
+      if (!this.originalMaterials.has(mesh)) {
+        this.originalMaterials.set(mesh, normalizeMaterials(mesh.material));
+      }
+      const originals = this.originalMaterials.get(mesh)!;
+      const unit = statusPreviewEnabled ? unitById.get(linkByMesh.get(mesh.name) ?? "") : undefined;
+      const currentIsOriginal = normalizeMaterials(mesh.material).every((m, i) => m === originals[i]);
+
+      if (!unit) {
+        if (!currentIsOriginal) {
+          normalizeMaterials(mesh.material).forEach((m) => m.dispose());
+          mesh.material = originals.length === 1 ? originals[0] : originals;
+        }
+        return;
+      }
+      if (!currentIsOriginal) normalizeMaterials(mesh.material).forEach((m) => m.dispose());
+      mesh.material = new THREE.MeshBasicMaterial({
+        color: UNIT_BOX_COLOR[unit.status],
+        transparent: true,
+        opacity: UNIT_BOX_OPACITY,
+        depthWrite: false,
+      });
+    });
   }
 
-  /** Ground Platform's real "ground fog" (Sky/Water/Bloom/Clouds follow-up)
-   * — a deliberately different effect from the `fogEnabled`/`fogColor`
-   * `THREE.FogExp2` above (that one fades with distance *from the
-   * camera*, affecting the whole scene). This one lives entirely on the
-   * ground mesh's own material: a radial fade from `groundColor` to
-   * `resolveFogColor(config)` (the same target color the regular fog
-   * already resolves to) based on distance from the fixed world origin
-   * (0,0,0) — a circular "misty edge" around a specific point the admin
-   * chooses a radius for, not a camera-relative depth effect.
-   *
-   * Built as a `MeshStandardNodeMaterial` (not the plain
-   * `MeshStandardMaterial` the old procedural-only ground used) so the
-   * fade can be a real TSL `colorNode` while keeping standard PBR
-   * shading (roughness, shadow receiving, environment reflections). Every
-   * knob is a live `UniformNode` (see the class fields above) — including
-   * `groundFogEnabled` itself (`groundFogStrengthUniform` just goes
-   * 0↔1) — so nothing here ever needs a pipeline/material rebuild, unlike
-   * `bloomEnabled`/`waterEnabled` elsewhere in this pass. */
-  private buildGroundMaterial(config: Project3DConfig): THREE.MeshStandardNodeMaterial {
+  /** Ground alignment (PRD §5) — the Y offset that would put this model's
+   * lowest point exactly at world Y=0, given its CURRENT scale/rotation.
+   * Returns null if the slot isn't loaded. Caller applies+persists it
+   * (this doesn't mutate anything itself, matching every other Scene-tab
+   * control being an explicit, savable edit). */
+  computeGroundAlignOffset(slotId: string): number | null {
+    const root = this.modelRootsBySlot.get(slotId);
+    if (!root) return null;
+    const box = new THREE.Box3().setFromObject(root);
+    const currentY = root.position.y;
+    const lowestY = box.min.y;
+    return currentY - lowestY;
+  }
+
+  /** Real world-space bounding box of the currently loaded content —
+   * Sections' "New Section"/"New Floor Section" uses this to place a
+   * sensible default footprint/height, instead of hardcoding world
+   * origin (which is only where the CAMERA orbit target starts, not
+   * necessarily anywhere near the actual GLB — confirmed via a real bug
+   * this exact gap caused: a project whose content sits well off-origin
+   * got a brand-new section that clipped away nearly the whole building,
+   * only grazing a thin edge slice, because the box and the building
+   * barely overlapped). Null before anything has loaded. */
+  getContentBounds(): { centerX: number; centerZ: number; minY: number; maxY: number; sizeX: number; sizeZ: number } | null {
+    const b = this.contentBounds;
+    if (!b) return null;
+    return { centerX: b.center.x, centerZ: b.center.z, minY: b.min.y, maxY: b.max.y, sizeX: b.size.x, sizeZ: b.size.z };
+  }
+
+  /** Every real THREE.Mesh currently in clippingGroup — the actual
+   * clippable content the section-fill cap borrows geometry from (back
+   * faces only, see rebuildSectionCap's own doc comment). */
+  private collectClippableMeshes(): THREE.Mesh[] {
+    const meshes: THREE.Mesh[] = [];
+    this.clippingGroup?.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh) meshes.push(mesh);
+    });
+    return meshes;
+  }
+
+  /** Removes every real color-fill mesh (sectionFillMeshes) — does NOT
+   * dispose their geometry (borrowed from the real source mesh in
+   * clippingGroup, never owned/disposed here). */
+  private clearSectionFillMeshes() {
+    for (const mesh of this.sectionFillMeshes) {
+      this.sectionFillClippingGroup?.remove(mesh);
+    }
+    this.sectionFillMeshes = [];
+  }
+
+  /** Sections module cap — restored technique from the pre-rebuild engine
+   * (real, production-verified): NOT a stencil trick (broken under this
+   * app's WebGPURenderer, confirmed via a real screenshot once before —
+   * see this method's git history if that's ever needed again). Instead,
+   * every clippable mesh's geometry is reused (buffer shared, not
+   * copied) by a second, BackSide-material mesh sharing the exact same
+   * clipping planes — where the real front face got clipped away, that
+   * mesh's back face (visible from inside the cut) shows a solid color
+   * fill. `fillGapsEnabled: false` shows a plain translucent unclipped
+   * indicator rectangle instead (editing aid only, matches the drawn
+   * footprint). */
+  private rebuildSectionCap(section: Section | null) {
+    const helpers = this.sectionHelperGroup;
+    if (!helpers) return;
+    if (this.sectionIndicatorMesh) {
+      helpers.remove(this.sectionIndicatorMesh);
+      this.sectionIndicatorMesh.geometry.dispose();
+      this.sectionIndicatorMesh = null;
+    }
+    this.clearSectionFillMeshes();
+    if (!section) return;
+
+    if (section.fillGapsEnabled) {
+      if (!this.sectionFillClippingGroup) {
+        this.sectionFillClippingGroup = new THREE.ClippingGroup();
+        helpers.add(this.sectionFillClippingGroup);
+      }
+      this.sectionFillClippingGroup.clippingPlanes = buildSectionPlanes(section);
+
+      if (!this.sectionFillMaterial) {
+        this.sectionFillMaterial = new THREE.MeshBasicMaterial({ color: section.fillColor, side: THREE.BackSide });
+      } else {
+        this.sectionFillMaterial.color.set(section.fillColor);
+      }
+
+      for (const source of this.collectClippableMeshes()) {
+        const fillMesh = new THREE.Mesh(source.geometry, this.sectionFillMaterial);
+        fillMesh.matrixAutoUpdate = false;
+        fillMesh.matrix.copy(source.matrixWorld);
+        fillMesh.frustumCulled = false;
+        fillMesh.castShadow = false;
+        fillMesh.receiveShadow = false;
+        fillMesh.renderOrder = 10;
+        this.sectionFillClippingGroup.add(fillMesh);
+        this.sectionFillMeshes.push(fillMesh);
+      }
+    } else {
+      const geometry = buildSectionCapGeometry(section);
+      if (!this.sectionIndicatorMaterial) {
+        this.sectionIndicatorMaterial = new THREE.MeshBasicMaterial({
+          color: SECTION_INDICATOR_COLOR,
+          transparent: true,
+          opacity: 0.5,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
+      }
+      const mesh = new THREE.Mesh(geometry, this.sectionIndicatorMaterial);
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      mesh.renderOrder = 10;
+      helpers.add(mesh);
+      this.sectionIndicatorMesh = mesh;
+    }
+  }
+
+  /** Activates a section by real clip + cap, or clears it (null). Does
+   * not itself attach/detach an editing gizmo (no viewport drag-authoring
+   * yet — Sections tab uses numeric fields this pass, see the panel's own
+   * doc comment). */
+  activateSection(section: Section | null) {
+    this.activeSectionId = section?.id ?? null;
+    if (this.clippingGroup) {
+      this.clippingGroup.clippingPlanes = section ? buildSectionPlanes(section) : NO_ACTIVE_SECTION_PLANES;
+    }
+    this.rebuildSectionCap(section);
+  }
+
+  getActiveSectionId(): string | null {
+    return this.activeSectionId;
+  }
+
+  /** Recomputes boundingRadius from currently loaded content and, only on
+   * the very FIRST successful load (hasFramedOnce false), positions the
+   * camera at the real cameraStartDistanceMultiplier distance — matching
+   * the pre-rebuild engine's formula exactly. Every load after that just
+   * updates boundingRadius (so distance-limit/far-plane math tracks the
+   * real content size) without yanking the camera away from wherever the
+   * admin currently has it pointed. */
+  private frameLoadedContent() {
+    const { camera, controls, loadedRoots } = this;
+    if (!camera || !controls || loadedRoots.length === 0) return;
+    const box = new THREE.Box3();
+    loadedRoots.forEach((root) => box.union(new THREE.Box3().setFromObject(root)));
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    this.contentBounds = { min: box.min.clone(), max: box.max.clone(), center: center.clone(), size: size.clone() };
+    this.boundingRadius = Math.max(size.x, size.y, size.z, 1) * 0.65 || 20;
+
+    if (!this.hasFramedOnce) {
+      this.hasFramedOnce = true;
+      const startDistance = this.boundingRadius * this.cameraConfig.cameraStartDistanceMultiplier;
+      controls.target.copy(center);
+      camera.position.set(center.x + startDistance, center.y + startDistance * 0.7, center.z + startDistance);
+    }
+    this.applyCameraConfig(this.cameraConfig);
+    // Real bug this avoids: without re-deriving sunDistance/re-applying
+    // the Environment config once real content bounds are known, the sun
+    // (and the ground disc's own sizing) would stay locked to the
+    // world-origin/boundingRadius=20 placeholder used before anything
+    // loaded — same class of gap Sections' own getContentBounds fix
+    // (Phase B) addressed for section placement.
+    this.sunDistance = Math.max(200, this.boundingRadius * 3);
+    this.applyEnvironmentConfig(this.environmentConfig, false);
+
+    // Lighting tab — a real shadow-camera frustum sized to the actual
+    // loaded content (same "was locked to the placeholder boundingRadius
+    // of 20" bug class as sunDistance above — the sun's shadow camera
+    // needs to be this. Bias/normalBias scaled to boundingRadius, not a
+    // fixed absolute value (negligible against a real building tens of
+    // meters across otherwise — shadow acne).
+    if (this.sun) {
+      const shadowSpan = this.boundingRadius * 1.5;
+      this.sun.shadow.camera.left = -shadowSpan;
+      this.sun.shadow.camera.right = shadowSpan;
+      this.sun.shadow.camera.top = shadowSpan;
+      this.sun.shadow.camera.bottom = -shadowSpan;
+      this.sun.shadow.camera.near = Math.max(0.1, this.sunDistance - this.boundingRadius * 2);
+      this.sun.shadow.camera.far = this.sunDistance + this.boundingRadius * 2;
+      this.sun.shadow.bias = -0.00005 * this.boundingRadius;
+      this.sun.shadow.normalBias = 0.01 * this.boundingRadius;
+      this.sun.shadow.camera.updateProjectionMatrix();
+      this.csmSystem?.updateFrustums();
+    }
+  }
+
+  /** Reframes the camera on the currently loaded content — resets the
+   * "already framed once" latch so it re-runs the real start-distance
+   * placement, same as a fresh mount would. */
+  resetView() {
+    this.hasFramedOnce = false;
+    this.frameLoadedContent();
+  }
+
+  setPerfStatsEnabled(enabled: boolean) {
+    this.showPerfStats = enabled;
+    if (!enabled) this.callbacks.onPerfStats(null);
+  }
+
+  /** Real current renderScale (post any adaptive/interaction reduction) —
+   * for the status bar's Quality Profile readout. */
+  getEffectiveRenderScale(): number {
+    return this.effectiveRenderScale;
+  }
+
+  /** Camera tab (PRD §37) — applies every field live, no remount. Safe to
+   * call on every slider drag (matches the Materials/Model-transform
+   * live-preview pattern). */
+  setCameraConfig(config: CameraConfig) {
+    this.cameraConfig = config;
+    this.applyCameraConfig(config);
+  }
+
+  private applyCameraConfig(config: CameraConfig) {
+    const { camera, controls, container } = this;
+    if (!camera || !controls || !container) return;
+    const isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
+    camera.fov = isMobileViewport ? config.cameraFovMobile : config.cameraFovDesktop;
+    camera.near = config.cameraNearClip;
+    // Real bug found live (not the "intermittent race" it first looked
+    // like — screenshot analysis showed the exact same y-position/height
+    // on every affected tab): the SkyMesh dome is a fixed-size backdrop
+    // at SKY_DOME_SCALE (1600 units) radius, entirely independent of an
+    // admin's artistic/perf cameraFarClip choice. Any project configured
+    // with a realistic near-field cameraFarClip (e.g. this app's own demo
+    // project ships 100) put the dome's own geometry beyond camera.far,
+    // so it was silently frustum-culled outright — the clear color
+    // (black) showed through wherever the dome would have been, while
+    // the ground plane (much closer to the camera) rendered normally.
+    // The sky dome must never be subject to the admin's scene-geometry
+    // far-clip setting, so it gets its own floor here.
+    camera.far = Math.max(config.cameraFarClip, this.boundingRadius * 8, SKY_DOME_SCALE * 1.1);
+    camera.updateProjectionMatrix();
+
+    controls.enableRotate = config.cameraOrbitEnabled;
+    controls.enablePan = config.cameraPanEnabled;
+    controls.enableZoom = config.cameraZoomEnabled;
+    controls.enableDamping = config.cameraDampingEnabled;
+    controls.dampingFactor = 0.08;
+    controls.autoRotate = config.autoRotate;
+    controls.minDistance = this.boundingRadius * config.cameraMinDistanceMultiplier;
+    controls.maxDistance = this.boundingRadius * config.cameraMaxDistanceMultiplier;
+    controls.minPolarAngle = THREE.MathUtils.degToRad(config.cameraMinPolarDeg);
+    controls.maxPolarAngle = THREE.MathUtils.degToRad(config.cameraMaxPolarDeg);
+    // OrbitControls' own defaults (unrestricted) when null — same
+    // "nullable means off" contract the schema field itself documents.
+    controls.minAzimuthAngle = config.cameraMinAzimuthDeg != null ? THREE.MathUtils.degToRad(config.cameraMinAzimuthDeg) : -Infinity;
+    controls.maxAzimuthAngle = config.cameraMaxAzimuthDeg != null ? THREE.MathUtils.degToRad(config.cameraMaxAzimuthDeg) : Infinity;
+  }
+
+  // ---------------------------------------------------------------------
+  // Environment tab (PRD §7-13) — Sun & Sky, Clouds, Fog & Haze, Water,
+  // Ground. PRD §10's "ONE Global Sun Vector" — resolveGlobalSunVector is
+  // the only place elevation/azimuth are computed; every feature below
+  // reads the resulting `this.sunDirection`, never its own.
+  // ---------------------------------------------------------------------
+
+  private isMobileQualityTier(): boolean {
+    return this.qualityConfig.qualityPreset === "mobile_low" || this.qualityConfig.qualityPreset === "mobile_high";
+  }
+
+  /** PRD §9-10 — off (default): the direct static sunElevationDeg/
+   * sunAzimuthDeg, zero behavior change for any project that never opens
+   * this tab. On: derived every call from Viewer Time + the selected
+   * Solar Path (src/lib/sunPosition.ts). `northOffsetDeg` rotates the
+   * result either way. */
+  private resolveGlobalSunVector(config: EnvironmentConfig): { elevationDeg: number; azimuthDeg: number } {
+    if (!config.solarControllerEnabled) {
+      return { elevationDeg: config.sunElevationDeg, azimuthDeg: config.sunAzimuthDeg };
+    }
+    const raw =
+      config.solarPathMode === "geographic"
+        ? geographicSunPosition(new Date(config.simulationDate), config.geoLatitude, config.geoLongitude, config.viewerTimeHours)
+        : sunPositionForAnchors(config.viewerTimeHours, config.solarAnchors);
+    return { elevationDeg: raw.elevationDeg, azimuthDeg: (((raw.azimuthDeg + config.northOffsetDeg) % 360) + 360) % 360 };
+  }
+
+  /** Restored near-verbatim from the pre-rebuild engine's own
+   * buildGroundMaterial — a real MeshStandardNodeMaterial whose colorNode
+   * does a radial fade from groundColor to the resolved fog color around
+   * world origin (Ground tab's own "Ground Fog" — a different, older
+   * technique from Fog & Haze's height-band fog), then multiplies in
+   * cloudShadowFactor (PRD §11's real, simplified Cloud Shadows). Every
+   * knob is a live UniformNode (this.ground*Uniform fields) so toggling
+   * never needs a material rebuild. */
+  private buildGroundMaterial(config: EnvironmentConfig): THREE.MeshStandardNodeMaterial {
     const groundColorUniform = uniform(new THREE.Color(config.groundColor));
-    const groundFogColorUniform = uniform(new THREE.Color(this.resolveFogColor(config)));
+    const groundFogColorUniform = uniform(new THREE.Color(resolveFogColor(config)));
     const groundFogRadiusUniform = uniform(Math.max(1, config.groundFogRadius));
     const groundFogStrengthUniform = uniform(config.groundFogEnabled ? 1 : 0);
     this.groundColorUniform = groundColorUniform;
@@ -1027,44 +1343,171 @@ export class RenderEngine {
     this.groundFogRadiusUniform = groundFogRadiusUniform;
     this.groundFogStrengthUniform = groundFogStrengthUniform;
 
+    const cloudShadowStrength = uniform(0);
+    const cloudHeightU = uniform(config.cloudHeight);
+    const cloudScaleU = uniform(Math.max(0.0001, config.cloudScale));
+    const cloudCoverageU = uniform(config.cloudCoverage);
+    const cloudWindU = uniform(new THREE.Vector2(0, 0));
+    const sunDirU = uniform(this.sunDirection.clone());
+    this.groundCloudShadowStrengthUniform = cloudShadowStrength;
+    this.groundCloudHeightUniform = cloudHeightU;
+    this.groundCloudScaleUniform = cloudScaleU;
+    this.groundCloudCoverageUniform = cloudCoverageU;
+    this.groundCloudWindUniform = cloudWindU;
+    this.groundSunDirectionUniform = sunDirU;
+
     const material = new THREE.MeshStandardNodeMaterial({ roughness: 1 });
-    // Fade over the inner 30% of the radius rather than a hard-edged
-    // circle — an untunable fixed softness (no separate field), same
-    // "don't invent an extra slider beyond what's asked" scope discipline
-    // as webgl_shaders_ocean.html's own hardcoded bloom threshold.
     const distanceFromOrigin = tslLength(positionWorld.xz);
     const innerRadius = groundFogRadiusUniform.mul(0.7);
-    const fade = smoothstep(innerRadius, groundFogRadiusUniform, distanceFromOrigin).mul(groundFogStrengthUniform);
-    material.colorNode = mix(groundColorUniform, groundFogColorUniform, fade);
+    const fade = tslSmoothstep(innerRadius, groundFogRadiusUniform, distanceFromOrigin).mul(groundFogStrengthUniform);
+    const baseColor = tslMix(groundColorUniform, groundFogColorUniform, fade);
+    const shadow = cloudShadowFactor(positionWorld, sunDirU, cloudHeightU, cloudScaleU, cloudCoverageU, cloudWindU, cloudShadowStrength);
+    material.colorNode = baseColor.mul(shadow);
     return material;
   }
 
-  /** Sky/Water/Bloom/Clouds "Ocean" tab — captures the real physical sky
-   * dome (`this.skyMesh`, the scene's only backdrop now) via
-   * `pmrem.fromScene`, the same "temporarily move the mesh into an
-   * offscreen capture scene, then back into the visible one" trick
-   * webgl_shaders_ocean.html's own `updateSun()` uses (that single mesh
-   * instance is also the visible backdrop, so it can't just live
-   * permanently in a separate scene). `size: 128` (PMREMGenerator's own
-   * default is 256) cuts the shaded-pixel count ~4x — a PMREM target only
-   * feeds blurry indirect lighting/reflections, not a sharp visible
-   * image, so this is not a visually meaningful quality loss; real perf
-   * fix from the original "Lighting tab doesn't work" report, when this
-   * replaced a free flat-gradient-texture PMREM capture with a real
-   * shaded one. */
-  private rebuildEnvironment(config: Project3DConfig) {
+  /** Environment tab (PRD §7-13) — applies every field live, no remount.
+   * Safe to call on every slider drag; the expensive PMREM rebuild is
+   * debounced internally (scheduleEnvironmentRebuild). */
+  setEnvironmentConfig(config: EnvironmentConfig) {
+    this.applyEnvironmentConfig(config, false);
+  }
+
+  private applyEnvironmentConfig(config: EnvironmentConfig, immediateRebuild: boolean) {
+    this.environmentConfig = config;
+    const { sun, ambient, scene, skyMesh, waterMesh, groundMesh, cloudSystem } = this;
+    if (!sun || !ambient || !scene) return;
+
+    const sunPos = this.resolveGlobalSunVector(config);
+    const dir = sunDirectionVector(sunPos);
+    this.sunDirection.set(dir.x, dir.y, dir.z);
+
+    const distance = this.sunDistance;
+    const center = this.contentBounds?.center ?? new THREE.Vector3();
+    sun.position.set(center.x + dir.x * distance, center.y + Math.max(dir.y, 0.05) * distance, center.z + dir.z * distance);
+    sun.target.position.copy(center);
+
+    const isNight = sunPos.elevationDeg <= 0;
+    if (config.autoSunColorEnabled) {
+      sun.color.setHex(sunColorForElevation(sunPos.elevationDeg));
+    } else {
+      sun.color.set(config.manualSunColorHex);
+    }
+    sun.intensity = config.autoSunIntensityEnabled
+      ? isNight
+        ? 0.1
+        : 1.2 + Math.max(0, sunPos.elevationDeg / 90) * 1.8
+      : config.manualSunIntensity;
+    ambient.intensity = isNight ? 0.08 : 0.15;
+
+    const isMobileTier = this.isMobileQualityTier();
+    const useRealCloudLayer = config.cloudsEnabled && !isMobileTier;
+
+    if (skyMesh) {
+      skyMesh.turbidity.value = config.skyTurbidity;
+      skyMesh.rayleigh.value = config.skyRayleigh;
+      skyMesh.mieCoefficient.value = config.skyMieCoefficient;
+      skyMesh.mieDirectionalG.value = config.skyMieDirectionalG;
+      skyMesh.sunPosition.value.copy(this.sunDirection);
+      skyMesh.showSunDisc.value = config.sunDiscEnabled ? 1 : 0;
+      skyMesh.visible = config.skyEnabled;
+      // The real raymarched Clouds layer is the primary system whenever
+      // it's active; SkyMesh's own baked-in cloud uniforms are the honest
+      // Low/Mobile-tier internal fallback (PRD §11) — never both at once.
+      const useFallbackClouds = config.cloudsEnabled && !useRealCloudLayer;
+      skyMesh.cloudCoverage.value = useFallbackClouds ? config.cloudCoverage : 0;
+      skyMesh.cloudDensity.value = useFallbackClouds ? config.cloudDensity : 0;
+      skyMesh.cloudElevation.value = config.cloudElevation;
+    }
+    if (cloudSystem) {
+      cloudSystem.mesh.visible = useRealCloudLayer;
+    }
+
+    if (waterMesh) {
+      waterMesh.visible = config.waterEnabled;
+      waterMesh.position.y = config.waterHeight;
+      const reflectSun = config.waterSunReflectionEnabled;
+      waterMesh.sunDirection.value.copy(reflectSun ? this.sunDirection : new THREE.Vector3(0, 1, 0));
+      waterMesh.sunColor.value.setHex(reflectSun ? sunColorForElevation(sunPos.elevationDeg) : 0x000000);
+      waterMesh.waterColor.value.set(config.waterColor);
+      waterMesh.size.value = config.waterSize;
+      const wavesActive = config.waterWavesEnabled && config.waterNormalMapEnabled;
+      waterMesh.distortionScale.value = wavesActive ? config.waterDistortionScale : 0;
+    }
+
+    if (groundMesh) {
+      groundMesh.visible = config.groundEnabled;
+      const wantsInfinite = config.groundStyle === "infinite";
+      const wantedRadius = Math.max(this.boundingRadius * 1.6, 10);
+      const currentIsInfinite = groundMesh.userData.isInfinite === true;
+      const currentRadius = groundMesh.userData.discRadius as number | undefined;
+      if (wantsInfinite !== currentIsInfinite || (!wantsInfinite && currentRadius !== wantedRadius)) {
+        const nextGeometry = wantsInfinite
+          ? new THREE.PlaneGeometry(GROUND_INFINITE_SIZE, GROUND_INFINITE_SIZE)
+          : new THREE.CircleGeometry(wantedRadius, 48);
+        groundMesh.geometry.dispose();
+        groundMesh.geometry = nextGeometry;
+        groundMesh.userData.isInfinite = wantsInfinite;
+        groundMesh.userData.discRadius = wantedRadius;
+      }
+    }
+    if (this.groundColorUniform) this.groundColorUniform.value.set(config.groundColor);
+    if (this.groundFogColorUniform) this.groundFogColorUniform.value.set(resolveFogColor(config));
+    if (this.groundFogRadiusUniform) this.groundFogRadiusUniform.value = Math.max(1, config.groundFogRadius);
+    if (this.groundFogStrengthUniform) this.groundFogStrengthUniform.value = config.groundFogEnabled ? 1 : 0;
+    if (this.groundCloudShadowStrengthUniform) {
+      this.groundCloudShadowStrengthUniform.value = config.cloudsEnabled && config.cloudShadowsEnabled ? 1 : 0;
+    }
+    if (this.groundCloudHeightUniform) this.groundCloudHeightUniform.value = config.cloudHeight;
+    if (this.groundCloudScaleUniform) this.groundCloudScaleUniform.value = Math.max(0.0001, config.cloudScale);
+    if (this.groundCloudCoverageUniform) this.groundCloudCoverageUniform.value = config.cloudCoverage;
+    if (this.groundCloudWindUniform) this.groundCloudWindUniform.value.copy(this.cloudSystem?.getWindOffset() ?? new THREE.Vector2());
+    if (this.groundSunDirectionUniform) this.groundSunDirectionUniform.value.copy(this.sunDirection);
+
+    this.scheduleEnvironmentRebuild(config, immediateRebuild);
+  }
+
+  /** Debounces the real shaded PMREM capture behind ~150ms of idle after
+   * the last call — same idiom Camera/Shots' own transitions and the
+   * pre-rebuild engine's identical method used. `environmentRefreshEnabled
+   * — off` (PRD §9) additionally skips every call AFTER the first
+   * successful one, freezing indirect lighting/reflections at their
+   * mount-time state as a real perf lever. */
+  private scheduleEnvironmentRebuild(config: EnvironmentConfig, immediate: boolean) {
+    if (this.environmentRebuildTimer != null) {
+      clearTimeout(this.environmentRebuildTimer);
+      this.environmentRebuildTimer = null;
+    }
+    const skyEnabledChangedSinceLastRebuild = this.lastRebuiltSkyEnabled !== null && this.lastRebuiltSkyEnabled !== config.skyEnabled;
+    if (this.hasRebuiltEnvironmentOnce && !config.environmentRefreshEnabled && !skyEnabledChangedSinceLastRebuild) return;
+    if (immediate) {
+      this.rebuildEnvironment(config);
+      this.hasRebuiltEnvironmentOnce = true;
+      return;
+    }
+    const mountTokenAtStart = this.mountToken;
+    this.environmentRebuildTimer = setTimeout(() => {
+      this.environmentRebuildTimer = null;
+      if (mountTokenAtStart !== this.mountToken) return;
+      this.rebuildEnvironment(config);
+      this.hasRebuiltEnvironmentOnce = true;
+    }, 150);
+  }
+
+  /** Real shaded-sky PMREM capture — restored near-verbatim from the
+   * pre-rebuild engine. Temporarily moves the one live `skyMesh` instance
+   * into an offscreen `envScene` to capture it (the same mesh is also the
+   * visible backdrop, so it can't just live permanently in a separate
+   * scene), then back. `skyEnabled: false` captures one cheap flat-color
+   * PMREM instead (still-lit scene, no directional sky gradient). */
+  private rebuildEnvironment(config: EnvironmentConfig) {
     const scene = this.scene;
     const envScene = this.envScene;
     const pmrem = this.pmrem;
     const skyMesh = this.skyMesh;
     if (!scene || !envScene || !pmrem || !skyMesh) return;
+    this.lastRebuiltSkyEnabled = config.skyEnabled;
 
-    // Standalone "Sky" tab's off switch (Rozaris-specific — the reference
-    // demo has no such toggle, its Sky is always the scene). No physical
-    // dome to capture a PMREM of, so fall back to one flat neutral color
-    // for both background and (via PMREMGenerator.fromScene on a bare
-    // color scene, the cheapest possible capture) ambient environment
-    // lighting — everything still lit, just no directional sky gradient.
     if (!config.skyEnabled) {
       skyMesh.visible = false;
       const fallbackColor = new THREE.Color(FOG_SKY_HORIZON_COLOR);
@@ -1093,1747 +1536,349 @@ export class RenderEngine {
     this.envRenderTarget = renderTarget;
     scene.environment = renderTarget.texture;
     scene.environmentIntensity = config.environmentIntensity;
-    // The physical sky dome paints itself directly as real geometry, so
-    // background stays unset — the renderer draws `skyMesh` itself
-    // rather than a flat equirect of it.
     scene.background = null;
     scene.backgroundIntensity = config.environmentIntensity;
     skyMesh.visible = true;
   }
 
-  /** Loads the real vendored LUT file for `presetId` (see `LUT_PRESETS`),
-   * dispatching to whichever of `LUTCubeLoader`/`LUT3dlLoader`/
-   * `LUTImageLoader` its `format` names — every option
-   * webgl_postprocessing_3dlut.html's own reference GUI exposes, same
-   * extension-based branch its own source uses. All three loaders share
-   * the same `{size, texture3D}` result shape. "Only reload on a real
-   * change" shape same as the rest of this class's async loaders (e.g.
-   * `loadCausticsTexture`). Failure (bad/missing preset id, fetch error)
-   * degrades to "no LUT" rather than breaking the mount. */
-  private async loadLut(presetId: string) {
-    if (this.lutPresetLoaded === presetId && this.lutTexture) return;
-    const preset = LUT_PRESETS.find((p) => p.id === presetId);
-    if (!preset) {
-      this.lutTexture = null;
-      this.lutPresetLoaded = null;
-      return;
-    }
-    const token = this.mountToken;
-    const loader = preset.format === "cube" ? new LUTCubeLoader() : preset.format === "3dl" ? new LUT3dlLoader() : new LUTImageLoader();
-    await new Promise<void>((resolve) => {
-      loader.load(
-        `/luts/${preset.file}`,
-        (result) => {
-          if (token !== this.mountToken) return resolve();
-          this.lutTexture = result.texture3D;
-          this.lutPresetLoaded = presetId;
-          resolve();
-        },
-        undefined,
-        (err) => {
-          if (token !== this.mountToken) return resolve();
-          console.warn(`3D Experience: LUT preset "${presetId}" failed to load, LUT grading disabled`, err);
-          this.lutTexture = null;
-          this.lutPresetLoaded = null;
-          resolve();
-        }
-      );
-    });
+  // ---------------------------------------------------------------------
+  // Lighting tab (PRD §14-21) — Sun Light, Shadows (CSM/Contact/
+  // Transmitted), Global Illumination (SSGI), Artificial Lights,
+  // Volumetric Lighting. See render-engine/{shadows,postProcessing,
+  // artificialLights}.ts for the real per-feature implementations; this
+  // is just their live-apply/rebuild-on-structural-change orchestration,
+  // same discipline as Environment's own applyEnvironmentConfig.
+  // ---------------------------------------------------------------------
+
+  setLightingConfig(config: LightingConfig) {
+    this.applyLightingConfig(config);
   }
 
-  /** Builds (or rebuilds) the TSL post-processing pipeline for the given
-   * quality tier. Uses `RenderPipeline` (three.js's current, non-deprecated
-   * pipeline/output-node manager) over a plain scene pass. Wrapped in
-   * try/catch: a construction failure degrades to "no post-processing"
-   * (renderPipeline stays null, the render loop falls back to a plain
-   * renderer.render(scene, camera)) rather than breaking the viewer
-   * outright.
-   *
-   * SSR/GTAO removed (user request, 2026-08-13, after they were
-   * implicated as a likely contributor to a real Sections-panel
-   * instability report — see the "rozaris-3d-sections-audit-fix" and
-   * "rozaris-3d-ssr-gtao-reenable" memories for the full history: this
-   * exact chain caused two separate, never-fully-explained real-GPU
-   * failures earlier this session — a black viewer, then solid red —
-   * before being re-enabled with a targeted-but-unconfirmed mitigation.
-   * Rather than keep chasing an unverifiable-without-a-browser crash
-   * class, the effects themselves (and the MRT normal/metalness/roughness
-   * buffers + HDR clamp that only existed to support them) are gone
-   * outright — not just toggled off. `ssrEnabled`/`gtaoEnabled` are gone
-   * from `Project3DConfig`/the API schema/the DB entirely (see the
-   * migration), and `tier.ssr`/`tier.gtao` are gone from
-   * `QualityTierSettings` — no dead, do-nothing toggle left behind
-   * anywhere. The real geographic sun, ambient light and PMREM sky
-   * environment/reflections were never implicated in either failure and
-   * are completely untouched by this.
-   *
-   * Bloom (Sky/Water/Bloom/Clouds "Ocean" tab) — a real per-project
-   * toggle (`config.bloomEnabled`), ANDed with `tier.bloom` exactly like
-   * `antialiasEnabled` already is against `tier.antialias`. Threshold is
-   * fixed at 0.85 (`BLOOM_THRESHOLD_DEFAULT`, webgl_shaders_ocean.html's
-   * own Bloom GUI default — it doesn't expose threshold either, only
-   * strength/radius).
-   *
-   * Depth of field (`webgl_postprocessing_dof2.html` parity) — real bokeh
-   * blur from `scenePass.getViewZNode()` (works unmodified, no MRT/setMRT
-   * needed: `PassNode`'s own default depth texture is always created
-   * unless `depthBuffer: false` is explicitly passed to `pass()`, which
-   * this app never does). Unlike `motionBlur`, `dof()`'s first argument is
-   * internally wrapped in `convertToTexture()` (confirmed in
-   * `DepthOfFieldNode.js`), so it accepts the already-composited
-   * bloom+chain fine — placed *after* bloom is folded in, so bright bloom
-   * highlights blur into proper bokeh discs instead of staying sharp
-   * inside a blurred base. */
-  private buildRenderPipeline(tier: QualityTierSettings) {
-    this.renderPipeline?.dispose();
-    this.renderPipeline = null;
-    this.bloomNode = null;
-    this.lutIntensity = null;
-    this.dofFocusDistance = null;
-    this.dofFocalLength = null;
-    this.dofBokehScale = null;
-    const renderer = this.renderer;
-    const scene = this.scene;
-    const camera = this.camera;
-    if (!renderer || !scene || !camera) return;
-    try {
-      const scenePass = pass(scene, camera);
-      const color = scenePass.getTextureNode("output");
+  private applyLightingConfig(config: LightingConfig) {
+    this.lightingConfig = config;
+    const { renderer, sun, ambient, scene, camera } = this;
+    if (!renderer || !sun || !ambient || !scene || !camera) return;
 
-      let chain: THREE.Node<"vec4"> = color;
-      if (tier.bloom && this.config.bloomEnabled) {
-        // Sky/Water/Bloom/Clouds "Ocean" tab — strength/radius only,
-        // matching webgl_shaders_ocean.html's own Bloom GUI folder
-        // exactly; threshold isn't exposed there either, so it stays
-        // fixed at the same value the demo hardcodes.
-        const bloomNode = bloom(chain, this.config.bloomStrength, this.config.bloomRadius, BLOOM_THRESHOLD_DEFAULT);
-        this.bloomNode = bloomNode;
-        chain = chain.add(bloomNode);
-      }
-      // Isolated into its own widened-type variable (same reasoning as
-      // aaChain/finalChain below) — DepthOfFieldNode, like SMAANode/
-      // Lut3DNode, doesn't structurally satisfy THREE.Node<"vec4"> per
-      // tsc, so reusing the narrower `chain` binding here would also break
-      // the `chain.add(bloomNode)` call above it.
-      let dofChain: typeof chain | ReturnType<typeof dof> = chain;
-      if (tier.depthOfField && this.config.depthOfFieldEnabled) {
-        // Real auto-focus (see the field doc comment above) — starts at
-        // the config's own focalLength as a reasonable pre-first-frame
-        // value; the render loop overwrites it every frame from then on.
-        const focusDistance = uniform(this.config.depthOfFieldFocalLength);
-        const focalLength = uniform(this.config.depthOfFieldFocalLength);
-        const bokehScale = uniform(this.config.depthOfFieldBokehScale);
-        this.dofFocusDistance = focusDistance;
-        this.dofFocalLength = focalLength;
-        this.dofBokehScale = bokehScale;
-        dofChain = dof(chain, scenePass.getViewZNode(), focusDistance, focalLength, bokehScale);
-      }
-
-      const aaChain = tier.antialias && this.config.antialiasEnabled ? smaa(dofChain) : dofChain;
-
-      // 3D LUT (webgl_postprocessing_3dlut.html parity) — applied last,
-      // after antialiasing, matching the reference demo's own
-      // OutputPass -> LUTPass ordering (color grading is the final step).
-      // `this.lutTexture` is only ever non-null when `config.lutEnabled`
-      // (mount() clears it otherwise, see loadLut's call site) — checking
-      // it directly here (not `config.lutEnabled` again) is what correctly
-      // no-ops if the async load hasn't resolved yet or failed.
-      let finalChain: typeof aaChain | ReturnType<typeof lut3D> = aaChain;
-      if (tier.lut && this.lutTexture) {
-        const intensity = uniform(this.config.lutIntensity);
-        this.lutIntensity = intensity;
-        finalChain = lut3D(aaChain, texture3D(this.lutTexture), this.lutTexture.image.width, intensity);
-      }
-
-      // Loading-screen reveal (webgl_postprocessing_transition.html
-      // technique) — absolute last step, wrapping the fully-composited
-      // image (every other effect above included) so the whole thing
-      // wipes in together, not just the raw color. `revealActive` is only
-      // ever true for the render(s) right after mount() first has
-      // something ready to show — see this method's own field doc
-      // comment above for the full lifecycle (set in mount(), ticked and
-      // torn back out by the render loop).
-      let revealedChain: typeof finalChain | ReturnType<typeof mix> = finalChain;
-      if (this.revealActive) {
-        const threshold = uniform(0);
-        this.revealThreshold = threshold;
-        const noise = mx_fractal_noise_float(vec3(uv().mul(6), 0), 3, 2, 0.5);
-        const fadeWidth = 0.08;
-        const mask = smoothstep(threshold.sub(fadeWidth), threshold, noise);
-        // Matches this app's own dark glass-panel chrome color, not an
-        // arbitrary black — reads as an intentional loading-shell tone
-        // rather than a flash of nothing.
-        const placeholder = vec4(tslColor(0x18181b), 1);
-        // finalChain's static type is a union including SMAANode/
-        // Lut3DNode/DepthOfFieldNode (same "doesn't structurally satisfy
-        // NodeExtensions" cosmetic typing gap documented on dofChain/
-        // aaChain above — nodeObject() doesn't resolve it either, tried
-        // first). mix()'s 3-arg overload needs an exact match on every
-        // union member, unlike smaa()/lut3D()'s own single-node params
-        // above, which happen to be loose enough to accept the union
-        // as-is — an explicit cast here is the least-bad fix: at runtime
-        // this really is always a real vec4 color node regardless of
-        // which effects happen to be enabled.
-        revealedChain = mix(placeholder, finalChain as unknown as THREE.Node<"vec4">, mask);
-      } else {
-        this.revealThreshold = null;
-      }
-
-      const pipeline = new THREE.RenderPipeline(renderer);
-      pipeline.outputNode = revealedChain;
-      this.renderPipeline = pipeline;
-    } catch (err) {
-      console.error("3D Experience: post-processing pipeline failed, falling back to direct render", err);
-      this.renderPipeline = null;
-      this.bloomNode = null;
-      this.lutIntensity = null;
-      this.dofFocusDistance = null;
-      this.dofFocalLength = null;
-      this.dofBokehScale = null;
-      this.revealThreshold = null;
-    }
-  }
-
-  /** Builds a fresh `WaterMesh` from the given config — the exact
-   * construction `mount()` used to inline; factored out so
-   * `setWaterEnabled` (a live toggle, no remount) can build the same mesh
-   * on demand. Doesn't add it to the scene or touch `this.waterMesh` —
-   * callers own both. */
-  private createWaterMesh(config: Project3DConfig): WaterMesh {
-    const waterNormals = new THREE.TextureLoader().load("/textures/waternormals.jpg", (texture) => {
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    });
-    const waterMesh = new WaterMesh(new THREE.PlaneGeometry(WATER_PLANE_SIZE, WATER_PLANE_SIZE), {
-      waterNormals,
-      sunDirection: this.sunDirection.clone(),
-      sunColor: 0xffffff,
-      waterColor: 0x001e0f,
-      distortionScale: config.waterDistortionScale,
-      size: config.waterSize,
-    });
-    waterMesh.rotation.x = -Math.PI / 2;
-    return waterMesh;
-  }
-
-  /** Live add/remove of the water plane — see `waterMesh`'s own field doc
-   * comment for why this exists (real click-responsiveness bug fix, no
-   * longer a mount()-only flag). No-ops if the scene isn't mounted yet, or
-   * if the requested state is already current (called unconditionally
-   * from `applyLiveUpdate` whenever `waterEnabled` differs from the
-   * previous config — this guard just makes the method itself idempotent
-   * for any other caller). */
-  setWaterEnabled(enabled: boolean, config: Project3DConfig) {
-    if (!this.scene) return;
-    if (enabled) {
-      if (this.waterMesh) return;
-      const waterMesh = this.createWaterMesh(config);
-      this.scene.add(waterMesh);
-      this.waterMesh = waterMesh;
-    } else {
-      if (!this.waterMesh) return;
-      this.scene.remove(this.waterMesh);
-      this.waterMesh.geometry.dispose();
-      (this.waterMesh.material as THREE.Material).dispose();
-      this.waterMesh = null;
-    }
-  }
-
-  /** One-time scene setup per project/content-mode/rendering-mode — full
-   * teardown+rebuild, called by the component whenever project.id,
-   * usingGlb, any slot's glbUrl, config.renderingMode or
-   * config.qualityPreset change. Cheaper config tweaks are applied
-   * in-place by `applyLiveUpdate`/`applySunAndEnvironment` instead. */
-  async mount(container: HTMLDivElement, params: MountParams) {
-    const token = ++this.mountToken;
-    this.container = container;
-    this.setProject(params.project);
-    this.config = params.config;
-    const { config, detailModels, usingGlb, project } = params;
-    this.isEditorPreview = params.isEditorPreview;
-
-    const renderer = new THREE.WebGPURenderer({
-      antialias: true,
-      // "auto"/"webgpu" both let Three.js probe for WebGPU and fall back
-      // to WebGL2 automatically (WebGPURenderer's own built-in
-      // `getFallback`); only "webgl2" forces the WebGL2 backend outright.
-      forceWebGL: config.renderingMode === "webgl2",
-      // Off (matches WebGPURenderer's own default) — the Section cap fill
-      // used to need this (a stencil-buffer silhouette technique), briefly
-      // made unconditional on 2026-08-14, then removed the same day when
-      // that whole technique turned out not to work under this app's
-      // WebGPURenderer (see `sectionFillMeshes`'s own doc comment) and was
-      // replaced with a back-face render that needs no stencil buffer at
-      // all. Nothing else in this app uses stencil.
-      stencil: false,
-      // webgpu_camera_logarithmicdepthbuffer.html parity — reduces
-      // z-fighting at distance against this app's fixed far=2000 camera
-      // (see the PerspectiveCamera constructed below). Off by default,
-      // matches WebGPURenderer's own default; another renderer-
-      // construction-time flag, same "needs a fresh mount" category as
-      // `stencil`/`forceWebGL` above.
-      logarithmicDepthBuffer: config.logarithmicDepthEnabled,
-    });
-    try {
-      await renderer.init();
-    } catch {
-      if (token === this.mountToken) this.callbacks.onWebglFail(this.callbacks.t("map.noWebglShort"));
-      return;
-    }
-    if (token !== this.mountToken) {
-      renderer.dispose();
-      return;
-    }
-
-    const tier = QUALITY_TIERS[config.qualityPreset];
-    // Fresh setup (new project/GLB/rendering-mode) resets any runtime
-    // adaptive downgrade from a prior mount back to Admin's real tier.
-    this.effectiveTier = tier;
-    this.frameTimes = [];
-    this.downgradeStep = 0;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, tier.dprCap));
-    renderer.setSize(container.clientWidth * tier.renderScale, container.clientHeight * tier.renderScale, false);
-    renderer.domElement.style.width = "100%";
-    renderer.domElement.style.height = "100%";
+    // Sun Light (PRD §15) — a real master kill switch on the same ONE sun
+    // Environment's own Sun & Sky drives; autoSunIntensityEnabled/
+    // autoSunColorEnabled/manualSunIntensity/manualSunColorHex are read
+    // from THIS config (shared with EnvironmentConfig's own copies of the
+    // same real Project3DConfig fields) inside applyEnvironmentConfig —
+    // no duplicate sun-color logic here, just the on/off switch and real
+    // shadow-map plumbing.
+    sun.visible = config.sunLightEnabled;
     renderer.shadowMap.enabled = config.shadowsEnabled;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = TONE_MAPPING_MODES[config.toneMapping];
-    renderer.toneMappingExposure = config.exposure;
-    container.appendChild(renderer.domElement);
-    this.renderer = renderer;
-
-    const scene = new THREE.Scene();
-    this.scene = scene;
-
-    // Sections module — see this.clippingGroup's field doc comment. Every
-    // "clippable" object gets added to this group instead of `scene`
-    // directly, further below; sun/ambient/lights and section-editing
-    // chrome stay direct children of `scene`.
-    const clippingGroup = new THREE.ClippingGroup();
-    // Real click-freeze bug fix (2026-08-14) — starts life at the same
-    // fixed 6-plane "nothing active" state `applyActiveClipping` always
-    // uses from here on (see NO_ACTIVE_SECTION_PLANES's own doc comment
-    // in sections.ts), instead of `ClippingGroup`'s own default (an empty
-    // array). Whatever pipeline variant the very first rendered frame
-    // needs for this group's meshes, every later on/off/switch-section
-    // action reuses unchanged — there's no separate "default" length for
-    // the first real activation to differ from and force a second compile
-    // against.
-    clippingGroup.clippingPlanes = NO_ACTIVE_SECTION_PLANES;
-    scene.add(clippingGroup);
-    this.clippingGroup = clippingGroup;
-    const sectionHelperGroup = new THREE.Group();
-    sectionHelperGroup.name = "RZ_SectionHelpers";
-    scene.add(sectionHelperGroup);
-    this.sectionHelperGroup = sectionHelperGroup;
-
-    const envScene = new THREE.Scene();
-    this.envScene = envScene;
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    this.pmrem = pmrem;
-
-    const isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
-    const fov = isMobileViewport ? config.cameraFovMobile : config.cameraFovDesktop;
-    const camera = new THREE.PerspectiveCamera(fov, container.clientWidth / Math.max(1, container.clientHeight), 0.1, 2000);
-    this.camera = camera;
-
-    // Real sun — see src/lib/sunPosition.ts. Direction only; distance is
-    // arbitrary for a DirectionalLight, scaled by boundingRadius once
-    // known below. Shadow bias/normalBias are scaled to boundingRadius
-    // too, not left as fixed absolute values.
-    const sun = new THREE.DirectionalLight(0xffffff, 2);
-    sun.castShadow = config.shadowsEnabled;
-    sun.shadow.mapSize.set(tier.shadowMapSize, tier.shadowMapSize);
-    // webgl_watch.html parity — real PCF soft-shadow-edge blur (in shadow
-    // map texels). Only visible because renderer.shadowMap.type is already
-    // PCFSoftShadowMap (set below) — that's the one shadow map type this
-    // property actually affects (confirmed against three.js's own
-    // DirectionalLightShadow/WebGPU shadow-node source). 0 (default)
-    // matches today's hard edge exactly.
+    sun.castShadow = config.shadowsEnabled && config.sunLightEnabled;
     sun.shadow.radius = config.shadowSoftness;
-    const ambient = new THREE.AmbientLight(0xffffff, 0.15);
-    scene.add(sun, sun.target, ambient);
-    this.sun = sun;
-    this.ambient = ambient;
+    setShadowMapTransmitted(renderer, config.transmittedShadowsEnabled);
 
-    // Physical sky dome (Sky/Water/Bloom/Clouds "Ocean" tab) — the
-    // scene's only backdrop; its turbidity/rayleigh/mie/cloud/sunPosition
-    // uniforms are handled by rebuildEnvironment/applySunAndEnvironment,
-    // not here.
-    const skyMesh = new SkyMesh();
-    skyMesh.scale.setScalar(SKY_DOME_SCALE);
-    scene.add(skyMesh);
-    this.skyMesh = skyMesh;
-
-    // Optional water plane (WaterMesh) — only built when
-    // config.waterEnabled (per-project opt-in; most projects have none).
-    // Mount-time construction here is still real (this is what a fresh
-    // mount/project-switch needs), but toggling it live no longer forces
-    // one — see `setWaterEnabled`'s own doc comment for the 2026-08-14
-    // click-freeze fix that moved live on/off out of this path. Auto-
-    // sized/positioned like
-    // WATER_PLANE_SIZE's doc comment). The normals texture is the actual
-    // asset the reference demo loads (`textures/waternormals.jpg`),
-    // vendored into `public/textures/` rather than re-approximated with a
-    // procedural canvas gradient — this is exactly the kind of hand-
-    // authored tiling detail a gradient can't reproduce.
-    if (config.waterEnabled) {
-      const waterMesh = this.createWaterMesh(config);
-      scene.add(waterMesh);
-      this.waterMesh = waterMesh;
+    // CSM (PRD §16) — real rebuild only when on/off or cascade count
+    // changes (CSMShadowNode's cascade count is fixed at construction);
+    // maxDistance/splitMode/margin are cheap property writes +
+    // updateFrustums() otherwise.
+    const wantsCSM = config.shadowsEnabled && config.sunLightEnabled && config.csmEnabled;
+    const needsCSMRebuild = wantsCSM !== (this.csmSystem != null) || (wantsCSM && this.csmSystem != null && this.csmSystem.node.cascades !== config.csmCascades);
+    if (needsCSMRebuild) {
+      this.csmSystem?.dispose();
+      this.csmSystem = wantsCSM ? buildCSMSystem(sun, config) : null;
     } else {
-      this.waterMesh = null;
+      this.csmSystem?.updateFrustums();
     }
 
-    this.pickable = new Map();
-    this.unitMeshes = new Map();
-    this.glbUnitBoxes = new Map();
-    this.unitMaterialCache = new Map();
+    // Post-processing chain (Contact Shadows/GI/Sun Shafts, PRD §17/19/21)
+    // — shares the Rendering tab's own scenePostPipeline (see
+    // applyScenePostPipeline's own doc comment); rebuild-vs-live-update
+    // is decided there, keyed on BOTH this config and renderingConfig.
+    this.applyScenePostPipeline();
 
-    let boundingRadius = 20;
-    let centerX = 0;
-    let centerY = 1;
-    let centerZ = 0;
+    // Artificial Lights (PRD §20) — real add/update/remove diffing.
+    void this.artificialLightSystem?.sync(config.artificialLights);
 
-    if (usingGlb) {
-      // --- GLB content — one root per enabled detail-model slot
-      // (Multiple Detail-Model Slots pass). Loaded in parallel; a single
-      // slot's GLB failing to load doesn't abort the others — that's the
-      // whole point of independent slots (fix/replace one without
-      // touching the other) — only if EVERY enabled slot fails does this
-      // fall back to procedural massing, same as the old single-model
-      // failure behavior. ---
-      const dracoLoader = new DRACOLoader();
-      dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
-      this.dracoLoader = dracoLoader;
-      const loader = new GLTFLoader();
-      loader.setDRACOLoader(dracoLoader);
-
-      const enabledModels = detailModels.filter((d) => d.model.enabled && d.model.glbUrl);
-      const loaded = await Promise.all(
-        enabledModels.map(async ({ slotId, model }) => {
-          try {
-            const gltf = await loader.loadAsync(model.glbUrl);
-            return { slotId, model, root: gltf.scene };
-          } catch (err) {
-            // Failure recovery: a bad URL/network error/corrupt file used
-            // to dead-end the whole mount in the same "no WebGL" error
-            // screen a genuine renderer failure shows — misleading, and
-            // worse than necessary. This slot is just skipped; the
-            // others (and the public/editor callers's own per-slot
-            // upload UI) are unaffected.
-            console.warn(`3D Experience: detail GLB failed to load for slot ${slotId}, skipping it`, err);
-            return null;
-          }
-        })
-      );
-      if (token !== this.mountToken) return;
-      const successful = loaded.filter((l): l is { slotId: string; model: ProjectDetailModel; root: THREE.Group } => l !== null);
-
-      if (successful.length === 0) {
-        if (token === this.mountToken) this.callbacks.onGlbLoadFailed();
-        return;
-      }
-
-      const unionBox = new THREE.Box3();
-      for (const { slotId, model, root } of successful) {
-        this.applyDetailTransform(root, model.scale, model.rotationDeg, model.altitudeOffset);
-        root.traverse((child) => {
-          const mesh = child as THREE.Mesh;
-          if (mesh.isMesh) {
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-          }
-        });
-        clippingGroup.add(root);
-        this.glbRoots.set(slotId, root);
-
-        this.applyDetailUnitLinks(slotId, root, model.unitLinks as UnitMeshLink[]);
-        this.applyGlassPreset(root, config.glassPreset, config.environmentIntensity);
-        this.applyNodeOverrides(root, model);
-
-        unionBox.union(new THREE.Box3().setFromObject(root));
-      }
-
-      const size = unionBox.getSize(new THREE.Vector3());
-      const center = unionBox.getCenter(new THREE.Vector3());
-      boundingRadius = Math.max(size.x, size.y, size.z) * 0.65 || 20;
-      // A real uploaded GLB is very often authored off-origin (real-world
-      // survey coordinates, arbitrary export origin, etc.) — using the
-      // union bounding box's real center here (not a hardcoded (0, y, 0))
-      // keeps the orbit pivot/shadow target locked to the actual
-      // building(s), across every loaded slot.
-      centerX = center.x;
-      centerY = center.y;
-      centerZ = center.z;
-
-      this.disposeGeometry = () => {
-        for (const root of this.glbRoots.values()) {
-          clippingGroup.remove(root);
-          disposeGlbObject3D(root);
-        }
-      };
-    } else {
-      // --- Procedural massing fallback ---
-      const layout = computeProjectLayout(project);
-      this.unitBoxes = layout.units;
-      boundingRadius = layout.boundingRadius;
-      centerY = layout.centerY;
-
-      // Ground Platform (Sky/Water/Bloom/Clouds follow-up) — built once,
-      // in both content modes, after `boundingRadius` is finalized below;
-      // see that shared block for why it moved out of this branch.
-
-      const geometry = new THREE.BoxGeometry(1, 1, 1);
-      // Unit-status caustics — real texture + shared scale/speed uniforms
-      // loaded/created once here, not once per unit (see caustics.ts's own
-      // doc comment for the full technique). `causticsUnitUniforms` is
-      // rebuilt fresh every mount, same lifecycle as `unitMeshes` itself.
-      const causticsActive = tier.caustics && config.causticsEnabled;
-      this.causticsUnitUniforms = new Map();
-      if (causticsActive) {
-        this.causticsTexture = loadCausticsTexture();
-        this.causticsScaleUniform = uniform(config.causticsScale);
-        this.causticsSpeedUniform = uniform(config.causticsSpeed);
-      } else {
-        this.causticsTexture = null;
-        this.causticsScaleUniform = null;
-        this.causticsSpeedUniform = null;
-      }
-      for (const unitBox of layout.units) {
-        // Initial seed color for the very first frame — refreshAppearance
-        // (called right after mount by every real caller) immediately
-        // overwrites this via applyUnitAppearance/resolveUnitColors, but
-        // seeding it correctly avoids a one-frame flash of the wrong
-        // color on projects with custom status colors.
-        const seedColor = this.resolveUnitColors()[unitBox.unit.status] ?? this.resolveUnitColors().available;
-        let material: THREE.MeshStandardMaterial = new THREE.MeshStandardMaterial({
-          color: seedColor,
-          roughness: 0.6,
-          metalness: 0.05,
-        });
-        if (causticsActive && this.causticsTexture && this.causticsScaleUniform && this.causticsSpeedUniform) {
-          // Real NodeMaterial upgrade — `.emissiveNode` (unlike `.color`/
-          // `.roughness`/`.metalness`/`.emissive`/`.emissiveIntensity`,
-          // which MeshStandardNodeMaterial still exposes for classic-API
-          // compatibility, confirmed against its own source) only exists
-          // on NodeMaterial subclasses, not the plain MeshStandardMaterial
-          // just constructed above. Same upgrade pattern applyNodeOverrides
-          // already uses for clearcoat/iridescence.
-          const nodeMaterial = new THREE.MeshStandardNodeMaterial({
-            color: seedColor,
-            roughness: 0.6,
-            metalness: 0.05,
-          });
-          material.dispose();
-          const initialIntensity = this.resolveCausticsIntensity(unitBox.unit.status);
-          const { emissiveNode, uniforms } = buildCausticsUnitEmissiveNode(
-            this.causticsTexture,
-            this.causticsScaleUniform,
-            this.causticsSpeedUniform,
-            seedColor,
-            initialIntensity
-          );
-          nodeMaterial.emissiveNode = emissiveNode;
-          this.causticsUnitUniforms.set(unitBox.unit.id, uniforms);
-          material = nodeMaterial as unknown as THREE.MeshStandardMaterial;
-        }
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.scale.set(unitBox.width, unitBox.height, unitBox.depth);
-        mesh.position.set(unitBox.x, unitBox.y, unitBox.z);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.userData.unitId = unitBox.unit.id;
-        clippingGroup.add(mesh);
-        this.unitMeshes.set(unitBox.unit.id, mesh);
-        this.pickable.set(unitBox.unit.id, mesh);
-      }
-
-      this.disposeGeometry = () => {
-        geometry.dispose();
-        this.unitMeshes.forEach((mesh) => (mesh.material as THREE.Material).dispose());
-        scene.traverse((obj) => {
-          if (obj instanceof THREE.Mesh && obj.geometry !== geometry) obj.geometry.dispose();
-        });
-      };
+    // Transmitted/Colored Shadows (PRD §18) — re-applied to every already-
+    // loaded root; syncModels() applies it to newly-loaded ones too.
+    for (const root of this.modelRootsBySlot.values()) {
+      applyTransmittedShadows(root, config);
     }
-    if (token !== this.mountToken) return;
-
-    const target = new THREE.Vector3(centerX, centerY, centerZ);
-    const startDistance = boundingRadius * config.cameraStartDistanceMultiplier;
-    camera.position.set(centerX + startDistance * 0.6, centerY + startDistance * 0.55, centerZ + startDistance * 0.9);
-    camera.lookAt(target);
-    this.defaultCamera = { position: camera.position.clone(), target: target.clone(), fov: camera.fov };
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.copy(target);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controls.minDistance = boundingRadius * config.cameraMinDistanceMultiplier;
-    controls.maxDistance = boundingRadius * config.cameraMaxDistanceMultiplier;
-    controls.minPolarAngle = THREE.MathUtils.degToRad(config.cameraMinPolarDeg);
-    controls.maxPolarAngle = THREE.MathUtils.degToRad(config.cameraMaxPolarDeg);
-    controls.autoRotate = config.autoRotate;
-    controls.autoRotateSpeed = 0.6;
-    controls.update();
-    this.controls = controls;
-
-    // Bias scaled to boundingRadius, not a fixed absolute value — a fixed
-    // bias is negligible against a real building tens/hundreds of meters
-    // across (shadow acne — "faces hiding and reappearing"), even though
-    // it was fine for the procedural fallback's small, uniform units.
-    sun.shadow.bias = -0.00005 * boundingRadius;
-    sun.shadow.normalBias = 0.01 * boundingRadius;
-    // Real bug fix (see `sunDistance`'s own field doc comment) — near/far
-    // must bracket where the sun *actually* sits (`sunDistance` units from
-    // `target`, applySunAndEnvironment's own placement), not just scale
-    // off boundingRadius in isolation. `sunDistance` itself also scales
-    // with boundingRadius (floor of 200, same distance every project used
-    // before this fix, so a project already comfortably inside that floor
-    // is unaffected) so both stay proportional across tiny-to-huge
-    // projects instead of drifting apart the way the old fixed-200/
-    // boundingRadius*6 pair could.
-    const sunDistance = Math.max(200, boundingRadius * 3);
-    this.sunDistance = sunDistance;
-    sun.shadow.camera.near = Math.max(0.1, sunDistance - boundingRadius * 2);
-    sun.shadow.camera.far = sunDistance + boundingRadius * 2;
-    const shadowSpan = boundingRadius * 1.5;
-    sun.shadow.camera.left = -shadowSpan;
-    sun.shadow.camera.right = shadowSpan;
-    sun.shadow.camera.top = shadowSpan;
-    sun.shadow.camera.bottom = -shadowSpan;
-    sun.shadow.camera.updateProjectionMatrix();
-    sun.target.position.copy(target);
-    this.sceneCenter = target.clone();
-
-    // Ground Platform (Sky/Water/Bloom/Clouds follow-up) — unified across
-    // both content modes. "disc" (the original ground, sized off
-    // `boundingRadius`) stays procedural-mode-only exactly as before
-    // (`usingGlb` guard below) — a GLB project only ever gets a ground
-    // when explicitly switched to "infinite", so no existing GLB project
-    // gains an unrequested ground the moment this field exists.
-    // `groundEnabled` still just toggles `.visible` on an
-    // always-constructed mesh (unchanged pattern) so it stays a cheap
-    // live toggle, not a remount — only `groundStyle` itself (a real
-    // geometry swap) needs one, see ProceduralProjectViewer.tsx's mount
-    // effect deps.
-    const groundGeometry =
-      config.groundStyle === "infinite"
-        ? new THREE.PlaneGeometry(GROUND_INFINITE_SIZE, GROUND_INFINITE_SIZE)
-        : usingGlb
-          ? null
-          : new THREE.CircleGeometry(boundingRadius * 1.6, 48);
-    if (groundGeometry) {
-      const ground = new THREE.Mesh(groundGeometry, this.buildGroundMaterial(config));
-      ground.rotation.x = -Math.PI / 2;
-      ground.receiveShadow = true;
-      ground.visible = config.groundEnabled;
-      clippingGroup.add(ground);
-      this.ground = ground;
-    } else {
-      this.ground = null;
-    }
-
-    scene.fog = config.fogEnabled ? new THREE.FogExp2(this.resolveFogColor(config), config.fogDensity) : null;
-
-    this.rebuildEnvironment(config);
-    // 3D LUT — real async texture load, awaited before buildRenderPipeline
-    // reads `this.lutTexture` below (both `lutEnabled` and `lutPreset` are
-    // mount deps — see ProceduralProjectViewer.tsx — so this only ever
-    // runs on a fresh mount; same mountToken guard pattern as this
-    // class's other async loaders.
-    if (config.lutEnabled) {
-      await this.loadLut(config.lutPreset);
-    } else {
-      this.lutTexture = null;
-      this.lutPresetLoaded = null;
-    }
-    if (token !== this.mountToken) return;
-    // Loading-screen reveal — armed before this same buildRenderPipeline
-    // call so the very first frame the render loop below ever draws is
-    // already the fully-hidden (threshold 0) state, not one frame of the
-    // finished, unrevealed image flashing first. Real per-project on/off
-    // (config.loadingRevealEnabled) — when off, buildRenderPipeline's own
-    // `if (this.revealActive)` check is simply never true, so no reveal
-    // node is ever added to the chain at all (same "no dead toggle"
-    // pattern as every other Enabled flag this session).
-    this.revealActive = config.loadingRevealEnabled;
-    this.revealStartTime = performance.now();
-    this.buildRenderPipeline(this.effectiveTier);
-
-    this.callbacks.onReady(true);
-    this.callbacks.onWebglFail(null);
-
-    const raycaster = new THREE.Raycaster();
-    const pointer = new THREE.Vector2();
-    // Three.js's Raycaster doesn't skip invisible objects on its own
-    // (Mesh.raycast never checks `.visible`) — filtering the *input* list
-    // (rather than the hits) is what actually keeps a filtered-out/
-    // unlinked unit from being clickable.
-    const pickableList = () => Array.from(this.pickable.values()).filter((obj) => obj.visible);
-
-    function pointerFromEvent(e: PointerEvent) {
-      const rect = renderer.domElement.getBoundingClientRect();
-      pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    }
-    const pickUnitId = (e: PointerEvent): string | null => {
-      pointerFromEvent(e);
-      raycaster.setFromCamera(pointer, camera);
-      const hits = raycaster.intersectObjects(pickableList(), true);
-      if (hits.length === 0) return null;
-      let obj: THREE.Object3D | null = hits[0].object;
-      while (obj) {
-        if (typeof obj.userData.unitId === "string") return obj.userData.unitId;
-        obj = obj.parent;
-      }
-      return null;
-    };
-
-    const handleMove = (e: PointerEvent) => {
-      // Sections module — suppress unit hover while drawing a section
-      // rectangle or dragging its gizmo, so the two interaction systems
-      // never fight over the same pointer events.
-      if (this.drawSection || this.sectionGizmo?.dragging) return;
-      // Interaction toggles (full-configurator pass) — `viewerUI` is a
-      // nullable Json? column and every pre-existing row predates these
-      // keys, so a missing key defaults to `true` (today's hardcoded
-      // always-on behavior), same pattern as the other viewerUI toggles.
-      if (this.config?.viewerUI.hoverEnabled === false) return;
-      const nextHoverId = pickUnitId(e);
-      if (nextHoverId !== this.hoveredId) {
-        this.hoveredId = nextHoverId;
-        this.refreshAppearanceInternal();
-        renderer.domElement.style.cursor = nextHoverId ? "pointer" : "grab";
-        const unit = nextHoverId ? this.unitById.get(nextHoverId) ?? null : null;
-        this.callbacks.onHoverChange(unit);
-      }
-      // Tracked on every move, not just id changes, and reported via the
-      // separate onPointerMove callback (not React state) — see its doc
-      // comment for why.
-      if (nextHoverId) this.callbacks.onPointerMove(e.clientX, e.clientY);
-    };
-    const handleClick = (e: PointerEvent) => {
-      if (this.drawSection || this.sectionGizmo?.dragging) return;
-      if (this.config?.viewerUI.selectEnabled === false) return;
-      const unitId = pickUnitId(e);
-      if (!unitId) return;
-      const unit = this.unitById.get(unitId);
-      if (unit) this.callbacks.onSelectUnit?.(unit);
-    };
-    const handleLeave = () => {
-      // Without this, moving the mouse off the canvas edge mid-hover
-      // leaves the cursor/tooltip/highlight stuck on whatever unit was
-      // last under the pointer — pointermove simply stops firing once the
-      // pointer leaves this element.
-      if (this.hoveredId !== null) {
-        this.hoveredId = null;
-        this.refreshAppearanceInternal();
-      }
-      renderer.domElement.style.cursor = "grab";
-      this.callbacks.onHoverChange(null);
-    };
-    this.handleMove = handleMove;
-    this.handleClick = handleClick;
-    this.handleLeave = handleLeave;
-
-    renderer.domElement.style.cursor = "grab";
-    renderer.domElement.addEventListener("pointermove", handleMove);
-    renderer.domElement.addEventListener("click", handleClick);
-    renderer.domElement.addEventListener("pointerleave", handleLeave);
-
-    const resizeObserver = new ResizeObserver(() => {
-      if (!container.clientWidth || !container.clientHeight) return;
-      const nextIsMobile = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
-      camera.fov = nextIsMobile ? this.config.cameraFovMobile : this.config.cameraFovDesktop;
-      camera.aspect = container.clientWidth / container.clientHeight;
-      camera.updateProjectionMatrix();
-      const t = QUALITY_TIERS[this.config.qualityPreset];
-      renderer.setSize(container.clientWidth * t.renderScale, container.clientHeight * t.renderScale, false);
-      // Shadow-map debug HUD positions itself in window-pixel terms
-      // internally (see its own field doc comment) — needs to know
-      // whenever the window (not just this container) resizes too.
-      this.shadowMapViewer?.updateForWindowResize();
-    });
-    resizeObserver.observe(container);
-    this.resizeObserver = resizeObserver;
-
-    const sampleAdaptiveQuality = (now: number) => {
-      const last = this.lastFrameAt;
-      this.lastFrameAt = now;
-      if (last == null) return;
-      const frames = this.frameTimes;
-      frames.push(now - last);
-      if (frames.length > 90) frames.shift();
-      // Wait for a full window before judging, and stop once every
-      // downgrade step has already been used — nothing left to try.
-      if (frames.length < 60 || this.downgradeStep >= ADAPTIVE_DOWNGRADE_ORDER.length) return;
-      const avg = frames.reduce((a, b) => a + b, 0) / frames.length;
-      if (avg <= 33) return; // healthy (roughly >=30fps sustained)
-      const flag = ADAPTIVE_DOWNGRADE_ORDER[this.downgradeStep];
-      this.effectiveTier = { ...this.effectiveTier, [flag]: false };
-      this.downgradeStep += 1;
-      this.frameTimes = []; // fresh window before judging the next step
-      console.info(`3D Experience: sustained low frame rate (~${avg.toFixed(0)}ms/frame) — disabling "${flag}" to recover`);
-      this.buildRenderPipeline(this.effectiveTier);
-    };
-
-    const stepCameraTransition = (now: number) => {
-      const t = this.cameraTransition;
-      if (!t) return;
-      const elapsed = now - t.startTime;
-      const p = Math.min(1, elapsed / t.durationMs);
-      const eased = p * p * (3 - 2 * p); // smoothstep — no visible "teleport"
-      camera.position.lerpVectors(t.startPos, t.endPos, eased);
-      controls.target.lerpVectors(t.startTarget, t.endTarget, eased);
-      camera.fov = t.startFov + (t.endFov - t.startFov) * eased;
-      camera.updateProjectionMatrix();
-      if (p >= 1) this.cameraTransition = null;
-    };
-
-    // A user grabbing the view mid-transition should win immediately, not
-    // fight the animation for the remaining duration.
-    controls.addEventListener("start", () => {
-      this.cameraTransition = null;
-    });
-
-    const samplePerfStats = () => {
-      if (!this.showPerfStats) return;
-      // Every ~30 frames (roughly twice a second at 60fps, slower on a
-      // struggling device) rather than a fixed setTimeout, so this never
-      // fights the adaptive-quality sampler's own timing.
-      this.perfSampleCounter += 1;
-      if (this.perfSampleCounter % 30 !== 0) return;
-      const frames = this.frameTimes;
-      const avgFrameMs = frames.length ? frames.reduce((a, b) => a + b, 0) / frames.length : 0;
-      this.callbacks.onPerfStats({
-        fps: avgFrameMs > 0 ? Math.round(1000 / avgFrameMs) : 0,
-        drawCalls: renderer.info.render.calls,
-        triangles: renderer.info.render.triangles,
-        dpr: renderer.getPixelRatio(),
-      });
-    };
-
-    this.refreshAppearance({
-      project,
-      config,
-      usingGlb,
-      selectedUnitId: params.selectedUnitId,
-      filters: params.filters,
-      showUnitBoxes: params.showUnitBoxes,
-    });
-    await renderer.setAnimationLoop(() => {
-      const now = performance.now();
-      sampleAdaptiveQuality(now);
-      // controls.update() must run BEFORE stepCameraTransition, not after
-      // — OrbitControls.update() reads camera.position/controls.target
-      // fresh each call and, when autoRotate is on, unconditionally nudges
-      // them further. stepCameraTransition's lerp is computed from fixed
-      // start/end snapshots, so putting it last makes it the authoritative
-      // final write for the frame — otherwise the nudge silently overwrote
-      // the transition's intended position every frame, fighting the
-      // "never visibly teleport" smoothstep with a slow drift.
-      controls.update();
-      stepCameraTransition(now);
-      // Depth of field real auto-focus — recomputed every frame from the
-      // camera's real live distance to its orbit target, after
-      // stepCameraTransition (the frame's authoritative final camera
-      // write, see the comment above) so a preset transition's focus
-      // stays correct mid-flight too, not just once it settles.
-      if (this.dofFocusDistance) {
-        this.dofFocusDistance.value = camera.position.distanceTo(controls.target);
-      }
-      // Loading-screen reveal — ticked every frame while active; once the
-      // ~1.1s window elapses, rebuilds the pipeline once more without the
-      // reveal node (see buildRenderPipeline's own doc comment) so it's a
-      // one-time cost, not a permanent one on every frame after mount.
-      // 1.15 (not 1.0) overshoots the noise's ~[0,1] range on purpose —
-      // smoothstep's own fadeWidth needs the threshold to clear the
-      // noise's highest values too, or a few pixels would stay dimmed
-      // forever at progress=1.
-      if (this.revealActive && this.revealThreshold) {
-        const revealDurationMs = 1100;
-        const progress = Math.min(1, (now - this.revealStartTime) / revealDurationMs);
-        this.revealThreshold.value = progress * 1.15;
-        if (progress >= 1) {
-          this.revealActive = false;
-          this.buildRenderPipeline(this.effectiveTier);
-        }
-      }
-      if (this.renderPipeline) this.renderPipeline.render();
-      else renderer.render(scene, camera);
-      // Shadow-map debug HUD — drawn as an overlay after the main render
-      // (its own .render() call temporarily sets renderer.autoClear=false
-      // so it composites on top instead of erasing the frame just drawn).
-      // Lazily constructed the first frame the sun's real shadow map
-      // actually exists (see this.shadowMapViewer's own field doc comment
-      // for why it can't be built any earlier).
-      if (this.shadowMapViewerEnabled && this.sun?.shadow.map) {
-        if (!this.shadowMapViewer) {
-          this.shadowMapViewer = new ShadowMapViewer(this.sun);
-          this.shadowMapViewer.size.set(160, 160);
-          this.shadowMapViewer.updateForWindowResize();
-        }
-        this.shadowMapViewer.render(renderer);
-      }
-      samplePerfStats();
-    });
   }
 
-  /** Re-runs refreshAppearance with whatever params it was last called
-   * with — used by the pointer handlers, which don't have a fresh
-   * `RefreshAppearanceParams` of their own (the component doesn't re-mount
-   * the engine on every hover). Keeps the last-known filter/selection
-   * state on the instance for this purpose. */
-  private lastRefreshParams: RefreshAppearanceParams | null = null;
-  private refreshAppearanceInternal() {
-    if (this.lastRefreshParams) this.refreshAppearance(this.lastRefreshParams);
+  // ---------------------------------------------------------------------
+  // Rendering tab (PRD §22-33) — Reflections (SSR), Anti-Aliasing (TRAA),
+  // Camera FX (Bloom/Lens Flare/DOF/Motion Blur), Color (Tone Mapping/
+  // Exposure/3D LUT). Extends the SAME shared post pipeline the Lighting
+  // tab built (postProcessing.ts's buildScenePostPipeline) — see
+  // applyScenePostPipeline below, the one place either tab rebuilds it.
+  // ---------------------------------------------------------------------
+
+  /** `antialiasEnabled` (TRAA) is the one renderer-CONSTRUCTION-time flag
+   * in this tab (MSAA must be off at the renderer for TRAA to be valid,
+   * same category `renderingMode` already is) — everything else applies
+   * live via applyRenderingConfig(), no remount. */
+  setRenderingConfig(config: RenderingConfig) {
+    const antialiasChanged = config.antialiasEnabled !== this.renderingConfig.antialiasEnabled;
+    this.renderingConfig = config;
+    if (antialiasChanged && this.renderer) {
+      void this.remount();
+      return;
+    }
+    this.applyRenderingConfig(config);
+  }
+
+  private applyRenderingConfig(config: RenderingConfig) {
+    this.renderingConfig = config;
+    const { renderer } = this;
+    if (!renderer) return;
+
+    // Color (PRD §31-32) — plain renderer properties, not part of the TSL
+    // post-processing node graph; live, no rebuild.
+    renderer.toneMapping = TONE_MAPPING_MAP[config.toneMapping];
+    renderer.toneMappingExposure = config.exposure;
+
+    // 3D LUT (PRD §33) — the texture itself loads async and is cached by
+    // preset id (render-engine/lut.ts); kick off/reuse that load here and
+    // re-apply once it resolves (same "fire, cache, re-apply on resolve"
+    // pattern ArtificialLightSystem/IES already use). A no-op once cached.
+    if (config.lutEnabled) {
+      ensureLutLoading(config.lutPreset, () => {
+        if (this.renderingConfig === config) this.applyScenePostPipeline();
+      });
+    }
+
+    this.applyScenePostPipeline();
+  }
+
+  /** The ONE shared post pipeline both Lighting (Contact Shadows/GI/Sun
+   * Shafts) and Rendering (Reflections/Anti-Aliasing/Bloom/Lens Flare/
+   * DOF/Motion Blur/LUT) extend (PRD §43) — real rebuild only when WHICH
+   * effects are structurally active (or which MRT channels they need)
+   * changes; every numeric slider inside an already-active effect is a
+   * cheap uniform update via ScenePostPipeline.update() instead. */
+  private applyScenePostPipeline() {
+    const { renderer, scene, camera, sun } = this;
+    if (!renderer || !scene || !camera || !sun) return;
+    const signature = computeScenePostSignature(this.lightingConfig, this.renderingConfig);
+    if (signature !== this.scenePostSignature) {
+      this.scenePostPipeline?.dispose();
+      this.scenePostPipeline = buildScenePostPipeline(renderer, scene, camera, sun, this.lightingConfig, this.renderingConfig);
+      this.scenePostSignature = signature;
+    } else {
+      this.scenePostPipeline?.update(this.lightingConfig, this.renderingConfig);
+    }
+  }
+
+  /** Performance tab (PRD §40) — real, live, no remount. Only
+   * renderingMode needs a full remount (see setQualityConfig's own doc
+   * comment); everything else here applies to the next resize/frame. */
+  setQualityConfig(config: QualityConfig) {
+    const renderingModeChanged = config.renderingMode !== this.qualityConfig.renderingMode;
+    this.qualityConfig = config;
+    if (renderingModeChanged) {
+      void this.remount();
+      return;
+    }
+    const target = resolveQualityTarget(config);
+    this.effectiveRenderScale = target.renderScale;
+    this.downgradeStep = 0;
+    if (this.renderer) this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, target.dprCap));
+    this.applyRenderScale();
+  }
+
+  /** renderingMode -> forceWebGL is a renderer-construction-time flag —
+   * the only Performance-tab field that needs a real dispose+re-init,
+   * same category cameraHelperEnabled/logarithmicDepthBuffer already are
+   * in the pre-rebuild engine. Re-mounts on the SAME container, so
+   * ThreeProjectViewer.tsx doesn't need to know this happened. */
+  private async remount() {
+    const container = this.container;
+    if (!container) return;
+    const showPerfStats = this.showPerfStats;
+    const qualityConfig = this.qualityConfig;
+    // Real bug this fixes: dispose()+mount() alone leaves a genuinely
+    // empty scene (Tris 1) — mount() only sets up the renderer/scene/
+    // camera, it never loads content on its own; that's syncModels()'s
+    // job, and nothing would call it again since the React-level
+    // `detailModels` prop this remount is invisible to hasn't changed.
+    const entries = this.lastSyncEntries;
+    this.dispose();
+    // mount() re-applies this.cameraConfig internally (the field itself
+    // survives dispose(), only the THREE objects it configures get torn
+    // down) — no separate camera-restore call needed here.
+    await this.mount(container, { showPerfStats, qualityConfig });
+    await this.syncModels(entries);
+  }
+
+  /** Applies effectiveRenderScale (or the temporary interaction-time
+   * scale, if lower) to the actual renderer size right now. */
+  private applyRenderScale() {
+    const { renderer, container } = this;
+    if (!renderer || !container || !container.clientWidth || !container.clientHeight) return;
+    const scale = this.interactionRenderScale != null ? Math.min(this.interactionRenderScale, this.effectiveRenderScale) : this.effectiveRenderScale;
+    renderer.setSize(container.clientWidth * scale, container.clientHeight * scale, false);
+  }
+
+  /** PRD §41 "Interaction Performance Strategy" (the runtime half, not
+   * the interaction-drag half — see the controls "start"/"end" listeners
+   * in mount()): a REAL sustained-low-frame-time downgrade, one step,
+   * lowering renderScale — not a fake counter. Only the render-scale
+   * lever exists today; SSR/SSGI/volumetric/shadow sample-count steps
+   * land with their own Phase 2-4 features (ADAPTIVE_DOWNGRADE_ORDER in
+   * viewerPresets.ts already reserves the concept for them). */
+  private sampleAdaptiveQuality() {
+    if (!this.qualityConfig.adaptiveQualityEnabled || !this.qualityConfig.runtimeQualityReductionEnabled) return;
+    if (this.isInteracting) return; // the interaction-time lever already covers this window
+    const frames = this.frameTimes;
+    if (frames.length < 60 || this.downgradeStep >= 3) return;
+    const avg = frames.reduce((a, b) => a + b, 0) / frames.length;
+    if (avg <= 33) return; // healthy (roughly >=30fps sustained)
+    this.effectiveRenderScale = Math.max(0.4, this.effectiveRenderScale * 0.85);
+    this.downgradeStep += 1;
+    this.frameTimes = []; // fresh window before judging the next step
+    this.applyRenderScale();
+  }
+
+  /** Shots (PRD §38) — the live camera's current position/target/fov, for
+   * "Capture Shot". Null if the renderer isn't ready. */
+  getCameraState(): { position: { x: number; y: number; z: number }; target: { x: number; y: number; z: number }; fov: number } | null {
+    const { camera, controls } = this;
+    if (!camera || !controls) return null;
+    return {
+      position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+      target: { x: controls.target.x, y: controls.target.y, z: controls.target.z },
+      fov: camera.fov,
+    };
+  }
+
+  /** Shots (PRD §38) — smoothly transitions to a saved CameraPreset over
+   * `preset.durationMs`. Cancelled early if the admin grabs the viewport
+   * mid-flight (see the controls "start" listener in mount()). */
+  flyToPreset(preset: CameraPreset) {
+    const { camera, controls } = this;
+    if (!camera || !controls) return;
+    this.cameraTransition = {
+      startPos: camera.position.clone(),
+      endPos: new THREE.Vector3(preset.position.x, preset.position.y, preset.position.z),
+      startTarget: controls.target.clone(),
+      endTarget: new THREE.Vector3(preset.target.x, preset.target.y, preset.target.z),
+      startFov: camera.fov,
+      endFov: preset.fov,
+      startTime: performance.now(),
+      durationMs: Math.max(1, preset.durationMs),
+    };
+  }
+
+  /** Camera Helper (PRD §4/§37) — a wireframe frustum for a saved Shot,
+   * shown while previewing it in the Shots tab (not the live viewport
+   * camera's own frustum, which is never visible from inside it). Pass
+   * null to clear. */
+  showCameraHelperFor(preset: CameraPreset | null) {
+    const scene = this.scene;
+    if (!scene) return;
+    if (this.cameraHelper) {
+      scene.remove(this.cameraHelper);
+      this.cameraHelper.dispose();
+      this.cameraHelper = null;
+    }
+    if (!preset || !this.cameraConfig) return;
+    const previewCam = new THREE.PerspectiveCamera(preset.fov, 16 / 9, this.cameraConfig.cameraNearClip, Math.min(this.boundingRadius * 2, 200));
+    previewCam.position.set(preset.position.x, preset.position.y, preset.position.z);
+    previewCam.lookAt(preset.target.x, preset.target.y, preset.target.z);
+    previewCam.updateProjectionMatrix();
+    const helper = new THREE.CameraHelper(previewCam);
+    scene.add(helper);
+    this.cameraHelper = helper;
+  }
+
+  captureScreenshot(): string | null {
+    if (!this.renderer || !this.scene || !this.camera) return null;
+    this.renderer.render(this.scene, this.camera);
+    return this.renderer.domElement.toDataURL("image/png");
   }
 
   dispose() {
-    this.mountToken++; // invalidates any in-flight mount() continuations
-    if (this.environmentRebuildTimer != null) {
-      clearTimeout(this.environmentRebuildTimer);
-      this.environmentRebuildTimer = null;
-    }
+    this.mountToken++;
+    this.syncToken++;
     const renderer = this.renderer;
-    const container = this.container;
-    if (renderer) {
-      renderer.setAnimationLoop(null);
-      if (this.handleMove) renderer.domElement.removeEventListener("pointermove", this.handleMove);
-      if (this.handleClick) renderer.domElement.removeEventListener("click", this.handleClick);
-      if (this.handleLeave) renderer.domElement.removeEventListener("pointerleave", this.handleLeave);
-    }
+    if (renderer) renderer.setAnimationLoop(null);
     this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     this.controls?.dispose();
-    // Sections module — draw-mode listeners, gizmo, cap material/geometry.
-    // `sectionHelperGroup`/`clippingGroup` themselves are children of
-    // `scene`, disposed of implicitly when `scene` is discarded below (no
-    // GPU resources of their own — plain Object3D/Group).
-    this.cancelDrawSection();
-    this.detachSectionGizmo();
+    this.controls = null;
+    this.dracoLoader?.dispose();
+    this.dracoLoader = null;
+    this.loader = null;
+    this.loadedRoots = [];
+    this.modelRootsBySlot.clear();
+    this.loadedGlbUrlBySlot.clear();
+    if (renderer) {
+      renderer.dispose();
+      renderer.domElement.remove();
+    }
+    this.renderer = null;
+    this.scene = null;
+    this.camera = null;
+    this.sun = null;
+    this.ambient = null;
+    this.container = null;
+    this.frameTimes = [];
+    this.lastFrameAt = null;
+    this.perfSampleCounter = 0;
+    this.cameraHelper?.dispose();
+    this.cameraHelper = null;
+    this.cameraTransition = null;
+    this.hasFramedOnce = false;
+    this.contentBounds = null;
+    this.clippingGroup = null;
+    this.sectionHelperGroup = null;
+    this.activeSectionId = null;
+    this.sectionFillClippingGroup = null;
+    this.sectionFillMaterial?.dispose();
+    this.sectionFillMaterial = null;
     this.sectionIndicatorMaterial?.dispose();
     this.sectionIndicatorMaterial = null;
     this.sectionIndicatorMesh = null;
-    this.sectionFillMaterial?.dispose();
-    this.sectionFillMaterial = null;
-    this.clearSectionFillMeshes();
-    // Plain `ClippingGroup`s (Group subclass) — no GPU resources of their
-    // own, same as `sectionHelperGroup`/`clippingGroup` right below;
-    // discarded along with the scene, just null the references.
-    this.sectionFillClippingGroup = null;
-    this.clippingGroup = null;
-    this.sectionHelperGroup = null;
-    this.liveSection = null;
-    this.activeSectionId = null;
-    this.disposeGeometry?.();
-    this.dracoLoader?.dispose();
+    this.sectionFillMeshes = [];
+
+    // Environment tab (PRD §7-13) cleanup.
+    if (this.environmentRebuildTimer != null) clearTimeout(this.environmentRebuildTimer);
+    this.environmentRebuildTimer = null;
+    this.hasRebuiltEnvironmentOnce = false;
+    this.lastRebuiltSkyEnabled = null;
     this.envRenderTarget?.dispose();
+    this.envRenderTarget = null;
     this.pmrem?.dispose();
-    this.renderPipeline?.dispose();
-    this.renderPipeline = null;
-    // Sky/Water/Bloom/Clouds "Ocean" tab — bloomNode owns its own internal
-    // blur/composite render targets (see BloomNode.js's own dispose());
-    // holding a direct reference here disposes them explicitly rather than
-    // relying on renderPipeline's teardown to reach into the node graph.
-    this.bloomNode?.dispose();
-    this.bloomNode = null;
-    // 3D LUT — the real Data3DTexture holds actual GPU-uploadable pixel
-    // data, so it gets an explicit dispose().
-    this.lutTexture?.dispose();
-    this.lutTexture = null;
-    this.lutPresetLoaded = null;
-    this.lutIntensity = null;
-    // Depth of field — plain UniformNodes, no GPU resources of their own.
-    this.dofFocusDistance = null;
-    this.dofFocalLength = null;
-    this.dofBokehScale = null;
-    // Loading-screen reveal — plain UniformNode, no GPU resources of its
-    // own; `revealActive` reset too so a disposed-then-remounted engine
-    // instance doesn't inherit a stale in-progress reveal state.
-    this.revealThreshold = null;
-    this.revealActive = false;
-    if (this.skyMesh) {
-      this.skyMesh.geometry.dispose();
-      (this.skyMesh.material as THREE.Material).dispose();
-      this.skyMesh = null;
-    }
-    if (this.waterMesh) {
-      const waterNormalsTexture = this.waterMesh.waterNormals.value as THREE.Texture | null;
-      waterNormalsTexture?.dispose();
-      this.waterMesh.geometry.dispose();
-      (this.waterMesh.material as THREE.Material).dispose();
-      this.waterMesh = null;
-    }
-    // Shadow-map debug HUD — no owned GPU resources (see its own field
-    // doc comment), just drop the reference.
-    this.shadowMapViewer = null;
-    this.shadowMapViewerEnabled = false;
-    // Unit-status caustics — the real texture holds actual GPU-uploadable
-    // pixel data, disposed explicitly same as lutTexture above; per-unit
-    // materials/their emissiveNode graphs are disposed along with the
-    // rest of unitMeshes elsewhere in this method already.
-    this.causticsTexture?.dispose();
-    this.causticsTexture = null;
-    this.causticsScaleUniform = null;
-    this.causticsSpeedUniform = null;
-    this.causticsUnitUniforms.clear();
-    // Ground Platform — centrally built/disposed now regardless of
-    // content mode (see mount()'s unified ground block); the geometry
-    // double-dispose this can overlap with in procedural mode (that
-    // branch's own `disposeGeometry` traversal above already caught
-    // `ground`'s geometry too, generically) is a documented no-op in
-    // three.js, not a bug.
-    if (this.ground) {
-      this.ground.geometry.dispose();
-      (this.ground.material as THREE.Material).dispose();
-      this.ground = null;
-    }
+    this.pmrem = null;
+    this.envScene = null;
+    this.skyMesh?.geometry.dispose();
+    (this.skyMesh?.material as THREE.Material | undefined)?.dispose();
+    this.skyMesh = null;
+    this.waterMesh?.geometry.dispose();
+    (this.waterMesh?.material as THREE.Material | undefined)?.dispose();
+    this.waterMesh = null;
+    this.groundMesh?.geometry.dispose();
+    (this.groundMesh?.material as THREE.Material | undefined)?.dispose();
+    this.groundMesh = null;
     this.groundColorUniform = null;
     this.groundFogColorUniform = null;
     this.groundFogRadiusUniform = null;
     this.groundFogStrengthUniform = null;
-    this.cameraTransition = null;
-    this.unitMaterialCache.forEach((material) => material.dispose());
-    this.unitMaterialCache = new Map();
-    // Memory/disposal symmetry — a project switch tears down and re-mounts;
-    // without resetting these too, the next project's fresh session would
-    // inherit a stale adaptive-downgrade step and frame-time window from
-    // whatever the previous project's runtime conditions happened to leave
-    // behind.
-    this.frameTimes = [];
-    this.lastFrameAt = null;
-    this.downgradeStep = 0;
-    if (renderer) {
-      renderer.dispose();
-      if (container && renderer.domElement.parentElement === container) {
-        container.removeChild(renderer.domElement);
-      }
-    }
-    this.renderer = null;
-    this.scene = null;
-    this.envScene = null;
-    this.pmrem = null;
-    this.envRenderTarget = null;
-    this.controls = null;
-    this.glbRoots.clear();
-    this.unitMeshes.clear();
-    this.glbUnitBoxes.clear();
-    this.pickable.clear();
-    this.resizeObserver = null;
-    this.handleMove = null;
-    this.handleClick = null;
-    this.handleLeave = null;
-    this.disposeGeometry = null;
-    this.dracoLoader = null;
-    this.container = null;
-    this.lastRefreshParams = null;
-    this.callbacks.onReady(false);
-  }
+    this.groundCloudShadowStrengthUniform = null;
+    this.groundCloudHeightUniform = null;
+    this.groundCloudScaleUniform = null;
+    this.groundCloudCoverageUniform = null;
+    this.groundCloudWindUniform = null;
+    this.groundSunDirectionUniform = null;
+    this.cloudSystem?.dispose();
+    this.cloudSystem = null;
+    this.fogSystem = null;
+    this.sunDistance = 200;
 
-  /** Applies lower-cost config changes without a full rebuild: ground/
-   * shell visibility, camera limits/FOV, detail-model transform/links/
-   * glass/material/overrides, exposure — everything the component's
-   * "lower-cost config changes" effect used to do inline. Only meaningful
-   * once `ready` (mount() has completed) — the caller gates on that, same
-   * as the original effect did. */
-  applyLiveUpdate(params: LiveUpdateParams) {
-    // Captured before `this.config` is overwritten below — the only way
-    // to tell an *enabled* flag actually flipped (vs. this call firing for
-    // an unrelated field) so the two structural-but-cheap toggles right
-    // below only do real work when they need to. Always a real config
-    // (the constructor seeds `this.config`, same as `mount()` does), never
-    // null — the first-ever call just diffs against that initial value,
-    // which is harmless since it's always in sync with what's on screen.
-    const prevConfig = this.config;
-    this.setProject(params.project);
-    this.config = params.config;
-    const { project, config, detailModels, usingGlb } = params;
-
-    if (this.ground) this.ground.visible = config.groundEnabled;
-    // scene.fog is a plain, stable three.js API — cheap to update live
-    // (unlike the post-processing chain), no remount needed.
-    if (this.scene) {
-      this.scene.fog = config.fogEnabled ? new THREE.FogExp2(this.resolveFogColor(config), config.fogDensity) : null;
-    }
-    if (this.controls) {
-      const layout = usingGlb ? null : computeProjectLayout(project);
-      const boundingRadius = layout?.boundingRadius ?? this.controls.getDistance();
-      this.controls.minDistance = boundingRadius * config.cameraMinDistanceMultiplier;
-      this.controls.maxDistance = boundingRadius * config.cameraMaxDistanceMultiplier;
-      this.controls.minPolarAngle = THREE.MathUtils.degToRad(config.cameraMinPolarDeg);
-      this.controls.maxPolarAngle = THREE.MathUtils.degToRad(config.cameraMaxPolarDeg);
-      this.controls.autoRotate = config.autoRotate;
-    }
-    if (this.camera) {
-      const nextIsMobile = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
-      this.camera.fov = nextIsMobile ? config.cameraFovMobile : config.cameraFovDesktop;
-      this.camera.updateProjectionMatrix();
-    }
-    // Live-reflects Admin's scale/rotation/altitude sliders and Link Units
-    // edits without a full GLB reload — one pass per already-loaded slot.
-    // A slot present in `detailModels` but not (yet) in `this.glbRoots`
-    // (e.g. just enabled, GLB not loaded until the next full mount()) is
-    // simply skipped here, same as the single-model version's implicit
-    // "only if a root is already loaded" gate.
-    for (const { slotId, model } of detailModels) {
-      const root = this.glbRoots.get(slotId);
-      if (!root) continue;
-      this.applyDetailTransform(root, model.scale, model.rotationDeg, model.altitudeOffset);
-      this.applyDetailUnitLinks(slotId, root, model.unitLinks as UnitMeshLink[]);
-      this.applyGlassPreset(root, config.glassPreset, config.environmentIntensity);
-      this.applyNodeOverrides(root, model);
-    }
-    if (this.renderer) {
-      this.renderer.toneMappingExposure = config.exposure;
-      this.renderer.toneMapping = TONE_MAPPING_MODES[config.toneMapping];
-    }
-
-    // Sky/Water/Bloom/Clouds pass — wave-look and bloom-look sliders are
-    // real live `UniformNode<float>`s on the already-constructed
-    // waterMesh/bloomNode, so these drag live with no pipeline rebuild.
-    // `waterEnabled` itself used to also force a full engine remount
-    // (real click-responsiveness bug, see `waterMesh`'s own field doc
-    // comment) — `setWaterEnabled` below is the fix, only called when the
-    // flag actually changed so a plain distortion/size drag stays a no-op
-    // here as before.
-    if (config.waterEnabled !== prevConfig.waterEnabled) {
-      this.setWaterEnabled(config.waterEnabled, config);
-    }
-    if (this.waterMesh) {
-      this.waterMesh.distortionScale.value = config.waterDistortionScale;
-      this.waterMesh.size.value = config.waterSize;
-    }
-    // Same fix, same reasoning, for `bloomEnabled`/`depthOfFieldEnabled`:
-    // both only ever changed *which nodes* `buildRenderPipeline` chains
-    // together, a plain in-memory TSL graph rebuild with no renderer/
-    // context/GLB work in it (see that method's own doc comment) — there
-    // was never a real reason either needed a full mount(). One rebuild
-    // covers both if they changed together (e.g. a preset switch).
-    if (config.bloomEnabled !== prevConfig.bloomEnabled || config.depthOfFieldEnabled !== prevConfig.depthOfFieldEnabled) {
-      this.buildRenderPipeline(this.effectiveTier);
-    }
-    if (this.bloomNode) {
-      this.bloomNode.strength.value = config.bloomStrength;
-      this.bloomNode.radius.value = config.bloomRadius;
-    }
-    // 3D LUT intensity — real live UniformNode; `lutEnabled`/`lutPreset`
-    // still need a fresh mount (structural + a real async texture load,
-    // unlike water/bloom/DoF above which are pure in-memory rebuilds).
-    if (this.lutIntensity) {
-      this.lutIntensity.value = config.lutIntensity;
-    }
-    // Depth of field's own live uniforms — `dofFocusDistance` is
-    // intentionally NOT touched here, it's owned by the per-frame render
-    // loop instead (real auto-focus, see its field doc comment).
-    if (this.dofFocalLength) {
-      this.dofFocalLength.value = config.depthOfFieldFocalLength;
-    }
-    if (this.dofBokehScale) {
-      this.dofBokehScale.value = config.depthOfFieldBokehScale;
-    }
-    // Unit-status caustics — real shared live UniformNodes (scale/speed);
-    // per-unit color/intensity are updated by applyUnitAppearance instead
-    // (they depend on each unit's own status, not just global config).
-    // `causticsEnabled` itself still needs a fresh mount (structural).
-    if (this.causticsScaleUniform) {
-      this.causticsScaleUniform.value = config.causticsScale;
-    }
-    if (this.causticsSpeedUniform) {
-      this.causticsSpeedUniform.value = config.causticsSpeed;
-    }
-
-    // Ground Platform's ground fog — same live-`UniformNode` pattern as
-    // above; `groundFogEnabled` itself is included here (not the mount
-    // deps) since it's just `groundFogStrengthUniform` going 0↔1, not a
-    // structural change (see buildGroundMaterial's own doc comment).
-    if (this.groundColorUniform) this.groundColorUniform.value.set(config.groundColor);
-    if (this.groundFogColorUniform) this.groundFogColorUniform.value.set(this.resolveFogColor(config));
-    if (this.groundFogRadiusUniform) this.groundFogRadiusUniform.value = Math.max(1, config.groundFogRadius);
-    if (this.groundFogStrengthUniform) this.groundFogStrengthUniform.value = config.groundFogEnabled ? 1 : 0;
-
-    // Sections module — re-applies the currently active section's
-    // clipping/cap from the freshest `config.sections` (e.g. a numeric
-    // field edit in `SectionsPanel`, or a "dragend" commit that just
-    // flowed through `draft`/`update`). A live in-progress gizmo drag
-    // updates the clip directly (see `onSectionGizmoChange`) rather than
-    // waiting for this React round-trip — this is the persisted-value
-    // catch-up path, not the real-time one.
-    if (this.activeSectionId) {
-      const section = config.sections.find((s) => s.id === this.activeSectionId) ?? null;
-      this.applyActiveClipping(section);
-    }
-  }
-
-  /** Sky/Water/Bloom/Clouds "Ocean" tab — sun position (direct
-   * elevation/azimuth, matching webgl_shaders_ocean.html's own GUI
-   * exactly, no geographic date/time simulation) + the physical sky dome/
-   * water it feeds. Recomputed whenever the sun/environment-intensity
-   * fields change. */
-  applySunAndEnvironment(params: SunEnvironmentParams) {
-    this.config = params.config;
-    const { config } = params;
-    const sun = this.sun;
-    const ambient = this.ambient;
-    const scene = this.scene;
-    if (!sun || !ambient || !scene) return;
-
-    // webgl_watch.html parity — cheap scalar, no shadow-map reallocation
-    // needed, safe to set on every call same as the sun direction below.
-    sun.shadow.radius = config.shadowSoftness;
-
-    const sunPos = {
-      elevationDeg: config.sunElevationDeg,
-      azimuthDeg: config.sunAzimuthDeg,
-      isNight: config.sunElevationDeg <= 0,
-    };
-    const dir = sunDirectionVector(sunPos);
-    // Real bug fix — must be the exact same distance `sun.shadow.camera`'s
-    // near/far were bracketed around in mount() (see `sunDistance`'s own
-    // field doc comment for the full "shadow map was always empty" story),
-    // not an independent hardcoded value that can silently drift out of
-    // sync with it again.
-    const distance = this.sunDistance;
-    // Offset by the scene's actual center (same point `sun.target` was
-    // pointed at, once, in mount()) — `sun.position` set in raw world
-    // space with no such offset would only match the intended elevation/
-    // azimuth when the scene happened to sit near the world origin; any
-    // building whose bounding-box center was offset from (0,0,0) would
-    // get a subtly wrong sun angle. Falls back to the origin if called
-    // before a mount (shouldn't happen in practice — `sun`/`ambient` are
-    // both null until mount() sets them, guarded by the early return
-    // above).
-    const center = this.sceneCenter ?? new THREE.Vector3();
-    sun.position.set(
-      center.x + dir.x * distance,
-      center.y + Math.max(dir.y, 0.05) * distance,
-      center.z + dir.z * distance
-    );
-    sun.color.setHex(sunColorForElevation(sunPos.elevationDeg));
-    sun.intensity = sunPos.isNight ? 0.1 : 1.2 + Math.max(0, sunPos.elevationDeg / 90) * 1.8;
-    ambient.intensity = sunPos.isNight ? 0.08 : 0.15;
-
-    // Sky/Water/Bloom/Clouds "Ocean" tab — feeds the same real sun
-    // direction into the physical sky dome and water plane, exactly like
-    // webgl_shaders_ocean.html's own `updateSun()` feeds one `sun` Vector3
-    // into both `sky`/`water`. Kept raw/unclamped (unlike `sun.position`'s
-    // `Math.max(dir.y, 0.05)` above, a practical floor so the *light*
-    // never comes from below ground) so sunrise/sunset coloring on the sky
-    // dome itself still looks correct at low sun angles. All of this is
-    // cheap uniform writes — safe to run every tick alongside the rest of
-    // this method; only the PMREM capture below is debounced.
-    this.sunDirection.set(dir.x, dir.y, dir.z);
-    if (this.skyMesh) {
-      // Standalone "Sky" tab (webgl_shaders_sky.html parity) — real
-      // per-project params, replacing the old fixed SKY_PHYSICAL_PARAMS
-      // constant (kept only as that tuple's former-default reference,
-      // see viewerPresets.ts). Written every call regardless of
-      // `skyEnabled` — cheap uniform writes on a mesh that may just be
-      // hidden below, no need to gate them individually.
-      this.skyMesh.turbidity.value = config.skyTurbidity;
-      this.skyMesh.rayleigh.value = config.skyRayleigh;
-      this.skyMesh.mieCoefficient.value = config.skyMieCoefficient;
-      this.skyMesh.mieDirectionalG.value = config.skyMieDirectionalG;
-      this.skyMesh.sunPosition.value.copy(this.sunDirection);
-      // Immediate visibility toggle for a live "off" switch — the
-      // expensive PMREM-of-sky-vs-flat-fallback swap happens in the
-      // debounced rebuildEnvironment below, but hiding/showing the mesh
-      // itself is a free scalar write, no reason to wait on it.
-      this.skyMesh.visible = config.skyEnabled;
-      // Clouds (webgl_shaders_ocean.html's "Clouds" folder — really just 3
-      // more uniforms on the sky shader, see SkyMesh's own field docs).
-      // Off by default: coverage/density forced to 0 rather than leaving
-      // config.cloudCoverage/cloudDensity's own defaults active, so the
-      // physical-sky rollout doesn't also silently add clouds for every
-      // project in the same pass.
-      this.skyMesh.cloudCoverage.value = config.cloudsEnabled ? config.cloudCoverage : 0;
-      this.skyMesh.cloudDensity.value = config.cloudsEnabled ? config.cloudDensity : 0;
-      this.skyMesh.cloudElevation.value = config.cloudElevation;
-    }
-    if (this.waterMesh) {
-      this.waterMesh.sunDirection.value.copy(this.sunDirection);
-      this.waterMesh.sunColor.value.setHex(sunColorForElevation(sunPos.elevationDeg));
-    }
-
-    // Everything above is cheap (a few scalar/vector writes) and applies
-    // synchronously on every call, so a live-drag sun elevation/azimuth
-    // slider tracks the pointer smoothly. `rebuildEnvironment` below is
-    // the expensive part (a real shaded PMREM capture of the sky dome) —
-    // debounced so a drag doesn't thrash the GPU on every tick, see
-    // scheduleEnvironmentRebuild.
-    this.scheduleEnvironmentRebuild(config);
-  }
-
-  /** Debounces `rebuildEnvironment` (the real shaded PMREM capture) behind
-   * ~150ms of idle after the last call — `applySunAndEnvironment`'s own
-   * React effect re-runs on every sun elevation/azimuth slider tick, and
-   * before this existed each tick triggered a full synchronous PMREM
-   * regeneration. Mirrors EditorShell.tsx's `syncSectionGizmo` debounce
-   * idiom. `mountTokenAtStart` guards against the timer outliving a
-   * dispose()/remount and firing `rebuildEnvironment` against a torn-down
-   * scene. Mount-time `rebuildEnvironment` calls stay direct/synchronous —
-   * only this hot, per-tick path is debounced. */
-  private scheduleEnvironmentRebuild(config: Project3DConfig) {
-    if (this.environmentRebuildTimer != null) clearTimeout(this.environmentRebuildTimer);
-    const mountTokenAtStart = this.mountToken;
-    this.environmentRebuildTimer = setTimeout(() => {
-      this.environmentRebuildTimer = null;
-      if (mountTokenAtStart !== this.mountToken) return;
-      this.rebuildEnvironment(config);
-    }, 150);
-  }
-
-  // ---------------------------------------------------------------------
-  // Sections module (first-class Configurator module) — real manual
-  // clipping-plane authoring/runtime. Pure plane/cap/drag-to-rectangle
-  // math lives in ./sections.ts (unit-tested standalone, see
-  // scripts/test-sections.ts); everything below is the one place that
-  // actually touches the live scene, same division of responsibility the
-  // rest of this class already has (React never mutates Three.js objects
-  // directly — see the class doc comment).
-  // ---------------------------------------------------------------------
-
-  /** A freshly-drawn section's default cut height — roughly mid-building
-   * from whatever's actually loaded, so a new section starts somewhere
-   * useful instead of at y=0. */
-  private defaultSectionHeight(): number {
-    if (this.glbRoots.size > 0) {
-      const box = new THREE.Box3();
-      for (const root of this.glbRoots.values()) box.union(new THREE.Box3().setFromObject(root));
-      if (Number.isFinite(box.min.y) && Number.isFinite(box.max.y)) {
-        return THREE.MathUtils.lerp(box.min.y, box.max.y, 0.5);
-      }
-    }
-    return 3;
-  }
-
-  /** Resolves a pointer event to a world-space point — raycasts against
-   * whatever's actually loaded (GLB root, else the procedural ground)
-   * first, falling back to the mathematical y=0 ground plane so drawing
-   * still works before/without a model loaded. Same
-   * `pointerFromEvent`/`Raycaster` pattern `mount()`'s unit hover/click
-   * already sets up, reused here for section-drawing clicks instead of
-   * the `pickable` unit map. */
-  private raycastGround(e: PointerEvent): THREE.Vector3 | null {
-    const renderer = this.renderer;
-    const camera = this.camera;
-    if (!renderer || !camera) return null;
-    const rect = renderer.domElement.getBoundingClientRect();
-    const pointer = new THREE.Vector2(
-      ((e.clientX - rect.left) / rect.width) * 2 - 1,
-      -((e.clientY - rect.top) / rect.height) * 2 + 1
-    );
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(pointer, camera);
-    const targets: THREE.Object3D[] = [...this.glbRoots.values()];
-    if (this.ground) targets.push(this.ground);
-    const hits = targets.length > 0 ? raycaster.intersectObjects(targets, true) : [];
-    if (hits.length > 0) return hits[0].point.clone();
-    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const point = new THREE.Vector3();
-    return raycaster.ray.intersectPlane(groundPlane, point) ? point : null;
-  }
-
-  private updateDrawPreview(p1: THREE.Vector3, p2: THREE.Vector3) {
-    const helpers = this.sectionHelperGroup;
-    if (!helpers) return;
-    const y = p1.y;
-    const corners = [
-      new THREE.Vector3(p1.x, y, p1.z),
-      new THREE.Vector3(p2.x, y, p1.z),
-      new THREE.Vector3(p2.x, y, p2.z),
-      new THREE.Vector3(p1.x, y, p2.z),
-      new THREE.Vector3(p1.x, y, p1.z),
-    ];
-    const geometry = new THREE.BufferGeometry().setFromPoints(corners);
-    if (this.sectionDrawPreview) {
-      this.sectionDrawPreview.geometry.dispose();
-      this.sectionDrawPreview.geometry = geometry;
-    } else {
-      const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x6b55f5 }));
-      line.renderOrder = 20;
-      helpers.add(line);
-      this.sectionDrawPreview = line;
-    }
-  }
-
-  private clearDrawPreview() {
-    const line = this.sectionDrawPreview;
-    if (line && this.sectionHelperGroup) {
-      this.sectionHelperGroup.remove(line);
-      line.geometry.dispose();
-      (line.material as THREE.Material).dispose();
-    }
-    this.sectionDrawPreview = null;
-  }
-
-  /** Starts the "+ Draw Section" flow — the next two clicks in the
-   * viewport become the rectangle's opposite corners; `onComplete` fires
-   * once with a new, unsaved `Section` (id/name/scope/buildingName are
-   * editor-UI concerns supplied by the caller, not geometry — see
-   * `SectionsListRail.tsx`). The caller owns adding it to
-   * `draft.sections`/selecting it; this method only produces the value. */
-  beginDrawSection(
-    opts: { id: string; name: string; scope: Section["scope"]; buildingName?: string },
-    onComplete: (section: Section) => void
-  ) {
-    const renderer = this.renderer;
-    if (!renderer) return;
-    this.cancelDrawSection();
-    let firstPoint: THREE.Vector3 | null = null;
-
-    const onMove = (e: PointerEvent) => {
-      if (!firstPoint) return;
-      const p = this.raycastGround(e);
-      if (p) this.updateDrawPreview(firstPoint, p);
-    };
-    const onClick = (e: PointerEvent) => {
-      const p = this.raycastGround(e);
-      if (!p) return;
-      if (!firstPoint) {
-        firstPoint = p;
-        return;
-      }
-      const section = sectionFromDragPoints(firstPoint, p, {
-        id: opts.id,
-        name: opts.name,
-        heightM: this.defaultSectionHeight(),
-        scope: opts.scope,
-        buildingName: opts.buildingName,
-      });
-      this.cancelDrawSection();
-      onComplete(section);
-    };
-
-    renderer.domElement.addEventListener("pointermove", onMove);
-    renderer.domElement.addEventListener("click", onClick);
-    this.drawSection = { onMove, onClick };
-  }
-
-  cancelDrawSection() {
-    const renderer = this.renderer;
-    if (this.drawSection && renderer) {
-      renderer.domElement.removeEventListener("pointermove", this.drawSection.onMove);
-      renderer.domElement.removeEventListener("click", this.drawSection.onClick);
-    }
-    this.drawSection = null;
-    this.clearDrawPreview();
-  }
-
-  /** Rebuilds the active section's real clip (`clippingGroup.clippingPlanes`)
-   * and cap mesh — the single place both the admin editor (selecting/
-   * editing a section) and the public runtime (a visitor activating a
-   * floor) funnel through, so the cap and the clip can never disagree.
-   * `null` clears both. */
-  private applyActiveClipping(section: Section | null) {
-    // Real click-freeze bug fix (2026-08-14, "Clipping doesn't work") —
-    // `NO_ACTIVE_SECTION_PLANES` instead of `[]` here specifically: see
-    // its own doc comment in sections.ts for the full mechanism (a
-    // changed clip-plane *count* forces a real ~12s shader/pipeline
-    // recompile across every clipped mesh; keeping the count fixed at 6
-    // always means this is now a cheap uniform update instead).
-    if (this.clippingGroup) {
-      this.clippingGroup.clippingPlanes = section ? buildSectionPlanes(section) : NO_ACTIVE_SECTION_PLANES;
-    }
-    this.rebuildSectionCap(section);
-  }
-
-  /** Every real `THREE.Mesh` currently in `clippingGroup` — the actual
-   * clippable content (GLB roots and/or procedural ground/shells/unit
-   * boxes), traversed recursively since a GLB root is a nested hierarchy,
-   * not a flat list. This is the geometry the section fill technique
-   * borrows (back faces only, see `sectionFillMeshes`'s own doc comment)
-   * — deliberately NOT a synthetic proxy box, so the fill only appears
-   * where real geometry was actually cut open, not the section's full
-   * authored rectangle. */
-  private collectClippableMeshes(): THREE.Mesh[] {
-    const meshes: THREE.Mesh[] = [];
-    this.clippingGroup?.traverse((obj) => {
-      if ((obj as THREE.Mesh).isMesh) meshes.push(obj as THREE.Mesh);
-    });
-    return meshes;
-  }
-
-  /** Removes every real color-fill mesh (`sectionFillMeshes`) from the
-   * scene — the shared `sectionFillMaterial` is NOT disposed here (it
-   * outlives any one rebuild, same as `sectionIndicatorMaterial`; both
-   * are only disposed in `dispose()`), only each mesh's own borrowed-
-   * geometry reference is dropped (the geometry itself belongs to the
-   * source mesh in `clippingGroup`, never owned/disposed here). */
-  private clearSectionFillMeshes() {
-    for (const mesh of this.sectionFillMeshes) {
-      this.sectionFillClippingGroup?.remove(mesh);
-      this.sectionHelperGroup?.remove(mesh);
-    }
-    this.sectionFillMeshes = [];
-  }
-
-  /** Real behavior, not just a color swap (see `Section.fillGapsEnabled`'s
-   * own doc comment for the full contract):
-   * - `fillGapsEnabled: true` — opaque, admin-picked `fillColor`, shown on
-   *   the real cut surface only (back-face fill — see
-   *   `sectionFillMeshes`'s own doc comment for the technique and its
-   *   2026-08-14 history), in both the editor and the public viewer.
-   * - `fillGapsEnabled: false` — a translucent (50%) neutral "clip plane
-   *   indicator" rectangle in the admin editor only; skipped entirely (no
-   *   mesh at all, not just alpha'd to invisible) in the public viewer,
-   *   since it's a pure editing aid a visitor has no use for. Stays a
-   *   plain, unclipped rectangle deliberately: while dragging/resizing a
-   *   section an admin needs to see the boundary they're actually
-   *   drawing, not a geometry-dependent fill that may show nothing at all
-   *   if the section isn't over any geometry yet. */
-  private rebuildSectionCap(section: Section | null) {
-    const helpers = this.sectionHelperGroup;
-    if (!helpers) return;
-    if (this.sectionIndicatorMesh) {
-      helpers.remove(this.sectionIndicatorMesh);
-      this.sectionIndicatorMesh.geometry.dispose();
-      this.sectionIndicatorMesh = null;
-    }
-    this.clearSectionFillMeshes();
-    if (!section) return;
-    if (!section.fillGapsEnabled && !this.isEditorPreview) return;
-
-    if (section.fillGapsEnabled) {
-      if (!this.sectionFillClippingGroup) {
-        this.sectionFillClippingGroup = new THREE.ClippingGroup();
-        helpers.add(this.sectionFillClippingGroup);
-      }
-      // Full plane set (not just the top plane) — a box-shaped section
-      // can cut through solid geometry on any of its faces (side walls
-      // too, if the section boundary itself slices through a building,
-      // not just its own top/bottom); `heightOnly` sections get the same
-      // treatment for free since their side planes are already inert
-      // `noClipPlane()`s (see that field's own doc comment) — nothing
-      // extra to special-case here.
-      this.sectionFillClippingGroup.clippingPlanes = buildSectionPlanes(section);
-
-      if (!this.sectionFillMaterial) {
-        this.sectionFillMaterial = new THREE.MeshBasicMaterial({ color: section.fillColor, side: THREE.BackSide });
-      } else {
-        // A plain color change is a uniform update, not a pipeline-
-        // affecting one (unlike the old stencil material's transparent/
-        // depthWrite/stencilWrite toggling) — no `needsUpdate` dance
-        // needed here; this material's `side`/opacity/transparency never
-        // change after construction.
-        this.sectionFillMaterial.color.set(section.fillColor);
-      }
-
-      for (const source of this.collectClippableMeshes()) {
-        const fillMesh = new THREE.Mesh(source.geometry, this.sectionFillMaterial);
-        // Shares source's world transform directly rather than
-        // re-parenting (source stays exactly where it is, inside
-        // clippingGroup) — sectionHelperGroup sits at identity at the
-        // scene root, so copying world-space matrixWorld straight into
-        // local .matrix (with matrixAutoUpdate off, so nothing overwrites
-        // it) reproduces the same placement. `sectionFillClippingGroup`
-        // (its real parent, added to `helpers` above) also sits at
-        // identity, so this world-space copy is still valid one level
-        // deeper.
-        fillMesh.matrixAutoUpdate = false;
-        fillMesh.matrix.copy(source.matrixWorld);
-        fillMesh.frustumCulled = false;
-        fillMesh.castShadow = false;
-        fillMesh.receiveShadow = false;
-        // Draws after the clipped geometry so it doesn't z-fight with
-        // whatever real geometry the cut happens to graze exactly at the
-        // clip planes.
-        fillMesh.renderOrder = 10;
-        this.sectionFillClippingGroup.add(fillMesh);
-        this.sectionFillMeshes.push(fillMesh);
-      }
-    } else {
-      // Translucent editing indicator — unchanged plain rectangle, sized
-      // to the section's own drawn footprint, unclipped, no back-face
-      // trick needed (it's not meant to look like real cut geometry).
-      const geometry = buildSectionCapGeometry(section);
-      if (!this.sectionIndicatorMaterial) {
-        this.sectionIndicatorMaterial = new THREE.MeshBasicMaterial({
-          color: SECTION_INDICATOR_COLOR,
-          transparent: true,
-          opacity: 0.5,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-        });
-      }
-      const mesh = new THREE.Mesh(geometry, this.sectionIndicatorMaterial);
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      mesh.renderOrder = 10;
-      helpers.add(mesh);
-      this.sectionIndicatorMesh = mesh;
-    }
-  }
-
-  /** Activates a section by id (real clip + cap) or clears it (`null`) —
-   * the entry point both `SectionsListRail.tsx` (selecting a section to
-   * edit) and the public runtime (a visitor clicking a floor in the
-   * bottom-chrome Sections panel) call. Does not itself attach/detach the
-   * editing gizmo — those are orthogonal (browsing a clipped view vs.
-   * actively dragging its handles). */
-  activateSection(sectionId: string | null) {
-    this.activeSectionId = sectionId;
-    const section = sectionId ? this.config.sections.find((s) => s.id === sectionId) ?? null : null;
-    this.applyActiveClipping(section);
-  }
-
-  /** Reads the gizmo anchor's live transform back into a `Section`, keyed
-   * off whatever `attachSectionGizmo` last stored in `liveSection` (so
-   * every other field — name/scope/fillGapsEnabled/fillColor/floorId/etc.
-   * — survives untouched). */
-  private onSectionGizmoChange() {
-    const anchor = this.sectionGizmoAnchor;
-    const base = this.liveSection;
-    if (!anchor || !base) return;
-    const next: Section = {
-      ...base,
-      centerX: anchor.position.x,
-      centerZ: anchor.position.z,
-      heightM: anchor.position.y,
-      // Wrapped into (-180, 180] — real bug fix: `anchor.rotation.y` is a
-      // raw Euler radian value that three.js never re-normalizes, so
-      // spinning the Rotate handle more than one full turn (very easy to
-      // do by accident, dragging in a circle) used to produce values like
-      // 540° or -720°. That's outside both the panel slider's own
-      // [-180, 180] range AND the PATCH route's zod
-      // `rotationDeg: z.number().min(-360).max(360)` — an out-of-range
-      // value here would 400 the *entire* config save (sections is one
-      // field in one all-or-nothing PATCH body), not just fail to persist
-      // this one section. Wrapping preserves the exact same visual
-      // rotation (sin/cos are periodic) while always staying in range.
-      rotationDeg: THREE.MathUtils.euclideanModulo(THREE.MathUtils.radToDeg(anchor.rotation.y) + 180, 360) - 180,
-      // Real bug fix (2026-08-14, "resize doesn't save") — same class of
-      // bug the rotationDeg wrap above already fixed: nothing capped the
-      // Resize handle's drag distance, so an admin dragging well past the
-      // server's own max produced a `Section` the PATCH route's zod
-      // schema then rejected outright (400s the whole config save, not
-      // just this field) — the edit looked fine on screen and in the
-      // panel's own numbers, then silently never persisted. Clamped to
-      // the exact same bound the server enforces (`SECTION_MAX_DIMENSION_M`,
-      // shared from sections.ts) so a drag can no longer produce a value
-      // guaranteed to be rejected.
-      widthM: Math.min(SECTION_MAX_DIMENSION_M, Math.max(0.5, anchor.scale.x)),
-      depthM: Math.min(SECTION_MAX_DIMENSION_M, Math.max(0.5, anchor.scale.z)),
-    };
-    this.liveSection = next;
-    this.applyActiveClipping(next);
-    this.callbacks.onSectionDraftChange?.(next);
-  }
-
-  /** Switches the gizmo's mode (the Move/Rotate/Resize/Height toolbar
-   * buttons) — safe to call whether or not a gizmo is currently attached
-   * (no-op if not); also called internally by `attachSectionGizmo`. */
-  setSectionGizmoMode(mode: "move" | "rotate" | "resize" | "height") {
-    const gizmo = this.sectionGizmo;
-    if (!gizmo) return;
-    // Each of the 4 authoring modes is a real TransformControls mode +
-    // axis restriction (its own `showX`/`showY`/`showZ` toggles) —
-    // reusing three's own gizmo rather than 4 bespoke hand-built ones.
-    if (mode === "move") {
-      gizmo.setMode("translate");
-      gizmo.showX = true;
-      gizmo.showY = false;
-      gizmo.showZ = true;
-    } else if (mode === "height") {
-      gizmo.setMode("translate");
-      gizmo.showX = false;
-      gizmo.showY = true;
-      gizmo.showZ = false;
-    } else if (mode === "rotate") {
-      gizmo.setMode("rotate");
-      gizmo.showX = false;
-      gizmo.showY = true;
-      gizmo.showZ = false;
-    } else {
-      gizmo.setMode("scale");
-      gizmo.showX = true;
-      gizmo.showY = false;
-      gizmo.showZ = true;
-    }
-  }
-
-  /** Attaches the editing gizmo to `section` in the given mode — also
-   * activates it (live clip + cap) so the admin sees what they're
-   * editing. Reuses one lazily-created `TransformControls` instance
-   * across attach calls (just re-targets/re-modes it) rather than
-   * recreating per section/mode switch.
-   *
-   * Real bug fixed here: this used to call `this.activateSection(section.id)`,
-   * which re-derives the section from `this.config.sections.find(...)` —
-   * `this.config` only gets refreshed by `applyLiveUpdate()`, which the
-   * admin editor's per-field edits don't trigger (Sections aren't in that
-   * effect's dependency list — cheap, local React state otherwise). So a
-   * just-drawn section (never yet in `this.config.sections`) or a section
-   * mid-edit from the panel would silently activate a *stale* — or, for a
-   * brand-new section, nonexistent — snapshot instead of what's actually
-   * being edited, meaning the live clip/cap the admin sees could lag
-   * behind or briefly vanish. Now applies the clip/cap directly from the
-   * `section` argument, which is always the fresh, authoritative value the
-   * caller (EditorShell.tsx) just computed — no re-lookup needed. */
-  attachSectionGizmo(section: Section, mode: "move" | "rotate" | "resize" | "height") {
-    const camera = this.camera;
-    const renderer = this.renderer;
-    const helpers = this.sectionHelperGroup;
-    if (!camera || !renderer || !helpers) return;
-
-    this.liveSection = { ...section };
-    this.activeSectionId = section.id;
-    this.applyActiveClipping(section);
-
-    if (!this.sectionGizmoAnchor) {
-      const anchor = new THREE.Object3D();
-      helpers.add(anchor);
-      this.sectionGizmoAnchor = anchor;
-    }
-    const anchor = this.sectionGizmoAnchor;
-    anchor.position.set(section.centerX, section.heightM, section.centerZ);
-    anchor.rotation.set(0, THREE.MathUtils.degToRad(section.rotationDeg), 0);
-    anchor.scale.set(section.widthM, 1, section.depthM);
-
-    if (!this.sectionGizmo) {
-      const gizmo = new TransformControls(camera, renderer.domElement);
-      gizmo.addEventListener("dragging-changed", (event: { value: unknown }) => {
-        if (this.controls) this.controls.enabled = !event.value;
-        // Real bug fix (Sections "doesn't save" audit): `onSectionDraftChange`
-        // (fired per-tick by `onSectionGizmoChange` below, via
-        // `objectChange`) only ever updated the live 3D preview and the
-        // panel's *displayed* numbers (`EditorShell.tsx`'s
-        // `liveSectionOverride`) — nothing wrote the drag's result back
-        // into `draft.sections`, the state Save/autosave actually PATCH.
-        // So Move/Rotate/Resize/Height gizmo edits looked correct
-        // on-screen but silently reverted on save. Fired once here, on
-        // drag-end (`event.value` false = "no longer dragging"), with
-        // whatever `onSectionGizmoChange` last computed into
-        // `this.liveSection` — one drag, one real commit into React
-        // state, matching every other panel field's `commit: true`
-        // convention for a discrete edit.
-        if (!event.value && this.liveSection) {
-          this.callbacks.onSectionDraftCommit?.(this.liveSection);
-        }
-      });
-      gizmo.addEventListener("objectChange", () => this.onSectionGizmoChange());
-      helpers.add(gizmo.getHelper());
-      this.sectionGizmo = gizmo;
-    }
-    this.sectionGizmo.attach(anchor);
-    this.setSectionGizmoMode(mode);
-  }
-
-  detachSectionGizmo() {
-    const gizmo = this.sectionGizmo;
-    if (gizmo) {
-      gizmo.detach();
-      this.sectionHelperGroup?.remove(gizmo.getHelper());
-      gizmo.dispose();
-    }
-    this.sectionGizmo = null;
-    if (this.sectionGizmoAnchor && this.sectionHelperGroup) {
-      this.sectionHelperGroup.remove(this.sectionGizmoAnchor);
-    }
-    this.sectionGizmoAnchor = null;
-    this.liveSection = null;
-  }
-
-  getLiveSectionDraft(): Section | null {
-    return this.liveSection;
+    // Lighting/Rendering tab (PRD §14-21, §22-33) cleanup — one shared
+    // post pipeline for both.
+    this.csmSystem?.dispose();
+    this.csmSystem = null;
+    this.scenePostPipeline?.dispose();
+    this.scenePostPipeline = null;
+    this.scenePostSignature = null;
+    this.artificialLightSystem?.dispose();
+    this.artificialLightSystem = null;
   }
 }

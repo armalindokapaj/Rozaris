@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Camera, Expand, Minimize, ScanEye, SquareStack } from "lucide-react";
+import { Camera, Expand, Minimize, SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useProjectConstruction } from "@/hooks/useProjectConstruction";
-import { useProject3DConfig } from "@/hooks/useProject3DConfig";
 import { useProjectDetailModel } from "@/hooks/useProjectDetailModel";
+import { useProject3DConfig } from "@/hooks/useProject3DConfig";
 import { useT } from "@/lib/i18n/useT";
 import { ThreeProjectViewer, type ThreeProjectViewerHandle } from "@/components/project/ThreeProjectViewer";
 import { ConstructionTimelineStrip } from "@/components/project/ConstructionTimelineStrip";
@@ -16,20 +15,34 @@ import { UnitDetailPanel } from "@/components/project/UnitDetailPanel";
 import { UnitPreviewCard } from "@/components/project/UnitPreviewCard";
 import type { Project, Unit } from "@/lib/types";
 
+/**
+ * Experience Editor v2 rebuild (2026-08-15): ThreeProjectViewer's own
+ * bottom chrome (Unit Search panel, shadow-map debug HUD, click-to-select
+ * in the 3D scene) doesn't exist yet — that's Interaction/Lighting-tab
+ * scope for a later phase. Unit selection here works through
+ * UnitDiscoveryPanel's search list only for now.
+ *
+ * Interaction tab (PRD §39) — `viewerConfig.viewerUI` is real again:
+ * Fullscreen/Screenshot/Information Card are genuinely wired (hidden
+ * when off); every other Interaction toggle isn't read here yet since
+ * the systems they'd gate (3D hover/select/highlight/isolation, a public
+ * Filters UI, a public Shots menu) don't exist in this rebuilt viewer —
+ * see InteractionPanel.tsx's own doc comment.
+ *
+ * Real bug fixed alongside the Environment tab (PRD §7-13) build: this
+ * component already fetched the real `viewerConfig` (useProject3DConfig)
+ * for `viewerUI` gating, but never forwarded `cameraConfig`/
+ * `qualityConfig`/`environmentConfig` to `<ThreeProjectViewer>` — so every
+ * public visitor saw RenderEngine's hardcoded defaults instead of
+ * whatever an admin actually saved on the Camera/Performance/Environment
+ * tabs. Same class of gap as the Phase-1 Publish-pipeline bug (admin
+ * editor's own live preview never round-trips through the public path
+ * that would have caught it).
+ */
 export function ArchVizClient({ project }: { project: Project }) {
   const mainRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<ThreeProjectViewerHandle>(null);
   const [unitPanelOpen, setUnitPanelOpen] = useState(false);
-  // Whether the viewer's own bottom panel (Unit Search) is expanded —
-  // used to declutter the header's construction-progress pill while one
-  // is open, not to gate a CTA anymore (that button is gone).
-  const [viewerPanelOpen, setViewerPanelOpen] = useState(false);
-  // Availability/unit-box colors/legend and the popup below are only
-  // meant to be visible while "Unit Search" is the active bottom-menu
-  // panel — clicking Home (or just closing Unit Search) clears the
-  // selection along with them, rather than leaving a stale popup up for a
-  // unit no longer visibly selectable in the scene.
-  const [unitSearchActive, setUnitSearchActive] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   // The 3D click flow always lands on the small UnitPreviewCard first;
   // this only flips true when that card's own "View Unit" button asks for
@@ -37,21 +50,205 @@ export function ArchVizClient({ project }: { project: Project }) {
   const [fullDetailOpen, setFullDetailOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [screenshotFlash, setScreenshotFlash] = useState(false);
-  // Shadow-map debug HUD (webgl_shadowmap_viewer.html parity) — a real
-  // dev/debug tool, not something a real visitor should stumble onto, so
-  // the toggle button itself only renders behind a `?debugShadowMap=1`
-  // query param rather than always being in the header chrome (see
-  // RenderEngine.ts's shadowMapViewer field doc comment for the full
-  // scoping rationale).
-  const searchParams = useSearchParams();
-  const shadowMapDebugAvailable = searchParams.get("debugShadowMap") === "1";
-  const [shadowMapViewerOn, setShadowMapViewerOn] = useState(false);
   const compareCount = useAppStore((s) => s.compare.length);
   const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
   const construction = useProjectConstruction(project);
-  const viewerConfig = useProject3DConfig(project.id);
   const detailModels = useProjectDetailModel(project.id);
+  const viewerConfig = useProject3DConfig(project.id);
   const { t } = useT();
+
+  const cameraConfig = useMemo(
+    () => ({
+      cameraFovDesktop: viewerConfig.cameraFovDesktop,
+      cameraFovMobile: viewerConfig.cameraFovMobile,
+      cameraNearClip: viewerConfig.cameraNearClip,
+      cameraFarClip: viewerConfig.cameraFarClip,
+      cameraStartDistanceMultiplier: viewerConfig.cameraStartDistanceMultiplier,
+      cameraMinDistanceMultiplier: viewerConfig.cameraMinDistanceMultiplier,
+      cameraMaxDistanceMultiplier: viewerConfig.cameraMaxDistanceMultiplier,
+      cameraMinPolarDeg: viewerConfig.cameraMinPolarDeg,
+      cameraMaxPolarDeg: viewerConfig.cameraMaxPolarDeg,
+      cameraMinAzimuthDeg: viewerConfig.cameraMinAzimuthDeg,
+      cameraMaxAzimuthDeg: viewerConfig.cameraMaxAzimuthDeg,
+      cameraOrbitEnabled: viewerConfig.cameraOrbitEnabled,
+      cameraPanEnabled: viewerConfig.cameraPanEnabled,
+      cameraZoomEnabled: viewerConfig.cameraZoomEnabled,
+      cameraDampingEnabled: viewerConfig.cameraDampingEnabled,
+      autoRotate: viewerConfig.autoRotate,
+    }),
+    [viewerConfig]
+  );
+
+  const qualityConfig = useMemo(
+    () => ({
+      renderingMode: viewerConfig.renderingMode,
+      qualityPreset: viewerConfig.qualityPreset,
+      customRenderScale: viewerConfig.customRenderScale,
+      customDprCap: viewerConfig.customDprCap,
+      adaptiveQualityEnabled: viewerConfig.adaptiveQualityEnabled,
+      runtimeQualityReductionEnabled: viewerConfig.runtimeQualityReductionEnabled,
+      interactionQualityReductionEnabled: viewerConfig.interactionQualityReductionEnabled,
+    }),
+    [viewerConfig]
+  );
+
+  const environmentConfig = useMemo(
+    () => ({
+      solarControllerEnabled: viewerConfig.solarControllerEnabled,
+      solarPathMode: viewerConfig.solarPathMode,
+      viewerTimeHours: viewerConfig.viewerTimeHours,
+      solarAnchors: viewerConfig.solarAnchors,
+      geoLatitude: viewerConfig.geoLatitude,
+      geoLongitude: viewerConfig.geoLongitude,
+      simulationDate: viewerConfig.simulationDate,
+      northOffsetDeg: viewerConfig.northOffsetDeg,
+      sunDiscEnabled: viewerConfig.sunDiscEnabled,
+      autoSunIntensityEnabled: viewerConfig.autoSunIntensityEnabled,
+      autoSunColorEnabled: viewerConfig.autoSunColorEnabled,
+      manualSunIntensity: viewerConfig.manualSunIntensity,
+      manualSunColorHex: viewerConfig.manualSunColorHex,
+      environmentRefreshEnabled: viewerConfig.environmentRefreshEnabled,
+      sunAzimuthDeg: viewerConfig.sunAzimuthDeg,
+      sunElevationDeg: viewerConfig.sunElevationDeg,
+      skyEnabled: viewerConfig.skyEnabled,
+      skyTurbidity: viewerConfig.skyTurbidity,
+      skyRayleigh: viewerConfig.skyRayleigh,
+      skyMieCoefficient: viewerConfig.skyMieCoefficient,
+      skyMieDirectionalG: viewerConfig.skyMieDirectionalG,
+      environmentIntensity: viewerConfig.environmentIntensity,
+      cloudsEnabled: viewerConfig.cloudsEnabled,
+      cloudCoverage: viewerConfig.cloudCoverage,
+      cloudDensity: viewerConfig.cloudDensity,
+      cloudElevation: viewerConfig.cloudElevation,
+      cloudMovementEnabled: viewerConfig.cloudMovementEnabled,
+      cloudSunLightingEnabled: viewerConfig.cloudSunLightingEnabled,
+      cloudShadowsEnabled: viewerConfig.cloudShadowsEnabled,
+      cloudHeight: viewerConfig.cloudHeight,
+      cloudThickness: viewerConfig.cloudThickness,
+      cloudThreshold: viewerConfig.cloudThreshold,
+      cloudOpacity: viewerConfig.cloudOpacity,
+      cloudSoftness: viewerConfig.cloudSoftness,
+      cloudScale: viewerConfig.cloudScale,
+      cloudWindSpeed: viewerConfig.cloudWindSpeed,
+      cloudWindDirectionDeg: viewerConfig.cloudWindDirectionDeg,
+      cloudRaymarchSteps: viewerConfig.cloudRaymarchSteps,
+      fogEnabled: viewerConfig.fogEnabled,
+      fogColor: viewerConfig.fogColor,
+      fogDensity: viewerConfig.fogDensity,
+      fogMatchesSky: viewerConfig.fogMatchesSky,
+      fogHeightBandEnabled: viewerConfig.fogHeightBandEnabled,
+      fogHazeEnabled: viewerConfig.fogHazeEnabled,
+      fogNoiseEnabled: viewerConfig.fogNoiseEnabled,
+      fogMovementEnabled: viewerConfig.fogMovementEnabled,
+      fogSunInteractionEnabled: viewerConfig.fogSunInteractionEnabled,
+      fogBaseHeight: viewerConfig.fogBaseHeight,
+      fogTopHeight: viewerConfig.fogTopHeight,
+      fogHaze: viewerConfig.fogHaze,
+      fogNoiseStrength: viewerConfig.fogNoiseStrength,
+      fogNoiseScale: viewerConfig.fogNoiseScale,
+      fogWindDirectionDeg: viewerConfig.fogWindDirectionDeg,
+      fogWindSpeed: viewerConfig.fogWindSpeed,
+      fogFalloff: viewerConfig.fogFalloff,
+      fogMaxOpacity: viewerConfig.fogMaxOpacity,
+      waterEnabled: viewerConfig.waterEnabled,
+      waterDistortionScale: viewerConfig.waterDistortionScale,
+      waterSize: viewerConfig.waterSize,
+      waterType: viewerConfig.waterType,
+      waterWavesEnabled: viewerConfig.waterWavesEnabled,
+      waterMovementEnabled: viewerConfig.waterMovementEnabled,
+      waterSunReflectionEnabled: viewerConfig.waterSunReflectionEnabled,
+      waterEnvReflectionEnabled: viewerConfig.waterEnvReflectionEnabled,
+      waterNormalMapEnabled: viewerConfig.waterNormalMapEnabled,
+      waterHeight: viewerConfig.waterHeight,
+      waterColor: viewerConfig.waterColor,
+      waterDeepColor: viewerConfig.waterDeepColor,
+      groundEnabled: viewerConfig.groundEnabled,
+      groundStyle: viewerConfig.groundStyle,
+      groundColor: viewerConfig.groundColor,
+      groundFogEnabled: viewerConfig.groundFogEnabled,
+      groundFogRadius: viewerConfig.groundFogRadius,
+    }),
+    [viewerConfig]
+  );
+
+  const lightingConfig = useMemo(
+    () => ({
+      sunLightEnabled: viewerConfig.sunLightEnabled,
+      sunTemperatureK: viewerConfig.sunTemperatureK,
+      autoSunIntensityEnabled: viewerConfig.autoSunIntensityEnabled,
+      autoSunColorEnabled: viewerConfig.autoSunColorEnabled,
+      manualSunIntensity: viewerConfig.manualSunIntensity,
+      manualSunColorHex: viewerConfig.manualSunColorHex,
+      csmEnabled: viewerConfig.csmEnabled,
+      csmCascades: viewerConfig.csmCascades,
+      csmMaxDistance: viewerConfig.csmMaxDistance,
+      csmResolution: viewerConfig.csmResolution,
+      csmSplitMode: viewerConfig.csmSplitMode,
+      csmMargin: viewerConfig.csmMargin,
+      softShadowsEnabled: viewerConfig.softShadowsEnabled,
+      shadowSoftness: viewerConfig.shadowSoftness,
+      shadowsEnabled: viewerConfig.shadowsEnabled,
+      contactShadowsEnabled: viewerConfig.contactShadowsEnabled,
+      contactShadowBlur: viewerConfig.contactShadowBlur,
+      contactShadowDarkness: viewerConfig.contactShadowDarkness,
+      contactShadowOpacity: viewerConfig.contactShadowOpacity,
+      contactShadowRange: viewerConfig.contactShadowRange,
+      transmittedShadowsEnabled: viewerConfig.transmittedShadowsEnabled,
+      coloredShadowsEnabled: viewerConfig.coloredShadowsEnabled,
+      transmittedShadowStrength: viewerConfig.transmittedShadowStrength,
+      giEnabled: viewerConfig.giEnabled,
+      giIndirectEnabled: viewerConfig.giIndirectEnabled,
+      giAOEnabled: viewerConfig.giAOEnabled,
+      giBackfaceLighting: viewerConfig.giBackfaceLighting,
+      giTemporalFiltering: viewerConfig.giTemporalFiltering,
+      giScreenSpaceSampling: viewerConfig.giScreenSpaceSampling,
+      giIntensity: viewerConfig.giIntensity,
+      giAOIntensity: viewerConfig.giAOIntensity,
+      giRadius: viewerConfig.giRadius,
+      giSliceCount: viewerConfig.giSliceCount,
+      giStepCount: viewerConfig.giStepCount,
+      giExpFactor: viewerConfig.giExpFactor,
+      giThickness: viewerConfig.giThickness,
+      giLinearThickness: viewerConfig.giLinearThickness,
+      artificialLights: viewerConfig.artificialLights,
+      volumetricLightingEnabled: viewerConfig.volumetricLightingEnabled,
+      sunShaftsEnabled: viewerConfig.sunShaftsEnabled,
+      lightVolumesEnabled: viewerConfig.lightVolumesEnabled,
+      volumetricRaymarchSteps: viewerConfig.volumetricRaymarchSteps,
+      volumetricDensity: viewerConfig.volumetricDensity,
+      volumetricMaxDensity: viewerConfig.volumetricMaxDensity,
+      volumetricDistanceAtten: viewerConfig.volumetricDistanceAtten,
+    }),
+    [viewerConfig]
+  );
+
+  const renderingConfig = useMemo(
+    () => ({
+      ssrEnabled: viewerConfig.ssrEnabled,
+      ssrIntensity: viewerConfig.ssrIntensity,
+      ssrMaxDistance: viewerConfig.ssrMaxDistance,
+      ssrThickness: viewerConfig.ssrThickness,
+      ssrQuality: viewerConfig.ssrQuality,
+      antialiasEnabled: viewerConfig.antialiasEnabled,
+      bloomEnabled: viewerConfig.bloomEnabled,
+      bloomStrength: viewerConfig.bloomStrength,
+      bloomRadius: viewerConfig.bloomRadius,
+      lensFlareEnabled: viewerConfig.lensFlareEnabled,
+      lensFlareIntensity: viewerConfig.lensFlareIntensity,
+      depthOfFieldEnabled: viewerConfig.depthOfFieldEnabled,
+      depthOfFieldFocalLength: viewerConfig.depthOfFieldFocalLength,
+      depthOfFieldBokehScale: viewerConfig.depthOfFieldBokehScale,
+      cameraAutoFocusEnabled: viewerConfig.cameraAutoFocusEnabled,
+      motionBlurEnabled: viewerConfig.motionBlurEnabled,
+      motionBlurIntensity: viewerConfig.motionBlurIntensity,
+      exposure: viewerConfig.exposure,
+      toneMapping: viewerConfig.toneMapping,
+      lutEnabled: viewerConfig.lutEnabled,
+      lutPreset: viewerConfig.lutPreset,
+      lutIntensity: viewerConfig.lutIntensity,
+    }),
+    [viewerConfig]
+  );
 
   // Fullscreen targets this whole page wrapper — not ThreeProjectViewer's
   // own canvas container — specifically so the header (ROZARIS/project
@@ -107,30 +304,22 @@ export function ArchVizClient({ project }: { project: Project }) {
               </p>
             </div>
           </div>
-          <button
-            onClick={toggleFullscreen}
-            aria-label={t("unit.viewerFullscreen")}
-            className="glass-panel-dark flex shrink-0 items-center justify-center rounded-panel px-3.5 text-white sm:px-4"
-          >
-            {fullscreen ? <Minimize className="h-4 w-4" /> : <Expand className="h-4 w-4" />}
-          </button>
-          <button
-            onClick={handleScreenshot}
-            aria-label={t("project.screenshot")}
-            className="glass-panel-dark flex shrink-0 items-center justify-center rounded-panel px-3.5 text-white sm:px-4"
-          >
-            <Camera className="h-4 w-4" />
-          </button>
-          {/* Shadow-map debug HUD (webgl_shadowmap_viewer.html parity) —
-              hidden unless ?debugShadowMap=1 is in the URL, see the
-              shadowMapDebugAvailable state's own comment above. */}
-          {shadowMapDebugAvailable && (
+          {viewerConfig.viewerUI.fullscreenEnabled !== false && (
             <button
-              onClick={() => setShadowMapViewerOn((v) => !v)}
-              aria-label="Toggle shadow map debug view"
-              className={`glass-panel-dark flex shrink-0 items-center justify-center rounded-panel px-3.5 text-white sm:px-4 ${shadowMapViewerOn ? "ring-2 ring-white/60" : ""}`}
+              onClick={toggleFullscreen}
+              aria-label={t("unit.viewerFullscreen")}
+              className="glass-panel-dark flex shrink-0 items-center justify-center rounded-panel px-3.5 text-white sm:px-4"
             >
-              <ScanEye className="h-4 w-4" />
+              {fullscreen ? <Minimize className="h-4 w-4" /> : <Expand className="h-4 w-4" />}
+            </button>
+          )}
+          {viewerConfig.viewerUI.screenshotEnabled !== false && (
+            <button
+              onClick={handleScreenshot}
+              aria-label={t("project.screenshot")}
+              className="glass-panel-dark flex shrink-0 items-center justify-center rounded-panel px-3.5 text-white sm:px-4"
+            >
+              <Camera className="h-4 w-4" />
             </button>
           )}
         </div>
@@ -145,7 +334,7 @@ export function ArchVizClient({ project }: { project: Project }) {
               {compareCount}
             </button>
           )}
-          {!unitPanelOpen && !viewerPanelOpen && project.status === "under_construction" && (
+          {!unitPanelOpen && project.status === "under_construction" && (
             <div className="flex items-stretch">
               <ConstructionTimelineStrip
                 stages={construction.stages}
@@ -165,26 +354,13 @@ export function ArchVizClient({ project }: { project: Project }) {
 
       <ThreeProjectViewer
         ref={viewerRef}
-        project={project}
-        config={viewerConfig}
         detailModels={detailModels}
+        cameraConfig={cameraConfig}
+        qualityConfig={qualityConfig}
+        environmentConfig={environmentConfig}
+        lightingConfig={lightingConfig}
+        renderingConfig={renderingConfig}
         className="relative h-full w-full"
-        selectedUnitId={selectedUnit?.id ?? null}
-        onSelectUnit={(u) => {
-          // Always land back on the small preview card, even if a
-          // different unit's full detail panel happened to be open.
-          setSelectedUnit(u);
-          setFullDetailOpen(false);
-        }}
-        onBarOpenChange={setViewerPanelOpen}
-        onUnitSearchActiveChange={(active) => {
-          setUnitSearchActive(active);
-          if (!active) {
-            setSelectedUnit(null);
-            setFullDetailOpen(false);
-          }
-        }}
-        showShadowMapViewer={shadowMapViewerOn}
       />
 
       <UnitDiscoveryPanel
@@ -196,12 +372,7 @@ export function ArchVizClient({ project }: { project: Project }) {
           setFullDetailOpen(false);
         }}
       />
-      {/* Interaction toggle (full-configurator pass) — "Show unit
-          information" independently gates the info card/panel even when a
-          unit is still selectable/highlightable in the 3D scene; missing
-          key (pre-existing config rows) defaults to `true`, same pattern
-          as the other viewerUI toggles. */}
-      {selectedUnit && !fullDetailOpen && unitSearchActive && (viewerConfig.viewerUI.showUnitInfo ?? true) && (
+      {selectedUnit && !fullDetailOpen && viewerConfig.viewerUI.showUnitInfo !== false && (
         <UnitPreviewCard
           project={project}
           unit={selectedUnit}
@@ -209,7 +380,7 @@ export function ArchVizClient({ project }: { project: Project }) {
           onViewDetails={() => setFullDetailOpen(true)}
         />
       )}
-      {selectedUnit && fullDetailOpen && unitSearchActive && (viewerConfig.viewerUI.showUnitInfo ?? true) && (
+      {selectedUnit && fullDetailOpen && viewerConfig.viewerUI.showUnitInfo !== false && (
         <UnitDetailPanel
           project={project}
           unit={selectedUnit}

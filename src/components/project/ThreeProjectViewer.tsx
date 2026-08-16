@@ -1,28 +1,95 @@
 "use client";
 
-import { forwardRef } from "react";
-import { ProceduralProjectViewer } from "./ProceduralProjectViewer";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { RenderEngine } from "@/lib/render-engine/RenderEngine";
 import type { ThreeProjectViewerHandle, ThreeProjectViewerProps } from "./viewerTypes";
 
-export type { ThreeProjectViewerHandle } from "./viewerTypes";
+export type { ThreeProjectViewerHandle, ThreeProjectViewerProps } from "./viewerTypes";
 
 /**
- * Project 3D Experience — as of "3D Experience Phase 1", a thin re-export
- * rather than a dispatcher between two engines. `ProceduralProjectViewer`
- * is now the one real viewer: a standalone WebGPU/WebGL2 canvas ROZARIS
- * fully owns, rendering either the procedural box-massing fallback or an
- * admin-uploaded detailed GLB (via useProjectDetailModel, called inside
- * that component) in the same scene/camera/renderer. The old
- * Mapbox-embedded path (MapboxProjectViewer.tsx -> DetailModelLayer.ts,
- * which rendered a GLB *inside Mapbox's own shared WebGL2 context* — no
- * OrbitControls, no post-processing, no WebGPU possible there) has been
- * retired; see the "3D Experience — Planpoint-style rendering, Phase 1"
- * plan for why. Kept as its own module (not inlined into every caller)
- * since callers (ArchVizClient.tsx, Project3DConfigEditor.tsx) still import
- * `ThreeProjectViewer` by name.
+ * Public/admin-shared 3D viewport — ground-up rebuild (2026-08-15,
+ * Experience Editor v2). A thin React wrapper around RenderEngine.ts.
+ *
+ * Renderer/scene/camera mount ONCE per container (empty-deps effect); a
+ * separate effect calls engine.syncModels() whenever `detailModels`
+ * changes, which is the cheap add/update/remove path — see
+ * RenderEngine.syncModels's own doc comment for why this split matters
+ * (a naive dispose+remount on every prop change would reload the GLB from
+ * network on every Inspector slider tick).
  */
 export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProjectViewerProps>(
-  function ThreeProjectViewer(props, ref) {
-    return <ProceduralProjectViewer {...props} ref={ref} />;
+  function ThreeProjectViewer({ detailModels, className, showPerfStats, onPerfStats, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig }, ref) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const engineRef = useRef<RenderEngine | null>(null);
+    const [webglFailed, setWebglFailed] = useState(false);
+
+    useImperativeHandle(ref, () => ({
+      resetView: () => engineRef.current?.resetView(),
+      captureScreenshot: () => engineRef.current?.captureScreenshot() ?? null,
+      computeGroundAlignOffset: (slotId: string) => engineRef.current?.computeGroundAlignOffset(slotId) ?? null,
+      getCameraState: () => engineRef.current?.getCameraState() ?? null,
+      flyToPreset: (preset) => engineRef.current?.flyToPreset(preset),
+      showCameraHelperFor: (preset) => engineRef.current?.showCameraHelperFor(preset),
+      activateSection: (section) => engineRef.current?.activateSection(section),
+      getContentBounds: () => engineRef.current?.getContentBounds() ?? null,
+      getEffectiveRenderScale: () => engineRef.current?.getEffectiveRenderScale() ?? 1,
+    }));
+
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      const engine = new RenderEngine({
+        onWebglFail: () => setWebglFailed(true),
+        onPerfStats: (stats) => onPerfStats?.(stats),
+      });
+      engineRef.current = engine;
+      void engine.mount(container, { showPerfStats });
+      return () => {
+        engine.dispose();
+        engineRef.current = null;
+      };
+      // Deliberately empty — mount() only sets up the renderer/scene/
+      // camera once per container; content and perf-stats toggling both
+      // go through syncModels()/imperative reads below, not a remount.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+      void engineRef.current?.syncModels(detailModels);
+    }, [detailModels]);
+
+    useEffect(() => {
+      engineRef.current?.setPerfStatsEnabled(!!showPerfStats);
+    }, [showPerfStats]);
+
+    useEffect(() => {
+      if (cameraConfig) engineRef.current?.setCameraConfig(cameraConfig);
+    }, [cameraConfig]);
+
+    useEffect(() => {
+      if (qualityConfig) engineRef.current?.setQualityConfig(qualityConfig);
+    }, [qualityConfig]);
+
+    useEffect(() => {
+      if (environmentConfig) engineRef.current?.setEnvironmentConfig(environmentConfig);
+    }, [environmentConfig]);
+
+    useEffect(() => {
+      if (lightingConfig) engineRef.current?.setLightingConfig(lightingConfig);
+    }, [lightingConfig]);
+
+    useEffect(() => {
+      if (renderingConfig) engineRef.current?.setRenderingConfig(renderingConfig);
+    }, [renderingConfig]);
+
+    return (
+      <div ref={containerRef} className={className}>
+        {webglFailed && (
+          <div className="flex h-full w-full items-center justify-center bg-neutral-900 text-sm text-white/60">
+            This device can&apos;t display the 3D viewer.
+          </div>
+        )}
+      </div>
+    );
   }
 );

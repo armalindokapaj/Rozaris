@@ -25,7 +25,7 @@ export default function Admin3DMapControlPage() {
   const params = useParams<{ projectId: string }>();
   const router = useRouter();
   const auth = useAppStore((s) => s.auth);
-  const project = useAdminProject(params.projectId);
+  const { project, loading: projectLoading } = useAdminProject(params.projectId);
   const { t } = useT();
   const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
   const { deleteProject, deleting: deletingProject } = useDeleteProject();
@@ -49,6 +49,15 @@ export default function Admin3DMapControlPage() {
 
   if (!hydrated) return null;
   if (!auth.signedIn) return null;
+
+  if (projectLoading) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+        <ShieldCheck className="h-8 w-8 animate-pulse text-neutral-300" />
+        <p className="text-sm text-neutral-500">{t("admin.loading")}</p>
+      </div>
+    );
+  }
 
   if (!project) {
     return (

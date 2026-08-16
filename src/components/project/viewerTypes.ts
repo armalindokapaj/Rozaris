@@ -1,108 +1,76 @@
-import type { Project, Project3DConfig, ProjectDetailModel, Section, Unit } from "@/lib/types";
+import type { CameraConfig, QualityConfig } from "@/lib/render-engine/RenderEngine";
+import type { CameraPreset, EnvironmentConfig, LightingConfig, ProjectDetailModel, RenderingConfig, Section, Unit } from "@/lib/types";
 
-export type SectionGizmoMode = "move" | "rotate" | "resize" | "height";
-
-/** Shared imperative handle + props contract between ThreeProjectViewer.tsx
- * (a thin re-export) and ProceduralProjectViewer.tsx (the real engine) —
- * kept in its own module so neither needs to import the other just for a
- * type. */
+/**
+ * ThreeProjectViewer's imperative handle + props contract — ground-up
+ * rebuild (2026-08-15, Experience Editor v2). Deliberately a smaller
+ * surface than the pre-rebuild version: Sections gizmo entry points, saved
+ * camera-preset reads, and the shadow-map debug HUD all come back in later
+ * phases (Sections/Camera/Lighting tabs) once those features exist again.
+ * Kept in its own module, same reasoning as before — avoids a circular
+ * import between ThreeProjectViewer.tsx and its call sites.
+ */
 export interface ThreeProjectViewerHandle {
-  /** PRD §7.1/§16 — "Reset returns to Admin-saved starting camera." */
+  /** Reframes the camera on the currently loaded content. */
   resetView: () => void;
-  /** Captures the current WebGL frame as a PNG data URL — null if the
-   * renderer isn't ready (e.g. WebGL failed to init). */
+  /** Captures the current frame as a PNG data URL — null if the renderer
+   * isn't ready (e.g. WebGPU/WebGL2 init failed). */
   captureScreenshot: () => string | null;
-  /** The live preview's current camera position/target/fov — null if the
-   * renderer isn't ready. Used by Project3DConfigEditor's "Save current
-   * view" camera-preset button (Render/visual quality pass). */
+  /** Scene tab's "Ground Align" (PRD §5) — the Y offset that would put
+   * the given slot's lowest point at world Y=0, at its current transform.
+   * Null if that slot isn't loaded (or the renderer isn't ready). */
+  computeGroundAlignOffset: (slotId: string) => number | null;
+  /** Shots (PRD §38) — the live camera's current position/target/fov. */
   getCameraState: () => { position: { x: number; y: number; z: number }; target: { x: number; y: number; z: number }; fov: number } | null;
-  /** Sections module — real editor-authoring entry points. Only
-   * `EditorShell.tsx` (admin) calls these; public-viewer usages never do.
-   * `beginDrawSection`'s `onComplete` fires once with a new, unsaved
-   * `Section` once the two viewport clicks land — the caller owns adding
-   * it to `draft.sections`. */
-  beginDrawSection: (
-    opts: { id: string; name: string; scope: Section["scope"]; buildingName?: string },
-    onComplete: (section: Section) => void
-  ) => void;
-  cancelDrawSection: () => void;
-  attachSectionGizmo: (section: Section, mode: SectionGizmoMode) => void;
-  setSectionGizmoMode: (mode: SectionGizmoMode) => void;
-  detachSectionGizmo: () => void;
-  getLiveSectionDraft: () => Section | null;
-  /** Real for both the admin editor (live-previewing while editing) and
-   * the public runtime (a visitor activating a floor from the
-   * bottom-chrome Sections panel) — clips + shows the section's cap;
-   * `null` clears it. */
-  activateSection: (sectionId: string | null) => void;
+  /** Shots (PRD §38) — smoothly transitions to a saved viewpoint. */
+  flyToPreset: (preset: CameraPreset) => void;
+  /** Shots (PRD §38) — wireframe frustum preview for a saved Shot; null
+   * clears it. */
+  showCameraHelperFor: (preset: CameraPreset | null) => void;
+  /** Sections (PRD §34-36) — real clip + cap, or null to clear. */
+  activateSection: (section: Section | null) => void;
+  /** Real world-space bounds of the currently loaded content — used to
+   * place a new Section sensibly instead of defaulting to world origin. */
+  getContentBounds: () => { centerX: number; centerZ: number; minY: number; maxY: number; sizeX: number; sizeZ: number } | null;
+  /** Performance tab (PRD §40) — real current renderScale post any
+   * adaptive/interaction reduction. */
+  getEffectiveRenderScale: () => number;
 }
 
 export interface ThreeProjectViewerProps {
-  project: Project;
-  config: Project3DConfig;
-  /** Every admin-uploaded detailed GLB slot ("Building", "Surroundings",
-   * ... — Multiple Detail-Model Slots pass), empty if none enabled yet —
-   * caller-supplied, not fetched internally, so both real callers control
-   * their own source: the public page uses `useProjectDetailModel` (each
-   * slot's published version, unchanged fetch); the Admin editor's live
-   * preview supplies its own array built from the currently active
-   * draft/published version of whichever slot is selected plus every
-   * in-progress slider/link/override edit, so the preview never lags
-   * behind unsaved changes. Mirrors how `config` above already works —
-   * no internal fetch there either. */
-  detailModels: { slotId: string; model: ProjectDetailModel }[];
+  /** Every published detail GLB slot ("Building", "Surroundings", ...) —
+   * caller-supplied, not fetched internally (public page uses
+   * useProjectDetailModel; the admin editor supplies its own
+   * draft-aware array). Empty is a valid "nothing published yet" state. */
+  detailModels: { slotId: string; model: ProjectDetailModel; units?: Unit[]; statusPreviewEnabled?: boolean }[];
   className?: string;
-  selectedUnitId?: string | null;
-  onSelectUnit?: (unit: Unit) => void;
-  /** Public viewer chrome (bottom icon menu) is on by default; the Admin
-   * live-preview embed turns it off to keep the form the only UI. */
-  showChrome?: boolean;
-  /** Fires whenever the bottom menu's Unit Search panel is
-   * expanded/collapsed, so a parent floating its own chrome (e.g.
-   * ArchVizClient's construction-progress pill) can react instead of
-   * guessing whether extra bottom-of-viewport height is in use. */
-  onBarOpenChange?: (open: boolean) => void;
-  /** Fires whenever the bottom menu's "Unit Search" panel specifically
-   * (not Camera Presets/Sections) opens or closes — narrower than
-   * `onBarOpenChange` above. Availability/unit-box color/legend and the
-   * unit-details popup are only meant to be visible while Unit Search is
-   * the active panel: switching to Home (which only shows once no panel
-   * is open), or closing Unit Search outright, all report `false` here so
-   * a parent (ArchVizClient's selected-unit popup) can hide/clear along
-   * with them instead of lingering. */
-  onUnitSearchActiveChange?: (active: boolean) => void;
-  /** Admin-only debug overlay (FPS/draw calls/triangles/DPR) — Publish/
-   * runtime hardening pass. Deliberately separate from `showChrome`
-   * (public visitor chrome vs. an admin debug tool are different
-   * concerns): off by default, Project3DConfigEditor's preview turns it
-   * on. */
+  /** Camera tab (PRD §37) — applied live, no remount when it changes. */
+  cameraConfig?: CameraConfig;
+  /** Performance tab (PRD §40) — applied live, except renderingMode
+   * (triggers a real remount — see RenderEngine.setQualityConfig). */
+  qualityConfig?: QualityConfig;
+  /** Environment tab (PRD §7-13) — Sun & Sky/Clouds/Fog & Haze/Water/
+   * Ground, applied live, no remount (RenderEngine.setEnvironmentConfig). */
+  environmentConfig?: EnvironmentConfig;
+  /** Lighting tab (PRD §14-21) — Sun Light/Shadows/CSM/Global Illumination/
+   * Artificial Lights/Volumetric Lighting, applied live, no remount
+   * (RenderEngine.setLightingConfig). */
+  lightingConfig?: LightingConfig;
+  /** Rendering tab (PRD §22-33) — Reflections/Anti-Aliasing/Camera FX/
+   * Color, applied live except `antialiasEnabled` (TRAA, triggers a real
+   * remount — see RenderEngine.setRenderingConfig). */
+  renderingConfig?: RenderingConfig;
+  /** Admin-only debug overlay (fps/frame time/draw calls/triangles/dpr) —
+   * real telemetry, sampled a few times a second while on. Off by default. */
   showPerfStats?: boolean;
-  /** Real shadow-map debug HUD (`webgl_shadowmap_viewer.html` parity) —
-   * shows exactly what the sun's real shadow map contains, overlaid in a
-   * corner. Not a `Project3DConfig` field (same "not persisted, session-
-   * only" category as `showPerfStats`); only wired up on the public
-   * viewer (ArchVizClient.tsx, hidden behind a `?debugShadowMap=1` query
-   * param, not a visible button real visitors would see) — see
-   * RenderEngine.ts's `shadowMapViewer` field doc comment for why it's
-   * scoped to a full-viewport context specifically. */
-  showShadowMapViewer?: boolean;
-  /** Mirrors the same 4 fields the built-in perf overlay already shows
-   * (fps/drawCalls/triangles/dpr) — when supplied, the caller is
-   * rendering its own perf display, so the internal floating overlay is
-   * suppressed to avoid showing it twice. Added for the dark-theme
-   * configurator restyle's right-rail "Performance Overview" card; the
-   * underlying tracking (RenderEngine.ts's samplePerfStats) is unchanged,
-   * this only adds a second place the same numbers can be read from. */
-  onPerfStats?: (stats: { fps: number; drawCalls: number; triangles: number; dpr: number } | null) => void;
-  /** Sections module — fires continuously while a section gizmo is being
-   * dragged in the admin editor, mirroring
-   * `RenderEngineCallbacks.onSectionDraftChange`. Public-viewer usages
-   * never supply this (nothing there drags a gizmo). */
-  onSectionDraftChange?: (section: Section) => void;
-  /** Sections module — fires once per gizmo drag, on release, mirroring
-   * `RenderEngineCallbacks.onSectionDraftCommit`. This is the one that
-   * must write into `draft.sections` (real save bug fix, 2026-08-13) —
-   * `onSectionDraftChange` above is display-only. Public-viewer usages
-   * never supply this. */
-  onSectionDraftCommit?: (section: Section) => void;
+  onPerfStats?: (
+    stats: {
+      fps: number;
+      frameTimeMs: number;
+      drawCalls: number;
+      triangles: number;
+      textures: number;
+      dpr: number;
+    } | null
+  ) => void;
 }
