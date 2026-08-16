@@ -18,7 +18,17 @@ import { buildScenePostPipeline, computeScenePostSignature, type ScenePostPipeli
 import { ensureLutLoading } from "./lut";
 import { ArtificialLightSystem } from "./artificialLights";
 import { DRACO_DECODER_PATH } from "@/lib/gltfDecoder";
-import { FOG_SKY_HORIZON_COLOR, GROUND_INFINITE_SIZE, QUALITY_TIERS, SKY_DOME_SCALE, UNIT_BOX_COLOR, UNIT_BOX_OPACITY, WATER_PLANE_SIZE } from "@/lib/viewerPresets";
+import {
+  FOG_SKY_HORIZON_COLOR,
+  GROUND_INFINITE_SIZE,
+  QUALITY_TIERS,
+  SELECTED_COLOR,
+  SKY_DOME_SCALE,
+  UNIT_BOX_COLOR,
+  UNIT_BOX_OPACITY,
+  UNIT_BOX_SELECTED_OPACITY,
+  WATER_PLANE_SIZE,
+} from "@/lib/viewerPresets";
 import { buildSectionCapGeometry, buildSectionPlanes, NO_ACTIVE_SECTION_PLANES, SECTION_INDICATOR_COLOR } from "./sections";
 import type { CameraPreset, EnvironmentConfig, LightingConfig, NodeOverride, Project3DConfig, ProjectDetailModel, RenderingConfig, Section, SceneManifestNode, Unit, UnitMeshLink } from "@/lib/types";
 
@@ -284,6 +294,12 @@ const DEFAULT_CAMERA_CONFIG: CameraConfig = {
 
 const MOBILE_VIEWPORT_BREAKPOINT = 768;
 
+/** See the resize ResizeObserver's own doc comment (mount()) — throttles
+ * real `renderer.setSize()` calls during a continuous container resize
+ * (e.g. the Units panel's GSAP width tween) to avoid out-pacing the GPU's
+ * ability to reallocate swap chain/render targets. */
+const RESIZE_THROTTLE_MS = 90;
+
 export interface RenderEngineCallbacks {
   onWebglFail: () => void;
   onPerfStats: (
@@ -442,6 +458,9 @@ export class RenderEngine {
   private ambient: THREE.AmbientLight | null = null;
   private sun: THREE.DirectionalLight | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  /** Throttle/trailing-call state for the resize observer below — see its own doc comment. */
+  private resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastResizeAt = 0;
 
   // Sections module (PRD §34-36) — every "clippable" object (the loaded
   // GLB roots) lives inside clippingGroup instead of directly under
@@ -470,6 +489,14 @@ export class RenderEngine {
   private lastSyncEntries: DetailModelEntry[] = [];
   private loadedGlbUrlBySlot = new Map<string, string>();
   private originalMaterials = new WeakMap<THREE.Mesh, THREE.Material[]>();
+  /** Units Search Mode PRD, Phase 3 (2026-08-16) — the unit whose mesh
+   * should render with the distinct SELECTED_COLOR/UNIT_BOX_SELECTED_
+   * OPACITY treatment (both pre-existing constants in viewerPresets.ts,
+   * never previously consumed by applyUnitBoxes). Independent of
+   * `statusPreviewEnabled` — a visitor selecting a unit from the list
+   * should see it highlighted even on a project that has that general
+   * preview toggle off. */
+  private selectedUnitId: string | null = null;
   /** Guards syncModels() calls that race a slower earlier one (e.g. two
    * quick Replace clicks) — each call gets its own token, a late-resolving
    * stale one's GLB load is discarded rather than raced into the scene. */
@@ -779,11 +806,43 @@ export class RenderEngine {
     loader.setDRACOLoader(dracoLoader);
     this.loader = loader;
 
+    // Front Page/Units Search Mode PRDs' live-resize choreography (a GSAP
+    // width tween on a real DOM sibling, panel opening/closing) drives
+    // this ResizeObserver continuously — real bug found live-testing that
+    // transition: the canvas rendered solid black for roughly the first
+    // half of the ~250ms transition every time, on both WebGPU and its
+    // WebGL2 fallback. Coalescing to one real resize per rAF (~60fps)
+    // made no measurable difference, which is itself informative — the
+    // browser was already effectively coalescing ResizeObserver to about
+    // that rate, so the actual problem isn't call *frequency* so much as
+    // *volume*: ~15-20 real `renderer.setSize()` calls in quick
+    // succession during one transition, each one presumably forcing the
+    // WebGPU backend to reallocate its swap chain/render targets, adds up
+    // to more reallocation work than the GPU can retire before the next
+    // one lands — so the canvas never catches up until the resizing
+    // itself slows down near the tween's ease-out tail.
+    //
+    // Throttled to one real resize per `RESIZE_THROTTLE_MS` instead, with
+    // a guaranteed trailing call so the final settled size is never
+    // skipped. Still reads as continuous/live to the eye (a threshold
+    // well under normal human motion-smoothness perception) while
+    // cutting the number of real GPU reallocations during a fast
+    // transition by roughly 4-5x — confirmed empirically to remove the
+    // black frame entirely.
     const resizeObserver = new ResizeObserver(() => {
-      if (!container.clientWidth || !container.clientHeight) return;
-      camera.aspect = container.clientWidth / container.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(container.clientWidth * this.effectiveRenderScale, container.clientHeight * this.effectiveRenderScale, false);
+      const now = performance.now();
+      if (now - this.lastResizeAt >= RESIZE_THROTTLE_MS) {
+        if (this.resizeTimer != null) {
+          clearTimeout(this.resizeTimer);
+          this.resizeTimer = null;
+        }
+        this.performResize(container, camera, renderer);
+      } else if (this.resizeTimer == null) {
+        this.resizeTimer = setTimeout(() => {
+          this.resizeTimer = null;
+          this.performResize(container, camera, renderer);
+        }, RESIZE_THROTTLE_MS);
+      }
     });
     resizeObserver.observe(container);
     this.resizeObserver = resizeObserver;
@@ -1019,6 +1078,7 @@ export class RenderEngine {
   private applyUnitBoxes(root: THREE.Object3D, unitLinks: UnitMeshLink[], units: Unit[], statusPreviewEnabled: boolean) {
     const unitById = new Map(units.map((u) => [u.id, u]));
     const linkByMesh = new Map(unitLinks.map((l) => [l.meshName, l.unitId]));
+    const selectedId = this.selectedUnitId;
 
     root.traverse((child) => {
       const mesh = child as THREE.Mesh;
@@ -1027,10 +1087,12 @@ export class RenderEngine {
         this.originalMaterials.set(mesh, normalizeMaterials(mesh.material));
       }
       const originals = this.originalMaterials.get(mesh)!;
-      const unit = statusPreviewEnabled ? unitById.get(linkByMesh.get(mesh.name) ?? "") : undefined;
+      const linkedUnitId = linkByMesh.get(mesh.name);
+      const unit = statusPreviewEnabled ? unitById.get(linkedUnitId ?? "") : undefined;
+      const isSelected = selectedId != null && linkedUnitId === selectedId;
       const currentIsOriginal = normalizeMaterials(mesh.material).every((m, i) => m === originals[i]);
 
-      if (!unit) {
+      if (!unit && !isSelected) {
         if (!currentIsOriginal) {
           normalizeMaterials(mesh.material).forEach((m) => m.dispose());
           mesh.material = originals.length === 1 ? originals[0] : originals;
@@ -1039,12 +1101,28 @@ export class RenderEngine {
       }
       if (!currentIsOriginal) normalizeMaterials(mesh.material).forEach((m) => m.dispose());
       mesh.material = new THREE.MeshBasicMaterial({
-        color: UNIT_BOX_COLOR[unit.status],
+        color: isSelected ? SELECTED_COLOR : UNIT_BOX_COLOR[unit!.status],
         transparent: true,
-        opacity: UNIT_BOX_OPACITY,
+        opacity: isSelected ? UNIT_BOX_SELECTED_OPACITY : UNIT_BOX_OPACITY,
         depthWrite: false,
       });
     });
+  }
+
+  /** Units Search Mode PRD, Phase 3 — real list→3D sync's "select" half:
+   * re-applies unit-box materials on every already-loaded slot (via the
+   * cached `lastSyncEntries`/`modelRootsBySlot`, no GLB reload) so
+   * clicking a unit in the public search panel highlights its mesh, if
+   * this project has one linked (`ProjectDetailModel.unitLinks`, admin-
+   * authored). A project whose GLB has no real `Unit_*`-named meshes for
+   * this unit simply shows no visible change — same honest no-op as
+   * `statusPreviewEnabled` already has for meshes with no link at all. */
+  setSelectedUnit(unitId: string | null) {
+    this.selectedUnitId = unitId;
+    for (const { slotId, model, units, statusPreviewEnabled } of this.lastSyncEntries) {
+      const root = this.modelRootsBySlot.get(slotId);
+      if (root) this.applyUnitBoxes(root, model.unitLinks, units ?? [], statusPreviewEnabled ?? true);
+    }
   }
 
   /** Ground alignment (PRD §5) — the Y offset that would put this model's
@@ -1245,6 +1323,16 @@ export class RenderEngine {
   setPerfStatsEnabled(enabled: boolean) {
     this.showPerfStats = enabled;
     if (!enabled) this.callbacks.onPerfStats(null);
+  }
+
+  /** The real, throttled resize work — see mount()'s ResizeObserver doc
+   * comment for why this is throttled at all instead of running inline. */
+  private performResize(container: HTMLDivElement, camera: THREE.PerspectiveCamera, renderer: THREE.WebGPURenderer) {
+    this.lastResizeAt = performance.now();
+    if (!container.clientWidth || !container.clientHeight) return;
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth * this.effectiveRenderScale, container.clientHeight * this.effectiveRenderScale, false);
   }
 
   /** Real current renderScale (post any adaptive/interaction reduction) —
@@ -1800,6 +1888,8 @@ export class RenderEngine {
     if (renderer) renderer.setAnimationLoop(null);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    if (this.resizeTimer != null) clearTimeout(this.resizeTimer);
+    this.resizeTimer = null;
     this.controls?.dispose();
     this.controls = null;
     this.dracoLoader?.dispose();

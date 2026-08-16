@@ -35,6 +35,11 @@ export interface ThreeProjectViewerHandle {
   /** Performance tab (PRD §40) — real current renderScale post any
    * adaptive/interaction reduction. */
   getEffectiveRenderScale: () => number;
+  /** Units Search Mode PRD, Phase 3 — highlights the given unit's mesh
+   * (SELECTED_COLOR override) if this project's published model has a
+   * real mesh link for it; null clears the highlight. No-op (safely) on a
+   * project with no unit mesh links authored yet. */
+  setSelectedUnit: (unitId: string | null) => void;
 }
 
 export interface ThreeProjectViewerProps {
@@ -73,4 +78,13 @@ export interface ThreeProjectViewerProps {
       dpr: number;
     } | null
   ) => void;
+  /** Front Page PRD §12 (First Load Sequence, Stage 2) — fires once, the
+   * first time the initial `syncModels()` call resolves (renderer mounted
+   * *and* whatever detail models were passed have loaded onto the scene,
+   * including the trivial "zero published slots" case). Never fires again
+   * after that, even if `detailModels` changes later and re-triggers
+   * `syncModels()`. Pass a stable (e.g. `useCallback`-wrapped) function —
+   * it's intentionally left out of the effect's dependency array, same
+   * convention as the mount effect above. */
+  onReady?: () => void;
 }

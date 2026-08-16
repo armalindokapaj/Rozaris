@@ -18,10 +18,11 @@ export type { ThreeProjectViewerHandle, ThreeProjectViewerProps } from "./viewer
  * network on every Inspector slider tick).
  */
 export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProjectViewerProps>(
-  function ThreeProjectViewer({ detailModels, className, showPerfStats, onPerfStats, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig }, ref) {
+  function ThreeProjectViewer({ detailModels, className, showPerfStats, onPerfStats, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, onReady }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<RenderEngine | null>(null);
     const [webglFailed, setWebglFailed] = useState(false);
+    const readyFiredRef = useRef(false);
 
     useImperativeHandle(ref, () => ({
       resetView: () => engineRef.current?.resetView(),
@@ -33,6 +34,7 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
       activateSection: (section) => engineRef.current?.activateSection(section),
       getContentBounds: () => engineRef.current?.getContentBounds() ?? null,
       getEffectiveRenderScale: () => engineRef.current?.getEffectiveRenderScale() ?? 1,
+      setSelectedUnit: (unitId) => engineRef.current?.setSelectedUnit(unitId),
     }));
 
     useEffect(() => {
@@ -55,7 +57,14 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
     }, []);
 
     useEffect(() => {
-      void engineRef.current?.syncModels(detailModels);
+      void engineRef.current?.syncModels(detailModels).then(() => {
+        if (readyFiredRef.current) return;
+        readyFiredRef.current = true;
+        onReady?.();
+      });
+      // onReady deliberately excluded — see its doc comment in
+      // viewerTypes.ts. Only `detailModels` should re-trigger this.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [detailModels]);
 
     useEffect(() => {

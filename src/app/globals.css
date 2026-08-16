@@ -214,6 +214,54 @@ body {
   border: 1px solid color-mix(in srgb, white 12%, transparent);
 }
 
+/* Project Viewer Front Page (Idle Experience PRD §11) — "controlled
+   architectural glassmorphism", scoped to ViewerHUD only. Deliberately a
+   separate class from `.glass-panel-dark` above (used site-wide with a
+   different, more opaque recipe) rather than overloading it: the PRD
+   specifies this exact rgba/blur/border combination for the Viewer only. */
+.viewer-glass {
+  background: rgba(12, 14, 18, 0.68);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: var(--shadow-1);
+}
+
+/* Front Page PRD §12, Stage 1 — indeterminate loading sweep. No fake
+   percentage: `onReady` only reports done/not-done (see
+   ThreeProjectViewer's `onReady` doc comment), so the indicator is
+   honestly indeterminate rather than a progress bar with numbers it
+   can't back up. Track is `.viewer-loading-bar` (relative, clipped); the
+   sweeping fill is its `::after`, transform-animated per PRD §27. */
+@keyframes rz-viewer-loading-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+.viewer-loading-bar {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.12);
+}
+.viewer-loading-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.55);
+  animation: rz-viewer-loading-sweep 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .viewer-loading-bar::after {
+    animation: none;
+    transform: translateX(75%);
+  }
+}
+
 /* Scoped dark theme — the 3D Experience Configurator only
    (src/components/dashboard/project3d/EditorShell.tsx's root wrapper),
    not a site-wide dark mode. Every existing panel already styles itself

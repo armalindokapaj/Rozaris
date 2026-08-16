@@ -184,3 +184,93 @@ export function geographicSunPosition(
 
   return { elevationDeg: (elevRad * 180) / Math.PI, azimuthDeg: azDeg };
 }
+
+/**
+ * Project Viewer Sun & Time PRD (2026-08-16) §10 "Sunrise/Sunset are
+ * calculated dynamically" + §21-22 "Recommended Preset Logic" — both need
+ * to know where an elevation curve crosses the horizon and where it peaks,
+ * regardless of whether that curve comes from real lat/lng astronomy
+ * (geographic mode) or an admin-authored anchor curve (manual mode) — the
+ * caller only hands this an `elevationAt(hour)` function, it doesn't care
+ * which. Samples at 5-minute resolution across the day (cheap — this only
+ * runs when date/mode/anchors actually change, never per drag-frame) and
+ * linearly interpolates the exact crossing between the two bracketing
+ * samples.
+ *
+ * Known limitation (documented, not fixed): if the day's peak elevation
+ * itself falls exactly at hour 0/24 (curve peaks at midnight), the
+ * backward/forward walk from that index finds no crossing and reports
+ * `sunriseHour`/`sunsetHour` as null even on an otherwise ordinary day/
+ * night curve. Real geographic solar noon is never near midnight for any
+ * latitude this platform serves, and a manual anchor curve authored to
+ * peak at midnight is a deliberately unusual choice — an intentionally
+ * approximate edge case, same spirit as geographicSunPosition's own doc
+ * comment above.
+ */
+export interface SunTimeline {
+  /** Hour (0-24) of the rising horizon crossing nearest solar noon; null
+   * if the sun never rises or never sets that day. */
+  sunriseHour: number | null;
+  sunsetHour: number | null;
+  /** Hour of peak elevation — always defined, even on an always-up/-down day. */
+  solarNoonHour: number;
+  alwaysUp: boolean;
+  alwaysDown: boolean;
+}
+
+const SUN_TIMELINE_SAMPLES = 24 * 12; // 5-minute resolution
+
+export function computeSunTimeline(elevationAt: (hour: number) => number): SunTimeline {
+  const samples: number[] = [];
+  for (let i = 0; i <= SUN_TIMELINE_SAMPLES; i++) samples.push(elevationAt((i / SUN_TIMELINE_SAMPLES) * 24));
+
+  let peakIdx = 0;
+  for (let i = 1; i <= SUN_TIMELINE_SAMPLES; i++) {
+    if (samples[i] > samples[peakIdx]) peakIdx = i;
+  }
+  const solarNoonHour = (peakIdx / SUN_TIMELINE_SAMPLES) * 24;
+  const alwaysUp = samples.every((v) => v > 0);
+  const alwaysDown = samples.every((v) => v <= 0);
+  if (alwaysUp || alwaysDown) {
+    return { sunriseHour: null, sunsetHour: null, solarNoonHour, alwaysUp, alwaysDown };
+  }
+
+  const hourAt = (i: number) => (i / SUN_TIMELINE_SAMPLES) * 24;
+  let sunriseHour: number | null = null;
+  for (let i = peakIdx; i > 0; i--) {
+    if (samples[i - 1] <= 0 && samples[i] > 0) {
+      const t = samples[i - 1] / (samples[i - 1] - samples[i]);
+      sunriseHour = hourAt(i - 1) + t * (hourAt(i) - hourAt(i - 1));
+      break;
+    }
+  }
+  let sunsetHour: number | null = null;
+  for (let i = peakIdx; i < SUN_TIMELINE_SAMPLES; i++) {
+    if (samples[i] > 0 && samples[i + 1] <= 0) {
+      const t = samples[i] / (samples[i] - samples[i + 1]);
+      sunsetHour = hourAt(i) + t * (hourAt(i + 1) - hourAt(i));
+      break;
+    }
+  }
+  return { sunriseHour, sunsetHour, solarNoonHour, alwaysUp: false, alwaysDown: false };
+}
+
+/** Sun & Time PRD §21-22 "Recommended Preset Logic" — Morning/Noon/Golden
+ * Hour/Evening derived from the timeline above rather than fixed clock
+ * times, so they adapt to season/geography (or an admin's manual curve)
+ * automatically. A preset whose anchor is null (no real sunrise/sunset
+ * that day) is omitted rather than guessed. */
+export interface SunTimePreset {
+  id: "morning" | "noon" | "goldenHour" | "evening";
+  hour: number;
+}
+
+export function sunTimelinePresets(timeline: SunTimeline): SunTimePreset[] {
+  const presets: SunTimePreset[] = [{ id: "noon", hour: timeline.solarNoonHour }];
+  if (timeline.sunriseHour != null) presets.unshift({ id: "morning", hour: timeline.sunriseHour + 2 });
+  if (timeline.sunsetHour != null) {
+    presets.push({ id: "goldenHour", hour: timeline.sunsetHour - 0.75 });
+    presets.push({ id: "evening", hour: timeline.sunsetHour + 1 / 3 });
+  }
+  return presets;
+}
