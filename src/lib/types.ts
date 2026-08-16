@@ -220,7 +220,7 @@ export type RenderingMode = "auto" | "webgpu" | "webgl2";
  * THREE.*ToneMapping actually has (confirmed against constants.js), same
  * set the reference site's own debug panel exposes. */
 export type ToneMapping = "none" | "linear" | "reinhard" | "cineon" | "aces" | "agx" | "neutral";
-export type QualityPreset = "ultra_desktop" | "high_desktop" | "balanced" | "mobile_high" | "mobile_low";
+export type QualityPreset = "ultra_desktop" | "high_desktop" | "balanced" | "mobile_high" | "mobile_low" | "custom";
 export type GlassPreset = "performance" | "standard" | "premium";
 /** Non-glass architectural material presets (Editor UX & Scene Structure
  * pass) — glass already has its own dedicated GlassPreset/GLASS_TIERS
@@ -234,6 +234,17 @@ export type MaterialPresetId =
   | "steel"
   | "chrome"
   | "ceramic";
+
+/** Experience Editor v2, Environment → Sun & Sky (PRD §9) — one admin-
+ * authored "Solar Anchor" (time of day → elevation/azimuth); stored as
+ * `Project3DConfig.solarAnchors[]`. See src/lib/sunPosition.ts's
+ * sunPositionForAnchors for the interpolation this feeds. */
+export interface SolarAnchor {
+  id: string;
+  timeHours: number;
+  elevationDeg: number;
+  azimuthDeg: number;
+}
 
 export interface Project3DConfig {
   groundEnabled: boolean;
@@ -284,10 +295,29 @@ export interface Project3DConfig {
    * the WebGL2 backend outright (see forceWebGL in ProceduralProjectViewer). */
   renderingMode: RenderingMode;
   qualityPreset: QualityPreset;
+  /** Experience Editor v2, Performance tab (PRD §40) additions. */
+  customRenderScale: number | null;
+  customDprCap: number | null;
+  adaptiveQualityEnabled: boolean;
+  runtimeQualityReductionEnabled: boolean;
+  interactionQualityReductionEnabled: boolean;
+  deviceDetectionEnabled: boolean;
   glassPreset: GlassPreset;
   environmentIntensity: number;
   cameraFovDesktop: number;
   cameraFovMobile: number;
+  /** Experience Editor v2, Camera tab (PRD §37) additions. */
+  cameraNearClip: number;
+  cameraFarClip: number;
+  cameraMinAzimuthDeg: number | null;
+  cameraMaxAzimuthDeg: number | null;
+  cameraOrbitEnabled: boolean;
+  cameraPanEnabled: boolean;
+  cameraZoomEnabled: boolean;
+  cameraDampingEnabled: boolean;
+  cameraAutoFocusEnabled: boolean;
+  cameraHelperEnabled: boolean;
+  cameraSensorWidthMm: number;
 
   /** Admin-saved camera framings — clicking one in the public viewer
    * smoothly transitions the live camera to it (not a snap). */
@@ -323,6 +353,36 @@ export interface Project3DConfig {
   sunAzimuthDeg: number;
   sunElevationDeg: number;
 
+  /** Experience Editor v2, Environment → Sun & Sky (PRD §9-10) — the
+   * "ROZARIS Manual Time + Sun System" / "ONE Global Sun". Off (default):
+   * every existing project keeps the direct static sunElevationDeg/
+   * sunAzimuthDeg above unchanged. On: elevation/azimuth are derived every
+   * frame from viewerTimeHours + solarPathMode (see
+   * src/lib/sunPosition.ts's sunPositionForAnchors/geographicSunPosition)
+   * instead — the ONE resulting direction vector feeds Sky/Water/Clouds/
+   * Fog today, and Shadows/GI/Volumetrics/Lens Flare in later phases, per
+   * PRD §10's "one Global Sun Vector, no feature gets its own". */
+  solarControllerEnabled: boolean;
+  solarPathMode: "manual" | "geographic";
+  viewerTimeControlEnabled: boolean;
+  viewerTimeHours: number;
+  viewerTimeStartHours: number;
+  viewerTimeEndHours: number;
+  viewerTimeStepMinutes: number;
+  solarAnchors: SolarAnchor[];
+  geoLatitude: number;
+  geoLongitude: number;
+  /** ISO date string — only the calendar date matters (year/month/day);
+   * time-of-day comes from `viewerTimeHours`. */
+  simulationDate: string;
+  northOffsetDeg: number;
+  sunDiscEnabled: boolean;
+  autoSunIntensityEnabled: boolean;
+  autoSunColorEnabled: boolean;
+  manualSunIntensity: number;
+  manualSunColorHex: string;
+  environmentRefreshEnabled: boolean;
+
   /** Standalone "Sky" tab (webgl_shaders_sky.html parity, added after the
    * Ocean tab above) — the reference demo's own elevation/azimuth/
    * exposure controls are the shared fields above, reused rather than
@@ -350,15 +410,39 @@ export interface Project3DConfig {
    * three.js's webgl_geometry_terrain example. Off by default: zero
    * behavior change for any existing project until an admin enables it. */
   fogMatchesSky: boolean;
-  /** Real HDR bloom (TSL `bloom()` node, already wired but dormant since
-   * the Render/visual quality pass) — per-project opt-in, ANDed with
-   * `QUALITY_TIERS[qualityPreset].bloom` in RenderEngine.ts's
-   * buildRenderPipeline (same pattern `antialiasEnabled` already uses
-   * against `tier.antialias`). Off by default: zero behavior change for
-   * any existing project. Params mirror webgl_shaders_ocean.html's Bloom
-   * GUI folder exactly (`strength`/`radius`) — the Sky/Water/Bloom/Clouds
-   * "Ocean" tab's Bloom group. `threshold` isn't exposed there either, so
-   * it stays fixed at the same 0.85 the demo hardcodes. */
+  /** Experience Editor v2, Environment → Fog & Haze (PRD §12,
+   * webgpu_custom_fog.html parity) — real TSL scene.fogNode height fog +
+   * distance haze + animated triNoise3D wisps (src/lib/render-engine/
+   * fog.ts), layered on top of the classic FogExp2 above when both are on.
+   * `fogHeightBandEnabled` is PRD §12's own "Ground Fog" toggle — distinct
+   * from `groundFogEnabled` further down (Ground tab's older radial-mist-
+   * on-the-ground-material technique). */
+  fogHeightBandEnabled: boolean;
+  fogHazeEnabled: boolean;
+  fogNoiseEnabled: boolean;
+  fogMovementEnabled: boolean;
+  fogSunInteractionEnabled: boolean;
+  fogBaseHeight: number;
+  fogTopHeight: number;
+  fogHaze: number;
+  fogNoiseStrength: number;
+  fogNoiseScale: number;
+  fogWindDirectionDeg: number;
+  fogWindSpeed: number;
+  fogFalloff: number;
+  fogMaxOpacity: number;
+  /** Real HDR bloom (TSL `bloom()` node) — per-project opt-in, off by
+   * default: zero behavior change for any existing project. `strength`/
+   * `radius` are the real admin-tunable knobs (mirrors
+   * webgl_shaders_ocean.html's own Bloom GUI folder); `threshold` isn't
+   * exposed, fixed instead — Experience Editor v2's Rendering tab (Phase
+   * 4, render-engine/postProcessing.ts) is this field's first real
+   * end-to-end wiring (the pre-rebuild engine that originally set
+   * threshold to 0.85 never actually shipped it live), and the real
+   * geographic-sun/PMREM-sky HDR range this new engine renders needed a
+   * real recalibration — live-tested: 0.85 bloomed almost the entire
+   * frame to white even at the lowest strength, 6 produces a tasteful
+   * highlight-only glow across the same strength range. */
   bloomEnabled: boolean;
   bloomStrength: number;
   bloomRadius: number;
@@ -374,6 +458,21 @@ export interface Project3DConfig {
   waterEnabled: boolean;
   waterDistortionScale: number;
   waterSize: number;
+  /** Experience Editor v2, Environment → Water (PRD §13) — see
+   * Project3DConfig's own doc comment in prisma/schema.prisma for exactly
+   * which of these are wired to a real render difference (waterType/
+   * waterWavesEnabled/waterNormalMapEnabled/waterSunReflectionEnabled/
+   * waterHeight/waterColor) vs. honestly stored-only for now
+   * (waterMovementEnabled/waterEnvReflectionEnabled/waterDeepColor). */
+  waterType: "sea" | "lake" | "pool" | "decorative";
+  waterWavesEnabled: boolean;
+  waterMovementEnabled: boolean;
+  waterSunReflectionEnabled: boolean;
+  waterEnvReflectionEnabled: boolean;
+  waterNormalMapEnabled: boolean;
+  waterHeight: number;
+  waterColor: string;
+  waterDeepColor: string;
 
   /** Procedural clouds baked into the physical sky dome's own shader
    * (`SkyMesh.cloudCoverage`/`cloudDensity`/`cloudElevation` — not a
@@ -390,6 +489,23 @@ export interface Project3DConfig {
   cloudCoverage: number;
   cloudDensity: number;
   cloudElevation: number;
+  /** Experience Editor v2, Environment → Clouds (PRD §11) — the real
+   * raymarched cloud layer's own extra controls; cloudCoverage/
+   * cloudDensity/cloudElevation above are shared inputs to both this
+   * system and SkyMesh's own built-in cloud uniforms (the honest Low/
+   * Mobile-tier internal fallback PRD §11 explicitly allows). */
+  cloudMovementEnabled: boolean;
+  cloudSunLightingEnabled: boolean;
+  cloudShadowsEnabled: boolean;
+  cloudHeight: number;
+  cloudThickness: number;
+  cloudThreshold: number;
+  cloudOpacity: number;
+  cloudSoftness: number;
+  cloudScale: number;
+  cloudWindSpeed: number;
+  cloudWindDirectionDeg: number;
+  cloudRaymarchSteps: number;
 
   /** `webgl_watch.html` parity — maps onto the sun
    * `DirectionalLight.shadow.radius` (PCF soft-shadow-edge blur, in shadow
@@ -481,6 +597,9 @@ export interface Project3DConfig {
    * viewerPresets.ts's QUALITY_TIERS header comment for the full history.
    * Not just disabled — genuinely gone, no dead toggle left behind. */
   shadowsEnabled: boolean;
+  /** Real TRAA (temporal reprojection AA) + MSAA disabled at the
+   * renderer when true, matching RenderEngine.ts's own doc comment —
+   * same field, upgraded technique, default unchanged (true). */
   antialiasEnabled: boolean;
 
   /** Manual clipping-plane sections (Sections module) — admin-authored,
@@ -488,8 +607,272 @@ export interface Project3DConfig {
    * `cameraPresets` above. See the `Section` interface's own doc comment. */
   sections: Section[];
 
+  /** Experience Editor v2, Lighting tab (PRD §14-21) — see
+   * Project3DConfig's own doc comment in prisma/schema.prisma for the
+   * full architecture (real CSMShadowNode/SSGINode/GTAONode/GodraysNode/
+   * IESSpotLight, all real vendored three.js classes). */
+  sunLightEnabled: boolean;
+  sunTemperatureK: number;
+  csmEnabled: boolean;
+  csmCascades: number;
+  csmMaxDistance: number;
+  csmResolution: number;
+  csmSplitMode: "practical" | "uniform" | "logarithmic";
+  csmMargin: number;
+  softShadowsEnabled: boolean;
+  contactShadowsEnabled: boolean;
+  contactShadowBlur: number;
+  contactShadowDarkness: number;
+  contactShadowOpacity: number;
+  contactShadowRange: number;
+  transmittedShadowsEnabled: boolean;
+  coloredShadowsEnabled: boolean;
+  transmittedShadowStrength: number;
+  giEnabled: boolean;
+  giIndirectEnabled: boolean;
+  giAOEnabled: boolean;
+  giBackfaceLighting: boolean;
+  giTemporalFiltering: boolean;
+  giScreenSpaceSampling: boolean;
+  giIntensity: number;
+  giAOIntensity: number;
+  giRadius: number;
+  giSliceCount: number;
+  giStepCount: number;
+  giExpFactor: number;
+  giThickness: number;
+  giLinearThickness: boolean;
+  artificialLights: ArtificialLight[];
+  volumetricLightingEnabled: boolean;
+  sunShaftsEnabled: boolean;
+  lightVolumesEnabled: boolean;
+  volumetricRaymarchSteps: number;
+  volumetricDensity: number;
+  volumetricMaxDensity: number;
+  volumetricDistanceAtten: number;
+
+  /** Experience Editor v2, Rendering tab (PRD §22-33) — see
+   * Project3DConfig's own doc comment in prisma/schema.prisma for the
+   * full architecture (real vendored SSRNode/TRAANode/BloomNode/
+   * LensflareNode/DepthOfFieldNode/motionBlur()/Lut3DNode, all extending
+   * the SAME shared MRT render graph Lighting built). */
+  ssrEnabled: boolean;
+  ssrIntensity: number;
+  ssrMaxDistance: number;
+  ssrThickness: number;
+  ssrQuality: number;
+  lensFlareEnabled: boolean;
+  lensFlareIntensity: number;
+  motionBlurEnabled: boolean;
+  motionBlurIntensity: number;
+
   updatedAt: string;
 }
+
+/** Lighting tab (PRD §20) — one admin-authored artificial light. Stored as
+ * `Project3DConfig.artificialLights[]`. */
+export interface ArtificialLight {
+  id: string;
+  name: string;
+  type: "point" | "spot" | "ies" | "rect";
+  enabled: boolean;
+  shadowsEnabled: boolean;
+  /** Real, simplified per-light volumetric cone (see RenderEngine.ts's own
+   * doc comment for why this isn't a second raymarch system). */
+  volumetricEnabled: boolean;
+  helperEnabled: boolean;
+  position: { x: number; y: number; z: number };
+  /** Spot/IES/Rect only — ignored for point lights. */
+  target: { x: number; y: number; z: number };
+  colorHex: string;
+  /** Null = use colorHex directly; a number recomputes colorHex via
+   * src/lib/colorTemperature.ts on change, same convenience-input pattern
+   * as Sun Light's own sunTemperatureK. */
+  temperatureK: number | null;
+  intensity: number;
+  distance: number;
+  decay: number;
+  /** Spot/IES only. */
+  angleDeg: number;
+  penumbra: number;
+  /** Rect only. */
+  width: number;
+  height: number;
+  /** IES only — a real uploaded `.ies` photometric profile (Vercel Blob),
+   * loaded via IESLoader. Null = a plain SpotLight cone, no profile. */
+  iesProfileUrl: string | null;
+}
+
+/** Lighting tab (PRD §14-21) subset of Project3DConfig — kept here (not
+ * RenderEngine.ts) so render-engine/{shadows,postProcessing,
+ * artificialLights,volumetrics}.ts can import it without a circular
+ * dependency back into RenderEngine.ts, same reasoning as
+ * EnvironmentConfig above. */
+export type LightingConfig = Pick<
+  Project3DConfig,
+  | "sunLightEnabled"
+  | "sunTemperatureK"
+  | "autoSunIntensityEnabled"
+  | "autoSunColorEnabled"
+  | "manualSunIntensity"
+  | "manualSunColorHex"
+  | "csmEnabled"
+  | "csmCascades"
+  | "csmMaxDistance"
+  | "csmResolution"
+  | "csmSplitMode"
+  | "csmMargin"
+  | "softShadowsEnabled"
+  | "shadowSoftness"
+  | "shadowsEnabled"
+  | "contactShadowsEnabled"
+  | "contactShadowBlur"
+  | "contactShadowDarkness"
+  | "contactShadowOpacity"
+  | "contactShadowRange"
+  | "transmittedShadowsEnabled"
+  | "coloredShadowsEnabled"
+  | "transmittedShadowStrength"
+  | "giEnabled"
+  | "giIndirectEnabled"
+  | "giAOEnabled"
+  | "giBackfaceLighting"
+  | "giTemporalFiltering"
+  | "giScreenSpaceSampling"
+  | "giIntensity"
+  | "giAOIntensity"
+  | "giRadius"
+  | "giSliceCount"
+  | "giStepCount"
+  | "giExpFactor"
+  | "giThickness"
+  | "giLinearThickness"
+  | "artificialLights"
+  | "volumetricLightingEnabled"
+  | "sunShaftsEnabled"
+  | "lightVolumesEnabled"
+  | "volumetricRaymarchSteps"
+  | "volumetricDensity"
+  | "volumetricMaxDensity"
+  | "volumetricDistanceAtten"
+>;
+
+/** Rendering tab (PRD §22-33) subset of Project3DConfig — Reflections
+ * (SSR), Anti-Aliasing (TRAA), Camera FX (Bloom/Lens Flare/Depth of
+ * Field/Motion Blur), Color (Tone Mapping/Exposure/3D LUT). Extends the
+ * SAME shared MRT render graph LightingConfig's own consumers
+ * (render-engine/postProcessing.ts) already built — most of these fields
+ * pre-date the v2 rebuild and are reused here, not duplicated; only the
+ * ssr/lensFlare/motionBlur fields are genuinely new. Kept here (not in
+ * RenderEngine.ts) for the same anti-circular-import reason
+ * EnvironmentConfig/LightingConfig are. */
+export type RenderingConfig = Pick<
+  Project3DConfig,
+  | "ssrEnabled"
+  | "ssrIntensity"
+  | "ssrMaxDistance"
+  | "ssrThickness"
+  | "ssrQuality"
+  | "antialiasEnabled"
+  | "bloomEnabled"
+  | "bloomStrength"
+  | "bloomRadius"
+  | "lensFlareEnabled"
+  | "lensFlareIntensity"
+  | "depthOfFieldEnabled"
+  | "depthOfFieldFocalLength"
+  | "depthOfFieldBokehScale"
+  | "cameraAutoFocusEnabled"
+  | "motionBlurEnabled"
+  | "motionBlurIntensity"
+  | "exposure"
+  | "toneMapping"
+  | "lutEnabled"
+  | "lutPreset"
+  | "lutIntensity"
+>;
+
+/** Environment tab (PRD §7-13) subset of Project3DConfig — Sun & Sky,
+ * Clouds, Fog & Haze, Water, Ground. Shared by RenderEngine.ts and its
+ * render-engine/clouds.ts + render-engine/fog.ts modules (kept here,
+ * not in RenderEngine.ts itself, so those two don't need a circular
+ * import back into it). */
+export type EnvironmentConfig = Pick<
+  Project3DConfig,
+  | "solarControllerEnabled"
+  | "solarPathMode"
+  | "viewerTimeHours"
+  | "solarAnchors"
+  | "geoLatitude"
+  | "geoLongitude"
+  | "simulationDate"
+  | "northOffsetDeg"
+  | "sunDiscEnabled"
+  | "autoSunIntensityEnabled"
+  | "autoSunColorEnabled"
+  | "manualSunIntensity"
+  | "manualSunColorHex"
+  | "environmentRefreshEnabled"
+  | "sunAzimuthDeg"
+  | "sunElevationDeg"
+  | "skyEnabled"
+  | "skyTurbidity"
+  | "skyRayleigh"
+  | "skyMieCoefficient"
+  | "skyMieDirectionalG"
+  | "environmentIntensity"
+  | "cloudsEnabled"
+  | "cloudCoverage"
+  | "cloudDensity"
+  | "cloudElevation"
+  | "cloudMovementEnabled"
+  | "cloudSunLightingEnabled"
+  | "cloudShadowsEnabled"
+  | "cloudHeight"
+  | "cloudThickness"
+  | "cloudThreshold"
+  | "cloudOpacity"
+  | "cloudSoftness"
+  | "cloudScale"
+  | "cloudWindSpeed"
+  | "cloudWindDirectionDeg"
+  | "cloudRaymarchSteps"
+  | "fogEnabled"
+  | "fogColor"
+  | "fogDensity"
+  | "fogMatchesSky"
+  | "fogHeightBandEnabled"
+  | "fogHazeEnabled"
+  | "fogNoiseEnabled"
+  | "fogMovementEnabled"
+  | "fogSunInteractionEnabled"
+  | "fogBaseHeight"
+  | "fogTopHeight"
+  | "fogHaze"
+  | "fogNoiseStrength"
+  | "fogNoiseScale"
+  | "fogWindDirectionDeg"
+  | "fogWindSpeed"
+  | "fogFalloff"
+  | "fogMaxOpacity"
+  | "waterEnabled"
+  | "waterDistortionScale"
+  | "waterSize"
+  | "waterType"
+  | "waterWavesEnabled"
+  | "waterMovementEnabled"
+  | "waterSunReflectionEnabled"
+  | "waterEnvReflectionEnabled"
+  | "waterNormalMapEnabled"
+  | "waterHeight"
+  | "waterColor"
+  | "waterDeepColor"
+  | "groundEnabled"
+  | "groundStyle"
+  | "groundColor"
+  | "groundFogEnabled"
+  | "groundFogRadius"
+>;
 
 // `PlatformHdri` (a shared, platform-wide HDRI environment map) removed
 // entirely 2026-08-14 along with `Project3DConfig.hdriId` — see
@@ -519,6 +902,36 @@ export interface ViewerUIToggles {
    * toggles above. Purely a client-side visitor preference — never
    * written back to `sunAzimuthDeg`/`sunElevationDeg` above. */
   sunPresetEnabled?: boolean;
+
+  // --- Experience Editor v2, Interaction tab (PRD §39) additions ---
+  // Same optional/defaults-true pattern as every field above. Real,
+  // persisted admin configuration; several gate public-viewer systems
+  // (3D click-to-select/hover/highlight/isolation, Filters UI) that don't
+  // exist yet in the ground-up-rebuilt public viewer — the Interaction
+  // tab UI says so honestly per-toggle rather than pretending otherwise.
+  /** Units subtab master switch. */
+  unitInteractionEnabled?: boolean;
+  highlightEnabled?: boolean;
+  statusColorsEnabled?: boolean;
+  isolationEnabled?: boolean;
+  floorIsolationEnabled?: boolean;
+  unitPageLinkEnabled?: boolean;
+  /** Filters subtab master switch. */
+  filtersEnabled?: boolean;
+  filterFloorEnabled?: boolean;
+  filterAvailabilityEnabled?: boolean;
+  filterBedroomsEnabled?: boolean;
+  filterTypeEnabled?: boolean;
+  filterPriceEnabled?: boolean;
+  /** Viewer Controls subtab — resetEnabled/fullscreenEnabled/
+   * screenshotEnabled are real and wired into ArchVizClient.tsx's header
+   * buttons now; shotsMenuEnabled/shareEnabled aren't (no public Shots
+   * menu or share affordance built yet). */
+  resetEnabled?: boolean;
+  fullscreenEnabled?: boolean;
+  shotsMenuEnabled?: boolean;
+  screenshotEnabled?: boolean;
+  shareEnabled?: boolean;
 }
 
 export interface CameraPreset {
@@ -715,6 +1128,58 @@ export interface NodeOverride {
   iridescenceIOR?: number;
   visible?: boolean;
   carried?: boolean;
+
+  // --- Experience Editor v2, Materials tab (PRD §6) additions below ---
+  // All still optional/additive on the same JSON column — no migration
+  // needed. "Restore Original GLB Material" is just clearing every field
+  // below (and the ones above) back to unset, not a separate stored flag.
+
+  /** Master switch — PRD's "Material Override — ON/OFF". When false, every
+   * other Materials-tab field here is ignored even if set (so toggling
+   * back on restores the prior values instead of losing them). */
+  materialOverrideEnabled?: boolean;
+  /** Base Texture Map — ON/OFF (default true = keep the GLB's own diffuse
+   * map; false = colorHex replaces it outright instead of tinting it). */
+  baseTextureEnabled?: boolean;
+  roughnessMapEnabled?: boolean;
+  metalnessMapEnabled?: boolean;
+  normalMapEnabled?: boolean;
+  /** Normal Strength — only meaningful with normalMapEnabled and an
+   * existing GLB normal map (no new map upload here). */
+  normalStrength?: number;
+  aoMapEnabled?: boolean;
+
+  emissiveEnabled?: boolean;
+  emissiveMapEnabled?: boolean;
+  emissiveColorHex?: string;
+  emissiveIntensity?: number;
+
+  /** Glass — real MeshPhysicalMaterial transmission, not the separate
+   * GlassPreset/GLASS_TIERS system (that's project-wide/Rendering-tab
+   * scope; this is a per-node override). */
+  transmissionEnabled?: boolean;
+  transmission?: number;
+  ior?: number;
+  thickness?: number;
+  attenuationEnabled?: boolean;
+  attenuationColorHex?: string;
+  attenuationDistance?: number;
+
+  anisotropy?: number;
+  anisotropyRotation?: number;
+  sheen?: number;
+  sheenColorHex?: string;
+  sheenRoughness?: number;
+  /** MeshPhysicalMaterial.dispersion — only has a visible effect together
+   * with transmission. */
+  dispersion?: number;
+
+  textureTransformEnabled?: boolean;
+  mapScaleX?: number;
+  mapScaleY?: number;
+  mapOffsetX?: number;
+  mapOffsetY?: number;
+  mapRotation?: number;
 }
 
 /** Admin's "Project 3D Experience" detailed GLB — a second, separate upload
@@ -748,9 +1213,28 @@ export interface ProjectDetailModel {
   fileName: string;
   fileSize: number;
   scale: number;
+  /** Y-axis rotation (degrees). */
   rotationDeg: number;
+  /** Y-axis position. */
   altitudeOffset: number;
+  /** Experience Editor v2, Scene tab (PRD §5) — X/Z position and
+   * rotation, alongside the pre-existing Y-only altitudeOffset/
+   * rotationDeg above. */
+  positionX: number;
+  positionZ: number;
+  rotationXDeg: number;
+  rotationZDeg: number;
+  /** PRD §5's "Model — ON/OFF" (reused pre-existing field name — a
+   * project already fell back to the procedural viewer when this was
+   * false, before the Scene tab had a real switch for it). */
   enabled: boolean;
+  visible: boolean;
+  castShadow: boolean;
+  receiveShadow: boolean;
+  /** Stored, no real backing system yet — see NodeOverride/DetailModel
+   * Version's own doc comments. */
+  selectable: boolean;
+  transformLocked: boolean;
   updatedAt: string;
   unitLinks: UnitMeshLink[];
   sceneManifest: SceneManifestNode[];

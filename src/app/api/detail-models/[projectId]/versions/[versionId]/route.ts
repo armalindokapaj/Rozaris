@@ -9,6 +9,18 @@ const patchSchema = z.object({
   scale: z.number().positive().max(1000).optional(),
   rotationDeg: z.number().optional(),
   altitudeOffset: z.number().optional(),
+  // Experience Editor v2, Scene tab (PRD §5) — full Position/Rotation +
+  // Model switches.
+  positionX: z.number().optional(),
+  positionZ: z.number().optional(),
+  rotationXDeg: z.number().optional(),
+  rotationZDeg: z.number().optional(),
+  modelEnabled: z.boolean().optional(),
+  modelVisible: z.boolean().optional(),
+  castShadow: z.boolean().optional(),
+  receiveShadow: z.boolean().optional(),
+  selectable: z.boolean().optional(),
+  transformLocked: z.boolean().optional(),
 });
 
 export async function PATCH(
@@ -41,6 +53,16 @@ export async function PATCH(
       scale: parsed.data.scale,
       rotationDeg: parsed.data.rotationDeg,
       altitudeOffset: parsed.data.altitudeOffset,
+      positionX: parsed.data.positionX,
+      positionZ: parsed.data.positionZ,
+      rotationXDeg: parsed.data.rotationXDeg,
+      rotationZDeg: parsed.data.rotationZDeg,
+      modelEnabled: parsed.data.modelEnabled,
+      modelVisible: parsed.data.modelVisible,
+      castShadow: parsed.data.castShadow,
+      receiveShadow: parsed.data.receiveShadow,
+      selectable: parsed.data.selectable,
+      transformLocked: parsed.data.transformLocked,
     },
     include: { unitLinks: true },
   });

@@ -200,6 +200,23 @@ export const QUALITY_TIERS: Record<QualityPreset, QualityTierSettings> = {
     depthOfField: false,
     caustics: false,
   },
+  /** Experience Editor v2, Performance tab (PRD §40) — "Custom" profile.
+   * These are only the FALLBACKs; the real values come from
+   * Project3DConfig.customRenderScale/customDprCap when set (see
+   * RenderEngine.ts's setQualityConfig). Everything else here matches
+   * high_desktop — Phase 2-4 features (shadows/bloom/ssgi/lut/DOF) aren't
+   * in the new engine yet regardless of profile. */
+  custom: {
+    renderScale: 0.95,
+    dprCap: 2,
+    shadowMapSize: 2048,
+    bloom: true,
+    antialias: true,
+    ssgi: false,
+    lut: true,
+    depthOfField: true,
+    caustics: true,
+  },
 };
 
 /** Real vendored LUT files — every option `webgl_postprocessing_3dlut.html`'s

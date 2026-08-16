@@ -951,13 +951,62 @@ model Project3DConfig {
 
   // "3D Experience Phase 1" — rendering foundation, quality presets, glass.
   // See src/lib/viewerPresets.ts.
-  renderingMode        String @default("auto") // auto | webgpu | webgl2
-  qualityPreset        String @default("high_desktop")
+  renderingMode                      String  @default("auto") // auto | webgpu | webgl2
+  qualityPreset                      String  @default("high_desktop")
+  // ultra_desktop | high_desktop | balanced | mobile_high | mobile_low | custom
+  /// Experience Editor v2, Performance tab (PRD §40) additions.
+  /// `custom*` only apply when qualityPreset === "custom" — every other
+  /// preset uses its own fixed QUALITY_TIERS entry (viewerPresets.ts),
+  /// unchanged. Null = "use the preset's own value."
+  customRenderScale                  Float?
+  customDprCap                       Float?
+  adaptiveQualityEnabled             Boolean @default(true)
+  /// Whether Adaptive Quality's real downgrade step (render-scale
+  /// reduction under sustained low frame time) is allowed to trigger at
+  /// all during normal playback, vs. only while the camera is actively
+  /// being dragged (interactionQualityReductionEnabled) — PRD's Runtime/
+  /// Interaction Quality Reduction split.
+  runtimeQualityReductionEnabled     Boolean @default(true)
+  interactionQualityReductionEnabled Boolean @default(true)
+  deviceDetectionEnabled             Boolean @default(true)
   // ultra_desktop | high_desktop | balanced | mobile_high | mobile_low
-  glassPreset          String @default("standard") // performance | standard | premium
-  environmentIntensity Float  @default(1)
-  cameraFovDesktop     Int    @default(38)
-  cameraFovMobile      Int    @default(48)
+  glassPreset                        String  @default("standard") // performance | standard | premium
+  environmentIntensity               Float   @default(1)
+  cameraFovDesktop                   Int     @default(38)
+  cameraFovMobile                    Int     @default(48)
+
+  /// Experience Editor v2, Camera tab (PRD §37) additions — everything
+  /// above this point (cameraStart/Min/MaxDistanceMultiplier, cameraMin/
+  /// MaxPolarDeg, autoRotate, cameraFovDesktop/Mobile) already existed
+  /// and is reused as-is, not duplicated. These are the genuinely missing
+  /// fields. Defaults match RenderEngine.ts's own pre-existing hardcoded
+  /// values exactly, so no existing project's camera behavior changes
+  /// until an admin touches this tab.
+  cameraNearClip         Float   @default(0.1)
+  cameraFarClip          Float   @default(2000)
+  /// Null = unrestricted (OrbitControls' own default) — same "nullable
+  /// means off" pattern the rest of this schema already uses.
+  cameraMinAzimuthDeg    Float?
+  cameraMaxAzimuthDeg    Float?
+  cameraOrbitEnabled     Boolean @default(true)
+  cameraPanEnabled       Boolean @default(true)
+  cameraZoomEnabled      Boolean @default(true)
+  cameraDampingEnabled   Boolean @default(true)
+  /// Real per-project toggle for the already-existing DOF auto-focus-
+  /// from-orbit-distance behavior (see depthOfFieldEnabled's own doc
+  /// comment) — stored now, takes effect once Depth of Field is wired
+  /// into the new engine (Rendering tab, later phase).
+  cameraAutoFocusEnabled Boolean @default(true)
+  /// Debug-only camera frustum wireframe (viewport helper, PRD §4's
+  /// "Camera Helper" toggle) — admin-editor-only, never shown publicly.
+  cameraHelperEnabled    Boolean @default(false)
+  /// 35mm-equivalent sensor width (mm) — the one extra fact needed to
+  /// convert this camera's real FOV into a "Focal Length (mm)" figure
+  /// admins coming from real cinematography/photography expect (PRD's
+  /// separate Focal Length + "Sensor / Film Gate" controls); 36mm is the
+  /// standard full-frame reference, so the default Focal Length shown
+  /// matches a real 36mm-sensor camera at the existing default FOV.
+  cameraSensorWidthMm    Float   @default(36)
 
   /// Sky/Water/Bloom/Clouds "Ocean" tab (webgl_shaders_ocean.html parity)
   /// — direct sun elevation/azimuth feeding the physical SkyMesh, matching
@@ -978,6 +1027,65 @@ model Project3DConfig {
   /// explicitly KEPT, further down this model — see its own doc comment.
   sunAzimuthDeg   Float @default(180)
   sunElevationDeg Float @default(45)
+
+  /// Experience Editor v2, Environment → Sun & Sky (PRD §9-10, "ROZARIS
+  /// Manual Time + Sun System" / "ONE Global Sun"). `solarControllerEnabled`
+  /// gates the whole system: off (default) keeps every existing project's
+  /// sun exactly as before — a static direct sunElevationDeg/sunAzimuthDeg,
+  /// zero behavior change. On, elevation/azimuth are DERIVED every frame
+  /// from Viewer Time + a Solar Path (manual anchors or real geographic
+  /// lat/lon/date) instead of being authored directly — see
+  /// RenderEngine.ts's resolveGlobalSunVector and src/lib/sunPosition.ts.
+  /// The result feeds the exact same single `sunDirection` Vector3 every
+  /// other Environment/Lighting feature reads (Sky/Water/Clouds/Fog today;
+  /// Shadows/GI/Volumetrics/Lens Flare in later phases) — no feature is
+  /// ever allowed its own separate sun.
+  solarControllerEnabled    Boolean  @default(false)
+  /// "manual" = interpolate `solarAnchors`; "geographic" = real solar
+  /// position from geoLatitude/geoLongitude/simulationDate.
+  solarPathMode             String   @default("manual")
+  /// Whether a live Viewer Time slider is exposed (public viewer's own
+  /// Interaction-tab wiring is a later phase — this is the admin-editor/
+  /// data-layer half of the switch). Off: `viewerTimeHours` is a fixed
+  /// "Default Time", not a live-adjustable one.
+  viewerTimeControlEnabled  Boolean  @default(false)
+  viewerTimeHours           Float    @default(12)
+  viewerTimeStartHours      Float    @default(6)
+  viewerTimeEndHours        Float    @default(20)
+  viewerTimeStepMinutes     Int      @default(15)
+  /// Manual Solar Path anchors — SolarAnchor[] (src/lib/sunPosition.ts):
+  /// `[{id, timeHours, elevationDeg, azimuthDeg}]`. Null/absent reads as
+  /// `[]` client-side, same nullable-Json? pattern as cameraPresets/
+  /// sections above.
+  solarAnchors              Json?
+  /// Geographic Solar Path — real lat/lon (defaults to Tirana, Albania,
+  /// this platform's home market) + a simulated calendar date (year/month/
+  /// day only; time-of-day comes from viewerTimeHours). See
+  /// src/lib/sunPosition.ts's geographicSunPosition.
+  geoLatitude               Float    @default(41.3275)
+  geoLongitude              Float    @default(19.8187)
+  simulationDate            DateTime @default(now())
+  /// Rotates the whole solar path's azimuth output — lets an admin align
+  /// "north" in the authored path with the GLB's own arbitrary export
+  /// orientation without re-authoring every anchor.
+  northOffsetDeg            Float    @default(0)
+  /// SkyMesh.showSunDisc passthrough (real existing uniform — see
+  /// SkyMesh.js) — useful to turn off when composing a PMREM environment
+  /// capture to avoid a fireball artifact (SkyMesh's own doc comment).
+  sunDiscEnabled            Boolean  @default(true)
+  /// Off = use manualSunIntensity/manualSunColorHex directly instead of
+  /// the existing elevation-driven sunColorForElevation()/intensity-curve
+  /// formula (RenderEngine.ts's applyGlobalSun).
+  autoSunIntensityEnabled   Boolean  @default(true)
+  autoSunColorEnabled       Boolean  @default(true)
+  manualSunIntensity        Float    @default(1.2)
+  manualSunColorHex         String   @default("#ffffff")
+  /// Off = the real debounced PMREM sky-environment recapture
+  /// (scheduleEnvironmentRebuild) never re-runs after the initial mount,
+  /// even as Viewer Time/sun moves — freezes indirect lighting/reflections
+  /// at their mount-time state as a real perf lever for scenes that don't
+  /// need it to track a moving sun.
+  environmentRefreshEnabled Boolean  @default(true)
 
   /// New standalone "Sky" tab (webgl_shaders_sky.html parity, 2026-08-14
   /// — separate from and added after the "Ocean" tab above). That
@@ -1012,6 +1120,34 @@ model Project3DConfig {
   /// technique from three.js's webgl_geometry_terrain example. Default
   /// false: zero behavior change for any existing project.
   fogMatchesSky Boolean @default(false)
+
+  /// Experience Editor v2, Environment → Fog & Haze (PRD §12,
+  /// webgpu_custom_fog.html parity) — real TSL `scene.fogNode` height fog +
+  /// distance haze + animated `triNoise3D` wisps (src/lib/render-engine/
+  /// fog.ts), layered ON TOP of the classic fogEnabled/fogColor/fogDensity/
+  /// fogMatchesSky THREE.FogExp2 above when both are on (fogEnabled stays
+  /// the master switch for "is there any fog at all"; these are its extra
+  /// height/haze/noise dimensions, not a replacement). Distinct from
+  /// `groundFogEnabled` further up this model (Ground tab's own radial
+  /// mist-near-origin effect on the ground MATERIAL, a different, older
+  /// technique) — `fogHeightBandEnabled` is PRD §12's "Ground Fog", a real
+  /// atmospheric height band affecting the whole scene via the fog node.
+  /// All new toggles off/neutral by default: zero behavior change for any
+  /// existing project until an admin opens this tab.
+  fogHeightBandEnabled     Boolean @default(false)
+  fogHazeEnabled           Boolean @default(false)
+  fogNoiseEnabled          Boolean @default(false)
+  fogMovementEnabled       Boolean @default(true)
+  fogSunInteractionEnabled Boolean @default(true)
+  fogBaseHeight            Float   @default(0)
+  fogTopHeight             Float   @default(40)
+  fogHaze                  Float   @default(0.3)
+  fogNoiseStrength         Float   @default(0.3)
+  fogNoiseScale            Float   @default(0.05)
+  fogWindDirectionDeg      Float   @default(0)
+  fogWindSpeed             Float   @default(0.02)
+  fogFalloff               Float   @default(1)
+  fogMaxOpacity            Float   @default(0.85)
   // `sectionCapStencilEnabled` column removed 2026-08-14 — the real
   // stencil-buffer-derived Section cap silhouette (webgl_clipping_stencil.html
   // technique) it gated is no longer a project-wide opt-in: it's now
@@ -1041,6 +1177,34 @@ model Project3DConfig {
   waterDistortionScale Float   @default(3.7)
   waterSize            Float   @default(1)
 
+  /// Experience Editor v2, Environment → Water (PRD §13) — extends the
+  /// pre-existing WaterMesh wiring above with the rest of the reference
+  /// demo's own knobs + PRD-named toggles. Honest split (RenderEngine.ts's
+  /// createWaterMesh/applyGlobalSun doc comments carry the full reasoning):
+  /// `waterType` is a real cosmetic preset picker (sets sensible
+  /// color/size defaults when chosen, not a distinct render path).
+  /// `waterHeight`/`waterColor` are real (mesh Y position / colorNode
+  /// uniform). `waterSunReflectionEnabled` is real (zeroes the specular
+  /// term). `waterWavesEnabled`/`waterNormalMapEnabled` are real, ANDed
+  /// together against `waterDistortionScale` (this shader has one shared
+  /// normal-map-driven distortion mechanism, not two independent ones).
+  /// `waterMovementEnabled`/`waterEnvReflectionEnabled`/`waterDeepColor`
+  /// are stored (so switching them off/on later restores state, per the
+  /// PRD's own ON/OFF contract) but not yet wired to a render difference —
+  /// WaterMesh's shared `time` TSL node has no per-instance pause, and the
+  /// planar `reflector()` mirror is baked into the material's colorNode at
+  /// construction, not a runtime-togglable term. Same honest "stored, not
+  /// yet wired" precedent InteractionPanel.tsx already established.
+  waterType                 String  @default("decorative")
+  waterWavesEnabled         Boolean @default(true)
+  waterMovementEnabled      Boolean @default(true)
+  waterSunReflectionEnabled Boolean @default(true)
+  waterEnvReflectionEnabled Boolean @default(true)
+  waterNormalMapEnabled     Boolean @default(true)
+  waterHeight               Float   @default(0)
+  waterColor                String  @default("#001e0f")
+  waterDeepColor            String  @default("#00131f")
+
   /// Sky/Water/Bloom/Clouds "Ocean" tab — webgl_shaders_ocean.html's own
   /// "Clouds" GUI folder is really 3 more uniforms on its Sky object, not
   /// a separate mesh; these feed SkyMesh.cloudCoverage/cloudDensity/
@@ -1054,6 +1218,37 @@ model Project3DConfig {
   cloudCoverage  Float   @default(0.4)
   cloudDensity   Float   @default(0.5)
   cloudElevation Float   @default(0.5)
+
+  /// Experience Editor v2, Environment → Clouds (PRD §11,
+  /// webgpu_volume_cloud.html parity) — the ONE user-facing "Clouds"
+  /// feature per PRD §11's own "do not implement another public cloud
+  /// system" rule. `cloudCoverage`/`cloudDensity`/`cloudElevation` above
+  /// are now shared inputs to BOTH systems: (1) the real raymarched cloud
+  /// layer below (src/lib/render-engine/clouds.ts — several TSL Loop()
+  /// steps sampling `triNoise3D`-based density between cloudHeight and
+  /// cloudHeight+cloudThickness, lit by the Global Sun Vector), used on
+  /// medium/high quality tiers, and (2) SkyMesh's own built-in cloud
+  /// uniforms (cheap, baked into the sky-dome shader), used as the real
+  /// Low/Mobile-tier internal fallback the PRD explicitly allows — never
+  /// both at once (RenderEngine.ts's applyGlobalSun zeroes whichever isn't
+  /// active for the current tier). All new fields off/neutral-default:
+  /// zero behavior change for any existing project.
+  cloudMovementEnabled    Boolean @default(true)
+  cloudSunLightingEnabled Boolean @default(true)
+  /// Real, simplified (not a per-pixel projected shadow map) — a soft
+  /// coverage-driven darkening sampled at the same noise UV, mixed into
+  /// the ground material's colorNode (buildGroundMaterial) when a ground
+  /// mesh exists.
+  cloudShadowsEnabled     Boolean @default(false)
+  cloudHeight             Float   @default(220)
+  cloudThickness          Float   @default(50)
+  cloudThreshold          Float   @default(0.45)
+  cloudOpacity            Float   @default(0.85)
+  cloudSoftness           Float   @default(0.35)
+  cloudScale              Float   @default(0.01)
+  cloudWindSpeed          Float   @default(0.02)
+  cloudWindDirectionDeg   Float   @default(45)
+  cloudRaymarchSteps      Int     @default(16)
 
   /// webgl_watch.html parity — real, previously-unset THREE.js property
   /// (DirectionalLight.shadow.radius) that always defaulted to its engine
@@ -1179,6 +1374,136 @@ model Project3DConfig {
   // as `[]` client-side, same nullable-Json?-column pattern as
   // cameraPresets/viewerUI above — no backfill needed for existing rows.
   sections Json?
+
+  /// Experience Editor v2, Lighting tab (PRD §14-21) — Sun Light, Shadows
+  /// (CSM/Contact/Transmitted), Global Illumination (SSGI), Artificial
+  /// Lights, Volumetric Lighting. All real, canonical-Git-sourced vendored
+  /// three.js modules (CSMShadowNode, SSGINode, GTAONode, GodraysNode,
+  /// IESSpotLight/IESLoader — all real classes already ships in this exact
+  /// three.js version, not re-derived). Off/neutral by default throughout:
+  /// zero behavior change for any existing project until an admin opens
+  /// this tab. See RenderEngine.ts's applyLightingConfig/buildPostPipeline
+  /// for the real shared MRT scene-pass + post-processing chain this tab
+  /// introduces (PRD §43's "shared render graph", first built here since
+  /// SSGI/Contact-AO/Godrays are its first real consumers; Rendering tab's
+  /// SSR/TRAA/Bloom/DOF/MotionBlur/LUT — Phase 4 — extend the same chain).
+  ///
+  /// Sun Light — reuses Environment → Sun & Sky's autoSunIntensityEnabled/
+  /// autoSunColorEnabled/manualSunIntensity/manualSunColorHex (the same
+  /// ONE sun light, not a duplicate system) — these two are new.
+  sunLightEnabled Boolean @default(true)
+  /// Kelvin — moving this slider recomputes manualSunColorHex via a real
+  /// Planckian-locus approximation (src/lib/colorTemperature.ts), a
+  /// convenience alternate input method for the same field, not a second
+  /// stored color.
+  sunTemperatureK Int     @default(5500)
+
+  /// Cascaded Shadow Maps (webgpu_shadowmap_csm.html parity, CSMShadowNode)
+  /// — real cascaded shadows on `sun`, replacing the single fixed shadow
+  /// frustum. Off keeps today's single-cascade shadow behavior unchanged.
+  csmEnabled         Boolean @default(false)
+  csmCascades        Int     @default(3)
+  csmMaxDistance     Float   @default(200)
+  csmResolution      Int     @default(2048)
+  csmSplitMode       String  @default("practical")
+  csmMargin          Float   @default(100)
+  softShadowsEnabled Boolean @default(true)
+
+  /// Contact Shadows (webgpu_shadow_contact.html parity, real small-radius
+  /// GTAONode — a genuinely different, tighter-radius use of the same
+  /// canonical AO node than SSGI's own AO term, not a competing SSAO
+  /// feature per PRD §19's "do not create a separate SSAO" rule, which is
+  /// about Global Illumination specifically).
+  contactShadowsEnabled Boolean @default(false)
+  contactShadowBlur     Float   @default(0.5)
+  contactShadowDarkness Float   @default(0.6)
+  contactShadowOpacity  Float   @default(0.8)
+  contactShadowRange    Float   @default(0.3)
+
+  /// Transmitted / Colored Shadows (webgpu_shadowmap_opacity.html parity)
+  /// — real per-mesh `castShadowNode` override for GLB nodes matching the
+  /// existing `Glass_*` naming convention (GLASS_NODE_PATTERN,
+  /// viewerPresets.ts), tinting their cast shadow by the glass's own
+  /// attenuation color instead of a flat opaque shadow.
+  transmittedShadowsEnabled Boolean @default(false)
+  coloredShadowsEnabled     Boolean @default(false)
+  transmittedShadowStrength Float   @default(0.6)
+
+  /// Global Illumination (webgpu_postprocessing_ssgi.html parity, SSGINode
+  /// — real screen-space GI + AO, the ONE GI system per PRD §19; no
+  /// separate LightProbeGrid feature). Field names mirror the node's own
+  /// uniform names exactly.
+  giEnabled             Boolean @default(false)
+  giIndirectEnabled     Boolean @default(true)
+  giAOEnabled           Boolean @default(true)
+  giBackfaceLighting    Boolean @default(false)
+  giTemporalFiltering   Boolean @default(true)
+  giScreenSpaceSampling Boolean @default(true)
+  giIntensity           Float   @default(10)
+  giAOIntensity         Float   @default(1)
+  giRadius              Float   @default(12)
+  giSliceCount          Int     @default(1)
+  giStepCount           Int     @default(12)
+  giExpFactor           Float   @default(2)
+  giThickness           Float   @default(1)
+  giLinearThickness     Boolean @default(false)
+
+  /// Artificial Lights (webgpu_lights_ies_spotlight.html parity for the
+  /// IES type) — admin-authored point/spot/IES-spot/rect-area lights.
+  /// ArtificialLight[] (src/lib/types.ts) — same typed-JSON-array pattern
+  /// as cameraPresets/sections. Null/absent reads as `[]` client-side.
+  artificialLights Json?
+
+  /// Volumetric Lighting (webgpu_volume_lighting.html parity for the
+  /// technique; Sun Shafts specifically use the real vendored GodraysNode
+  /// — screen-space godrays from the Global Sun Vector, depth-occluded).
+  /// "Artificial Light Volumes" is a real, simplified per-light billboard
+  /// cone (ArtificialLight.volumetricEnabled), not a second raymarch
+  /// system — see RenderEngine.ts's own doc comment for the honest scope
+  /// call.
+  volumetricLightingEnabled Boolean @default(false)
+  sunShaftsEnabled          Boolean @default(true)
+  lightVolumesEnabled       Boolean @default(false)
+  volumetricRaymarchSteps   Int     @default(60)
+  volumetricDensity         Float   @default(0.7)
+  volumetricMaxDensity      Float   @default(0.5)
+  volumetricDistanceAtten   Float   @default(2)
+
+  /// Experience Editor v2, Rendering tab (PRD §22-33) — extends the SAME
+  /// shared WebGPU render graph the Lighting tab built above (PRD §43),
+  /// not a second pipeline. Every field the Rendering tab needs that
+  /// already existed from before the v2 rebuild (bloomEnabled/
+  /// bloomStrength/bloomRadius, lutEnabled/lutPreset/lutIntensity,
+  /// depthOfFieldEnabled/depthOfFieldFocalLength/depthOfFieldBokehScale,
+  /// exposure, toneMapping, antialiasEnabled, cameraAutoFocusEnabled) is
+  /// reused as-is above/elsewhere in this model, not duplicated — these 9
+  /// are the genuinely new columns. `antialiasEnabled` (default true,
+  /// unchanged) now means real TRAA (temporal reprojection AA) + MSAA
+  /// disabled at the renderer, replacing the old browser-MSAA-only
+  /// behavior under the same toggle — a deliberate "upgrade the technique
+  /// under an unchanged default" call, not a new opt-in (see
+  /// RenderEngine.ts's own doc comment).
+  /// Screen-space reflections (real vendored `SSRNode`, single-bounce
+  /// mirror+roughness-blur mode — NOT the old, fully-removed 2026-08-13
+  /// ad-hoc SSR/GTAO chain implicated in a real render-instability
+  /// report; this is a from-scratch build on the new Phase-3-proven
+  /// shared MRT graph). Off by default.
+  ssrEnabled      Boolean @default(false)
+  ssrIntensity    Float   @default(1)
+  ssrMaxDistance  Float   @default(30)
+  ssrThickness    Float   @default(0.5)
+  ssrQuality      Float   @default(0.5)
+  /// Real bloom-fed lens flare (`LensflareNode` — ghosts pivoting off the
+  /// existing Bloom pass' bright-pass texture, so it has no visible effect
+  /// unless `bloomEnabled` is also on; the Rendering panel's own UI
+  /// enforces this dependency). Off by default.
+  lensFlareEnabled   Boolean @default(false)
+  lensFlareIntensity Float   @default(1)
+  /// Real per-pixel motion blur (`motionBlur()` TSL fn) sampling the
+  /// scene's own MRT velocity buffer — genuine camera + object motion,
+  /// not a fake radial blur. Off by default.
+  motionBlurEnabled   Boolean @default(false)
+  motionBlurIntensity Float   @default(1)
 
   updatedAt DateTime @updatedAt
 
@@ -1390,8 +1715,33 @@ model DetailModelVersion {
   materialCount      Int?
   textureCount       Int?
   scale              Float                  @default(1)
+  /// Y-axis rotation, kept under its pre-existing name for backward
+  /// compat with every row written before Experience Editor v2's Scene
+  /// tab (PRD §5) added the other two axes below.
   rotationDeg        Float                  @default(0)
+  /// Y-axis position, kept under its pre-existing name for the same
+  /// reason as rotationDeg above.
   altitudeOffset     Float                  @default(0)
+  /// Experience Editor v2, Scene tab (PRD §5) — full Position/Rotation.
+  /// X/Z only here; Y reuses altitudeOffset/rotationDeg above rather than
+  /// duplicating them under new names.
+  positionX          Float                  @default(0)
+  positionZ          Float                  @default(0)
+  rotationXDeg       Float                  @default(0)
+  rotationZDeg       Float                  @default(0)
+  /// Experience Editor v2, Scene tab (PRD §5) Model switches. Defaults
+  /// preserve current behavior for every pre-existing row (a model that
+  /// exists always rendered, was always visible, always cast/received
+  /// shadows once shadows existed). `selectable`/`transformLocked` are
+  /// stored now but have no real backing system yet (viewport click-
+  /// select/gizmo lands in a later phase) — the Scene tab UI marks them
+  /// as such rather than pretending they do something today.
+  modelEnabled       Boolean                @default(true)
+  modelVisible       Boolean                @default(true)
+  castShadow         Boolean                @default(true)
+  receiveShadow      Boolean                @default(true)
+  selectable         Boolean                @default(true)
+  transformLocked    Boolean                @default(false)
   validationStatus   ModelValidationStatus  @default(ready)
   validationIssues   Json?
   /// Full node list for this version's GLB (not just Unit_* — see

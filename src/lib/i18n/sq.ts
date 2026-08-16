@@ -928,6 +928,7 @@ const sq: Dictionary = {
     configure3DMapControl: "Konfiguro Kontrollin e Hartës 3D",
     projectNotFound: "Projekti nuk u gjet.",
     backToAdminConsole: "Kthehu te konsola e administratorit",
+    loading: "Loading…",
     viewer3DTitle: "Përvoja 3D",
     sceneGroundTitle: "Toka / platforma",
     viewer3DGround: "Toka / platforma",
