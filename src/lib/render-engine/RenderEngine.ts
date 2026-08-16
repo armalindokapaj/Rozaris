@@ -519,6 +519,16 @@ export class RenderEngine {
   private downgradeStep = 0;
   private isInteracting = false;
   private interactionRenderScale: number | null = null;
+  /** Kept fresh on mount + every resize (see performResize). Mobile gets
+   * the admin-configured quality preset at full strength, same as
+   * desktop — the interaction-time and sustained-low-fps render-scale
+   * levers below both back off on mobile instead of firing, since a
+   * touch-drag orbit is effectively constant contact (unlike an
+   * occasional desktop mouse-drag), which made those two real, honest
+   * "temporarily/adaptively reduce resolution" features read as "mobile
+   * always looks low-res" in practice. `dprCap`/`renderScale` themselves
+   * stay admin-controlled and untouched here. */
+  private isMobileViewport = false;
 
   // Camera tab (PRD §37).
   private cameraConfig: CameraConfig = DEFAULT_CAMERA_CONFIG;
@@ -686,10 +696,10 @@ export class RenderEngine {
     scene.add(sectionHelperGroup);
     this.sectionHelperGroup = sectionHelperGroup;
 
-    const isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
+    this.isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
     const cfg = this.cameraConfig;
     const camera = new THREE.PerspectiveCamera(
-      isMobileViewport ? cfg.cameraFovMobile : cfg.cameraFovDesktop,
+      this.isMobileViewport ? cfg.cameraFovMobile : cfg.cameraFovDesktop,
       container.clientWidth / Math.max(1, container.clientHeight),
       cfg.cameraNearClip,
       cfg.cameraFarClip
@@ -781,7 +791,7 @@ export class RenderEngine {
     controls.addEventListener("start", () => {
       this.cameraTransition = null;
       this.isInteracting = true;
-      if (this.qualityConfig.interactionQualityReductionEnabled) {
+      if (this.qualityConfig.interactionQualityReductionEnabled && !this.isMobileViewport) {
         this.interactionRenderScale = Math.max(0.5, this.effectiveRenderScale * 0.7);
         this.applyRenderScale();
       }
@@ -1330,6 +1340,7 @@ export class RenderEngine {
   private performResize(container: HTMLDivElement, camera: THREE.PerspectiveCamera, renderer: THREE.WebGPURenderer) {
     this.lastResizeAt = performance.now();
     if (!container.clientWidth || !container.clientHeight) return;
+    this.isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(container.clientWidth * this.effectiveRenderScale, container.clientHeight * this.effectiveRenderScale, false);
@@ -1352,8 +1363,8 @@ export class RenderEngine {
   private applyCameraConfig(config: CameraConfig) {
     const { camera, controls, container } = this;
     if (!camera || !controls || !container) return;
-    const isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
-    camera.fov = isMobileViewport ? config.cameraFovMobile : config.cameraFovDesktop;
+    this.isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
+    camera.fov = this.isMobileViewport ? config.cameraFovMobile : config.cameraFovDesktop;
     camera.near = config.cameraNearClip;
     // Real bug found live (not the "intermittent race" it first looked
     // like — screenshot analysis showed the exact same y-position/height
@@ -1812,6 +1823,7 @@ export class RenderEngine {
    * viewerPresets.ts already reserves the concept for them). */
   private sampleAdaptiveQuality() {
     if (!this.qualityConfig.adaptiveQualityEnabled || !this.qualityConfig.runtimeQualityReductionEnabled) return;
+    if (this.isMobileViewport) return; // mobile always renders at the full configured quality — see isMobileViewport's own doc comment
     if (this.isInteracting) return; // the interaction-time lever already covers this window
     const frames = this.frameTimes;
     if (frames.length < 60 || this.downgradeStep >= 3) return;
