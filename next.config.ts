@@ -19,6 +19,50 @@ const nextConfig: NextConfig = {
   // still-broken sharp install can never take the route down again either
   // way.
   serverExternalPackages: ["sharp", "ndarray-pixels", "@gltf-transform/core", "@gltf-transform/functions"],
+
+  // Platform Audit (2026-08-16, finding H3) — no security headers were
+  // configured anywhere and no middleware.ts exists either, on an app with
+  // a real admin console and file-upload surface. Scoped deliberately:
+  // strict on the axes that stop real attacks at near-zero compatibility
+  // cost (clickjacking via frame-ancestors, MIME-sniffing, <object>/<embed>
+  // embeds, cross-origin form hijacking); permissive on script/connect/
+  // img/worker-src because this app leans on mapbox-gl (its own workers +
+  // tile/API hosts), WebGPU/WebGL2 (the 3D viewer), and Vercel Blob-hosted
+  // photos/GLBs at URLs this file can't enumerate. Tightening script-src to
+  // a nonce-based policy is real future work that needs actual browser
+  // verification this pass didn't have room for — see the
+  // "rozaris-publish-security-audit" memory. Camera/microphone are safe to
+  // block outright (grepped: unused anywhere); geolocation is deliberately
+  // left off this list since MapControls.tsx's "locate me" uses it.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), payment=()" },
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "base-uri 'self'",
+              "form-action 'self'",
+              "object-src 'none'",
+              "frame-ancestors 'none'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+              "worker-src 'self' blob:",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https:",
+              "font-src 'self' data:",
+              "connect-src 'self' https: wss: blob:",
+            ].join("; "),
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
+import { rateLimit, requestIp } from "@/lib/rateLimit";
 
 /** Shared by `authorize()` (initial sign-in) and the `jwt` callback's
  * `trigger === "update"` branch (re-resolve after a write that changes
@@ -49,10 +50,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      authorize: async (credentials) => {
+      authorize: async (credentials, request) => {
         const email = credentials?.email;
         const password = credentials?.password;
         if (typeof email !== "string" || typeof password !== "string") return null;
+
+        // Platform Audit (finding H2, see the "rozaris-publish-security-
+        // audit" memory) — sign-in had no throttling at all, which is what
+        // turns a weak password (finding C1) into something practically
+        // guessable. Keyed by IP, not email: limiting by email alone would
+        // let an attacker lock a real user out just by failing their login
+        // repeatedly from elsewhere. Returning null (not a distinguishing
+        // error) matches this function's own existing convention below for
+        // suspended/disabled accounts — indistinguishable from a wrong
+        // password to the caller.
+        if (rateLimit(`signin:${requestIp(request)}`, { limit: 10, windowMs: 15 * 60 * 1000 })) {
+          return null;
+        }
 
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user?.passwordHash) return null;

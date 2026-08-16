@@ -137,29 +137,38 @@ export function SignInModal() {
           </p>
         )}
 
-        <div className="mt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-            {t("signInModal.demoAccounts")}
-          </p>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {/* Admin is deliberately excluded from this public one-click
-                list — a real visitor's sign-in form must never be able to
-                log in as admin with a single click. Still listed in the
-                admin-only UsersTab reference view. See the launch-
-                readiness audit that found this. */}
-            {DEMO_ACCOUNTS.filter((a) => a.typeLabel !== "Admin").map((a) => (
-              <button
-                key={a.email}
-                type="button"
-                onClick={() => fillDemo(a.email)}
-                title={a.typeLabel}
-                className="rounded-full border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700"
-              >
-                {a.displayName}
-              </button>
-            ))}
+        {/* Platform Audit (finding H1/C1): every DEMO_ACCOUNTS credential
+            shares the same guessable-password convention (see
+            src/lib/demoAccounts.ts), so the one-click list itself — not
+            just the Admin entry below — must never render outside a
+            non-production build. A previous pass excluded Admin from this
+            list but left the other four rendering unconditionally in
+            production, which is what actually made those accounts
+            reachable by any visitor; NODE_ENV is the real boundary, the
+            per-entry filter alone was not. */}
+        {process.env.NODE_ENV !== "production" && (
+          <div className="mt-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              {t("signInModal.demoAccounts")}
+            </p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {/* Admin stays excluded even in non-production builds — a
+                  sign-in form should never offer a super-admin one-click
+                  login, dev environment or not. */}
+              {DEMO_ACCOUNTS.filter((a) => a.typeLabel !== "Admin").map((a) => (
+                <button
+                  key={a.email}
+                  type="button"
+                  onClick={() => fillDemo(a.email)}
+                  title={a.typeLabel}
+                  className="rounded-full border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700"
+                >
+                  {a.displayName}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <p className="mt-3 text-xs text-neutral-400">{t("signInModal.mockNote")}</p>
 

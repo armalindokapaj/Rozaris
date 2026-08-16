@@ -26,7 +26,7 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
 
     useImperativeHandle(ref, () => ({
       resetView: () => engineRef.current?.resetView(),
-      captureScreenshot: () => engineRef.current?.captureScreenshot() ?? null,
+      captureScreenshot: () => engineRef.current?.captureScreenshot() ?? Promise.resolve(null),
       computeGroundAlignOffset: (slotId: string) => engineRef.current?.computeGroundAlignOffset(slotId) ?? null,
       getCameraState: () => engineRef.current?.getCameraState() ?? null,
       flyToPreset: (preset) => engineRef.current?.flyToPreset(preset),

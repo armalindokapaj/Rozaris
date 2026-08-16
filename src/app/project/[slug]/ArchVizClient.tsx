@@ -62,7 +62,13 @@ export function ArchVizClient({ project }: { project: Project }) {
   const [fullDetailOpen, setFullDetailOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
-  const [screenshotFlash, setScreenshotFlash] = useState(false);
+  const [screenshotFlash, setScreenshotFlash] = useState<"success" | "error" | null>(null);
+  // Real bug found live: `el.requestFullscreen?.()` was fire-and-forget —
+  // any environment that refuses Fullscreen (an embedded webview/iframe
+  // without `allow="fullscreen"`, a browser with the permission denied,
+  // etc.) rejected the promise silently and the button just looked dead,
+  // with zero feedback. Same flash-toast pattern as screenshot below.
+  const [fullscreenUnsupported, setFullscreenUnsupported] = useState(false);
   // Units Search Mode PRD §20/§26 "global layout state" — lifted up here
   // (rather than living inside ViewerHUD) because UnitsWorkspace is a
   // sibling of ViewerHUD (PRD §36's own component tree), not a child of
@@ -387,9 +393,25 @@ export function ArchVizClient({ project }: { project: Project }) {
     const el = mainRef.current;
     if (!el) return;
     if (!document.fullscreenElement) {
-      el.requestFullscreen?.();
+      // Real bug found live: neither of these two failure modes ever
+      // surfaced anything before — `document.fullscreenEnabled === false`
+      // (Permissions-Policy denies it outright, e.g. inside an iframe/
+      // webview without `allow="fullscreen"`) resolved as a silent no-op,
+      // and `requestFullscreen()`'s own rejection (denied for any other
+      // reason) was never caught, so it just vanished as an unhandled
+      // promise rejection with the button looking completely dead either
+      // way.
+      if (!document.fullscreenEnabled || !el.requestFullscreen) {
+        setFullscreenUnsupported(true);
+        setTimeout(() => setFullscreenUnsupported(false), 2500);
+        return;
+      }
+      el.requestFullscreen().catch(() => {
+        setFullscreenUnsupported(true);
+        setTimeout(() => setFullscreenUnsupported(false), 2500);
+      });
     } else {
-      document.exitFullscreen?.();
+      document.exitFullscreen?.().catch(() => {});
     }
   }
 
@@ -401,19 +423,28 @@ export function ArchVizClient({ project }: { project: Project }) {
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
-  function handleScreenshot() {
-    const dataUrl = viewerRef.current?.captureScreenshot();
-    if (!dataUrl) return;
+  async function handleScreenshot() {
+    const dataUrl = await viewerRef.current?.captureScreenshot();
+    if (!dataUrl) {
+      setScreenshotFlash("error");
+      setTimeout(() => setScreenshotFlash(null), 2500);
+      return;
+    }
     const a = document.createElement("a");
     a.href = dataUrl;
     a.download = `${project.slug}-rozaris.png`;
+    // Some browsers only honor a download click on an anchor that's
+    // actually in the DOM at click time — appended/removed synchronously
+    // so it's never visible.
+    document.body.appendChild(a);
     a.click();
+    a.remove();
     // Publish/runtime hardening pass — project.screenshotSaved was
     // already translated in both locales but had zero call sites
     // anywhere in the app; same timeout-flash pattern already used for
     // Project3DConfigEditor.tsx's own savedFlash.
-    setScreenshotFlash(true);
-    setTimeout(() => setScreenshotFlash(false), 2500);
+    setScreenshotFlash("success");
+    setTimeout(() => setScreenshotFlash(null), 2500);
   }
 
   // Stable identity required — ThreeProjectViewer deliberately excludes
@@ -508,7 +539,13 @@ export function ArchVizClient({ project }: { project: Project }) {
 
         {screenshotFlash && (
           <div className="glass-panel-dark pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-pill px-4 py-2 text-xs font-semibold text-white sm:top-20">
-            {t("project.screenshotSaved")}
+            {t(screenshotFlash === "success" ? "project.screenshotSaved" : "project.screenshotFailed")}
+          </div>
+        )}
+
+        {fullscreenUnsupported && (
+          <div className="glass-panel-dark pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-pill px-4 py-2 text-xs font-semibold text-white sm:top-20">
+            {t("project.fullscreenUnavailable")}
           </div>
         )}
 

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { upload } from "@vercel/blob/client";
-import { CheckCircle2, ShieldCheck, UploadCloud } from "lucide-react";
+import { CheckCircle2, ExternalLink, ShieldCheck, UploadCloud } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
@@ -136,18 +136,29 @@ export default function NewAdminProjectPage() {
     };
   }, []);
 
-  const canSubmit = name.trim().length > 0 && !!neighborhoodId && !creating;
+  // Real UX gap found live (reported as "Project Name... can be added
+  // later"): Name used to hard-block Step 1 even though nothing else here
+  // (the 3D upload, the Configurator) actually needs a real name yet — an
+  // admin testing the upload pipe had to invent a placeholder name just to
+  // get past this screen. Name is no longer required; a blank one gets a
+  // real auto-generated placeholder in handleCreate below instead of an
+  // empty string, which would otherwise render as a blank row everywhere
+  // this project's name is shown.
+  const canSubmit = !!neighborhoodId && !creating;
 
   async function handleCreate() {
     if (!canSubmit) return;
     setCreating(true);
     setCreateError(null);
 
+    const resolvedName =
+      name.trim() ||
+      `Untitled Project ${new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
     const developer = publishers.find((p) => p.id === publisherId) ?? DEMO_PUBLISHER;
     const newProject: Project = {
       id: `custom-${Date.now()}`,
-      slug: slugify(name),
-      name: name.trim(),
+      slug: slugify(resolvedName),
+      name: resolvedName,
       developer: { ...DEMO_PUBLISHER, id: developer.id, name: developer.name },
       status: "coming_soon",
       progressPercent: 0,
@@ -226,6 +237,16 @@ export default function NewAdminProjectPage() {
   // first upload — see the `ensureDetailSlotId` comment below for why this
   // can't just be a project-creation-time step.
   const [detailSlotId, setDetailSlotId] = useState<string | null>(null);
+  // Real gap found live (reported as "drag and dropping doesn't work") —
+  // both dropzones below have always LOOKED like a real HTML5 drop target
+  // (the dashed border, the UploadCloud icon) but never had an
+  // onDrop/onDragOver pair wired up, so a dropped file just did nothing —
+  // the browser's own "navigate to this file" default behavior, silently
+  // swallowed by the SPA router. `isDraggingX` only drives the active-state
+  // outline; the actual file handoff reuses the exact same handlers the
+  // <input>'s onChange already calls.
+  const [isDraggingDetail, setIsDraggingDetail] = useState(false);
+  const [isDraggingUnits, setIsDraggingUnits] = useState(false);
 
   // Real bug fixed here (found live, see "rozaris-mvp-admin-project-pipe"
   // memory): this page used to POST straight to
@@ -308,6 +329,62 @@ export default function NewAdminProjectPage() {
     }
   }
 
+  // Shared by both dropzones — real HTML5 drag-and-drop, see the
+  // isDraggingDetail/isDraggingUnits doc comment above for what this
+  // fixes. `dragenter`/`dragover` both need `preventDefault()` or the
+  // browser refuses to fire `drop` at all (its own default is "navigate to
+  // this file"), which is the exact silent-no-op the bug report described.
+  function dropHandlers(setDragging: (v: boolean) => void, onFile: (file: File) => void) {
+    return {
+      onDragOver: (e: DragEvent) => e.preventDefault(),
+      onDragEnter: (e: DragEvent) => {
+        e.preventDefault();
+        setDragging(true);
+      },
+      onDragLeave: (e: DragEvent) => {
+        e.preventDefault();
+        setDragging(false);
+      },
+      onDrop: (e: DragEvent) => {
+        e.preventDefault();
+        setDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) onFile(file);
+      },
+    };
+  }
+
+  // --- Publication (Draft/Publish, PRD-less real bug fix) ---
+  // Tracked locally rather than read off `project` — the client-built
+  // `Project` object this page constructs has no `approvalStatus` field at
+  // all (it's not part of the shared `Project` type most pages read), and
+  // the real value is knowable without a fetch: POST /api/projects now
+  // always creates rows `pending` (see that route's own doc comment).
+  const [publicationStatus, setPublicationStatus] = useState<"pending" | "active">("pending");
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+
+  async function handlePublish() {
+    if (!project || publishing) return;
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      const res = await fetch(`/api/admin/projects/${project.id}/publication`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvalStatus: "active" }),
+      });
+      if (!res.ok) {
+        throw new Error(await readErrorMessage(res, t("admin.newProjectPublishFailed")));
+      }
+      setPublicationStatus("active");
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : t("admin.newProjectPublishFailed"));
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   if (!hydrated) return null;
   if (!auth.signedIn) return null;
 
@@ -354,6 +431,9 @@ export default function NewAdminProjectPage() {
               placeholder={t("admin.newProjectNamePlaceholder")}
               className="w-full rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
             />
+            <span className="mt-1 block text-[11px] text-neutral-400">
+              {t("admin.newProjectNameOptionalNote")}
+            </span>
           </label>
 
           <div className="grid grid-cols-2 gap-3">
@@ -431,9 +511,19 @@ export default function NewAdminProjectPage() {
             <span className="mb-1.5 block text-xs font-medium text-neutral-500">
               {t("admin.newProjectDetailGlb")}
             </span>
-            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-control border border-dashed border-neutral-300 px-3 py-6 text-sm text-neutral-500 hover:border-brand-400 hover:text-brand-600">
-              <UploadCloud className="h-4 w-4" />
-              {detailFile ? detailFile.name : t("admin.newProjectDetailGlbPrompt")}
+            <label
+              className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-control border border-dashed px-3 py-6 text-sm transition-colors ${
+                isDraggingDetail
+                  ? "border-brand-500 bg-brand-50 text-brand-600"
+                  : "border-neutral-300 text-neutral-500 hover:border-brand-400 hover:text-brand-600"
+              }`}
+              {...dropHandlers(setIsDraggingDetail, (file) => void handleDetailUpload(file))}
+            >
+              <span className="flex items-center gap-2">
+                <UploadCloud className="h-4 w-4" />
+                {detailFile ? detailFile.name : t("admin.newProjectDetailGlbPrompt")}
+              </span>
+              <span className="text-[11px] text-neutral-400">{t("admin.newProjectDropHint")}</span>
               <input
                 type="file"
                 accept=".glb"
@@ -464,9 +554,17 @@ export default function NewAdminProjectPage() {
               {t("admin.newProjectUnitsGlb")}
               <span className="ml-1 font-normal text-neutral-400">({t("common.optional")})</span>
             </span>
-            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-control border border-dashed border-neutral-200 px-3 py-6 text-sm text-neutral-400 hover:border-neutral-300">
-              <UploadCloud className="h-4 w-4" />
-              {unitsFile ? unitsFile.name : t("admin.newProjectUnitsGlbPrompt")}
+            <label
+              className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-control border border-dashed px-3 py-6 text-sm transition-colors ${
+                isDraggingUnits ? "border-brand-400 bg-brand-50 text-brand-600" : "border-neutral-200 text-neutral-400 hover:border-neutral-300"
+              }`}
+              {...dropHandlers(setIsDraggingUnits, (file) => setUnitsFile(file))}
+            >
+              <span className="flex items-center gap-2">
+                <UploadCloud className="h-4 w-4" />
+                {unitsFile ? unitsFile.name : t("admin.newProjectUnitsGlbPrompt")}
+              </span>
+              <span className="text-[11px] text-neutral-400">{t("admin.newProjectDropHint")}</span>
               <input
                 type="file"
                 accept=".glb"
@@ -475,6 +573,37 @@ export default function NewAdminProjectPage() {
               />
             </label>
             <p className="mt-1.5 text-xs text-neutral-400">{t("admin.newProjectUnitsGlbNote")}</p>
+          </div>
+
+          <div className="rounded-control border border-neutral-200 bg-neutral-50 p-3.5">
+            <span className="mb-2 block text-xs font-medium text-neutral-500">
+              {t("admin.newProjectPublicationTitle")}
+            </span>
+            <p className={`text-xs ${publicationStatus === "active" ? "text-emerald-600" : "text-amber-600"}`}>
+              {publicationStatus === "active" ? t("admin.newProjectPublishedNote") : t("admin.newProjectDraftNote")}
+            </p>
+            {publishError && <p className="mt-1.5 text-xs text-red-600">{publishError}</p>}
+            <div className="mt-3 flex gap-2">
+              <a
+                href={`/project/${project.slug}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-control border border-neutral-200 bg-white py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+              >
+                {t("admin.newProjectPreviewInViewer")}
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+              {publicationStatus !== "active" && (
+                <button
+                  onClick={handlePublish}
+                  disabled={!detailDone || publishing}
+                  title={!detailDone ? t("admin.newProjectDetailGlb") : undefined}
+                  className="flex-1 rounded-control bg-emerald-600 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+                >
+                  {publishing ? t("admin.newProjectPublishing") : t("admin.newProjectPublish")}
+                </button>
+              )}
+            </div>
           </div>
 
           <button

@@ -337,7 +337,17 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          // Real bug found live-testing: closing the menu by re-clicking
+          // this same icon (the natural way, not just outside-click/
+          // Escape/menu-item-navigation-away — the only three paths that
+          // already went through closeAll()) left `section` at whatever
+          // sub-panel was last open, so the NEXT open silently landed back
+          // there instead of the main list. Always reset alongside the
+          // toggle, on both the open and close transition.
+          setOpen((v) => !v);
+          setSection("none");
+        }}
         aria-label={t("viewer.more")}
         aria-haspopup="menu"
         aria-expanded={open}

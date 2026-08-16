@@ -3,6 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { slugify } from "@/lib/utils";
+import { rateLimit, requestIp } from "@/lib/rateLimit";
 
 /**
  * Real account creation — the counterpart to `src/auth.ts`'s Credentials
@@ -33,6 +34,12 @@ const signupSchema = z
   });
 
 export async function POST(request: Request) {
+  // Platform Audit (finding H2) — signup was fully uncapped: unlimited
+  // automated account creation, and a free oracle for testing which
+  // emails already exist (finding L1) via the 409 below.
+  const limited = rateLimit(`signup:${requestIp(request)}`, { limit: 5, windowMs: 10 * 60 * 1000 });
+  if (limited) return limited;
+
   const parsed = signupSchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });

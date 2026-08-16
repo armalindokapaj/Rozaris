@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { prisma } from "@/lib/db";
 
 /**
- * ⚠️ LEGACY as of the versioning pass — GET below now resolves the
- * project's currently-*published* `MapModelVersion` instead of the old
- * single-row `ProjectMapModel`, keeping the exact same response shape for
- * MapModelEditor.tsx and every other existing caller. PUT/DELETE further
- * down still write the legacy `ProjectMapModel` table (unauthenticated,
- * same known gap as before) — left in place, unused by the admin UI once
- * it switches to POST/PATCH .../versions, as a one-release safety net. Do
- * not build new features against PUT/DELETE here.
+ * GET-only as of the Platform Audit (finding C2) — resolves the project's
+ * currently-*published* `MapModelVersion` instead of the old single-row
+ * `ProjectMapModel`, keeping the exact same response shape for
+ * MapModelEditor.tsx and every other existing caller. This route used to
+ * also expose unauthenticated PUT/DELETE against the legacy table; both
+ * were removed outright rather than gated, since the versioned pipeline
+ * (POST/PATCH .../versions, requireAdmin()-gated) already fully replaced
+ * them and nothing in the frontend called them anymore.
  */
 function toLegacyShape(v: {
   projectId: string;
@@ -47,19 +46,6 @@ function toLegacyShape(v: {
   };
 }
 
-const mapModelSchema = z.object({
-  glbUrl: z.string().url(),
-  fileName: z.string().min(1),
-  fileSize: z.number().int().positive(),
-  scale: z.number().positive().max(1000),
-  rotationDeg: z.number(),
-  altitudeOffset: z.number(),
-  enabled: z.boolean(),
-  hideBaseBuilding: z.boolean(),
-  hiddenBuildingLng: z.number().nullable().optional(),
-  hiddenBuildingLat: z.number().nullable().optional(),
-});
-
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ projectId: string }> }
@@ -71,43 +57,10 @@ export async function GET(
   return NextResponse.json(version ? toLegacyShape(version) : null);
 }
 
-/**
- * Upserts one project's GLB placement — MapModelEditor.tsx's "Save
- * placement" button. ⚠️ Same known gap as src/app/api/blob/upload/route.ts:
- * no session/role check yet (real auth isn't wired into the UI — see the
- * "rozaris-backend-plan" memory). Add an admin check here the moment it is.
- */
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ projectId: string }> }
-) {
-  const { projectId } = await params;
-  const parsed = mapModelSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) {
-    return NextResponse.json(
-      { error: `No project row for "${projectId}" — run \`npm run db:seed\`.` },
-      { status: 404 }
-    );
-  }
-
-  const model = await prisma.projectMapModel.upsert({
-    where: { projectId },
-    update: parsed.data,
-    create: { projectId, ...parsed.data },
-  });
-  return NextResponse.json(model);
-}
-
-export async function DELETE(
-  _request: Request,
-  { params }: { params: Promise<{ projectId: string }> }
-) {
-  const { projectId } = await params;
-  await prisma.projectMapModel.deleteMany({ where: { projectId } });
-  return NextResponse.json({ ok: true });
-}
+// PUT/DELETE removed (Platform Audit, see the "rozaris-publish-security-
+// audit" memory, finding C2) — they wrote the legacy single-row
+// `ProjectMapModel` table with NO auth check at all, and nothing in the
+// frontend has called them since the versioned pipeline
+// (POST/PATCH .../versions, requireAdmin()-gated) replaced them. Confirmed
+// via a full grep sweep: every remaining caller of this route only ever
+// does a bare (GET) `fetch()`. Use the versioned routes for any new write.

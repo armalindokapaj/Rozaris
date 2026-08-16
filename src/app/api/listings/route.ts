@@ -10,6 +10,7 @@ import { requirePublisherSession } from "@/lib/publisherAuth";
 import { isPublisherIdle } from "@/lib/moderation";
 import { isFeatureEnabled } from "@/lib/featureFlags";
 import { AMENITY_KEYS } from "@/lib/constants";
+import { rateLimit } from "@/lib/rateLimit";
 
 /**
  * The public marketplace's first real read AND write surface for `Listing`
@@ -99,6 +100,13 @@ const listingSchema = z.object({
 export async function POST(request: Request) {
   const gate = await requirePublisherSession();
   if (gate instanceof NextResponse) return gate;
+
+  // Platform Audit (finding H2) — submission was fully uncapped. Keyed by
+  // the signed-in account (this route already requires auth) rather than
+  // IP, so it throttles spam from one account without penalizing an office
+  // of publishers sharing a network.
+  const limited = rateLimit(`listing-submit:${gate.user?.id}`, { limit: 20, windowMs: 60 * 60 * 1000 });
+  if (limited) return limited;
 
   const parsed = listingSchema.safeParse(await request.json());
   if (!parsed.success) {

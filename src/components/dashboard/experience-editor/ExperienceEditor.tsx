@@ -346,6 +346,7 @@ export function ExperienceEditor({
         <EditorViewport
           ref={viewerRef}
           detailModels={detailModels}
+          slotsLoaded={detail.slotsLoaded}
           cameraConfig={cameraConfig}
           qualityConfig={qualityConfig}
           environmentConfig={environmentConfig}

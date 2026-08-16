@@ -472,6 +472,10 @@ const sq: Dictionary = {
     share: "Ndaj",
     screenshot: "Foto",
     screenshotSaved: "Fotoja u ruajt",
+    // Untranslated placeholder — see rozaris-locale-english-only memory:
+    // new keys stay English until told otherwise, even mid-section.
+    screenshotFailed: "Couldn't capture a screenshot — try again",
+    fullscreenUnavailable: "Fullscreen isn't available in this window",
     exploreAvailableUnits: "Eksploro Njësitë e Disponueshme ({count})",
     byDeveloper: "nga {developer}",
     byDeveloperCapital: "Nga {developer}",
@@ -1265,6 +1269,8 @@ const sq: Dictionary = {
     newProjectTitle: "Projekt i ri",
     newProjectName: "Emri i projektit",
     newProjectNamePlaceholder: "p.sh. Riverside Residence",
+    // Untranslated placeholder — see rozaris-locale-english-only memory.
+    newProjectNameOptionalNote: "Leave blank to auto-name it — rename anytime later.",
     newProjectCity: "Qyteti",
     newProjectCityDerived: "Set automatically from the selected neighborhood",
     newProjectNeighborhood: "Lagjja",
@@ -1283,12 +1289,22 @@ const sq: Dictionary = {
     newProjectPipeStep3: "Konfiguro",
     newProjectDetailGlb: "GLB i ndërtesës së detajuar",
     newProjectDetailGlbPrompt: "Zgjidh një skedar .glb",
+    // Untranslated placeholders below — see rozaris-locale-english-only
+    // memory: new keys stay English until told otherwise.
+    newProjectDropHint: "or drag and drop a .glb file here",
     newProjectUploading: "Duke ngarkuar… {percent}%",
     newProjectUploadDone: "U ngarkua — gati për konfigurim.",
     newProjectUnitsGlb: "GLB i njësive",
     newProjectUnitsGlbPrompt: "Zgjidh një skedar .glb",
     newProjectUnitsGlbNote: "Nuk është lidhur ende — njësitë zbulohen aktualisht nga emrat e mesh-ave brenda GLB-së së ndërtesës së detajuar (Konfiguruesi → skeda Njësitë).",
     newProjectOpenConfigurator: "Hap Konfiguruesin 3D",
+    newProjectPublicationTitle: "Publication",
+    newProjectDraftNote: "This project is a draft — hidden from search, listings, and the public site until you publish it.",
+    newProjectPublishedNote: "Published — live on the platform.",
+    newProjectPreviewInViewer: "Preview in Viewer",
+    newProjectPublish: "Publish Project",
+    newProjectPublishing: "Publishing…",
+    newProjectPublishFailed: "Couldn't publish the project — try again.",
     projectUnitsTitle: "Njësitë & modeli 3D",
     projectModelTitle: "Modeli 3D",
     projectModelDropTitle: "Tërhiq & lësho një skedar .glb të optimizuar",

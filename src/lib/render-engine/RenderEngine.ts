@@ -1887,10 +1887,26 @@ export class RenderEngine {
     this.cameraHelper = helper;
   }
 
-  captureScreenshot(): string | null {
+  /** Async on purpose — WebGPURenderer presents to the canvas on its own
+   * schedule relative to `render()` returning (unlike WebGL2's synchronous
+   * swap), so reading `toDataURL()` in the same tick can capture a stale
+   * or blank frame. Waiting two real animation frames after `render()`
+   * before reading pixels is the standard way to guarantee the browser
+   * has actually composited what was just drawn. Wrapped in try/catch
+   * (not just an `if` guard) since `toDataURL()` itself can throw on a
+   * tainted/lost-context canvas — a real failure should surface as `null`
+   * to the caller, not an uncaught rejection. */
+  async captureScreenshot(): Promise<string | null> {
     if (!this.renderer || !this.scene || !this.camera) return null;
     this.renderer.render(this.scene, this.camera);
-    return this.renderer.domElement.toDataURL("image/png");
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+    try {
+      return this.renderer.domElement.toDataURL("image/png");
+    } catch {
+      return null;
+    }
   }
 
   dispose() {

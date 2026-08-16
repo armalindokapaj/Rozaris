@@ -14,8 +14,11 @@ export interface ThreeProjectViewerHandle {
   /** Reframes the camera on the currently loaded content. */
   resetView: () => void;
   /** Captures the current frame as a PNG data URL — null if the renderer
-   * isn't ready (e.g. WebGPU/WebGL2 init failed). */
-  captureScreenshot: () => string | null;
+   * isn't ready (e.g. WebGPU/WebGL2 init failed) or the capture itself
+   * failed. Async — see RenderEngine.captureScreenshot's own doc comment
+   * for why (WebGPU's canvas presentation isn't synchronous with
+   * `render()` returning). */
+  captureScreenshot: () => Promise<string | null>;
   /** Scene tab's "Ground Align" (PRD §5) — the Y offset that would put
    * the given slot's lowest point at world Y=0, at its current transform.
    * Null if that slot isn't loaded (or the renderer isn't ready). */

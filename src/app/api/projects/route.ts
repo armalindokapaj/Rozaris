@@ -126,7 +126,21 @@ export async function POST(request: Request) {
         ...data,
         slug,
         publisherId,
-        approvalStatus: "active",
+        // Real bug found live (reported as "a project I saved as a draft
+        // was already published") — every project created through either
+        // real caller (NewProjectModal.tsx, the `/admin/projects/new`
+        // wizard) went straight to `active` on creation, immediately live
+        // on the public platform (search, listings, /project/[slug]) with
+        // zero draft/review window, even though the wizard's own "Status"
+        // field displayed "Draft" the whole time. Starts `pending` now —
+        // out of the public catalog (`PUBLIC_WHERE` in projects.server.ts)
+        // — until an admin explicitly publishes it via `PATCH
+        // /api/admin/projects/[projectId]/publication`. A `pending`
+        // project's slug still resolves in the 3D viewer for its own
+        // creator through `CustomProjectPreview`'s Zustand fallback (see
+        // that component's doc comment) — a real "preview while in draft"
+        // path, not a new one built for this.
+        approvalStatus: "pending",
         city: location.cityName,
         locationId: location.id,
       },
