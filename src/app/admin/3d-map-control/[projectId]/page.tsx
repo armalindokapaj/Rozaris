@@ -1,13 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
-import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { useAdminProject } from "@/hooks/useAdminProject";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
-import { useStoreHydrated } from "@/hooks/useStoreHydrated";
 import { useDeleteProject } from "@/hooks/useDeleteProject";
 import { MapModelEditor } from "@/components/dashboard/MapModelEditor";
 
@@ -20,11 +17,16 @@ import { MapModelEditor } from "@/components/dashboard/MapModelEditor";
  * pattern/comments in `../../3d-experience/[projectId]/page.tsx`, including
  * the session-repair banner below (same confirmed root cause of uploads
  * silently 401'ing on this route too).
+ *
+ * Authorization is handled by the nearest `layout.tsx` (real Auth.js
+ * session, server-side, via `requireAdminPage()`) before this component
+ * ever renders — see that file's doc comment for why the client-side
+ * Zustand `auth.signedIn` gate that used to live here was removed
+ * (Multi-Channel Publishing PRD, Phase 1).
  */
 export default function Admin3DMapControlPage() {
   const params = useParams<{ projectId: string }>();
   const router = useRouter();
-  const auth = useAppStore((s) => s.auth);
   const { project, loading: projectLoading } = useAdminProject(params.projectId);
   const { t } = useT();
   const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
@@ -37,18 +39,6 @@ export default function Admin3DMapControlPage() {
     const ok = await deleteProject(project.id, reason ?? undefined);
     if (ok) router.push("/admin?tab=mapControl");
   }
-  // Same real bug fix as ../../3d-experience/[projectId]/page.tsx — see
-  // useStoreHydrated's own doc comment for the full "fresh load bounces
-  // back to /admin" root cause.
-  const hydrated = useStoreHydrated();
-
-  useEffect(() => {
-    if (!hydrated) return;
-    if (!auth.signedIn) router.replace("/admin");
-  }, [hydrated, auth.signedIn, router]);
-
-  if (!hydrated) return null;
-  if (!auth.signedIn) return null;
 
   if (projectLoading) {
     return (

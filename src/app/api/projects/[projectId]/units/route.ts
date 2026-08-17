@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { notifyNewUnit } from "@/lib/notify";
+import { bumpInventoryRevision } from "@/lib/publishing/inventoryRevision";
 
 const unitSchema = z.object({
   // Client-supplied, not server-generated: ProjectUnitsEditor.tsx already
@@ -78,6 +79,9 @@ export async function POST(
 
   const { id, ...data } = parsed.data;
   const unit = await prisma.unit.create({ data: { id, ...data, projectId } });
+  // Multi-Channel Publishing PRD Phase 6 — see inventoryRevision.ts's doc
+  // comment: a new unit changes what the public inventory endpoint returns.
+  await bumpInventoryRevision(projectId);
 
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
   await logAuditEvent({

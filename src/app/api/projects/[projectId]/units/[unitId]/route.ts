@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
+import { bumpInventoryRevision } from "@/lib/publishing/inventoryRevision";
 
 const unitPatchSchema = z.object({
   code: z.string().min(1).optional(),
@@ -45,6 +46,11 @@ export async function PATCH(
   }
 
   const unit = await prisma.unit.update({ where: { id: unitId }, data: parsed.data });
+  // Multi-Channel Publishing PRD Phase 6 — see inventoryRevision.ts's doc
+  // comment. Unconditional even for edits that don't touch price/status
+  // (e.g. a floor plan image) — simpler and safe than trying to allowlist
+  // exactly which PATCH fields the public DTO actually surfaces.
+  await bumpInventoryRevision(projectId);
 
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
   await logAuditEvent({
@@ -84,6 +90,9 @@ export async function DELETE(
     where: { id: unitId },
     data: { deletedAt: new Date(), deletedBy: actor },
   });
+  // Multi-Channel Publishing PRD Phase 6 — a deleted unit must disappear
+  // from the public inventory endpoint too.
+  await bumpInventoryRevision(projectId);
 
   await logAuditEvent({
     actor,

@@ -176,6 +176,9 @@ model User {
   sentConversationsAsBuyer Conversation[]        @relation("BuyerConversations")
   messages                 Message[]
   leadStatusOverrides      LeadStatusOverride[]
+  /// Multi-Channel Publishing PRD Phase 9 — see ProjectMembership's own
+  /// doc comment.
+  projectMemberships       ProjectMembership[]
 
   @@map("users")
 }
@@ -363,6 +366,12 @@ model Publisher {
   listings Listing[]
   projects Project[]
   leads    LeadItem[]
+
+  /// Multi-Channel Publishing PRD Phase 2 — denormalized alongside
+  /// ProjectPublishTarget.projectId, see that model's own doc comment.
+  publishTargets ProjectPublishTarget[]
+  /// Phase 10 — see ClientApiCredential's own doc comment.
+  apiCredentials ClientApiCredential[]
 
   // §8 "Business Teams, Roles & Permissions" — every member is its own
   // real ROZARIS account (never a shared login), joined via an
@@ -705,6 +714,16 @@ model Project {
   detailModelSlots    DetailModelSlot[]
   leads               LeadItem[]
 
+  /// Multi-Channel Publishing PRD Phase 2 — see the section comment above
+  /// ViewerRelease below for the full picture.
+  viewerReleases ViewerRelease[]
+  publishTargets ProjectPublishTarget[]
+  inventoryState ProjectInventoryState?
+  /// Phase 8 — see InventoryConnector's own doc comment.
+  inventoryConnectors InventoryConnector[]
+  /// Phase 9 — see ProjectMembership's own doc comment.
+  memberships         ProjectMembership[]
+
   @@map("projects")
 }
 
@@ -726,6 +745,20 @@ model Unit {
   facadeImage    String?
   videoUrl       String?
 
+  /// Multi-Channel Publishing PRD Phase 2 — additive-only hardening. The
+  /// PRD's own §7 also proposed converting `status` above (bare String) to
+  /// a real `UnitAvailability` enum; deliberately NOT done here — 12 files
+  /// already do string comparisons/writes against it (unit-status colors,
+  /// X-ray overlay, ProjectUnitsEditor, POI camera, mesh-status coloring),
+  /// and nothing in Phase 2 actually needs the enum yet. Revisit that
+  /// conversion alongside Phase 6/8 (inventory sync / conflict detection),
+  /// where `revision` below finally gets a real writer.
+  updatedAt DateTime @updatedAt
+  /// Optimistic-concurrency counter — inert until Phase 6/8 wires an
+  /// `If-Match` check into the inventory-sync write path (PRD §57
+  /// "Concurrency"). No writer increments it yet.
+  revision  Int      @default(1)
+
   /// Super Admin recycle bin — the unit PATCH/DELETE route
   /// (api/projects/[projectId]/units/[unitId]) now soft-deletes here
   /// instead of a real prisma.unit.delete().
@@ -739,6 +772,11 @@ model Unit {
   /// UnitMeshLinkV2.unit, added alongside making `unitId` a genuine FK
   /// instead of a bare, unvalidated String.
   unitMeshLinks UnitMeshLinkV2[]
+
+  /// Multi-Channel Publishing PRD Phase 2 — see PublishTargetUnitOverride's
+  /// own doc comment for why this is an override list, not a duplicate of
+  /// this row.
+  publishTargetOverrides PublishTargetUnitOverride[]
 
   /// Units Blocks & POI Layer PRD §6 — "Strengthen Unit identity."
   /// Confirmed via a live-DB scan before adding this (zero existing
@@ -2227,4 +2265,351 @@ model EnvironmentPreset {
   updatedAt DateTime @updatedAt
 
   @@map("environment_presets")
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Channel Publishing — Phase 2 (Data foundation). See the
+// "rozaris-multichannel-publishing-prd" memory for the full architecture:
+// one Project/digital-twin publishes through many independently controlled
+// `ProjectPublishTarget`s (Rozaris marketplace, white-label client embeds,
+// kiosks) instead of duplicated projects per client. `ViewerRelease` is the
+// immutable compiled snapshot a target points at — deliberately separate
+// from the live-editable `Project3DConfig`/`DetailModelVersion` rows the
+// Experience Configurator writes to, so an admin can keep tuning lighting
+// on a draft while every already-deployed target keeps serving its last
+// released manifest untouched. The release COMPILER (turning
+// Project3DConfig + DetailModelVersions + UnitMeshLinkV2 into `manifest`)
+// is Phase 3, not added here — this pass is schema + CRUD only, nothing
+// reads or writes a real `manifest` yet (`ready`/`archived` on
+// ViewerReleaseStatus, and manifest's contents, are inert until then).
+// ---------------------------------------------------------------------------
+
+enum ViewerReleaseStatus {
+  draft
+  ready
+  archived
+}
+
+/// One immutable compiled snapshot of a project's 3D experience — what a
+/// `ProjectPublishTarget` actually serves in production. `manifestHash`
+/// lets a target cheaply confirm "am I still serving the latest" without
+/// re-hashing a potentially large JSON blob client-side.
+model ViewerRelease {
+  id            String              @id @default(cuid())
+  projectId     String
+  project       Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version       Int
+  status        ViewerReleaseStatus @default(draft)
+  schemaVersion Int                 @default(1)
+  manifest      Json
+  manifestHash  String
+  createdBy     String?
+  createdAt     DateTime            @default(now())
+  validatedAt   DateTime?
+  archivedAt    DateTime?
+
+  publishTargets ProjectPublishTarget[]
+
+  @@unique([projectId, version])
+  @@index([projectId, status])
+  @@map("viewer_releases")
+}
+
+enum PublishTargetType {
+  marketplace
+  embed
+  custom_domain
+  kiosk
+}
+
+enum PublishTargetStatus {
+  draft
+  active
+  suspended
+  expired
+}
+
+/// Where a Project's digital twin is actually deployed — the PRD's core new
+/// concept. One Project can have many of these (ROZARIS marketplace + N
+/// white-label client sites + kiosks) all pointing at the SAME Unit rows
+/// and either a shared or independently-pinned `ViewerRelease`, never a
+/// duplicated project. `publicKey` is the only identifier ever exposed to a
+/// browser (embed iframe src, bootstrap requests) — deliberately opaque and
+/// unguessable, never an administrative credential.
+model ProjectPublishTarget {
+  id String @id @default(cuid())
+
+  /// Opaque public locator, crypto.randomBytes-generated — see
+  /// src/lib/publishing/publicKey.ts. Never sequential/guessable, since
+  /// this is the one identifier a public embed URL/bootstrap API ever sees.
+  publicKey String @unique
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Denormalized alongside projectId (same tolerance this schema already
+  /// has elsewhere, e.g. DetailModelVersion.projectId) — lets a future
+  /// Client Portal query "every target across every one of my projects" in
+  /// one indexed lookup instead of joining through Project every time.
+  publisherId String
+  publisher   Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+
+  type   PublishTargetType
+  status PublishTargetStatus @default(draft)
+
+  /// Admin-facing label only ("ABC Construction Website") — never shown to
+  /// an actual visitor, who sees `branding` below instead.
+  name String
+
+  activeReleaseId String?
+  activeRelease   ViewerRelease? @relation(fields: [activeReleaseId], references: [id], onDelete: SetNull)
+
+  /// `type: custom_domain` targets only, e.g. "abcconstruction.al".
+  /// Verification/DNS wiring is Phase 10 (Enterprise); the column exists
+  /// now so the admin CRUD shape doesn't need a breaking change later.
+  customDomain String?
+  /// CSP `frame-ancestors` + Origin-header allowlist for `type: embed`,
+  /// e.g. ["https://abcconstruction.al", "https://www.abcconstruction.al"].
+  /// Enforced starting Phase 5 (`/embed/[publicKey]`); stored now so a
+  /// target can be fully configured before that route exists.
+  allowedOrigins String[]
+
+  /// Presentation overlay only — logo/colors/CTA copy/feature toggles (PRD
+  /// §42's shape). Deliberately never duplicates Unit price/availability;
+  /// see PublishTargetUnitOverride below for the one thing that DOES vary
+  /// per channel.
+  branding        Json?
+  viewerOverrides Json?
+
+  licenseStartsAt DateTime?
+  licenseEndsAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  unitOverrides PublishTargetUnitOverride[]
+
+  @@index([projectId])
+  @@index([publisherId])
+  @@map("project_publish_targets")
+}
+
+/// Per-channel presentation override for a single Unit — NOT a duplicate of
+/// the Unit row. Price/availability/etc. stay single-source-of-truth on
+/// `Unit` itself (PRD §11 "channel overrides"). A row here means "on this
+/// one target, show this unit differently"; no row means "show the
+/// channel's normal defaults."
+model PublishTargetUnitOverride {
+  id String @id @default(cuid())
+
+  publishTargetId String
+  publishTarget   ProjectPublishTarget @relation(fields: [publishTargetId], references: [id], onDelete: Cascade)
+
+  unitId String
+  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  visible     Boolean @default(true)
+  showPrice   Boolean @default(true)
+  customPrice Float?
+  ctaType     String?
+  ctaUrl      String?
+
+  @@unique([publishTargetId, unitId])
+  @@map("publish_target_unit_overrides")
+}
+
+/// Cheap "did anything change" counter for the live inventory endpoint
+/// (Phase 6) — a viewer will poll this instead of re-fetching/diffing every
+/// unit on a timer. One row per Project, created lazily on first bump
+/// rather than backfilled for every existing project up front.
+model ProjectInventoryState {
+  projectId String   @id
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  revision  BigInt   @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@map("project_inventory_states")
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Channel Publishing — Phase 8 (external inventory ingestion). PRD §20:
+// "Google Sheets must be treated as an external editor, not your database."
+// `InventoryConnector` + `InventorySyncRun` are deliberately provider-
+// agnostic — `google_sheets`/`api`/`manual` all funnel through the same
+// validate → match-by-code → diff → write → bump-revision → audit engine
+// (src/lib/integrations/inventorySync.ts). Only `google_sheets` needs a
+// real fetch step (src/lib/integrations/googleSheets.ts) this environment
+// has no way to test end-to-end against a real sheet (no OAuth/service-
+// account credential, same honesty as KYC/OTP/Upstash elsewhere in this
+// app) — `manual` (rows supplied directly via the admin API) exercises the
+// exact same engine and IS fully real-DB-verified.
+// ---------------------------------------------------------------------------
+
+enum InventoryConnectorType {
+  google_sheets
+  api
+  manual
+}
+
+enum ConnectorStatus {
+  active
+  paused
+  error
+}
+
+model InventoryConnector {
+  id String @id @default(cuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  type   InventoryConnectorType
+  status ConnectorStatus       @default(active)
+
+  /// `type: google_sheets` — the sheet id from its URL. Null for other types.
+  externalResourceId String?
+  /// Deliberately unused/inert — this environment has no secrets manager to
+  /// point it at, and the only fetch path implemented (public CSV export)
+  /// needs no credential at all. Kept so the shape doesn't need a breaking
+  /// change once a real OAuth/service-account flow exists.
+  credentialsRef String?
+
+  configuration Json?
+  columnMapping Json?
+
+  lastSyncAt           DateTime?
+  lastSuccessfulSyncAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  syncRuns InventorySyncRun[]
+
+  @@index([projectId])
+  @@map("inventory_connectors")
+}
+
+/// One row per sync attempt — PRD §23's own worked example ("I changed
+/// apartment 44 to sold yesterday but it's showing available... A-044
+/// ERROR: invalid status") is exactly what `errors` here makes answerable.
+model InventorySyncRun {
+  id String @id @default(cuid())
+
+  connectorId String
+  connector   InventoryConnector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+
+  /// "success" | "partial" | "error" — free string, not an enum, matching
+  /// this schema's existing tolerance for small closed-ish string sets
+  /// checked in application code (e.g. Unit.status) rather than the DB.
+  status String
+
+  /// sha256 of the raw row payload — PRD §24 step 11 idempotency ("same
+  /// sourceHash -> no database writes"). Null only for pre-idempotency
+  /// runs, which don't exist yet since this ships with the check built in.
+  sourceHash String?
+
+  rowsRead     Int
+  rowsChanged  Int
+  rowsRejected Int
+  errors       Json?
+
+  startedAt  DateTime
+  finishedAt DateTime?
+
+  @@index([connectorId, startedAt])
+  @@map("inventory_sync_runs")
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Channel Publishing — Phase 9 (client-side project permissions). PRD
+// §27-29: "Your existing Publisher system is the correct tenant
+// foundation... don't introduce an unrelated Tenant table" + "add
+// project-level permissions." `OrganizationMembership` (existing) already
+// scopes a team member's role across an ENTIRE Publisher/org; this adds the
+// narrower "which specific projects can this person touch, and with what
+// access" layer on top — e.g. a Sales Agent who should only ever see one
+// tower's inventory+leads, not the whole company's portfolio. A Publisher
+// owner/org-admin (or a Rozaris admin) always has full access to every one
+// of their own projects regardless of this table (see
+// `requireProjectPermission()`, src/lib/permissions/projectAccess.ts) — a
+// row here is only needed to grant a REGULAR org member (agent/
+// content_editor/viewer, none of which imply project access on their own)
+// scoped reach into one specific project. Deliberately admin-managed for
+// now (`/api/admin/projects/[projectId]/members`), not yet a Publisher
+// self-service flow — that's a natural follow-on using the same
+// `requireOrgRole()` gate Business Teams already has, not built this pass.
+// ---------------------------------------------------------------------------
+
+enum ProjectMemberRole {
+  project_admin
+  inventory_manager
+  sales_manager
+  analytics_viewer
+}
+
+model ProjectMembership {
+  id String @id @default(cuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role ProjectMemberRole
+
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, userId])
+  @@map("project_memberships")
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Channel Publishing — Phase 10 (Enterprise: scoped API credentials).
+// PRD §50-51: "Client API credentials... Never store plain keys." Real
+// prefix+hash storage (bcrypt, already a dependency this app's own
+// password hashing uses — see src/auth.ts) — the plaintext key is shown to
+// the admin/publisher exactly once at creation time and never persisted or
+// retrievable again, same handling a password reset flow would use.
+// Deliberately scoped to inventory/prices/leads read/write — PRD §50's own
+// "Never: project3d:write, admin:*" is enforced by the `scopes` allowlist
+// below, not left to caller discipline.
+// ---------------------------------------------------------------------------
+
+enum ClientApiScope {
+  inventory_read
+  inventory_write
+  prices_write
+  leads_read
+}
+
+model ClientApiCredential {
+  id String @id @default(cuid())
+
+  publisherId String
+  publisher   Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+
+  /// Admin/publisher-facing label ("Skyline CRM integration"), not shown
+  /// to API callers.
+  name String
+
+  /// First 8 chars of the real key, kept in the clear so a credentials list
+  /// UI can show "rzk_a1b2c3d4••••••••" without ever re-deriving or storing
+  /// the full value — the same partial-reveal pattern most API-key
+  /// products use.
+  keyPrefix String
+  /// bcrypt hash of the full key — verified the same way
+  /// `Account.password`/`User.passwordHash` are (bcrypt.compare), never
+  /// reversed.
+  keyHash String
+
+  scopes ClientApiScope[]
+
+  expiresAt DateTime?
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([publisherId])
+  @@map("client_api_credentials")
 }

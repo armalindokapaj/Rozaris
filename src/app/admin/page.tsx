@@ -33,6 +33,7 @@ import {
   Eye,
   EyeOff,
   Archive,
+  Share2,
   type LucideIcon,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
@@ -850,6 +851,15 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
                   >
                     <Boxes className="h-3.5 w-3.5" />
                     {t("admin.manageUnits")}
+                  </button>
+                  {/* Multi-Channel Publishing PRD Phase 7 — same card, same
+                      button shape as the two above. */}
+                  <button
+                    onClick={() => router.push(`/admin/distribution/${p.id}`)}
+                    className="flex items-center justify-center gap-1.5 rounded-control border border-neutral-300 bg-white py-2.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                    {t("admin.configureDistribution")}
                   </button>
                 </div>
               </div>

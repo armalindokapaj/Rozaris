@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 
 /**
@@ -63,4 +64,30 @@ export async function requireScope(scope: string) {
     return NextResponse.json({ error: `Missing admin permission scope "${scope}".` }, { status: 403 });
   }
   return gate;
+}
+
+/**
+ * Page-oriented sibling to requireAdmin() above, for Server Component
+ * layouts gating a route subtree rather than API routes — a page has no
+ * JSON body to return a 401/403 into, so this redirects instead.
+ *
+ * Multi-Channel Publishing PRD, Phase 1 "Security & boundaries": three
+ * full-page admin editors reachable directly by URL
+ * (`/admin/3d-experience/[projectId]`, `/admin/3d-map-control/[projectId]`,
+ * `/admin/projects/new`) used to gate only on the persisted Zustand
+ * `auth.signedIn` mock — a client-side flag with no relationship to the
+ * real Auth.js session every write route on those pages already enforces
+ * via requireAdmin(). Their nearest `layout.tsx` calls this once, server-
+ * side, before any client code runs:
+ * `await requireAdminPage();` — redirects and never returns on failure.
+ *
+ * Same check as requireAdmin(), deliberately not reusing it directly since
+ * that function's failure path returns a NextResponse a layout can't
+ * render.
+ */
+export async function requireAdminPage() {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    redirect("/admin");
+  }
 }

@@ -1,13 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
-import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { useAdminProject } from "@/hooks/useAdminProject";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
-import { useStoreHydrated } from "@/hooks/useStoreHydrated";
 import { useDeleteProject } from "@/hooks/useDeleteProject";
 import { ExperienceEditor } from "@/components/dashboard/experience-editor/ExperienceEditor";
 
@@ -17,18 +14,25 @@ import { ExperienceEditor } from "@/components/dashboard/experience-editor/Exper
  * that tab's card now navigates here instead of setting local state.
  * `Project3DConfigEditor` itself is unchanged in behavior, only in shell
  * (no more `fixed inset-0` overlay — this route *is* the page).
+ *
+ * Authorization is handled by the nearest `layout.tsx` (real Auth.js
+ * session, server-side, via `requireAdminPage()`) before this component
+ * ever renders — see that file's doc comment for why the client-side
+ * Zustand `auth.signedIn` gate that used to live here was removed
+ * (Multi-Channel Publishing PRD, Phase 1).
  */
 export default function Admin3DExperiencePage() {
   const params = useParams<{ projectId: string }>();
   const router = useRouter();
-  const auth = useAppStore((s) => s.auth);
   const { project, loading: projectLoading } = useAdminProject(params.projectId);
   const { t } = useT();
   // Confirmed root cause of "3D Experience upload always fails": this route
   // is reachable directly by URL, bypassing admin/page.tsx's session-repair
   // gate entirely, so a real Auth.js session gone stale here previously had
   // no repair path — every upload/delete/publish silently 401'd while the
-  // page still looked "signed in as Admin" (the Zustand mock flag below).
+  // page still looked "signed in as Admin". Distinct from (and still needed
+  // alongside) the layout's initial gate above: this covers a session that
+  // was valid on load going stale later while the tab stays open.
   const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
   const { deleteProject, deleting: deletingProject } = useDeleteProject();
 
@@ -39,27 +43,6 @@ export default function Admin3DExperiencePage() {
     const ok = await deleteProject(project.id, reason ?? undefined);
     if (ok) router.push("/admin?tab=experience");
   }
-  // Real bug fix — "can't access Configure 3D Experience" on a fresh load
-  // (hard refresh / new tab / bookmark): `auth` is a persisted Zustand
-  // slice with `skipHydration: true`, so it reads its default
-  // (`signedIn: false`) on the very first client render, before
-  // `StoreHydration.tsx` finishes asynchronously restoring it from
-  // localStorage. The redirect below used to fire on that first,
-  // pre-hydration render and stick even once `auth.signedIn` corrected
-  // itself moments later — see useStoreHydrated's own doc comment.
-  const hydrated = useStoreHydrated();
-
-  useEffect(() => {
-    // Same console-wide "signed in as Admin" gate admin/page.tsx applies —
-    // this route is reachable directly by URL, bypassing that gate, so it
-    // needs its own. Redirects to /admin rather than duplicating the full
-    // sign-in UI/flow here. Waits for real hydration first (see above).
-    if (!hydrated) return;
-    if (!auth.signedIn) router.replace("/admin");
-  }, [hydrated, auth.signedIn, router]);
-
-  if (!hydrated) return null;
-  if (!auth.signedIn) return null;
 
   if (projectLoading) {
     return (

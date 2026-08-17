@@ -7,7 +7,6 @@ import { CheckCircle2, ExternalLink, ShieldCheck, UploadCloud } from "lucide-rea
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
-import { useStoreHydrated } from "@/hooks/useStoreHydrated";
 import { useLocations } from "@/hooks/useLocations";
 import { CITY_CENTER, DEMO_PUBLISHER, stageTemplate } from "@/lib/mockData";
 import type { Project } from "@/lib/types";
@@ -60,32 +59,24 @@ interface PublisherOption {
  * Deliberately NOT built here (per the user's scope): inventory import,
  * map placement, search integration, construction progress, media
  * management, SEO, publishing workflow, developer management.
+ *
+ * Authorization is handled by the nearest `layout.tsx` (real Auth.js
+ * session, server-side, via `requireAdminPage()`) before this component
+ * ever renders — see that file's doc comment for why the client-side
+ * Zustand `auth.signedIn` gate that used to live here was removed
+ * (Multi-Channel Publishing PRD, Phase 1).
  */
 export default function NewAdminProjectPage() {
   const router = useRouter();
-  const auth = useAppStore((s) => s.auth);
   const addProject = useAppStore((s) => s.addProject);
   const { t } = useT();
 
-  // Same real bug fix as /admin/3d-experience/[projectId]/page.tsx — see
-  // useStoreHydrated's own doc comment for the full "fresh load bounces
-  // back to /admin" root cause.
-  const hydrated = useStoreHydrated();
-
-  useEffect(() => {
-    // Same console-wide gate every other direct-URL admin route applies —
-    // see the identical effect in /admin/3d-experience/[projectId]/page.tsx.
-    if (!hydrated) return;
-    if (!auth.signedIn) router.replace("/admin");
-  }, [hydrated, auth.signedIn, router]);
-
   // The real Auth.js session (checked by every write route this page calls)
-  // is separate from the `auth.signedIn` Zustand mock above and can go
-  // stale independently — this route is reachable directly by URL, same as
-  // /admin/3d-experience/[projectId], so it needs the same repair path.
-  // This exact gap was the confirmed root cause of an earlier "upload
-  // always fails" bug this session — see "rozaris-3d-editor-render-hardening"
-  // memory.
+  // can go stale independently of the layout's initial gate above — this
+  // route is reachable directly by URL, same as /admin/3d-experience/[id],
+  // so it needs the same repair path. This exact gap was the confirmed root
+  // cause of an earlier "upload always fails" bug — see
+  // "rozaris-3d-editor-render-hardening" memory.
   const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -384,9 +375,6 @@ export default function NewAdminProjectPage() {
       setPublishing(false);
     }
   }
-
-  if (!hydrated) return null;
-  if (!auth.signedIn) return null;
 
   return (
     <div className="mx-auto max-w-xl px-4 py-10">
