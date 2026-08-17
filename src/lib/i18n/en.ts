@@ -2507,6 +2507,11 @@ const en = {
     foundCount: "{count} units found",
     refineSubtitle: "Refine available homes",
     listUnits: "List units",
+    // Units Bar desktop title zone (2026-08-17) — replaces the bar's own
+    // visible "Units" text; `title`/`listUnits` above are untouched
+    // (still used for the bar's own aria-label and UnitsWorkspace's real
+    // panel header) so this rename doesn't leak into either of those.
+    filterListLabel: "Filter List",
     filterSurface: "Surface",
     filterBedrooms: "Bedrooms",
     filterBathrooms: "Bathrooms",

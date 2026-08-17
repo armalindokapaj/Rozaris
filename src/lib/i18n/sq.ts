@@ -2508,6 +2508,7 @@ const sq: Dictionary = {
     foundCount: "{count} units found",
     refineSubtitle: "Refine available homes",
     listUnits: "List units",
+    filterListLabel: "Filter List",
     filterSurface: "Surface",
     filterBedrooms: "Bedrooms",
     filterBathrooms: "Bathrooms",

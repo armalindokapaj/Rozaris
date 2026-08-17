@@ -8,9 +8,22 @@ import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEdito
  * real TSL `scene.fogNode` (src/lib/render-engine/fog.ts): a base→top
  * height band, distance haze, and animated `triNoise3D` wisps, layered on
  * top of the pre-existing classic exponential fog (Fog master/Color/
- * Density/Matches Sky). "Ground Fog" here is PRD §12's own height-band
- * toggle — distinct from the Ground tab's older radial-mist-on-the-
- * ground-material technique of the same informal name.
+ * Density/Matches Sky). "Height Band" here is PRD §12's own height-band
+ * toggle.
+ *
+ * Every fog-labeled control lives on THIS panel now, including "Ground
+ * Fog" (its own older radial-mist-on-the-ground-material technique,
+ * fields still owned by the Ground tab's schema/renderer since it paints
+ * onto that tab's ground material — see RenderEngine.buildGroundMaterial)
+ * — it used to live on the Ground tab under an identical "Ground Fog"
+ * label as the Height Band toggle above, which both (a) split fog
+ * controls across two unrelated panels and (b) let the ground radial
+ * mist keep rendering even with the master Fog switch off, since it read
+ * only its own `groundFogEnabled`. Now it's grouped here and gated by
+ * the same master `on` (`fogEnabled`) as everything else on this panel,
+ * both in the UI (`disabled`) and in the renderer (RenderEngine.ts
+ * ANDs `fogEnabled` into `groundFogStrengthUniform`) — turning off "Fog"
+ * now genuinely turns off every fog-like effect.
  */
 export function FogSubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
@@ -26,9 +39,15 @@ export function FogSubtab({ configEditor }: { configEditor: UseProjectConfigEdit
         <SliderRow label="Density" value={draft.fogDensity} min={0} max={0.1} step={0.001} disabled={!on} onChange={(v) => update({ fogDensity: v })} />
       </GroupCard>
 
+      <SectionHeading>Ground Fog</SectionHeading>
+      <GroupCard>
+        <ToggleRow label="Ground Fog" checked={draft.groundFogEnabled} disabled={!on} onChange={(v) => update({ groundFogEnabled: v })} hint="A radial mist fade around world origin on the ground material — distinct from the height band and haze below" />
+        <SliderRow label="Radius" value={draft.groundFogRadius} min={1} max={2000} step={5} suffix="m" disabled={!on || !draft.groundFogEnabled} onChange={(v) => update({ groundFogRadius: v })} />
+      </GroupCard>
+
       <SectionHeading>Height &amp; Haze</SectionHeading>
       <GroupCard>
-        <ToggleRow label="Ground Fog" checked={draft.fogHeightBandEnabled} disabled={!on} onChange={(v) => update({ fogHeightBandEnabled: v })} hint="A real height band — distinct from Ground tab's radial mist" />
+        <ToggleRow label="Height Band" checked={draft.fogHeightBandEnabled} disabled={!on} onChange={(v) => update({ fogHeightBandEnabled: v })} hint="A base→top height band on the atmospheric fog — distinct from Ground Fog's radial mist above" />
         <SliderRow label="Base Height" value={draft.fogBaseHeight} min={-50} max={500} step={1} suffix="m" disabled={!on} onChange={(v) => update({ fogBaseHeight: v })} />
         <SliderRow label="Top Height" value={draft.fogTopHeight} min={-50} max={500} step={1} suffix="m" disabled={!on} onChange={(v) => update({ fogTopHeight: v })} />
         <ToggleRow label="Distance Haze" checked={draft.fogHazeEnabled} disabled={!on} onChange={(v) => update({ fogHazeEnabled: v })} />

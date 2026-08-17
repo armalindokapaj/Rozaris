@@ -290,7 +290,6 @@ export function ViewerHUD({
             onFiltersChange={onUnitFiltersChange ?? (() => {})}
             listOpen={!!unitsListOpen}
             onToggleList={() => onToggleUnitsList?.()}
-            onClose={() => onActiveModuleChange("explore")}
           />
           {sunTimeBounds && sunTimeline && sunTimePresets && (
             <SunTimeWorkspace
@@ -310,6 +309,7 @@ export function ViewerHUD({
           )}
           <ViewsWorkspace
             activeModule={activeModule}
+            isDesktop={isDesktop}
             presets={cameraPresets ?? []}
             activePresetId={activeViewPresetId ?? null}
             onSelectPreset={(p) => onSelectViewPreset?.(p)}

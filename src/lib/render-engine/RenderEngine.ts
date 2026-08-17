@@ -1427,16 +1427,20 @@ export class RenderEngine {
   /** Restored near-verbatim from the pre-rebuild engine's own
    * buildGroundMaterial — a real MeshStandardNodeMaterial whose colorNode
    * does a radial fade from groundColor to the resolved fog color around
-   * world origin (Ground tab's own "Ground Fog" — a different, older
-   * technique from Fog & Haze's height-band fog), then multiplies in
-   * cloudShadowFactor (PRD §11's real, simplified Cloud Shadows). Every
-   * knob is a live UniformNode (this.ground*Uniform fields) so toggling
-   * never needs a material rebuild. */
+   * world origin ("Ground Fog" — a different, older technique from Fog &
+   * Haze's height-band fog; its controls live in the Fog & Haze panel
+   * alongside the rest of fog, but the field/uniform stay ground-owned
+   * since the effect paints onto the ground material itself). Gated by
+   * BOTH `groundFogEnabled` and the master `fogEnabled` — the master
+   * switch must kill every fog-like effect, not just the atmospheric one.
+   * Then multiplies in cloudShadowFactor (PRD §11's real, simplified Cloud
+   * Shadows). Every knob is a live UniformNode (this.ground*Uniform
+   * fields) so toggling never needs a material rebuild. */
   private buildGroundMaterial(config: EnvironmentConfig): THREE.MeshStandardNodeMaterial {
     const groundColorUniform = uniform(new THREE.Color(config.groundColor));
     const groundFogColorUniform = uniform(new THREE.Color(resolveFogColor(config)));
     const groundFogRadiusUniform = uniform(Math.max(1, config.groundFogRadius));
-    const groundFogStrengthUniform = uniform(config.groundFogEnabled ? 1 : 0);
+    const groundFogStrengthUniform = uniform(config.fogEnabled && config.groundFogEnabled ? 1 : 0);
     this.groundColorUniform = groundColorUniform;
     this.groundFogColorUniform = groundFogColorUniform;
     this.groundFogRadiusUniform = groundFogRadiusUniform;
@@ -1553,7 +1557,7 @@ export class RenderEngine {
     if (this.groundColorUniform) this.groundColorUniform.value.set(config.groundColor);
     if (this.groundFogColorUniform) this.groundFogColorUniform.value.set(resolveFogColor(config));
     if (this.groundFogRadiusUniform) this.groundFogRadiusUniform.value = Math.max(1, config.groundFogRadius);
-    if (this.groundFogStrengthUniform) this.groundFogStrengthUniform.value = config.groundFogEnabled ? 1 : 0;
+    if (this.groundFogStrengthUniform) this.groundFogStrengthUniform.value = config.fogEnabled && config.groundFogEnabled ? 1 : 0;
     if (this.groundCloudShadowStrengthUniform) {
       this.groundCloudShadowStrengthUniform.value = config.cloudsEnabled && config.cloudShadowsEnabled ? 1 : 0;
     }

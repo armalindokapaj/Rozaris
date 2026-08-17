@@ -25,6 +25,13 @@ import { UnitDetailPanel } from "@/components/project/UnitDetailPanel";
 import { UnitPreviewCard } from "@/components/project/UnitPreviewCard";
 import type { Project, Unit } from "@/lib/types";
 
+/** Sun & Time PRD — the public viewer's scrub range is a fixed constant
+ * (direct instruction, 2026-08-17: "Time will always be from 06:00 to
+ * 21:00"), not the admin-configurable `viewerTimeStartHours`/
+ * `viewerTimeEndHours` fields — see `sunTimeBounds` below for why. */
+const PUBLIC_VIEWER_TIME_START_HOURS = 6;
+const PUBLIC_VIEWER_TIME_END_HOURS = 21;
+
 /**
  * Front Page / Idle Experience rebuild (2026-08-16): the header/bottom-nav
  * chrome now comes from `<ViewerHUD>` (compass, project identity, utility
@@ -182,13 +189,22 @@ export function ArchVizClient({ project }: { project: Project }) {
     return computeSunTimeline(elevationAt);
   }, [viewerConfig.solarPathMode, viewerConfig.geoLatitude, viewerConfig.geoLongitude, viewerConfig.solarAnchors, effectiveSunDate]);
   const sunTimePresets = useMemo(() => sunTimelinePresets(sunTimeline), [sunTimeline]);
+  // Direct instruction, 2026-08-17: "Time will always be from 06:00 to
+  // 21:00 for the users to edit" — the public viewer's scrub range is now
+  // a fixed constant, not the admin's per-project `viewerTimeStartHours`/
+  // `viewerTimeEndHours` (same "stop reading a DB field, flag it, don't
+  // delete it" pattern as `chromeDimmed` replacing `viewerConfig.
+  // autoRotate` above: the Experience Editor's Sun & Time start/end
+  // fields still exist and still save, an admin's saved value just isn't
+  // consulted by this component any more). `stepMinutes` wasn't part of
+  // the instruction, so it stays admin-configurable.
   const sunTimeBounds = useMemo(
     () => ({
-      startHours: viewerConfig.viewerTimeStartHours,
-      endHours: viewerConfig.viewerTimeEndHours,
+      startHours: PUBLIC_VIEWER_TIME_START_HOURS,
+      endHours: PUBLIC_VIEWER_TIME_END_HOURS,
       stepMinutes: viewerConfig.viewerTimeStepMinutes,
     }),
-    [viewerConfig.viewerTimeStartHours, viewerConfig.viewerTimeEndHours, viewerConfig.viewerTimeStepMinutes]
+    [viewerConfig.viewerTimeStepMinutes]
   );
 
   const handleSunTimeChange = useCallback((hours: number) => {

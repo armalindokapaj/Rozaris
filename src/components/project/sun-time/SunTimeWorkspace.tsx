@@ -214,27 +214,6 @@ export function SunTimeWorkspace({
     </div>
   );
 
-  // Compact icon-only reset trigger — desktop bar only (see doc comment);
-  // the mobile branch below keeps the original icon+text button
-  // (`resetButton`), which has room for it. Its own `dateMenuCompact`
-  // sibling was removed (direct design feedback, 2026-08-17: "Date to be
-  // removed") — neither bar offers a date picker anymore; the whole
-  // date-menu feature (state, `dateLabel`/`quickDates` derivations, the
-  // `<Calendar>` trigger) was removed from this component entirely, not
-  // just hidden on one branch.
-  const resetButtonCompact = (
-    <button
-      type="button"
-      onClick={onReset}
-      disabled={!canReset}
-      aria-label={t("sunTime.reset")}
-      title={t("sunTime.reset")}
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control text-white/60 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-    >
-      <RotateCcw className="h-4 w-4" aria-hidden="true" />
-    </button>
-  );
-
   if (isDesktop) {
     return (
       <div
@@ -243,18 +222,29 @@ export function SunTimeWorkspace({
         aria-label={t("sunTime.title")}
         aria-hidden={!open}
         className={cn(
-          // Fixed `w-[720px]` (not `w-fit`) — same "w-fit under-measures a
+          // Fixed `w-[592px]` (not `w-fit`) — same "w-fit under-measures a
           // busy flex row" Chromium bug UnitsBar's own doc comment already
           // documents in detail, reproduced here too every time this row's
-          // content changed shape (real, verified via `scrollWidth` vs.
-          // `offsetWidth` mismatches each time). No `h-[60px]` any more —
-          // the title zone and "Presets" label are both gone (direct
-          // design feedback, 2026-08-17) and the 4 presets are now a 2x2
-          // grid, taller than the old single-row layout the fixed 60px
-          // height was tuned for; `py-2.5` + `items-stretch` (default,
-          // left implicit) lets the bar's own height follow whichever
-          // zone is tallest instead.
-          "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 flex w-[720px] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-panel px-3.5 py-2.5 opacity-0 ring-2 ring-brand-400/50 sm:px-4",
+          // content changed shape (real, verified via per-child
+          // getBoundingClientRect, not `scrollWidth`/`offsetWidth` — those
+          // two saturate at the container's own size and can't detect a
+          // container *wider* than its content, only narrower; only the
+          // per-child-rect technique catches both directions). No
+          // `h-[60px]` any more — the title zone and "Presets" label are
+          // both gone (direct design feedback, 2026-08-17) and the 4
+          // presets are now a 2x2 grid, taller than the old single-row
+          // layout the fixed 60px height was tuned for; `py-2.5` +
+          // `items-stretch` (default, left implicit) lets the bar's own
+          // height follow whichever zone is tallest instead. Re-measured
+          // 720px→672px→592px (direct design feedback, 2026-08-17: "remove
+          // empty space on the right") after the compact reset button was
+          // removed from the Presets zone (below: "remove reset button on
+          // the right") — the 672px step was a guess made without
+          // re-measuring and left a real ~99px empty gap after the preset
+          // grid (confirmed live); 592px is content's own real last pixel
+          // (573px) plus the same 16px `sm:px-4` the left side already
+          // uses.
+          "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 flex w-[592px] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-panel px-3.5 py-2.5 opacity-0 ring-2 ring-brand-400/50 sm:px-4",
           open ? "pointer-events-auto" : "pointer-events-none"
         )}
       >
@@ -295,11 +285,15 @@ export function SunTimeWorkspace({
             feedback, 2026-08-17: "remove text Presets" / "remodel to have
             all 4 presets 2x2 view") — one shared grid for both branches
             now instead of desktop's own separate scrollable `presetRow`.
-            Reset sits beside the grid, vertically centered. */}
-        <div className="flex shrink-0 items-center gap-2.5 pl-3.5 sm:pl-4">
-          {presetGrid}
-          {resetButtonCompact}
-        </div>
+            The desktop bar's own compact reset trigger that used to sit
+            beside the grid was removed entirely (direct instruction,
+            2026-08-17: "remove reset button on the right") — the mobile
+            sheet's icon+text `resetButton` is unaffected, this only
+            dropped the desktop-only compact variant, since removing it
+            is what the paired "remove empty space on the right"
+            instruction was about (the bar's fixed width above shrank to
+            match). */}
+        <div className="flex shrink-0 items-center pl-3.5 sm:pl-4">{presetGrid}</div>
       </div>
     );
   }
@@ -311,10 +305,21 @@ export function SunTimeWorkspace({
       aria-label={t("sunTime.title")}
       aria-hidden={!open}
       className={cn(
-        "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 w-[calc(100vw-1.5rem)] -translate-x-1/2 rounded-panel p-3.5 opacity-0",
+        // Same mobile shell formula as UnitsBar's own mobile branch,
+        // verbatim (direct instruction, 2026-08-17: "check every distance
+        // and alignment... seamless") — this branch used to be a plain
+        // `p-3.5` with no drag-handle affordance, a real inconsistency
+        // against UnitsBar's `px-4 pb-4 pt-2.5` + handle that made
+        // switching Units → Time feel like two different sheet designs
+        // rather than one consistent pattern.
+        "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 w-[calc(100vw-1.5rem)] -translate-x-1/2 rounded-panel px-4 pb-4 pt-2.5 opacity-0",
         open ? "pointer-events-auto" : "pointer-events-none"
       )}
     >
+      {/* Drag-handle affordance — decorative only, same as UnitsBar's own
+          (see that component's doc comment); every mobile sheet in this
+          file tree now opens with the identical handle. */}
+      <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-white/20" aria-hidden="true" />
       {/* Date removed (direct design feedback, 2026-08-17: "the date to be
           removed") — just the live time value + reset now, same trim the
           desktop bar got. */}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
 import { gsap } from "gsap";
-import { Building2, ChevronDown, X } from "lucide-react";
+import { Building2, ChevronDown } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
 import { useClickOutside } from "@/hooks/useClickOutside";
@@ -182,7 +182,12 @@ function CompactFilterSelect({
  * the visitor explicitly clicks the title zone itself ("List Units"),
  * wired to `onToggleList` → `unitsListOpen` in ArchVizClient →
  * `getViewerLayoutState`'s new third input (see that module's doc
- * comment).
+ * comment). Neither branch has its own close button any more (desktop's
+ * own X was removed, direct instruction 2026-08-17) — closing is
+ * ViewerHUD's existing global click-outside-the-nav-group handler and
+ * re-tapping "Units" in the bottom nav, same as it always was for every
+ * other module panel; `onClose` was a real prop here until this, now
+ * fully removed rather than left unused.
  *
  * `filters` is the same `UnitFilterState` UnitsWorkspace/UnitSearchView
  * already read/write (lifted one level further up, to ArchVizClient, so
@@ -223,7 +228,6 @@ export function UnitsBar({
   onFiltersChange,
   listOpen,
   onToggleList,
-  onClose,
 }: {
   activeModule: ActiveModule;
   isDesktop: boolean;
@@ -233,7 +237,6 @@ export function UnitsBar({
   /** Desktop only — see this component's own doc comment. */
   listOpen: boolean;
   onToggleList: () => void;
-  onClose: () => void;
 }) {
   const { t } = useT();
   const reducedMotion = useEffectiveReducedMotion();
@@ -430,26 +433,24 @@ export function UnitsBar({
         // Fixed width (not `w-fit`, unlike every other bar in this file
         // tree) — real bug found live-testing: this bar has more zones
         // than Views/Sun & Time (title, Surface, Bedrooms, Bathrooms,
-        // Availability, close), and once a flex row gets this wide/
-        // complex, Chromium's `fit-content` intrinsic-width pass
-        // measurably undershoots its own children's real needed width
-        // (reproduced via getBoundingClientRect + scrollWidth: the
-        // container computed ~35px narrower than its content actually
-        // needed), clipping the close button under `overflow-hidden` even
-        // though every individual child measured at its own correct
-        // width. A third instance of the general "w-fit under a busy flex
-        // row" class of bug this session already hit twice elsewhere
-        // (SunTimeWorkspace's `flex-1` and `flex-wrap` cases) — this time
-        // fixed by not asking the browser to compute intrinsic sizing at
-        // all. `useIsDesktop`'s own 1024px floor (`calc(100vw-2rem)` =
-        // 992px minimum) always has room for it. Re-measured down from
-        // 940px→904px (direct design feedback, 2026-08-17: "remove empty
-        // space on the right") after the Availability label removal below
-        // shrank real content further — checked via the same real-child-
-        // rects technique, not guessed: content's own last pixel now
-        // sits ~897px from the bar's left edge including the right
-        // padding, so 904px leaves a small buffer rather than being
-        // measured exactly to the pixel again.
+        // Availability), and once a flex row gets this wide/complex,
+        // Chromium's `fit-content` intrinsic-width pass measurably
+        // undershoots its own children's real needed width (reproduced via
+        // getBoundingClientRect + scrollWidth), clipping trailing content
+        // under `overflow-hidden` even though every individual child
+        // measured at its own correct width. Fixed by not asking the
+        // browser to compute intrinsic sizing at all. `useIsDesktop`'s own
+        // 1024px floor (`calc(100vw-2rem)` = 992px minimum) always has room
+        // for it. Re-measured across this bar's revisions (each direct
+        // design feedback: "remove empty space on the right"), most
+        // recently 940px→904px→856px→872px — that 856px step overshot:
+        // removing the close button + its divider, then guessing the new
+        // width down without re-measuring first, undershot by ~11px and
+        // let the Availability zone's own right edge overflow past the
+        // rounded corner (`scrollWidth` 866px vs. `offsetWidth` 856px,
+        // confirmed live). 872px is the real re-measured value with a
+        // small buffer, checked via the same real-child-rects technique
+        // every time, not guessed.
         //
         // No `overflow-hidden` (unlike every sibling bar) — real bug found
         // live-testing: Bedrooms/Bathrooms's own dropdown panels open
@@ -464,7 +465,7 @@ export function UnitsBar({
         // reasoning ViewerUtilities' own doc comment gives for its
         // identical fix), so corner-clipping was never actually needed
         // here.
-        "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 flex h-[60px] w-[904px] max-w-[calc(100vw-2rem)] -translate-x-1/2 items-stretch rounded-panel px-3.5 opacity-0 ring-2 ring-brand-400/50 sm:px-4",
+        "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 flex h-[60px] w-[872px] max-w-[calc(100vw-2rem)] -translate-x-1/2 items-stretch rounded-panel px-3.5 opacity-0 ring-2 ring-brand-400/50 sm:px-4",
         open ? "pointer-events-auto" : "pointer-events-none"
       )}
     >
@@ -493,7 +494,13 @@ export function UnitsBar({
         </span>
         <span className="flex flex-col items-start gap-0.5 leading-none">
           <span className="flex items-baseline gap-1.5 whitespace-nowrap">
-            <span className="text-sm font-bold text-white">{t("units.title")}</span>
+            {/* Direct instruction, 2026-08-17: "Replace that text to:
+                Filter List" — a dedicated `filterListLabel` key, not a
+                rename of the shared `units.title` (that key still labels
+                the bar's own aria-label and UnitsWorkspace's real panel
+                header, so renaming it in place would've relabeled those
+                too). */}
+            <span className="text-sm font-bold text-white">{t("units.filterListLabel")}</span>
             <span className="text-xs font-normal text-white/50">{t("units.foundCount", { count: filteredCount })}</span>
           </span>
           <span className="whitespace-nowrap text-[11px] font-normal normal-case text-white/50">{t("units.refineSubtitle")}</span>
@@ -583,18 +590,6 @@ export function UnitsBar({
           feedback, 2026-08-17: "remove the word 'availability'") — the
           3 pills (Available/Reserved/Sold) read clearly on their own. */}
       <div className="flex shrink-0 items-center pl-3.5 sm:pl-4">{availabilityPills("flex items-center gap-1.5")}</div>
-
-      <span className="my-3 w-px shrink-0 bg-white/10" aria-hidden="true" />
-
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label={t("units.close")}
-        title={t("units.close")}
-        className="ml-2 flex h-8 w-8 shrink-0 items-center justify-center self-center rounded-control text-white/60 transition-colors hover:bg-white/10 hover:text-white"
-      >
-        <X className="h-4 w-4" aria-hidden="true" />
-      </button>
     </div>
   );
 }
