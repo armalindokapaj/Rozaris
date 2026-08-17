@@ -64,6 +64,53 @@ export async function POST(
     );
   }
 
+  // Units Blocks & POI Layer PRD §26 — stricter gate specifically for a
+  // `role: units` slot's own version: unlike a Building GLB with some
+  // incidental embedded Unit_* boxes (still just the two checks above),
+  // a DEDICATED Units layer publishing with an unmapped block, a real
+  // project unit with no block at all, or a broken Building anchor is a
+  // genuinely broken inventory layer, not a cosmetic gap.
+  if (!force) {
+    const slot = await prisma.detailModelSlot.findUnique({ where: { id: version.slotId } });
+    if (slot?.role === "units") {
+      const problems: string[] = [];
+
+      if (!slot.transformParentSlotId) {
+        problems.push("This Units slot has no Building anchor set — its transform would never track the architectural model.");
+      } else {
+        const parent = await prisma.detailModelSlot.findUnique({ where: { id: slot.transformParentSlotId } });
+        if (!parent || parent.projectId !== projectId) {
+          problems.push("This Units slot's Building anchor no longer exists — re-set it before publishing.");
+        } else if (parent.role !== "building") {
+          problems.push(`This Units slot's anchor ("${parent.name}") is no longer a Building-role slot — alignment would be meaningless.`);
+        }
+      }
+
+      const manifest = (version.sceneManifest as { name: string }[] | null) ?? [];
+      const unitNodeNames = new Set(manifest.map((n) => n.name).filter((n) => /^Unit_/i.test(n)));
+      const mappedMeshNames = new Set(links.map((l) => l.meshName));
+      const unmappedBlocks = Array.from(unitNodeNames).filter((n) => !mappedMeshNames.has(n));
+      if (unmappedBlocks.length > 0) {
+        problems.push(
+          `${unmappedBlocks.length} unit block${unmappedBlocks.length === 1 ? "" : "s"} in this GLB ${unmappedBlocks.length === 1 ? "isn't" : "aren't"} mapped to a real unit (${unmappedBlocks.slice(0, 5).join(", ")}${unmappedBlocks.length > 5 ? ", …" : ""}) — map every block in the Units tab, or remove it from the GLB.`
+        );
+      }
+
+      const projectUnits = await prisma.unit.findMany({ where: { projectId, deletedAt: null }, select: { id: true, code: true } });
+      const mappedUnitIds = new Set(links.map((l) => l.unitId));
+      const missingUnits = projectUnits.filter((u) => !mappedUnitIds.has(u.id));
+      if (missingUnits.length > 0) {
+        problems.push(
+          `${missingUnits.length} real unit${missingUnits.length === 1 ? " has" : "s have"} no block in this GLB (${missingUnits.slice(0, 5).map((u) => u.code).join(", ")}${missingUnits.length > 5 ? ", …" : ""}) — add/map a block for ${missingUnits.length === 1 ? "it" : "each"}, or accept they'll show no 3D interaction volume.`
+        );
+      }
+
+      if (problems.length > 0) {
+        return NextResponse.json({ error: problems.join(" ") }, { status: 422 });
+      }
+    }
+  }
+
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
   const now = new Date();
   const updated = await prisma.$transaction(async (tx) => {

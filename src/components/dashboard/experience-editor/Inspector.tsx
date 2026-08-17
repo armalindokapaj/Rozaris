@@ -3,11 +3,12 @@
 import type { RefObject } from "react";
 import { DetailModelUpload } from "./panels/DetailModelUpload";
 import { ModelPanel } from "./panels/ModelPanel";
-import { UnitMappingPanel } from "./panels/UnitMappingPanel";
+import { UnitsPanel } from "./panels/UnitsPanel";
 import { MaterialsPanel } from "./panels/MaterialsPanel";
 import { EnvironmentPanel } from "./panels/EnvironmentPanel";
 import { LightingPanel } from "./panels/LightingPanel";
 import { RenderingPanel } from "./panels/RenderingPanel";
+import { PresetsPanel } from "./panels/PresetsPanel";
 import { CameraPanel } from "./panels/CameraPanel";
 import { ShotsPanel } from "./panels/ShotsPanel";
 import { SectionsPanel } from "./panels/SectionsPanel";
@@ -72,18 +73,20 @@ export function Inspector({
             <>
               <div className="h-px bg-neutral-800" />
               <ModelPanel modelEditor={modelEditor} canEdit={detail.canEditDetail} onGroundAlign={onGroundAlign} />
-              <div className="h-px bg-neutral-800" />
-              <UnitMappingPanel
-                activeVersion={detail.activeVersion}
-                modelEditor={modelEditor}
-                units={units}
-                canEdit={detail.canEditDetail}
-                statusPreviewEnabled={statusPreviewEnabled}
-                onStatusPreviewChange={onStatusPreviewChange}
-              />
             </>
           )}
         </div>
+      ) : activeTab === "units" ? (
+        <UnitsPanel
+          detail={detail}
+          modelEditor={modelEditor}
+          configEditor={configEditor}
+          units={units}
+          canEdit={detail.canEditDetail}
+          statusPreviewEnabled={statusPreviewEnabled}
+          onStatusPreviewChange={onStatusPreviewChange}
+          viewerRef={viewerRef}
+        />
       ) : activeTab === "materials" ? (
         <MaterialsPanel activeVersion={detail.activeVersion} modelEditor={modelEditor} canEdit={detail.canEditDetail} />
       ) : activeTab === "environment" ? (
@@ -92,6 +95,8 @@ export function Inspector({
         <LightingPanel configEditor={configEditor} projectId={project.id} />
       ) : activeTab === "rendering" ? (
         <RenderingPanel configEditor={configEditor} />
+      ) : activeTab === "presets" ? (
+        <PresetsPanel configEditor={configEditor} locale={locale} />
       ) : activeTab === "camera" ? (
         <CameraPanel configEditor={configEditor} canEdit={true} />
       ) : activeTab === "shots" ? (

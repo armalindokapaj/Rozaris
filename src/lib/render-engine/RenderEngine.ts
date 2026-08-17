@@ -22,15 +22,26 @@ import {
   FOG_SKY_HORIZON_COLOR,
   GROUND_INFINITE_SIZE,
   QUALITY_TIERS,
-  SELECTED_COLOR,
   SKY_DOME_SCALE,
-  UNIT_BOX_COLOR,
-  UNIT_BOX_OPACITY,
-  UNIT_BOX_SELECTED_OPACITY,
   WATER_PLANE_SIZE,
 } from "@/lib/viewerPresets";
 import { buildSectionCapGeometry, buildSectionPlanes, NO_ACTIVE_SECTION_PLANES, SECTION_INDICATOR_COLOR } from "./sections";
-import type { CameraPreset, EnvironmentConfig, LightingConfig, NodeOverride, Project3DConfig, ProjectDetailModel, RenderingConfig, Section, SceneManifestNode, Unit, UnitMeshLink } from "@/lib/types";
+import { applyUnitBoxAppearance, buildUnitRegistry, disposeUnitBoxAppearanceCaches, findUnitRootObjects, type UnitRuntimeEntry } from "./unitRegistry";
+import type {
+  CameraPreset,
+  DetailModelSlotRole,
+  EnvironmentConfig,
+  LightingConfig,
+  NodeOverride,
+  Project3DConfig,
+  ProjectDetailModel,
+  RenderingConfig,
+  Section,
+  SceneManifestNode,
+  Unit,
+  UnitMeshLink,
+  UnitsConfig,
+} from "@/lib/types";
 
 export const DEFAULT_ENVIRONMENT_CONFIG: EnvironmentConfig = {
   solarControllerEnabled: false,
@@ -200,6 +211,31 @@ export const DEFAULT_RENDERING_CONFIG: RenderingConfig = {
   lutIntensity: 1,
 };
 
+/** Units tab (Units Blocks & POI Layer PRD) defaults — match the Prisma
+ * column defaults exactly (see the migration's own doc comments), so an
+ * unconfigured project renders identically to what every existing
+ * project already showed via the old hardcoded UNIT_BOX_COLOR/
+ * UNIT_BOX_OPACITY/SELECTED_COLOR constants in viewerPresets.ts. */
+export const DEFAULT_UNITS_CONFIG: UnitsConfig = {
+  unitColorAvailable: "#22c55e",
+  unitColorReserved: "#eab308",
+  unitColorSold: "#ef4444",
+  unitColorSelected: "#6b55f5",
+  unitBlocksEnabled: true,
+  unitBlocksStatusColorsEnabled: true,
+  unitBlocksXrayEnabled: true,
+  unitBlocksDefaultOpacity: 0.18,
+  unitBlocksHoverOpacity: 0.25,
+  unitBlocksSelectedOpacity: 0.32,
+  unitBlocksSelectedOutlineEnabled: true,
+  unitPoiCameraEnabled: true,
+  unitPoiCameraFov: 38,
+  unitPoiCameraDistanceMultiplier: 3,
+  unitPoiCameraHeightOffset: 0.5,
+  unitPoiTransitionMs: 900,
+  unitPoiAutoOcclusionCorrection: false,
+};
+
 /** Performance tab (PRD §40) subset of Project3DConfig. */
 export type QualityConfig = Pick<
   Project3DConfig,
@@ -312,6 +348,19 @@ export interface RenderEngineCallbacks {
       dpr: number;
     } | null
   ) => void;
+  /** Units Blocks & POI Layer PRD §19-20 — the "3D → List" half of the
+   * shared selection state: a real click on a unit block (not a drag-to-
+   * orbit) fires this so the caller's own `selectedUnitId` React state —
+   * the single source of truth per §20 — can follow, alongside whatever
+   * else a click should do (scroll the list row into view, open the
+   * detail panel). The engine ALSO updates its own internal selection
+   * immediately for instant visual feedback, without waiting for the
+   * caller to round-trip back through setSelectedUnit(). Optional — the
+   * editor's own preview viewport doesn't need this wired. */
+  onUnitClick?: (unitId: string | null) => void;
+  /** Same shape, for hover — lets a caller show a cursor/tooltip without
+   * polling the engine. Optional. */
+  onUnitHover?: (unitId: string | null) => void;
 }
 
 export interface DetailModelEntry {
@@ -323,6 +372,15 @@ export interface DetailModelEntry {
    * status display is later-phase scope), only the admin editor does. */
   units?: Unit[];
   statusPreviewEnabled?: boolean;
+  /** Units Blocks & POI Layer PRD §2/§3 — which real slot this entry is
+   * (building/units/surroundings/context/custom) and, if set, which
+   * OTHER slot's transform to live-inherit instead of this entry's own
+   * position/rotation/scale fields on `model`. Optional so a caller that hasn't
+   * been updated yet (shouldn't exist post this PRD, but keeps the type
+   * honest about what's really required) just gets "custom, no parent" —
+   * the same as every pre-existing slot before this PRD's migration ran. */
+  slotRole?: DetailModelSlotRole;
+  transformParentSlotId?: string | null;
 }
 
 export interface MountParams {
@@ -501,6 +559,27 @@ export class RenderEngine {
    * quick Replace clicks) — each call gets its own token, a late-resolving
    * stale one's GLB load is discarded rather than raced into the scene. */
   private syncToken = 0;
+
+  // Units Blocks & POI Layer PRD — real Unit Registry + X-ray overlay
+  // (render-engine/unitRegistry.ts owns the actual traversal/material
+  // logic; these are the caches/state that must survive across syncModels()
+  // calls, same reasoning as originalMaterials above).
+  private unitsConfig: UnitsConfig = DEFAULT_UNITS_CONFIG;
+  private unitMaterialCache = new Map<string, THREE.MeshBasicMaterial>();
+  private unitOutlineByMesh = new Map<THREE.Mesh, THREE.LineSegments>();
+  /** unitId -> live runtime entry (bounds/meshes/root) — rebuilt after
+   * every syncModels() and every refreshUnitStatuses() call, never on
+   * every frame. */
+  private unitRegistry = new Map<string, UnitRuntimeEntry>();
+  private unitRaycastTargets: THREE.Mesh[] = [];
+  private hoveredUnitId: string | null = null;
+  private isolatedUnitId: string | null = null;
+  private unitStatusFilters: { available: boolean; reserved: boolean; sold: boolean } = {
+    available: true,
+    reserved: true,
+    sold: true,
+  };
+  private unitsModeEnabled = false;
 
   private showPerfStats = false;
   private perfSampleCounter = 0;
@@ -801,6 +880,52 @@ export class RenderEngine {
       this.interactionRenderScale = null;
       this.applyRenderScale();
     });
+
+    // Units Blocks & POI Layer PRD §19 — real Raycaster support, scoped
+    // to `unitRaycastTargets` only (never the whole architectural GLB —
+    // both correct, since only confirmed-mapped units should be
+    // clickable, and fast, since the target list never grows with the
+    // building's own triangle/mesh count). Click-vs-drag distinguished by
+    // pointer travel distance, not timing (timing is unreliable across
+    // mouse/trackpad/touch) — the exact same class of gesture ambiguity
+    // OrbitControls' own "start"/"end" events above already have to
+    // account for. Both listeners no-op entirely while Units mode is off
+    // (unitIdAtPointer's own early return), so this never interferes with
+    // any other tool/gizmo interaction.
+    const unitRaycaster = new THREE.Raycaster();
+    const unitPointerNdc = new THREE.Vector2();
+    let unitPointerDownAt: { x: number; y: number } | null = null;
+    const UNIT_CLICK_DRAG_THRESHOLD_PX = 6;
+    const unitIdAtPointer = (event: PointerEvent): string | null => {
+      if (!this.unitsModeEnabled || this.unitRaycastTargets.length === 0) return null;
+      const rect = renderer.domElement.getBoundingClientRect();
+      unitPointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      unitPointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      unitRaycaster.setFromCamera(unitPointerNdc, camera);
+      const hit = unitRaycaster.intersectObjects(this.unitRaycastTargets, false)[0];
+      return (hit?.object.userData.unitId as string | undefined) ?? null;
+    };
+    renderer.domElement.addEventListener("pointermove", (event) => {
+      const unitId = unitIdAtPointer(event);
+      if (unitId === this.hoveredUnitId) return;
+      this.hoveredUnitId = unitId;
+      this.refreshUnitRegistryAndAppearance();
+      this.callbacks.onUnitHover?.(unitId);
+    });
+    renderer.domElement.addEventListener("pointerdown", (event) => {
+      unitPointerDownAt = { x: event.clientX, y: event.clientY };
+    });
+    renderer.domElement.addEventListener("pointerup", (event) => {
+      const downAt = unitPointerDownAt;
+      unitPointerDownAt = null;
+      if (!downAt || Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y) > UNIT_CLICK_DRAG_THRESHOLD_PX) return;
+      if (!this.unitsModeEnabled) return;
+      const unitId = unitIdAtPointer(event);
+      this.selectedUnitId = unitId;
+      this.refreshUnitRegistryAndAppearance();
+      this.callbacks.onUnitClick?.(unitId);
+    });
+
     this.applyCameraConfig(this.cameraConfig);
     // Mount-time environment application stays direct/synchronous
     // (including its PMREM rebuild) — only the hot per-slider-tick path
@@ -966,7 +1091,7 @@ export class RenderEngine {
     }
 
     let loadedSomethingNew = false;
-    for (const { slotId, model, units, statusPreviewEnabled } of entries) {
+    for (const { slotId, model } of entries) {
       if (model.enabled === false) continue;
       const existingRoot = this.modelRootsBySlot.get(slotId);
       const existingUrl = this.loadedGlbUrlBySlot.get(slotId);
@@ -982,7 +1107,6 @@ export class RenderEngine {
           mesh.receiveShadow = model.receiveShadow !== false;
         });
         this.applyNodeOverrides(existingRoot, model);
-        this.applyUnitBoxes(existingRoot, model.unitLinks, units ?? [], statusPreviewEnabled ?? true);
         applyTransmittedShadows(existingRoot, this.lightingConfig);
         continue;
       }
@@ -1002,7 +1126,6 @@ export class RenderEngine {
           mesh.receiveShadow = model.receiveShadow !== false;
         });
         this.applyNodeOverrides(root, model);
-        this.applyUnitBoxes(root, model.unitLinks, units ?? [], statusPreviewEnabled ?? true);
         applyTransmittedShadows(root, this.lightingConfig);
         clippingGroup.add(root);
         this.modelRootsBySlot.set(slotId, root);
@@ -1014,11 +1137,144 @@ export class RenderEngine {
     }
 
     if (token !== this.syncToken) return;
+
+    // Units Blocks & POI Layer PRD §3 — "Units GLB must inherit Building
+    // transform." Runs AFTER every root's own transform is applied above,
+    // so a child slot always copies its parent's freshly-updated
+    // position/rotation/scale — including on an admin's live Building
+    // transform drag, since that already re-enters this same syncModels()
+    // cheap path every tick. Deliberately overrides ANY of the child
+    // slot's own transform fields rather than blending them — per PRD §3
+    // the Units slot's own transform is meant to be ignored entirely.
+    for (const entry of entries) {
+      const parentSlotId = entry.transformParentSlotId;
+      if (!parentSlotId) continue;
+      const childRoot = this.modelRootsBySlot.get(entry.slotId);
+      const parentRoot = this.modelRootsBySlot.get(parentSlotId);
+      if (!childRoot || !parentRoot) continue;
+      childRoot.position.copy(parentRoot.position);
+      childRoot.rotation.copy(parentRoot.rotation);
+      childRoot.scale.copy(parentRoot.scale);
+    }
+
     this.loadedRoots = Array.from(this.modelRootsBySlot.values());
+    this.refreshUnitRegistryAndAppearance();
     // Only reframe the camera when something NEW came in — an in-place
     // transform/material edit on already-loaded content must never yank
     // the camera away from wherever the admin currently has it pointed.
     if (loadedSomethingNew) this.frameLoadedContent();
+  }
+
+  /** Units Blocks & POI Layer PRD §10-12 — rebuilds the unit registry
+   * (bounds/meshes/status) and re-applies the X-ray overlay material
+   * across EVERY currently-loaded slot's root, merged into one project-
+   * wide `unitRegistry`/`unitRaycastTargets` (a unit's mesh could in
+   * principle live in the Building GLB — the old embedded-Unit_-boxes
+   * pattern — or a dedicated `role: units` slot; this doesn't care
+   * which). Called after syncModels() (new/changed content or transform
+   * inheritance), and again by setSelectedUnit/hoverUnit/
+   * refreshUnitStatuses/setUnitsMode/etc. below — cheap (bounding-box
+   * math + a materialCache-backed material assignment, no GLB reload,
+   * no allocation on the hot hover-in/hover-out path once the cache is
+   * warm). */
+  private refreshUnitRegistryAndAppearance() {
+    const rootObjectsByName = new Map<string, THREE.Object3D>();
+    const allLinks: UnitMeshLink[] = [];
+    const unitsById = new Map<string, Unit>();
+    const poiByUnitId = new Map<
+      string,
+      { poiYawDeg: number; poiEnabled: boolean; poiDistanceOverride: number | null; poiHeightOverride: number | null }
+    >();
+    let anyStatusPreviewEnabled = false;
+
+    for (const { slotId, model, units, statusPreviewEnabled } of this.lastSyncEntries) {
+      const root = this.modelRootsBySlot.get(slotId);
+      if (!root || model.enabled === false) continue;
+      for (const [name, obj] of findUnitRootObjects(root)) rootObjectsByName.set(name, obj);
+      for (const link of model.unitLinks) {
+        allLinks.push(link);
+        poiByUnitId.set(link.unitId, {
+          poiYawDeg: link.poiYawDeg ?? 0,
+          poiEnabled: link.poiEnabled ?? true,
+          poiDistanceOverride: link.poiDistanceOverride ?? null,
+          poiHeightOverride: link.poiHeightOverride ?? null,
+        });
+      }
+      for (const u of units ?? []) unitsById.set(u.id, u);
+      if (statusPreviewEnabled ?? true) anyStatusPreviewEnabled = true;
+    }
+
+    this.unitRaycastTargets = applyUnitBoxAppearance(
+      rootObjectsByName,
+      allLinks,
+      unitsById,
+      anyStatusPreviewEnabled,
+      this.selectedUnitId,
+      this.hoveredUnitId,
+      this.unitsConfig,
+      this.originalMaterials,
+      this.unitMaterialCache,
+      this.unitOutlineByMesh
+    );
+    this.unitRegistry = buildUnitRegistry(rootObjectsByName, allLinks, unitsById, poiByUnitId);
+    this.applyUnitVisibility();
+  }
+
+  /** Units mode (§13) + status filters (§18) + isolate (§18) — all pure
+   * visibility toggles on already-built registry entries, no material
+   * work, no registry rebuild. Runs after refreshUnitRegistryAndAppearance
+   * and again whenever any of the three inputs change on their own. */
+  private applyUnitVisibility() {
+    for (const entry of this.unitRegistry.values()) {
+      const passesFilter = this.unitStatusFilters[entry.status];
+      const passesIsolate = this.isolatedUnitId == null || this.isolatedUnitId === entry.unitId;
+      entry.rootObject.visible = this.unitsModeEnabled && passesFilter && passesIsolate;
+    }
+  }
+
+  /** §18 — master Units-mode toggle (Explore/Views/Time hide unit blocks;
+   * the Units workspace shows them, per §13). */
+  setUnitsMode(enabled: boolean) {
+    this.unitsModeEnabled = enabled;
+    this.applyUnitVisibility();
+  }
+
+  /** §18/§13 — per-status show/hide within Units mode. */
+  setUnitStatusFilters(filters: { available: boolean; reserved: boolean; sold: boolean }) {
+    this.unitStatusFilters = filters;
+    this.applyUnitVisibility();
+  }
+
+  /** §18 — hides every unit block except the given one; null clears it. */
+  isolateUnit(unitId: string | null) {
+    this.isolatedUnitId = unitId;
+    this.applyUnitVisibility();
+  }
+
+  /** §18 — hover highlight (independent of selection). */
+  hoverUnit(unitId: string | null) {
+    if (this.hoveredUnitId === unitId) return;
+    this.hoveredUnitId = unitId;
+    this.refreshUnitRegistryAndAppearance();
+  }
+
+  /** §21-22 — live status sync with ZERO GLB reload/remapping. Updates
+   * each cached sync entry's own `units` array in place (so a later
+   * syncModels() call — e.g. the next unrelated Inspector edit — doesn't
+   * clobber it back to stale data) and re-applies box appearance/registry
+   * immediately. The one function `useProjectUnits`'s polling (on load,
+   * window focus, visibilitychange, and every ~30s) should call. */
+  refreshUnitStatuses(units: Unit[]) {
+    this.lastSyncEntries = this.lastSyncEntries.map((entry) => ({ ...entry, units }));
+    this.refreshUnitRegistryAndAppearance();
+  }
+
+  /** Units tab (PRD §14, §24) — project-level appearance/POI-camera
+   * config, applied live (no remount), same pattern as
+   * setEnvironmentConfig/setLightingConfig/setRenderingConfig. */
+  setUnitsConfig(config: UnitsConfig) {
+    this.unitsConfig = config;
+    this.refreshUnitRegistryAndAppearance();
   }
 
   /** Position/Rotation/Scale — PRD §5. Y axis reuses the pre-existing
@@ -1081,58 +1337,78 @@ export class RenderEngine {
     });
   }
 
-  /** Unit Mapping's "Status Preview — ON/OFF" (PRD §5) — tints every
-   * Unit_<number> box a translucent green/yellow/red by its linked real
-   * Unit's status. Off (or unlinked) restores the GLB's own original
-   * material, same cache-and-clone discipline as applyNodeOverrides. */
-  private applyUnitBoxes(root: THREE.Object3D, unitLinks: UnitMeshLink[], units: Unit[], statusPreviewEnabled: boolean) {
-    const unitById = new Map(units.map((u) => [u.id, u]));
-    const linkByMesh = new Map(unitLinks.map((l) => [l.meshName, l.unitId]));
-    const selectedId = this.selectedUnitId;
-
-    root.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh || !UNIT_NODE_PATTERN.test(mesh.name)) return;
-      if (!this.originalMaterials.has(mesh)) {
-        this.originalMaterials.set(mesh, normalizeMaterials(mesh.material));
-      }
-      const originals = this.originalMaterials.get(mesh)!;
-      const linkedUnitId = linkByMesh.get(mesh.name);
-      const unit = statusPreviewEnabled ? unitById.get(linkedUnitId ?? "") : undefined;
-      const isSelected = selectedId != null && linkedUnitId === selectedId;
-      const currentIsOriginal = normalizeMaterials(mesh.material).every((m, i) => m === originals[i]);
-
-      if (!unit && !isSelected) {
-        if (!currentIsOriginal) {
-          normalizeMaterials(mesh.material).forEach((m) => m.dispose());
-          mesh.material = originals.length === 1 ? originals[0] : originals;
-        }
-        return;
-      }
-      if (!currentIsOriginal) normalizeMaterials(mesh.material).forEach((m) => m.dispose());
-      mesh.material = new THREE.MeshBasicMaterial({
-        color: isSelected ? SELECTED_COLOR : UNIT_BOX_COLOR[unit!.status],
-        transparent: true,
-        opacity: isSelected ? UNIT_BOX_SELECTED_OPACITY : UNIT_BOX_OPACITY,
-        depthWrite: false,
-      });
-    });
-  }
-
-  /** Units Search Mode PRD, Phase 3 — real list→3D sync's "select" half:
-   * re-applies unit-box materials on every already-loaded slot (via the
-   * cached `lastSyncEntries`/`modelRootsBySlot`, no GLB reload) so
-   * clicking a unit in the public search panel highlights its mesh, if
-   * this project has one linked (`ProjectDetailModel.unitLinks`, admin-
-   * authored). A project whose GLB has no real `Unit_*`-named meshes for
-   * this unit simply shows no visible change — same honest no-op as
-   * `statusPreviewEnabled` already has for meshes with no link at all. */
+  /** Units Search Mode PRD, Phase 3 / Units Blocks & POI Layer PRD §18-20 —
+   * real list→3D sync's "select" half: re-applies unit-box appearance
+   * across every currently-loaded root (via the cached `lastSyncEntries`/
+   * `modelRootsBySlot`, no GLB reload) so selecting a unit — from the list
+   * OR from a real 3D click (see the pointerup handler in mount()) — keeps
+   * both directions of §20's single `selectedUnitId` state in sync. A
+   * project whose GLB has no real `Unit_*`-named meshes for this unit
+   * simply shows no visible change — same honest no-op the old
+   * implementation already had for an unmapped unit. */
   setSelectedUnit(unitId: string | null) {
     this.selectedUnitId = unitId;
-    for (const { slotId, model, units, statusPreviewEnabled } of this.lastSyncEntries) {
-      const root = this.modelRootsBySlot.get(slotId);
-      if (root) this.applyUnitBoxes(root, model.unitLinks, units ?? [], statusPreviewEnabled ?? true);
-    }
+    this.refreshUnitRegistryAndAppearance();
+  }
+
+  /** Units Blocks & POI Layer PRD §16-17 — "Camera calculation." Frames
+   * the given unit using the ONE master POI camera config
+   * (unitPoiCamera*) plus this unit's own `poiYawDeg` (interpreted in
+   * Building-local space — i.e. relative to the unit ROOT's own world
+   * position/orientation, which already reflects any Building rotation
+   * via transform inheritance/the unit's own placement in that hierarchy,
+   * so a later Building rotation automatically keeps every unit's camera
+   * correct with no extra math here). Reuses the exact same
+   * cameraTransition/stepCameraTransition machinery flyToPreset() already
+   * built (PRD §17 — "do not introduce another animation library"), not a
+   * second transition system. No-op (returns false) if the unit isn't in
+   * the registry (not yet loaded, or genuinely unmapped) or has
+   * poiEnabled === false. */
+  focusUnit(unitId: string): boolean {
+    const entry = this.unitRegistry.get(unitId);
+    const camera = this.camera;
+    const controls = this.controls;
+    if (!entry || !camera || !controls || !entry.poiEnabled || !this.unitsConfig.unitPoiCameraEnabled) return false;
+
+    const distance = entry.poiDistanceOverride ?? entry.worldBoundingSphere.radius * this.unitsConfig.unitPoiCameraDistanceMultiplier;
+    const height = entry.poiHeightOverride ?? this.unitsConfig.unitPoiCameraHeightOffset;
+    const yawRad = (entry.poiYawDeg * Math.PI) / 180;
+    // Offset rotated by the unit's own authored yaw, matching §16's
+    // diagram exactly: bounding-sphere center -> rotate a flat offset by
+    // poiYawDeg -> add the height lift.
+    const offset = new THREE.Vector3(Math.sin(yawRad) * distance, height, Math.cos(yawRad) * distance);
+    const endPos = entry.worldCenter.clone().add(offset);
+    const endTarget = entry.worldCenter.clone();
+
+    this.cameraTransition = {
+      startPos: camera.position.clone(),
+      endPos,
+      startTarget: controls.target.clone(),
+      endTarget,
+      startFov: camera.fov,
+      endFov: this.unitsConfig.unitPoiCameraFov,
+      startTime: performance.now(),
+      durationMs: Math.max(1, this.unitsConfig.unitPoiTransitionMs),
+    };
+    return true;
+  }
+
+  /** §18 — clears any Units-mode isolate/selection and reframes on the
+   * whole loaded scene, the same real reframe frameLoadedContent() itself
+   * does (Shots/Camera already use resetView() for this exact "back to
+   * the whole building" behavior — reused here rather than duplicated). */
+  resetUnitCamera() {
+    this.selectedUnitId = null;
+    this.isolatedUnitId = null;
+    this.refreshUnitRegistryAndAppearance();
+    this.resetView();
+  }
+
+  /** Read-only snapshot for callers that need unit metadata without
+   * reaching into engine internals (e.g. a Units-tab "N/E/S/W badge"
+   * showing whether a unit is currently mapped/loaded). */
+  getUnitRegistrySnapshot(): { unitId: string; unitCode: string; poiYawDeg: number }[] {
+    return Array.from(this.unitRegistry.values()).map((e) => ({ unitId: e.unitId, unitCode: e.unitCode, poiYawDeg: e.poiYawDeg }));
   }
 
   /** Ground alignment (PRD §5) — the Y offset that would put this model's
@@ -1958,6 +2234,14 @@ export class RenderEngine {
     this.sectionIndicatorMaterial = null;
     this.sectionIndicatorMesh = null;
     this.sectionFillMeshes = [];
+
+    // Units Blocks & POI Layer PRD cleanup.
+    disposeUnitBoxAppearanceCaches(this.unitMaterialCache, this.unitOutlineByMesh);
+    this.unitRegistry.clear();
+    this.unitRaycastTargets = [];
+    this.selectedUnitId = null;
+    this.hoveredUnitId = null;
+    this.isolatedUnitId = null;
 
     // Environment tab (PRD §7-13) cleanup.
     if (this.environmentRebuildTimer != null) clearTimeout(this.environmentRebuildTimer);

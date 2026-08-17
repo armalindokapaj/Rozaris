@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, ShieldCheck } from "lucide-react";
 import { useDetailModelSlots, type DetailVersionRow } from "@/hooks/useDetailModelSlots";
 import { useModelEditor, type ModelSwitches, type ModelTransform } from "@/hooks/useModelEditor";
@@ -43,9 +43,61 @@ function detailModelFromDraft(
     selectable: switches.selectable,
     transformLocked: switches.transformLocked,
     updatedAt: version.createdAt,
-    unitLinks: version.unitLinks.map((l) => ({ meshName: l.meshName, unitId: l.unitId })),
+    unitLinks: version.unitLinks.map((l) => ({
+      meshName: l.meshName,
+      unitId: l.unitId,
+      poiYawDeg: l.poiYawDeg,
+      poiEnabled: l.poiEnabled,
+      poiDistanceOverride: l.poiDistanceOverride,
+      poiHeightOverride: l.poiHeightOverride,
+    })),
     sceneManifest: (version.sceneManifest as ProjectDetailModel["sceneManifest"]) ?? [],
     nodeOverrides: overrides,
+    triangleCount: null,
+    meshCount: null,
+    materialCount: null,
+    textureCount: null,
+  };
+}
+
+/** Units Blocks & POI Layer PRD — every OTHER (non-active) slot's own
+ * latest version, read-only (no live draft overrides — those only exist
+ * for whichever slot the Scene/Materials tabs currently have open),
+ * straight from its own stored fields. Lets Building + Units (+
+ * Surroundings/Context) all render together in the editor's own preview,
+ * same as the public viewer already composites every published slot —
+ * previously the editor only ever rendered the single active-tab slot,
+ * which made a Units slot's placement/POI camera impossible to actually
+ * see against the building while authoring it. */
+function detailModelFromVersion(version: DetailVersionRow): ProjectDetailModel {
+  return {
+    glbUrl: version.publicAssetUrl,
+    fileName: version.fileName,
+    fileSize: version.fileSize,
+    scale: version.scale,
+    rotationDeg: version.rotationDeg,
+    altitudeOffset: version.altitudeOffset,
+    positionX: version.positionX,
+    positionZ: version.positionZ,
+    rotationXDeg: version.rotationXDeg,
+    rotationZDeg: version.rotationZDeg,
+    enabled: version.modelEnabled,
+    visible: version.modelVisible,
+    castShadow: version.castShadow,
+    receiveShadow: version.receiveShadow,
+    selectable: version.selectable,
+    transformLocked: version.transformLocked,
+    updatedAt: version.createdAt,
+    unitLinks: version.unitLinks.map((l) => ({
+      meshName: l.meshName,
+      unitId: l.unitId,
+      poiYawDeg: l.poiYawDeg,
+      poiEnabled: l.poiEnabled,
+      poiDistanceOverride: l.poiDistanceOverride,
+      poiHeightOverride: l.poiHeightOverride,
+    })),
+    sceneManifest: (version.sceneManifest as ProjectDetailModel["sceneManifest"]) ?? [],
+    nodeOverrides: (version.nodeOverrides as ProjectDetailModel["nodeOverrides"]) ?? [],
     triangleCount: null,
     meshCount: null,
     materialCount: null,
@@ -88,22 +140,53 @@ export function ExperienceEditor({
   const configEditor = useProjectConfigEditor(project.id, true);
   const { units } = useProjectUnits(project.id);
 
-  const detailModels = useMemo(
-    () =>
-      detail.activeVersion
-        ? [
-            {
-              slotId: detail.activeSlotId as string,
-              model: {
-                ...detailModelFromDraft(detail.activeVersion, modelEditor.transform, modelEditor.switches, modelEditor.overrides),
-                unitLinks: modelEditor.links.map((l) => ({ meshName: l.meshName, unitId: l.unitId })),
-              },
-              units: units ?? undefined,
-              statusPreviewEnabled,
-            },
-          ]
-        : [],
-    [detail.activeVersion, detail.activeSlotId, modelEditor.transform, modelEditor.switches, modelEditor.overrides, modelEditor.links, units, statusPreviewEnabled]
+  const detailModels = useMemo(() => {
+    const entries = detail.slots.flatMap((slot) => {
+      const isActive = slot.id === detail.activeSlotId;
+      const model = isActive
+        ? detail.activeVersion
+          ? {
+              ...detailModelFromDraft(detail.activeVersion, modelEditor.transform, modelEditor.switches, modelEditor.overrides),
+              unitLinks: modelEditor.links,
+            }
+          : null
+        : (detail.versionsBySlot[slot.id]?.[0] && detailModelFromVersion(detail.versionsBySlot[slot.id][0])) ?? null;
+      if (!model) return [];
+      return [
+        {
+          slotId: slot.id,
+          model,
+          units: units ?? undefined,
+          statusPreviewEnabled,
+          slotRole: slot.role,
+          transformParentSlotId: slot.transformParentSlotId,
+        },
+      ];
+    });
+    return entries;
+  }, [detail.slots, detail.activeSlotId, detail.activeVersion, detail.versionsBySlot, modelEditor.transform, modelEditor.switches, modelEditor.overrides, modelEditor.links, units, statusPreviewEnabled]);
+
+  const unitsConfig = useMemo(
+    () => ({
+      unitColorAvailable: configEditor.draft.unitColorAvailable,
+      unitColorReserved: configEditor.draft.unitColorReserved,
+      unitColorSold: configEditor.draft.unitColorSold,
+      unitColorSelected: configEditor.draft.unitColorSelected,
+      unitBlocksEnabled: configEditor.draft.unitBlocksEnabled,
+      unitBlocksStatusColorsEnabled: configEditor.draft.unitBlocksStatusColorsEnabled,
+      unitBlocksXrayEnabled: configEditor.draft.unitBlocksXrayEnabled,
+      unitBlocksDefaultOpacity: configEditor.draft.unitBlocksDefaultOpacity,
+      unitBlocksHoverOpacity: configEditor.draft.unitBlocksHoverOpacity,
+      unitBlocksSelectedOpacity: configEditor.draft.unitBlocksSelectedOpacity,
+      unitBlocksSelectedOutlineEnabled: configEditor.draft.unitBlocksSelectedOutlineEnabled,
+      unitPoiCameraEnabled: configEditor.draft.unitPoiCameraEnabled,
+      unitPoiCameraFov: configEditor.draft.unitPoiCameraFov,
+      unitPoiCameraDistanceMultiplier: configEditor.draft.unitPoiCameraDistanceMultiplier,
+      unitPoiCameraHeightOffset: configEditor.draft.unitPoiCameraHeightOffset,
+      unitPoiTransitionMs: configEditor.draft.unitPoiTransitionMs,
+      unitPoiAutoOcclusionCorrection: configEditor.draft.unitPoiAutoOcclusionCorrection,
+    }),
+    [configEditor.draft]
   );
 
   const cameraConfig = useMemo(
@@ -306,6 +389,14 @@ export function ExperienceEditor({
     if (offset != null) modelEditor.groundAlign(offset);
   }
 
+  // Units Blocks & POI Layer PRD §13 — "Units mode" only shows/allows
+  // interaction with unit blocks while the Units tab is actually open, so
+  // the X-ray overlay doesn't obstruct the Materials/Environment/etc.
+  // tabs' own preview of the architectural model.
+  useEffect(() => {
+    viewerRef.current?.setUnitsMode(activeTab === "units");
+  }, [activeTab]);
+
   if (!project) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 bg-neutral-950 p-6 text-center">
@@ -352,6 +443,7 @@ export function ExperienceEditor({
           environmentConfig={environmentConfig}
           lightingConfig={lightingConfig}
           renderingConfig={renderingConfig}
+          unitsConfig={unitsConfig}
           onPerfStats={(stats) => {
             setPerfStats(stats);
             setEffectiveRenderScale(viewerRef.current?.getEffectiveRenderScale() ?? null);

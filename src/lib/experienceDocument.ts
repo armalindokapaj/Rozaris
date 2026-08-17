@@ -131,7 +131,7 @@ export async function refreshExperienceDocument(
           rotationDeg: version.rotationDeg,
           altitudeOffset: version.altitudeOffset,
           nodeOverrides: (version.nodeOverrides as unknown as NodeOverride[]) ?? [],
-          unitLinks: version.unitLinks.map((l) => ({ meshName: l.meshName, unitId: l.unitId })),
+          unitLinks: version.unitLinks.map((l) => ({ meshName: l.meshName, unitId: l.unitId, poiYawDeg: l.poiYawDeg })),
           publicationStatus: version.publicationStatus,
           validationStatus: version.validationStatus,
         }

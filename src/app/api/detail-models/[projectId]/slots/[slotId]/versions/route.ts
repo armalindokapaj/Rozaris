@@ -80,7 +80,7 @@ export async function POST(
     return NextResponse.json({ error: "Slot not found." }, { status: 404 });
   }
 
-  const validation = await fetchAndValidateGlb(parsed.data.glbUrl, "detailModel");
+  const validation = await fetchAndValidateGlb(parsed.data.glbUrl, "detailModel", slot.role);
   const last = await prisma.detailModelVersion.findFirst({
     where: { slotId },
     orderBy: { version: "desc" },
@@ -192,7 +192,7 @@ export async function POST(
           rotationDeg: parsed.data.rotationDeg,
           altitudeOffset: parsed.data.altitudeOffset,
           nodeOverrides: carriedOverrides,
-          unitLinks: carryable.map((l) => ({ meshName: l.meshName, unitId: l.unitId })),
+          unitLinks: carryable.map((l) => ({ meshName: l.meshName, unitId: l.unitId, poiYawDeg: l.poiYawDeg })),
           publicationStatus: "draft",
           validationStatus: validation.status,
         }
@@ -242,6 +242,16 @@ export async function POST(
           meshName: l.meshName,
           unitId: l.unitId,
           mappingStatus: "carried",
+          // Units Blocks & POI Layer PRD §7 — carry the POI fields
+          // forward with the mapping, same as everything else on this
+          // row. Without this, every routine GLB replacement would
+          // silently reset every unit's camera-facing direction back to
+          // 0°, discarding real admin authoring work for no reason tied
+          // to the actual new GLB.
+          poiYawDeg: l.poiYawDeg,
+          poiEnabled: l.poiEnabled,
+          poiDistanceOverride: l.poiDistanceOverride,
+          poiHeightOverride: l.poiHeightOverride,
         })),
       });
     }

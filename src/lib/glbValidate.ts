@@ -122,6 +122,15 @@ export const VALIDATION_THRESHOLDS = {
 
 export type ModelKind = keyof typeof VALIDATION_THRESHOLDS;
 
+/** Units Blocks & POI Layer PRD §27 — "Give Units GLB its own performance
+ * budget." The generic detailModel budget (800k warn / 2M block) is sized
+ * for a full architectural GLB; a `role: units` slot is meant to be a few
+ * hundred bare interaction volumes with no materials/textures, and should
+ * be flagged far earlier. Kept separate from VALIDATION_THRESHOLDS (a
+ * per-`kind`, not per-role, map) since only the detailModel kind has any
+ * concept of slot role at all. */
+export const UNITS_SLOT_TRIANGLE_THRESHOLDS = { warnTriangles: 100_000, blockTriangles: 250_000 } as const;
+
 function parseGlbJsonChunk(buffer: ArrayBuffer): GltfJson {
   const view = new DataView(buffer);
   if (buffer.byteLength < 20) throw new Error("File too small to be a valid GLB.");
@@ -142,7 +151,13 @@ function parseGlbJsonChunk(buffer: ArrayBuffer): GltfJson {
 
 export async function validateGlb(
   buffer: ArrayBuffer,
-  kind: ModelKind
+  kind: ModelKind,
+  /** Units Blocks & POI Layer PRD §26-27 — only meaningful for
+   * `kind: "detailModel"`; a `role: "units"` slot gets its own triangle
+   * budget and a BLOCKING (not warning) duplicate-`Unit_*`-name check,
+   * since every node in that GLB is meant to be an unambiguous, uniquely-
+   * named interaction volume. */
+  slotRole?: "building" | "units" | "surroundings" | "context" | "custom"
 ): Promise<GlbValidationResult> {
   const issues: string[] = [];
   let json: GltfJson;
@@ -185,13 +200,18 @@ export async function validateGlb(
   // feel laggy once it's actually rendered continuously during map/viewer
   // interaction (drag, rotate, zoom), rather than finding out after the
   // fact on the live page.
-  const { warnTriangles, blockTriangles } = VALIDATION_THRESHOLDS[kind];
+  const isUnitsSlot = kind === "detailModel" && slotRole === "units";
+  const { warnTriangles, blockTriangles } = isUnitsSlot ? UNITS_SLOT_TRIANGLE_THRESHOLDS : VALIDATION_THRESHOLDS[kind];
   const consequence =
     kind === "mapModel"
       ? "may render slowly and feel laggy while dragging or rotating the map"
       : "may render slowly and feel laggy while orbiting the 3D viewer";
   if (triangleCount > blockTriangles) {
-    issues.push(`Triangle count ${triangleCount.toLocaleString()} exceeds the ${blockTriangles.toLocaleString()} block threshold for this pipeline — too heavy to publish, ${consequence}.`);
+    issues.push(
+      isUnitsSlot
+        ? `Triangle count ${triangleCount.toLocaleString()} exceeds the ${blockTriangles.toLocaleString()} block threshold for a Units slot — interaction volumes should be simple boxes (recommended under 50,000 total), not detailed geometry.`
+        : `Triangle count ${triangleCount.toLocaleString()} exceeds the ${blockTriangles.toLocaleString()} block threshold for this pipeline — too heavy to publish, ${consequence}.`
+    );
   } else if (triangleCount > warnTriangles) {
     issues.push(`Triangle count ${triangleCount.toLocaleString()} exceeds the ${warnTriangles.toLocaleString()} recommended limit — ${consequence}. Consider simplifying the model before publishing.`);
   }
@@ -212,6 +232,7 @@ export async function validateGlb(
   // that's exactly the situation where name-based resolution becomes
   // genuinely ambiguous (an override/link could silently apply to the
   // wrong one of the two).
+  let blockingDuplicateUnitNames = false;
   if (kind === "detailModel") {
     const nameCounts = new Map<string, number>();
     for (const n of sceneManifest) nameCounts.set(n.name, (nameCounts.get(n.name) ?? 0) + 1);
@@ -221,14 +242,40 @@ export async function validateGlb(
         .slice(0, 5)
         .map(([name, count]) => `"${name}" (×${count})`)
         .join(", ");
+      const duplicateUnitNames = duplicates.filter(([name]) => UNIT_NODE_PATTERN.test(name));
+      // Units Blocks & POI Layer PRD §26 — for a role=units slot, a
+      // duplicate Unit_* name isn't just an ambiguity risk (the generic
+      // warning below already covers that for every other pipeline) — it
+      // means the DB's own (detailModelVersionId, meshName) unique
+      // constraint would make one of the two indistinguishable copies
+      // silently un-mappable. Blocking, not a warning, specifically here.
+      if (isUnitsSlot && duplicateUnitNames.length > 0) {
+        blockingDuplicateUnitNames = true;
+        issues.push(
+          `${duplicateUnitNames.length} unit block name${duplicateUnitNames.length === 1 ? "" : "s"} used more than once in this Units GLB (${duplicateUnitNames.map(([name, count]) => `"${name}" (×${count})`).join(", ")}) — each unit must have a uniquely-named node. Rename before publishing.`
+        );
+      } else {
+        issues.push(
+          `${duplicates.length} node name${duplicates.length === 1 ? "" : "s"} used more than once (${sample}${duplicates.length > 5 ? ", …" : ""}) — material overrides and unit links are matched by name, so a duplicate can silently apply to the wrong node. Consider renaming for clarity before linking units or setting overrides.`
+        );
+      }
+    }
+
+    // §26 "Invalid Unit_* naming" — a bare `Unit_` (or `Unit_` followed by
+    // only punctuation) node has no usable code to auto-match against a
+    // real Unit.code at all; flag it explicitly rather than let it fall
+    // through as a silent "needs review" mapping-panel row with no clue
+    // why auto-detect never found it.
+    const invalidUnitNames = unitNodeNames.filter((n) => !/[a-z0-9]/i.test(n.replace(/^unit_?/i, "")));
+    if (isUnitsSlot && invalidUnitNames.length > 0) {
       issues.push(
-        `${duplicates.length} node name${duplicates.length === 1 ? "" : "s"} used more than once (${sample}${duplicates.length > 5 ? ", …" : ""}) — material overrides and unit links are matched by name, so a duplicate can silently apply to the wrong node. Consider renaming for clarity before linking units or setting overrides.`
+        `${invalidUnitNames.length} node${invalidUnitNames.length === 1 ? "" : "s"} named just "Unit_" with no unit code after it (${invalidUnitNames.slice(0, 5).join(", ")}${invalidUnitNames.length > 5 ? ", …" : ""}) — rename to "Unit_<code>" (e.g. "Unit_A-101").`
       );
     }
   }
 
   let status: ValidationStatus = "ready";
-  if (meshCount === 0 || triangleCount > blockTriangles) status = "blocked";
+  if (meshCount === 0 || triangleCount > blockTriangles || blockingDuplicateUnitNames) status = "blocked";
   else if (issues.length > 0) status = "warning";
 
   return { status, issues, triangleCount, meshCount, materialCount, textureCount, unitNodeNames, sceneManifest };
@@ -236,7 +283,11 @@ export async function validateGlb(
 
 /** Fetches an already-uploaded Blob URL and validates it — the entry point
  * route handlers actually call. */
-export async function fetchAndValidateGlb(url: string, kind: ModelKind): Promise<GlbValidationResult> {
+export async function fetchAndValidateGlb(
+  url: string,
+  kind: ModelKind,
+  slotRole?: "building" | "units" | "surroundings" | "context" | "custom"
+): Promise<GlbValidationResult> {
   const res = await fetch(url);
   if (!res.ok) {
     return {
@@ -251,5 +302,5 @@ export async function fetchAndValidateGlb(url: string, kind: ModelKind): Promise
     };
   }
   const buffer = await res.arrayBuffer();
-  return validateGlb(buffer, kind);
+  return validateGlb(buffer, kind, slotRole);
 }

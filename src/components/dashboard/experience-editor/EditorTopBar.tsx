@@ -151,9 +151,9 @@ export function EditorTopBar({
        * narrower than ~1450px real tabs (Performance/Publish, at minimum)
        * were pushed clean off the visible edge with no scroll affordance
        * a real admin would notice. A dedicated row has the full window
-       * width to itself, comfortably fitting all 11 tabs down to ~960px;
-       * `overflow-x-auto` stays as a genuine fallback below that, not the
-       * primary mechanism. */}
+       * width to itself, comfortably fitting all of EDITOR_TABS down to
+       * ~960px; `overflow-x-auto` stays as a genuine fallback below that,
+       * not the primary mechanism. */}
       <nav className="flex min-w-0 items-center gap-0.5 overflow-x-auto border-t border-neutral-900 px-4 py-1.5">
         {EDITOR_TABS.map((tab) => (
           <button

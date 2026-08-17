@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useAdminSessionRepair } from "./useAdminSessionRepair";
 import type { DetailVersionRow, NodeOverrideRow, UnitLinkRow } from "./useDetailModelSlots";
 import type { NodeOverride } from "@/lib/types";
+import { autoMatchUnitNodes } from "@/lib/glbUnitNodes";
 
 export interface ModelTransform {
   scale: number;
@@ -130,20 +131,33 @@ export function useModelEditor(projectId: string, activeVersion: DetailVersionRo
   function linkFor(meshName: string): string | null {
     return links.find((l) => l.meshName === meshName)?.unitId ?? null;
   }
+  function linkRowFor(meshName: string): UnitLinkRow | null {
+    return links.find((l) => l.meshName === meshName) ?? null;
+  }
+  /** Units tab (PRD §15/§25) — the per-unit POI-camera fields. Only
+   * meaningful on an already-linked mesh; a no-op if `setLink` hasn't
+   * created the row yet. */
+  function updateLinkPoi(meshName: string, patch: Partial<Pick<UnitLinkRow, "poiYawDeg" | "poiEnabled" | "poiDistanceOverride" | "poiHeightOverride">>) {
+    setLinks((prev) => prev.map((l) => (l.meshName === meshName ? { ...l, ...patch } : l)));
+    setDirty(true);
+  }
   function autoDetectLinks(detectedMeshNames: string[], units: { id: string; code: string }[]) {
-    // "Auto Detect" — matches Unit_<number> mesh names to a real Unit by
-    // trailing number vs. the unit's own code, when unambiguous. Never
-    // overwrites an existing manual selection.
+    // "Auto Detect" — matches Unit_<code> mesh names to a real Unit via
+    // the shared `normalizeUnitMatchKey`/`autoMatchUnitNodes` (glbUnitNodes.ts),
+    // the same normalizer `Unit Mapping`'s own code-comparison-by-code
+    // path already used correctly. Units Blocks & POI Layer PRD §6: this
+    // used to compare bare trailing digits instead ("Unit_A-101" vs. code
+    // "A-101" both reduced to "101") — a real collision risk across
+    // buildings sharing room numbers ("A-101" and "B-101" would both match
+    // the first Unit found with a "101" in its code, mis-mapping whichever
+    // lost the race). Never overwrites an existing manual selection.
     setLinks((prev) => {
-      const next = [...prev];
-      for (const meshName of detectedMeshNames) {
-        if (next.some((l) => l.meshName === meshName)) continue;
-        const num = meshName.match(/(\d+)\s*$/)?.[1];
-        if (!num) continue;
-        const match = units.find((u) => u.code.replace(/\D/g, "") === num.replace(/^0+/, "") || u.code === num);
-        if (match) next.push({ meshName, unitId: match.id, mappingStatus: "mapped" });
-      }
-      return next;
+      const currentSelections: Record<string, string> = {};
+      for (const l of prev) currentSelections[l.meshName] = l.unitId;
+      const nextSelections = autoMatchUnitNodes(detectedMeshNames, units, currentSelections);
+      return Object.entries(nextSelections).map(
+        ([meshName, unitId]) => prev.find((l) => l.meshName === meshName) ?? { meshName, unitId, mappingStatus: "mapped" }
+      );
     });
     setDirty(true);
   }
@@ -172,7 +186,16 @@ export function useModelEditor(projectId: string, activeVersion: DetailVersionRo
       const res3 = await fetch(`/api/detail-models/${projectId}/versions/${activeVersion.id}/links`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(links.map((l) => ({ meshName: l.meshName, unitId: l.unitId }))),
+        body: JSON.stringify(
+          links.map((l) => ({
+            meshName: l.meshName,
+            unitId: l.unitId,
+            poiYawDeg: l.poiYawDeg,
+            poiEnabled: l.poiEnabled,
+            poiDistanceOverride: l.poiDistanceOverride,
+            poiHeightOverride: l.poiHeightOverride,
+          }))
+        ),
       });
       if (res3.status === 401) establishAdminSession();
       if (!res3.ok) throw new Error(await res3.text());
@@ -208,6 +231,8 @@ export function useModelEditor(projectId: string, activeVersion: DetailVersionRo
     overrideFor,
     setLink,
     linkFor,
+    linkRowFor,
+    updateLinkPoi,
     autoDetectLinks,
     save,
   };

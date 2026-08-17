@@ -46,23 +46,53 @@ export interface UseProjectUnitsResult {
  * See the "Units: Postgres source of truth in the admin 3D editor" and
  * its drift-bug-fix follow-up memory for the full history.
  */
+/** Units Blocks & POI Layer PRD §21-22 — "Make status refresh
+ * automatically." Ms between background polls while the tab is visible;
+ * a real admin changing A-405 from available to sold on one browser
+ * should show up as RED on every other open viewer within this window,
+ * not just on that admin's own next full page load. */
+const UNIT_STATUS_POLL_MS = 30_000;
+
 export function useProjectUnits(projectId: string): UseProjectUnitsResult {
   const [units, setUnits] = useState<Unit[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/projects/${projectId}/units`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((rows: RawUnitRow[] | null) => {
-        if (cancelled) return;
-        setUnits(rows ? rows.map(normalizeUnit) : null);
-      })
-      .catch(() => {
-        if (!cancelled) setUnits(null);
-      });
+    const load = () => {
+      fetch(`/api/projects/${projectId}/units`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((rows: RawUnitRow[] | null) => {
+          if (cancelled) return;
+          setUnits(rows ? rows.map(normalizeUnit) : null);
+        })
+        .catch(() => {
+          if (!cancelled) setUnits(null);
+        });
+    };
+
+    load(); // on load
+
+    // §22 — "on viewer load, on window focus, on visibilitychange ->
+    // visible, every ~30 seconds while the viewer is open." Zero GLB
+    // reload/remapping on the RenderEngine side either way (see
+    // RenderEngine.refreshUnitStatuses's own doc comment) — this hook's
+    // job is only to keep `units` itself fresh; every consumer (the admin
+    // editor's live preview, the public viewer) already re-applies box
+    // appearance whenever this array's reference changes.
+    const onFocus = () => load();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    const interval = setInterval(load, UNIT_STATUS_POLL_MS);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      clearInterval(interval);
     };
   }, [projectId]);
 

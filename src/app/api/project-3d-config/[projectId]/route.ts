@@ -231,6 +231,21 @@ const patchSchema = z.object({
   unitColorReserved: hexColorSchema.optional(),
   unitColorSold: hexColorSchema.optional(),
   unitColorSelected: hexColorSchema.optional(),
+  // Units Blocks & POI Layer PRD §5/§11-12/§24 — X-ray overlay appearance.
+  unitBlocksEnabled: z.boolean().optional(),
+  unitBlocksStatusColorsEnabled: z.boolean().optional(),
+  unitBlocksXrayEnabled: z.boolean().optional(),
+  unitBlocksDefaultOpacity: z.number().min(0).max(1).optional(),
+  unitBlocksHoverOpacity: z.number().min(0).max(1).optional(),
+  unitBlocksSelectedOpacity: z.number().min(0).max(1).optional(),
+  unitBlocksSelectedOutlineEnabled: z.boolean().optional(),
+  // Units Blocks & POI Layer PRD §14 — master POI camera.
+  unitPoiCameraEnabled: z.boolean().optional(),
+  unitPoiCameraFov: z.number().min(10).max(120).optional(),
+  unitPoiCameraDistanceMultiplier: z.number().min(0.5).max(20).optional(),
+  unitPoiCameraHeightOffset: z.number().min(-20).max(20).optional(),
+  unitPoiTransitionMs: z.number().min(0).max(10_000).optional(),
+  unitPoiAutoOcclusionCorrection: z.boolean().optional(),
   // Unit-status caustics (webgpu_caustics.html parity, adapted).
   causticsEnabled: z.boolean().optional(),
   causticsScale: z.number().min(0.05).max(3).optional(),

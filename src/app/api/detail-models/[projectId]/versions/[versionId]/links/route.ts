@@ -9,6 +9,14 @@ const linksSchema = z.array(
   z.object({
     meshName: z.string().min(1),
     unitId: z.string().min(1),
+    // Units Blocks & POI Layer PRD §7/§15 — optional so existing callers
+    // that only ever sent {meshName, unitId} (e.g. a not-yet-updated
+    // client) keep working; the DB default (0°, enabled, no overrides)
+    // applies when omitted.
+    poiYawDeg: z.number().finite().optional(),
+    poiEnabled: z.boolean().optional(),
+    poiDistanceOverride: z.number().finite().nullable().optional(),
+    poiHeightOverride: z.number().finite().nullable().optional(),
   })
 );
 
@@ -45,6 +53,34 @@ export async function PUT(
     );
   }
 
+  // Units Blocks & POI Layer PRD §8 — this route verified the VERSION
+  // belongs to the project but never verified each submitted unitId does.
+  // Before this fix, an admin (or a buggy client) could bind a mesh to a
+  // Unit row from a completely different project — invisible in the UI
+  // (the picker only ever offers this project's own units) but a real
+  // cross-tenant data-integrity hole via a direct API call. Also rejects
+  // the same unitId appearing twice in one payload with a clean 400
+  // instead of letting the DB's new (detailModelVersionId, unitId) unique
+  // constraint surface as an opaque 500.
+  const submittedUnitIds = [...new Set(parsed.data.map((l) => l.unitId))];
+  if (submittedUnitIds.length !== parsed.data.length) {
+    return NextResponse.json({ error: "Each unit can only be mapped to one mesh." }, { status: 400 });
+  }
+  if (submittedUnitIds.length > 0) {
+    const validUnits = await prisma.unit.findMany({
+      where: { id: { in: submittedUnitIds }, projectId, deletedAt: null },
+      select: { id: true },
+    });
+    if (validUnits.length !== submittedUnitIds.length) {
+      const validIds = new Set(validUnits.map((u) => u.id));
+      const invalid = submittedUnitIds.filter((id) => !validIds.has(id));
+      return NextResponse.json(
+        { error: `Unit(s) not found in this project: ${invalid.join(", ")}` },
+        { status: 400 }
+      );
+    }
+  }
+
   const links = await prisma.$transaction(async (tx) => {
     await tx.unitMeshLinkV2.deleteMany({ where: { detailModelVersionId: versionId } });
     if (parsed.data.length === 0) return [];
@@ -54,6 +90,10 @@ export async function PUT(
         meshName: link.meshName,
         unitId: link.unitId,
         mappingStatus: "mapped",
+        poiYawDeg: link.poiYawDeg ?? 0,
+        poiEnabled: link.poiEnabled ?? true,
+        poiDistanceOverride: link.poiDistanceOverride ?? null,
+        poiHeightOverride: link.poiHeightOverride ?? null,
       })),
     });
     return tx.unitMeshLinkV2.findMany({ where: { detailModelVersionId: versionId } });

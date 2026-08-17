@@ -5,8 +5,8 @@ import { Expand, Minimize, Move, MousePointer2, RotateCw, Scale as ScaleIcon } f
 import { cn } from "@/lib/utils";
 import { ThreeProjectViewer } from "@/components/project/ThreeProjectViewer";
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
-import type { CameraConfig, QualityConfig } from "@/lib/render-engine/RenderEngine";
-import type { EnvironmentConfig, LightingConfig, ProjectDetailModel, RenderingConfig, Unit } from "@/lib/types";
+import type { CameraConfig, DetailModelEntry, QualityConfig } from "@/lib/render-engine/RenderEngine";
+import type { EnvironmentConfig, LightingConfig, RenderingConfig, UnitsConfig } from "@/lib/types";
 
 type Tool = "select" | "move" | "rotate" | "scale";
 
@@ -28,7 +28,7 @@ const TOOLS: { id: Tool; icon: typeof MousePointer2; label: string }[] = [
 export const EditorViewport = forwardRef<
   ThreeProjectViewerHandle,
   {
-    detailModels: { slotId: string; model: ProjectDetailModel; units?: Unit[]; statusPreviewEnabled?: boolean }[];
+    detailModels: DetailModelEntry[];
     /** Whether the caller has finished figuring out WHAT to load at all
      * (`useDetailModelSlots`'s own `slotsLoaded`) — see the loading-overlay
      * doc comment below for why this, not just `onReady`, is needed. */
@@ -38,11 +38,17 @@ export const EditorViewport = forwardRef<
     environmentConfig?: EnvironmentConfig;
     lightingConfig?: LightingConfig;
     renderingConfig?: RenderingConfig;
+    unitsConfig?: UnitsConfig;
+    onUnitClick?: (unitId: string | null) => void;
+    onUnitHover?: (unitId: string | null) => void;
     onPerfStats?: (
       stats: { fps: number; frameTimeMs: number; drawCalls: number; triangles: number; textures: number; dpr: number } | null
     ) => void;
   }
->(function EditorViewport({ detailModels, slotsLoaded, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, onPerfStats }, viewerRef) {
+>(function EditorViewport(
+  { detailModels, slotsLoaded, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, unitsConfig, onUnitClick, onUnitHover, onPerfStats },
+  viewerRef
+) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [tool, setTool] = useState<Tool>("select");
     const [fullscreen, setFullscreen] = useState(false);
@@ -127,6 +133,9 @@ export const EditorViewport = forwardRef<
             environmentConfig={environmentConfig}
             lightingConfig={lightingConfig}
             renderingConfig={renderingConfig}
+            unitsConfig={unitsConfig}
+            onUnitClick={onUnitClick}
+            onUnitHover={onUnitHover}
             className="relative h-full w-full"
             showPerfStats={!!onPerfStats}
             onPerfStats={handlePerfStats}

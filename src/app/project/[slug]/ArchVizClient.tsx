@@ -23,7 +23,7 @@ import { ConstructionTimelineStrip } from "@/components/project/ConstructionTime
 import { UnitDiscoveryPanel } from "@/components/project/UnitDiscoveryPanel";
 import { UnitDetailPanel } from "@/components/project/UnitDetailPanel";
 import { UnitPreviewCard } from "@/components/project/UnitPreviewCard";
-import type { Project, Unit } from "@/lib/types";
+import type { Project } from "@/lib/types";
 
 /** Sun & Time PRD — the public viewer's scrub range is a fixed constant
  * (direct instruction, 2026-08-17: "Time will always be from 06:00 to
@@ -65,7 +65,13 @@ export function ArchVizClient({ project }: { project: Project }) {
   const mainRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<ThreeProjectViewerHandle>(null);
   const [unitPanelOpen, setUnitPanelOpen] = useState(false);
-  const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
+  // Units Blocks & POI Layer PRD §20 — "one selectedUnitId state, not two
+  // independently-set pieces." Real Unit object is derived below once
+  // `units` (the live Postgres list) is in scope, rather than storing the
+  // object itself — a status change from the poll in useProjectUnits
+  // would otherwise leave a stale Unit object here (wrong status/price)
+  // until something else happened to re-select it.
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   // The 3D click flow always lands on the small UnitPreviewCard first;
   // this only flips true when that card's own "View Unit" button asks for
   // the full gallery/publisher-contact panel.
@@ -128,6 +134,7 @@ export function ArchVizClient({ project }: { project: Project }) {
   // none yet — an honestly empty list, not a fabricated one.
   const { units: liveUnits } = useProjectUnits(project.id);
   const units = useMemo(() => liveUnits ?? [], [liveUnits]);
+  const selectedUnit = useMemo(() => units.find((u) => u.id === selectedUnitId) ?? null, [units, selectedUnitId]);
   // Same `units` handed to every slot — `applyUnitBoxes` only actually
   // matches entries against that slot's own `unitLinks` map, so a unit
   // with no link for a given slot's meshes is simply never touched;
@@ -447,6 +454,32 @@ export function ArchVizClient({ project }: { project: Project }) {
     [viewerConfig]
   );
 
+  // Units Blocks & POI Layer PRD — real appearance + master POI camera
+  // config for the public viewer's own unit blocks (same shape/pattern as
+  // every other *Config memo here).
+  const unitsConfig = useMemo(
+    () => ({
+      unitColorAvailable: viewerConfig.unitColorAvailable,
+      unitColorReserved: viewerConfig.unitColorReserved,
+      unitColorSold: viewerConfig.unitColorSold,
+      unitColorSelected: viewerConfig.unitColorSelected,
+      unitBlocksEnabled: viewerConfig.unitBlocksEnabled,
+      unitBlocksStatusColorsEnabled: viewerConfig.unitBlocksStatusColorsEnabled,
+      unitBlocksXrayEnabled: viewerConfig.unitBlocksXrayEnabled,
+      unitBlocksDefaultOpacity: viewerConfig.unitBlocksDefaultOpacity,
+      unitBlocksHoverOpacity: viewerConfig.unitBlocksHoverOpacity,
+      unitBlocksSelectedOpacity: viewerConfig.unitBlocksSelectedOpacity,
+      unitBlocksSelectedOutlineEnabled: viewerConfig.unitBlocksSelectedOutlineEnabled,
+      unitPoiCameraEnabled: viewerConfig.unitPoiCameraEnabled,
+      unitPoiCameraFov: viewerConfig.unitPoiCameraFov,
+      unitPoiCameraDistanceMultiplier: viewerConfig.unitPoiCameraDistanceMultiplier,
+      unitPoiCameraHeightOffset: viewerConfig.unitPoiCameraHeightOffset,
+      unitPoiTransitionMs: viewerConfig.unitPoiTransitionMs,
+      unitPoiAutoOcclusionCorrection: viewerConfig.unitPoiAutoOcclusionCorrection,
+    }),
+    [viewerConfig]
+  );
+
   // Fullscreen targets this whole page wrapper — not ThreeProjectViewer's
   // own canvas container — specifically so the header (ROZARIS/project
   // name/Full Screen/Screenshot) and the viewer's own bottom icon menu all
@@ -486,6 +519,28 @@ export function ArchVizClient({ project }: { project: Project }) {
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
+  // Units Blocks & POI Layer PRD §13 — unit blocks are only visible AND
+  // clickable/hoverable while the visitor is actually in the Units
+  // module — matches ActiveModule's own 4 values exactly (explore/views/
+  // sunTime all hide them, same as the admin editor scoping it to just
+  // its own Units tab).
+  useEffect(() => {
+    viewerRef.current?.setUnitsMode(activeModule === "units");
+  }, [activeModule]);
+
+  // §13/§18 — the public Units workspace's own single-select status
+  // filter (`unitFilters.status`) maps onto the engine's independent
+  // available/reserved/sold toggles: "all" shows every status, any other
+  // value isolates just that one.
+  useEffect(() => {
+    const status = unitFilters.status;
+    viewerRef.current?.setUnitStatusFilters({
+      available: status === "all" || status === "available",
+      reserved: status === "all" || status === "reserved",
+      sold: status === "all" || status === "sold",
+    });
+  }, [unitFilters.status]);
+
   async function handleScreenshot() {
     const dataUrl = await viewerRef.current?.captureScreenshot();
     if (!dataUrl) {
@@ -522,6 +577,18 @@ export function ArchVizClient({ project }: { project: Project }) {
   // that needs gating here.
   const handleSelectUnitIn3D = useCallback((unitId: string | null) => {
     viewerRef.current?.setSelectedUnit(unitId);
+  }, []);
+
+  // Units Blocks & POI Layer PRD §19-20 — the real "3D → List/Panel" half:
+  // a genuine click on a unit block (RenderEngine already distinguishes
+  // this from an orbit-drag release and updates its OWN selection
+  // instantly for visual feedback) opens the same UnitPreviewCard flow a
+  // UnitDiscoveryPanel row selection would, keyed off one shared
+  // `selectedUnitId`. `null` (clicked empty space/architecture) clears it,
+  // same as the panel's own close button.
+  const handleUnitClickIn3D = useCallback((unitId: string | null) => {
+    setSelectedUnitId(unitId);
+    setFullDetailOpen(false);
   }, []);
 
   return (
@@ -626,6 +693,8 @@ export function ArchVizClient({ project }: { project: Project }) {
           environmentConfig={environmentConfig}
           lightingConfig={lightingConfig}
           renderingConfig={renderingConfig}
+          unitsConfig={unitsConfig}
+          onUnitClick={handleUnitClickIn3D}
           onReady={handleReady}
           className="relative h-full w-full"
         />
@@ -636,7 +705,7 @@ export function ArchVizClient({ project }: { project: Project }) {
         open={unitPanelOpen}
         onClose={() => setUnitPanelOpen(false)}
         onSelectUnit={(u) => {
-          setSelectedUnit(u);
+          setSelectedUnitId(u.id);
           setFullDetailOpen(false);
         }}
       />
@@ -644,7 +713,7 @@ export function ArchVizClient({ project }: { project: Project }) {
         <UnitPreviewCard
           project={project}
           unit={selectedUnit}
-          onClose={() => setSelectedUnit(null)}
+          onClose={() => setSelectedUnitId(null)}
           onViewDetails={() => setFullDetailOpen(true)}
         />
       )}

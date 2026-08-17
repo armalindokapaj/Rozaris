@@ -735,6 +735,18 @@ model Unit {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  /// Units Blocks & POI Layer PRD §7 — the real inverse of
+  /// UnitMeshLinkV2.unit, added alongside making `unitId` a genuine FK
+  /// instead of a bare, unvalidated String.
+  unitMeshLinks UnitMeshLinkV2[]
+
+  /// Units Blocks & POI Layer PRD §6 — "Strengthen Unit identity."
+  /// Confirmed via a live-DB scan before adding this (zero existing
+  /// duplicate (projectId, code) pairs across all 68 active units) —
+  /// codes like "A-101"/"B-101" must be unique per project so mesh-name
+  /// matching (`normalizeUnitMatchKey`) can never collide across
+  /// buildings within the same project.
+  @@unique([projectId, code])
   @@map("units")
 }
 
@@ -1488,22 +1500,61 @@ model Project3DConfig {
   /// ad-hoc SSR/GTAO chain implicated in a real render-instability
   /// report; this is a from-scratch build on the new Phase-3-proven
   /// shared MRT graph). Off by default.
-  ssrEnabled      Boolean @default(false)
-  ssrIntensity    Float   @default(1)
-  ssrMaxDistance  Float   @default(30)
-  ssrThickness    Float   @default(0.5)
-  ssrQuality      Float   @default(0.5)
+  ssrEnabled          Boolean @default(false)
+  ssrIntensity        Float   @default(1)
+  ssrMaxDistance      Float   @default(30)
+  ssrThickness        Float   @default(0.5)
+  ssrQuality          Float   @default(0.5)
   /// Real bloom-fed lens flare (`LensflareNode` — ghosts pivoting off the
   /// existing Bloom pass' bright-pass texture, so it has no visible effect
   /// unless `bloomEnabled` is also on; the Rendering panel's own UI
   /// enforces this dependency). Off by default.
-  lensFlareEnabled   Boolean @default(false)
-  lensFlareIntensity Float   @default(1)
+  lensFlareEnabled    Boolean @default(false)
+  lensFlareIntensity  Float   @default(1)
   /// Real per-pixel motion blur (`motionBlur()` TSL fn) sampling the
   /// scene's own MRT velocity buffer — genuine camera + object motion,
   /// not a fake radial blur. Off by default.
   motionBlurEnabled   Boolean @default(false)
   motionBlurIntensity Float   @default(1)
+
+  /// Units Blocks & POI Layer PRD §5, §24 — appearance config for the
+  /// dedicated `role=units` GLB slot's X-ray overlay, consumed by the
+  /// single `src/lib/unitStatusVisuals.ts` registry (§5) that every
+  /// status-color surface (unit page, listing, units bar, viewer blocks)
+  /// reads from, so "sold = red" is enforced in exactly one place.
+  /// `unitBlocksEnabled` is the master switch — off means the Units slot
+  /// never loads even if one exists (an admin authoring-in-progress
+  /// lever, same shape as `groundEnabled`/`shadowsEnabled`). Defaults
+  /// preserve current behavior for every pre-existing project: none of
+  /// them have a role=units slot yet, so these fields are inert until
+  /// one is uploaded regardless of default value.
+  unitBlocksEnabled                Boolean @default(true)
+  unitBlocksStatusColorsEnabled    Boolean @default(true)
+  unitBlocksXrayEnabled            Boolean @default(true)
+  unitBlocksDefaultOpacity         Float   @default(0.18)
+  unitBlocksHoverOpacity           Float   @default(0.25)
+  unitBlocksSelectedOpacity        Float   @default(0.32)
+  /// §12 — selected units keep their status color and gain a purple
+  /// outline, instead of the old full-purple-fill SELECTED_COLOR
+  /// replacement.
+  unitBlocksSelectedOutlineEnabled Boolean @default(true)
+
+  /// Units Blocks & POI Layer PRD §14 — "One Master POI Camera," one
+  /// config per project (not per unit — see UnitMeshLinkV2.poiYawDeg for
+  /// the one per-unit knob). `unitPoiCameraEnabled` defaults true: it's
+  /// inert on every existing project (nothing calls focusUnit() without
+  /// a role=units slot + raycast/list wiring, both new in this same
+  /// PRD), so there's no existing-project behavior to preserve here the
+  /// way there is for a toggle with a live renderer effect.
+  unitPoiCameraEnabled            Boolean @default(true)
+  unitPoiCameraFov                Float   @default(38)
+  unitPoiCameraDistanceMultiplier Float   @default(3)
+  unitPoiCameraHeightOffset       Float   @default(0.5)
+  unitPoiTransitionMs             Int     @default(900)
+  /// Stored per PRD §14; not yet wired to any real correction logic —
+  /// same "real field, honestly not-yet-wired" precedent as several
+  /// Interaction-tab toggles already in this schema.
+  unitPoiAutoOcclusionCorrection  Boolean @default(false)
 
   updatedAt DateTime @updatedAt
 
@@ -1680,17 +1731,46 @@ model MapModelVersion {
 /// least one per project once any detail GLB exists (the migrate-detail-
 /// model-slots.ts backfill creates a "Building" slot for every project
 /// that already had DetailModelVersion rows before this table existed).
+/// Units Blocks & POI Layer PRD §2 — what a slot's GLB actually contains,
+/// resolved server- and engine-side instead of ever string-matching on
+/// `DetailModelSlot.name` (an admin can rename "Building" to anything).
+/// `custom` is the default for every slot created before this column
+/// existed and for any future slot an admin adds beyond the 4 named
+/// roles — same "honest, not silently reinterpreted" precedent as this
+/// schema's other backward-compatible enum defaults.
+enum DetailModelSlotRole {
+  building
+  units
+  surroundings
+  context
+  custom
+}
+
 model DetailModelSlot {
-  id        String   @id @default(cuid())
+  id        String              @id @default(cuid())
   projectId String
   name      String
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
+  order     Int                 @default(0)
+  role      DetailModelSlotRole @default(custom)
+  createdAt DateTime            @default(now())
+
+  /// Units Blocks & POI Layer PRD §3 — "Units GLB must inherit Building
+  /// transform." When set, this slot's own position/rotation/scale
+  /// (`DetailModelVersion` position/rotation/scale fields) are ignored by the
+  /// engine in favor of copying the parent slot's live transform every
+  /// frame, so Building and Units can never drift apart even as an admin
+  /// edits Building's transform after Units was already placed. Nullable
+  /// self-relation — most slots (Building itself, Surroundings, Context)
+  /// have no parent and keep their own independent transform.
+  transformParentSlotId String?
+  transformParentSlot   DetailModelSlot?  @relation("SlotTransformParent", fields: [transformParentSlotId], references: [id], onDelete: SetNull)
+  transformChildSlots   DetailModelSlot[] @relation("SlotTransformParent")
 
   project  Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
   versions DetailModelVersion[]
 
   @@index([projectId])
+  @@index([transformParentSlotId])
   @@map("detail_model_slots")
 }
 
@@ -1802,9 +1882,38 @@ model UnitMeshLinkV2 {
   mappingStatus        String   @default("mapped")
   mappedAt             DateTime @default(now())
 
-  detailModelVersion DetailModelVersion @relation(fields: [detailModelVersionId], references: [id], onDelete: Cascade)
+  /// Units Blocks & POI Layer PRD §15-16 — "Each Unit only gets rotation."
+  /// The one thing an admin authors per unit: which way its POI camera
+  /// faces, in Building-local degrees (0/90/180/270 shown as N/E/S/W in
+  /// the editor, stored as a free float for future flexibility). Combined
+  /// with the project-wide `Project3DConfig.unitPoiCamera*` fields and the
+  /// unit's own live bounding sphere at focusUnit()-time — deliberately
+  /// NOT a full position/target pair per unit, per the PRD's "escape
+  /// hatches only" framing below.
+  poiYawDeg           Float   @default(0)
+  /// Per-unit opt-out of the POI camera (e.g. a unit with no meaningful
+  /// interior to frame). Does not affect status-color/X-ray rendering.
+  poiEnabled          Boolean @default(true)
+  /// Escape hatches only — 99% of units should need just `poiYawDeg`.
+  /// Null means "use the project's unitPoiCameraDistanceMultiplier/
+  /// HeightOffset as-is for this unit."
+  poiDistanceOverride Float?
+  poiHeightOverride   Float?
 
+  detailModelVersion DetailModelVersion @relation(fields: [detailModelVersionId], references: [id], onDelete: Cascade)
+  /// Units Blocks & POI Layer PRD §8 — was a bare, unvalidated String;
+  /// now a real FK so a link can never point at a unitId that doesn't
+  /// exist (or, combined with the route-level project check, one that
+  /// belongs to a different project).
+  unit               Unit               @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  /// PRD §8 — "one GLB block → one Unit, one Unit → one GLB block,"
+  /// scoped per version (a later version can remap freely). The existing
+  /// (detailModelVersionId, meshName) constraint below already prevented
+  /// one mesh mapping to two units; this adds the missing other half.
   @@unique([detailModelVersionId, meshName])
+  @@unique([detailModelVersionId, unitId])
+  @@index([unitId])
   @@map("unit_mesh_links_v2")
 }
 
@@ -2091,4 +2200,31 @@ model Advertisement {
   createdAt DateTime @default(now())
 
   @@map("advertisements")
+}
+
+// ---------------------------------------------------------------------------
+// Environment Presets — a reusable, named "look" (Sun & Sky, Fog & Haze,
+// Clouds, Water, Lens Flare/Bloom, Tone Mapping/LUT) an admin can save from
+// one project's Experience Editor and apply to ANY other project. Global
+// (no projectId): the whole point is cross-project reuse, unlike every
+// other Environment/Rendering field, which lives on the per-project
+// Project3DConfig singleton. `config` is a validated JSON snapshot of
+// exactly the field set src/lib/environmentPresetFields.ts defines —
+// deliberately excludes camera, quality/performance, ground, unit colors,
+// Sections, and Shadows/GI/DoF/SSR/Motion-Blur (those are tuned to each
+// project's own GLB scale/branding, not portable).
+// ---------------------------------------------------------------------------
+
+model EnvironmentPreset {
+  id        String   @id @default(cuid())
+  /// Admin-chosen, unique so the Presets tab's picker never shows two
+  /// indistinguishable entries — a rename/create that collides is a real
+  /// 409, not a silent duplicate.
+  name      String   @unique
+  config    Json
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("environment_presets")
 }

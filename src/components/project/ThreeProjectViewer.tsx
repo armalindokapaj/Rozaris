@@ -18,11 +18,22 @@ export type { ThreeProjectViewerHandle, ThreeProjectViewerProps } from "./viewer
  * network on every Inspector slider tick).
  */
 export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProjectViewerProps>(
-  function ThreeProjectViewer({ detailModels, className, showPerfStats, onPerfStats, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, onReady }, ref) {
+  function ThreeProjectViewer(
+    { detailModels, className, showPerfStats, onPerfStats, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, unitsConfig, onUnitClick, onUnitHover, onReady },
+    ref
+  ) {
     const containerRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<RenderEngine | null>(null);
     const [webglFailed, setWebglFailed] = useState(false);
     const readyFiredRef = useRef(false);
+    // Callback props change identity every render in most callers (inline
+    // arrow functions) — read through a ref inside the mount-time engine
+    // construction instead of depending on them directly, same reasoning
+    // the mount effect below already documents for why it stays empty-deps.
+    const onUnitClickRef = useRef(onUnitClick);
+    onUnitClickRef.current = onUnitClick;
+    const onUnitHoverRef = useRef(onUnitHover);
+    onUnitHoverRef.current = onUnitHover;
 
     useImperativeHandle(ref, () => ({
       resetView: () => engineRef.current?.resetView(),
@@ -35,6 +46,13 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
       getContentBounds: () => engineRef.current?.getContentBounds() ?? null,
       getEffectiveRenderScale: () => engineRef.current?.getEffectiveRenderScale() ?? 1,
       setSelectedUnit: (unitId) => engineRef.current?.setSelectedUnit(unitId),
+      setUnitsMode: (enabled) => engineRef.current?.setUnitsMode(enabled),
+      setUnitStatusFilters: (filters) => engineRef.current?.setUnitStatusFilters(filters),
+      isolateUnit: (unitId) => engineRef.current?.isolateUnit(unitId),
+      hoverUnit: (unitId) => engineRef.current?.hoverUnit(unitId),
+      focusUnit: (unitId) => engineRef.current?.focusUnit(unitId) ?? false,
+      resetUnitCamera: () => engineRef.current?.resetUnitCamera(),
+      getUnitRegistrySnapshot: () => engineRef.current?.getUnitRegistrySnapshot() ?? [],
     }));
 
     useEffect(() => {
@@ -43,6 +61,8 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
       const engine = new RenderEngine({
         onWebglFail: () => setWebglFailed(true),
         onPerfStats: (stats) => onPerfStats?.(stats),
+        onUnitClick: (unitId) => onUnitClickRef.current?.(unitId),
+        onUnitHover: (unitId) => onUnitHoverRef.current?.(unitId),
       });
       engineRef.current = engine;
       void engine.mount(container, { showPerfStats });
@@ -90,6 +110,10 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
     useEffect(() => {
       if (renderingConfig) engineRef.current?.setRenderingConfig(renderingConfig);
     }, [renderingConfig]);
+
+    useEffect(() => {
+      if (unitsConfig) engineRef.current?.setUnitsConfig(unitsConfig);
+    }, [unitsConfig]);
 
     return (
       <div ref={containerRef} className={className}>

@@ -38,6 +38,13 @@ export async function GET(
       return {
         slotId: slot.id,
         slotName: slot.name,
+        // Units Blocks & POI Layer PRD §2/§3 — the public viewer's
+        // RenderEngine needs to know which loaded slot is the Units
+        // layer (to build the unit registry/raycast targets from it)
+        // and which slot's transform to live-inherit, same as the admin
+        // editor's own detailModels construction.
+        slotRole: slot.role,
+        transformParentSlotId: slot.transformParentSlotId,
         model: {
           glbUrl: version.publicAssetUrl,
           fileName: version.fileName,
@@ -64,7 +71,14 @@ export async function GET(
           selectable: version.selectable,
           transformLocked: version.transformLocked,
           updatedAt: version.updatedAt,
-          unitLinks: version.unitLinks.map((l) => ({ meshName: l.meshName, unitId: l.unitId })),
+          unitLinks: version.unitLinks.map((l) => ({
+            meshName: l.meshName,
+            unitId: l.unitId,
+            poiYawDeg: l.poiYawDeg,
+            poiEnabled: l.poiEnabled,
+            poiDistanceOverride: l.poiDistanceOverride,
+            poiHeightOverride: l.poiHeightOverride,
+          })),
           sceneManifest: version.sceneManifest ?? [],
           nodeOverrides: version.nodeOverrides ?? [],
           triangleCount: version.triangleCount,

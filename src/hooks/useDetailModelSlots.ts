@@ -11,6 +11,15 @@ export interface UnitLinkRow {
   meshName: string;
   unitId: string;
   mappingStatus: string;
+  /** Units Blocks & POI Layer PRD §7/§15 — the per-unit POI camera-facing
+   * direction (Building-local degrees) plus its rare escape-hatch
+   * overrides. Optional here purely because callers building a fresh,
+   * not-yet-saved row (e.g. autoDetectLinks/setLink) don't set them —
+   * the API/DB default (0°, enabled) applies once persisted. */
+  poiYawDeg?: number;
+  poiEnabled?: boolean;
+  poiDistanceOverride?: number | null;
+  poiHeightOverride?: number | null;
 }
 
 export interface DetailVersionRow {
@@ -147,13 +156,13 @@ export function useDetailModelSlots(projectId: string) {
     setActiveSlotId(slotId);
   }
 
-  async function handleAddSlot(name: string) {
+  async function handleAddSlot(name: string, role?: DetailModelSlot["role"]) {
     const trimmed = name.trim();
     if (!trimmed) return;
     try {
       const res = await fetchWithSessionRetry(
         `/api/detail-models/${projectId}/slots`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: trimmed }) },
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: trimmed, role }) },
         establishAdminSession
       );
       if (!res.ok) throw new Error(await res.text());
@@ -421,6 +430,12 @@ export function useDetailModelSlots(projectId: string) {
     slots,
     activeSlotId,
     versions,
+    /** Units Blocks & POI Layer PRD — every slot's own latest version, not
+     * just the active one, so a consumer can composite ALL slots into one
+     * live preview (Building + Units together) the way the public viewer
+     * already does, rather than showing only whichever slot's tab is
+     * currently selected. */
+    versionsBySlot,
     activeVersion,
     slotsLoaded,
     canEditDetail,

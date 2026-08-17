@@ -1,5 +1,5 @@
-import type { CameraConfig, QualityConfig } from "@/lib/render-engine/RenderEngine";
-import type { CameraPreset, EnvironmentConfig, LightingConfig, ProjectDetailModel, RenderingConfig, Section, Unit } from "@/lib/types";
+import type { CameraConfig, DetailModelEntry, QualityConfig } from "@/lib/render-engine/RenderEngine";
+import type { CameraPreset, EnvironmentConfig, LightingConfig, RenderingConfig, Section, UnitsConfig } from "@/lib/types";
 
 /**
  * ThreeProjectViewer's imperative handle + props contract — ground-up
@@ -38,11 +38,32 @@ export interface ThreeProjectViewerHandle {
   /** Performance tab (PRD §40) — real current renderScale post any
    * adaptive/interaction reduction. */
   getEffectiveRenderScale: () => number;
-  /** Units Search Mode PRD, Phase 3 — highlights the given unit's mesh
-   * (SELECTED_COLOR override) if this project's published model has a
-   * real mesh link for it; null clears the highlight. No-op (safely) on a
-   * project with no unit mesh links authored yet. */
+  /** Units Search Mode PRD, Phase 3 / Units Blocks & POI Layer PRD §18-20
+   * — highlights the given unit's block (status-color fill + purple
+   * outline) if this project's published model has a real mesh link for
+   * it; null clears the highlight. No-op (safely) on a project with no
+   * unit mesh links authored yet. */
   setSelectedUnit: (unitId: string | null) => void;
+  /** §18 — master Units-mode toggle; unit blocks are only visible AND
+   * clickable/hoverable while this is on. */
+  setUnitsMode: (enabled: boolean) => void;
+  /** §18/§13 — per-status show/hide within Units mode. */
+  setUnitStatusFilters: (filters: { available: boolean; reserved: boolean; sold: boolean }) => void;
+  /** §18 — hides every unit block except the given one; null clears it. */
+  isolateUnit: (unitId: string | null) => void;
+  /** §18 — hover highlight, independent of selection. */
+  hoverUnit: (unitId: string | null) => void;
+  /** §16-17 — flies the camera to the given unit's POI framing. Returns
+   * false (no-op) if the unit isn't loaded/mapped or has its own POI
+   * camera disabled. */
+  focusUnit: (unitId: string) => boolean;
+  /** §18 — clears selection/isolation and reframes on the whole scene. */
+  resetUnitCamera: () => void;
+  /** Read-only — every unit currently resolved in the live registry
+   * (loaded GLB + confirmed mapping), for a caller that wants to show
+   * "N mapped / loaded" without duplicating the engine's own resolution
+   * logic. */
+  getUnitRegistrySnapshot: () => { unitId: string; unitCode: string; poiYawDeg: number }[];
 }
 
 export interface ThreeProjectViewerProps {
@@ -50,8 +71,17 @@ export interface ThreeProjectViewerProps {
    * caller-supplied, not fetched internally (public page uses
    * useProjectDetailModel; the admin editor supplies its own
    * draft-aware array). Empty is a valid "nothing published yet" state. */
-  detailModels: { slotId: string; model: ProjectDetailModel; units?: Unit[]; statusPreviewEnabled?: boolean }[];
+  detailModels: DetailModelEntry[];
   className?: string;
+  /** Units tab — appearance + master POI camera, applied live (no
+   * remount), same pattern as environmentConfig/lightingConfig/
+   * renderingConfig below. */
+  unitsConfig?: UnitsConfig;
+  /** §19-20 — real 3D-click/hover on a unit block. Optional: the editor's
+   * own live-preview viewport doesn't need to wire these (it drives
+   * selection from the Units tab's own list instead). */
+  onUnitClick?: (unitId: string | null) => void;
+  onUnitHover?: (unitId: string | null) => void;
   /** Camera tab (PRD §37) — applied live, no remount when it changes. */
   cameraConfig?: CameraConfig;
   /** Performance tab (PRD §40) — applied live, except renderingMode

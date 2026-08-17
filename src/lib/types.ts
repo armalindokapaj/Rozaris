@@ -571,6 +571,36 @@ export interface Project3DConfig {
   unitColorSold: string;
   unitColorSelected: string;
 
+  /** Units Blocks & POI Layer PRD §5, §11-12, §24 — appearance config for
+   * the X-ray unit-box overlay, consumed by `src/lib/unitStatusVisuals.ts`
+   * together with the `unitColor*` fields just above. A real, pre-
+   * existing gap this PRD's implementation found and fixed: `unitColor*`
+   * were already real, admin-editable, persisted fields (with a stale doc
+   * comment above claiming they drove "RenderEngine.ts's
+   * refreshGlbUnitBoxAppearance" — a function that no longer exists,
+   * deleted along with the rest of the pre-rebuild engine in the
+   * Experience Editor v2 rewrite) but the rebuilt RenderEngine.ts never
+   * actually read them, rendering unit boxes with hardcoded
+   * UNIT_BOX_COLOR/SELECTED_COLOR constants instead. Both are wired
+   * together now. */
+  unitBlocksEnabled: boolean;
+  unitBlocksStatusColorsEnabled: boolean;
+  unitBlocksXrayEnabled: boolean;
+  unitBlocksDefaultOpacity: number;
+  unitBlocksHoverOpacity: number;
+  unitBlocksSelectedOpacity: number;
+  unitBlocksSelectedOutlineEnabled: boolean;
+
+  /** Units Blocks & POI Layer PRD §14-17 — one master POI-camera config
+   * per project; the only per-unit knob lives on UnitMeshLink.poiYawDeg
+   * instead. */
+  unitPoiCameraEnabled: boolean;
+  unitPoiCameraFov: number;
+  unitPoiCameraDistanceMultiplier: number;
+  unitPoiCameraHeightOffset: number;
+  unitPoiTransitionMs: number;
+  unitPoiAutoOcclusionCorrection: boolean;
+
   /** Unit-status caustics (`webgpu_caustics.html` parity, adapted — see
    * RenderEngine.ts's `buildCausticsNode` doc comment for the real
    * technique and honest deviations from the reference's refract()/
@@ -790,6 +820,34 @@ export type RenderingConfig = Pick<
   | "lutEnabled"
   | "lutPreset"
   | "lutIntensity"
+>;
+
+/** Units Blocks & POI Layer PRD — the new Units tab's own subset of
+ * Project3DConfig (appearance + master POI camera). Kept here for the
+ * same anti-circular-import reason as the other *Config Picks: the Unit
+ * Registry/X-ray material logic lives in its own render-engine module
+ * (render-engine/unitRegistry.ts), plus the shared, non-3D-only
+ * `src/lib/unitStatusVisuals.ts` resolver both need this shape without
+ * importing RenderEngine.ts itself. */
+export type UnitsConfig = Pick<
+  Project3DConfig,
+  | "unitColorAvailable"
+  | "unitColorReserved"
+  | "unitColorSold"
+  | "unitColorSelected"
+  | "unitBlocksEnabled"
+  | "unitBlocksStatusColorsEnabled"
+  | "unitBlocksXrayEnabled"
+  | "unitBlocksDefaultOpacity"
+  | "unitBlocksHoverOpacity"
+  | "unitBlocksSelectedOpacity"
+  | "unitBlocksSelectedOutlineEnabled"
+  | "unitPoiCameraEnabled"
+  | "unitPoiCameraFov"
+  | "unitPoiCameraDistanceMultiplier"
+  | "unitPoiCameraHeightOffset"
+  | "unitPoiTransitionMs"
+  | "unitPoiAutoOcclusionCorrection"
 >;
 
 /** Environment tab (PRD §7-13) subset of Project3DConfig — Sun & Sky,
@@ -1068,6 +1126,15 @@ export interface ProjectMapModel {
 export interface UnitMeshLink {
   meshName: string;
   unitId: string;
+  /** Units Blocks & POI Layer PRD §7/§15/§29 — the per-unit POI-camera
+   * authoring fields that travel with the mapping itself (including into
+   * the versioned ExperienceDocument snapshot). Deliberately NOT
+   * `Unit.status` — see PRD §29's "do not snapshot status" rule;
+   * availability is live inventory, not 3D authoring configuration. */
+  poiYawDeg?: number;
+  poiEnabled?: boolean;
+  poiDistanceOverride?: number | null;
+  poiHeightOverride?: number | null;
 }
 
 /** One entry per glTF node in a detail-model GLB, in the source file's own
@@ -1200,11 +1267,21 @@ export interface NodeOverride {
  * one (auto-created "Building" for any project that had a detail model
  * before this existed — see scripts/migrate-detail-model-slots.ts).
  * `ProjectDetailModel` below is now per-slot, not per-project. */
+/** Units Blocks & POI Layer PRD §2 — what a slot's GLB actually contains,
+ * resolved by this real field rather than ever string-matching on `name`
+ * (an admin can rename "Building" to anything). */
+export type DetailModelSlotRole = "building" | "units" | "surroundings" | "context" | "custom";
+
 export interface DetailModelSlot {
   id: string;
   projectId: string;
   name: string;
   order: number;
+  role: DetailModelSlotRole;
+  /** PRD §3 — set (normally to the project's `building`-role slot's id)
+   * so this slot's own transform is ignored in favor of live-copying the
+   * parent's, keeping Building and Units from ever drifting apart. */
+  transformParentSlotId: string | null;
   createdAt: string;
 }
 

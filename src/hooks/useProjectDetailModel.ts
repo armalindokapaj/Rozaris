@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ProjectDetailModel } from "@/lib/types";
+import type { DetailModelSlotRole, ProjectDetailModel } from "@/lib/types";
 
 export interface ProjectDetailModelSlotEntry {
   slotId: string;
   slotName: string;
+  slotRole: DetailModelSlotRole;
+  transformParentSlotId: string | null;
   model: ProjectDetailModel;
 }
 

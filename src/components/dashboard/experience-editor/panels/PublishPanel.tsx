@@ -57,6 +57,19 @@ export function PublishPanel({
   const hasOpeningShot = configEditor.draft.cameraPresets.length > 0;
   const sectionCount = configEditor.draft.sections.length;
 
+  // Units Blocks & POI Layer PRD §26 — preview the same checks the
+  // publish route itself enforces for a role=units slot, so an admin
+  // sees the problem BEFORE clicking Publish and getting a 422, not
+  // instead of the server-side gate (that stays authoritative — this is
+  // read-only preview off the same live draft state).
+  const activeSlot = detail.slots.find((s) => s.id === detail.activeSlotId) ?? null;
+  const isUnitsSlot = activeSlot?.role === "units";
+  const unitNodeNames = new Set((activeVersion?.sceneManifest ?? []).map((n) => n.name).filter((n) => /^Unit_/i.test(n)));
+  const mappedMeshNames = new Set(modelEditor.links.map((l) => l.meshName));
+  const unmappedBlocks = Array.from(unitNodeNames).filter((n) => !mappedMeshNames.has(n));
+  const mappedUnitIds = new Set(modelEditor.links.map((l) => l.unitId));
+  const missingUnits = (units ?? []).filter((u) => !mappedUnitIds.has(u.id));
+
   async function publish() {
     setPublishing(true);
     setPublishError(null);
@@ -102,6 +115,25 @@ export function PublishPanel({
         <CheckRow ok="warn" label={`${sectionCount} section(s) authored`} detail={sectionCount === 0 ? "Optional — informational only" : undefined} />
         <CheckRow ok="warn" label="Solar Path / Viewer Time" detail="N/A — lands with the Environment tab (Phase 2)" />
         <CheckRow ok="warn" label="Shader errors" detail="N/A — no shader-compile tracking exists yet" />
+        {isUnitsSlot && (
+          <>
+            <CheckRow
+              ok={!!activeSlot?.transformParentSlotId}
+              label={activeSlot?.transformParentSlotId ? "Building anchor set" : "No Building anchor set"}
+              detail={activeSlot?.transformParentSlotId ? undefined : "Set on the Scene tab — required to publish a Units slot"}
+            />
+            <CheckRow
+              ok={unmappedBlocks.length === 0}
+              label={`Unit blocks: ${unmappedBlocks.length} unmapped`}
+              detail={unmappedBlocks.length > 0 ? unmappedBlocks.slice(0, 5).join(", ") : undefined}
+            />
+            <CheckRow
+              ok={missingUnits.length === 0}
+              label={`Units missing a block: ${missingUnits.length}`}
+              detail={missingUnits.length > 0 ? missingUnits.slice(0, 5).map((u) => u.code).join(", ") : undefined}
+            />
+          </>
+        )}
       </GroupCard>
 
       <SectionHeading>Versions</SectionHeading>
