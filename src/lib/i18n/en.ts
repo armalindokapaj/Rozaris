@@ -2471,7 +2471,7 @@ const en = {
     explore: "Explore",
     units: "Units",
     views: "Views",
-    sunTime: "Sun & Time",
+    sunTime: "Time",
     more: "More",
     moreProjectInfo: "Project Information",
     moreShare: "Share",
@@ -2501,6 +2501,16 @@ const en = {
     clearFilters: "Clear filters",
     moreComingSoon: "Coming in an upcoming update.",
     resultsCount: "{count} results",
+    // Units Bar (2026-08-17) — the floating filter bar shown when Units is
+    // active; distinct wording from resultsCount above to match the
+    // reference render's own "12 units found" exactly.
+    foundCount: "{count} units found",
+    refineSubtitle: "Refine available homes",
+    listUnits: "List units",
+    filterSurface: "Surface",
+    filterBedrooms: "Bedrooms",
+    filterBathrooms: "Bathrooms",
+    filterAvailability: "Availability",
     noResults: "No units match these filters.",
     floorLabel: "Floor {floor}",
     favorite: "Favorite",
@@ -2546,6 +2556,7 @@ const en = {
     periodAfternoon: "Afternoon",
     periodEvening: "Evening",
     periodSunset: "Sunset",
+    presets: "Presets",
     presetMorning: "Morning",
     presetNoon: "Noon",
     presetGoldenHour: "Golden Hour",

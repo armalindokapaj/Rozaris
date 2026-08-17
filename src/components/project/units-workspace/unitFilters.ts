@@ -9,6 +9,15 @@ export function bedroomLabel(bedrooms: number): string {
   return bedrooms === 0 ? "Studio" : `${bedrooms}+1`;
 }
 
+/** Real, fixed bedroom-count buckets (Studio→4+1) — shared between
+ * UnitSearchView's own pill row and UnitsBar's dropdown (2026-08-17,
+ * Units Bar redesign) so both surfaces offer the identical set rather than
+ * two independently-maintained copies. Not derived from the live `units`
+ * array (unlike `bathroomOptions` in UnitsBar) — this is a real-estate
+ * category scale, not a data-driven option list, same reasoning
+ * UnitSearchView's own doc comment already gives for it. */
+export const BEDROOM_OPTIONS = [0, 1, 2, 3, 4];
+
 export type StatusFilter = "available" | "reserved" | "sold" | "all";
 export type SortOption = "recommended" | "priceAsc" | "priceDesc" | "areaAsc" | "areaDesc" | "floorAsc" | "floorDesc";
 
@@ -17,11 +26,22 @@ export interface UnitFilterState {
   status: StatusFilter;
   /** Bedroom-count bucket, or null = every type. */
   bedrooms: number | null;
+  /** Exact bathroom count, or null = every count. Added alongside `minArea`/
+   * `maxArea` for the Units Bar redesign (2026-08-17) — UnitSearchView
+   * itself still has no bathrooms control of its own (see its doc
+   * comment), but the underlying filter state is real and shared, so
+   * UnitsBar's Bathrooms dropdown genuinely narrows the same list. */
+  bathrooms: number | null;
   building: string | null;
   minPrice: number | null;
   maxPrice: number | null;
   minFloor: number | null;
   maxFloor: number | null;
+  /** Surface range, always in real stored m² regardless of the visitor's
+   * display `AreaUnit` preference (ft² is a presentation-only conversion —
+   * see unitDisplay.ts's own doc comment). null = unbounded on that side. */
+  minArea: number | null;
+  maxArea: number | null;
   sort: SortOption;
 }
 
@@ -29,11 +49,14 @@ export const DEFAULT_UNIT_FILTERS: UnitFilterState = {
   query: "",
   status: "available",
   bedrooms: null,
+  bathrooms: null,
   building: null,
   minPrice: null,
   maxPrice: null,
   minFloor: null,
   maxFloor: null,
+  minArea: null,
+  maxArea: null,
   sort: "recommended",
 };
 
@@ -45,9 +68,11 @@ export const DEFAULT_UNIT_FILTERS: UnitFilterState = {
 export function activeFilterCount(state: UnitFilterState): number {
   let n = 0;
   if (state.bedrooms != null) n++;
+  if (state.bathrooms != null) n++;
   if (state.building != null) n++;
   if (state.minPrice != null || state.maxPrice != null) n++;
   if (state.minFloor != null || state.maxFloor != null) n++;
+  if (state.minArea != null || state.maxArea != null) n++;
   return n;
 }
 
@@ -56,11 +81,14 @@ export function filterUnits(units: Unit[], state: UnitFilterState): Unit[] {
   return units.filter((u) => {
     if (state.status !== "all" && u.status !== state.status) return false;
     if (state.bedrooms != null && u.bedrooms !== state.bedrooms) return false;
+    if (state.bathrooms != null && u.bathrooms !== state.bathrooms) return false;
     if (state.building != null && u.buildingName !== state.building) return false;
     if (state.minPrice != null && u.price < state.minPrice) return false;
     if (state.maxPrice != null && u.price > state.maxPrice) return false;
     if (state.minFloor != null && u.floor < state.minFloor) return false;
     if (state.maxFloor != null && u.floor > state.maxFloor) return false;
+    if (state.minArea != null && u.area < state.minArea) return false;
+    if (state.maxArea != null && u.area > state.maxArea) return false;
     if (q) {
       const haystack = `${u.code} ${u.buildingName} ${bedroomLabel(u.bedrooms)}`.toLowerCase();
       if (!haystack.includes(q)) return false;

@@ -1,14 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { gsap } from "gsap";
-import { useT } from "@/lib/i18n/useT";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
 import { useClickOutside } from "@/hooks/useClickOutside";
-import { useHasMounted } from "@/hooks/useHasMounted";
-import { useIdleFade } from "@/hooks/useIdleFade";
-import { useViewerPreferences } from "@/hooks/useViewerPreferences";
 import { cn } from "@/lib/utils";
 import { NorthCompass } from "./NorthCompass";
 import { ProjectIdentity } from "./ProjectIdentity";
@@ -22,7 +18,9 @@ import type { ThreeProjectViewerHandle } from "../viewerTypes";
 import { SunTimeWorkspace } from "../sun-time/SunTimeWorkspace";
 import type { SunTimePreset, SunTimeline } from "@/lib/sunPosition";
 import { ViewsWorkspace } from "../views-workspace/ViewsWorkspace";
-import type { CameraPreset } from "@/lib/types";
+import { UnitsBar } from "../units-workspace/UnitsBar";
+import { DEFAULT_UNIT_FILTERS, type UnitFilterState } from "../units-workspace/unitFilters";
+import type { CameraPreset, Unit } from "@/lib/types";
 import type { MoreMenuProjectInfo } from "./MoreMenu";
 
 /**
@@ -41,20 +39,25 @@ import type { MoreMenuProjectInfo } from "./MoreMenu";
  * as a sibling of `ViewerHUD` under `ProjectViewer`, needing the same
  * state, so the parent (ArchVizClient) owns it and both read/drive it.
  * "explore" is the default/fallback (see ViewerNavigation's doc comment).
- * Every module now has a real panel: "units" gets UnitsWorkspace
- * (rendered by the parent, desktop only — see layoutState.ts), "sunTime"
- * gets SunTimeWorkspace, "views" gets ViewsWorkspace. ViewerModuleLayer's
- * "coming soon" placeholder now only ever shows for mobile's own Units
- * fallback. All the real state/data plumbing for Sun & Time and Views
- * lives in the parent (ArchVizClient), this component just threads it
- * through — same pattern viewerTimeHours/simulationDate already used for
- * the nav pill's own compact label below.
+ * Every module now has a real panel: "units" gets UnitsBar on every device
+ * (a desktop bar or a mobile bottom sheet, both real — see that
+ * component's own doc comment), plus the real UnitsWorkspace side panel
+ * (rendered by the parent, desktop only, and only once its own "List
+ * Units" trigger has been clicked — see layoutState.ts's `unitsListOpen`
+ * doc comment), "sunTime" gets SunTimeWorkspace, "views" gets
+ * ViewsWorkspace. ViewerModuleLayer's "coming soon" placeholder no longer
+ * has any real module left to show for — it's dead weight kept mounted
+ * only because nothing currently needs it removed. All the real state/
+ * data plumbing for Sun & Time, Views, and Units lives in the parent
+ * (ArchVizClient), this
+ * component just threads it through to the panels below.
  */
 export function ViewerHUD({
   viewerRef,
   sceneReady,
   activeModule,
   onActiveModuleChange,
+  chromeDimmed,
   project,
   fullscreen,
   onToggleFullscreen,
@@ -63,7 +66,6 @@ export function ViewerHUD({
   fullscreenEnabled,
   northOffsetDeg,
   viewerTimeHours,
-  simulationDate,
   sunTimeInteractive,
   sunTimeBounds,
   sunTimeline,
@@ -71,17 +73,28 @@ export function ViewerHUD({
   activeSunPreset,
   sunTimeCanReset,
   onSunTimeChange,
-  onSunDateChange,
   onSunPresetSelect,
   onSunTimeReset,
   cameraPresets,
   activeViewPresetId,
   onSelectViewPreset,
+  units,
+  unitFilters,
+  onUnitFiltersChange,
+  unitsListOpen,
+  onToggleUnitsList,
 }: {
   viewerRef: React.RefObject<ThreeProjectViewerHandle | null>;
   sceneReady: boolean;
   activeModule: ActiveModule;
   onActiveModuleChange: (module: ActiveModule) => void;
+  /** More / Settings Menu PRD §14 "Interface Auto-Hide" — computed by the
+   * parent now (2026-08-17), not here: ArchVizClient also needs it to
+   * drive the 3D camera's own idle auto-rotate (see that component's own
+   * doc comment), and two independent `useIdleFade` timers in two
+   * components would be wasteful and could drift out of sync with each
+   * other. This component just applies it visually. */
+  chromeDimmed: boolean;
   /** More / Settings Menu PRD — also feeds MoreMenu's Project Information
    * section, hence the richer shape than the old projectName/developerName/
    * city trio it replaces. */
@@ -93,7 +106,6 @@ export function ViewerHUD({
   fullscreenEnabled: boolean;
   northOffsetDeg?: number;
   viewerTimeHours?: number;
-  simulationDate?: string;
   /** Sun & Time PRD §9 — whether an admin has actually turned on live
    * time control for this project (solarControllerEnabled &&
    * viewerTimeControlEnabled). Off is the default for every project today
@@ -108,7 +120,6 @@ export function ViewerHUD({
    * default (Reset PRD §32 has nothing to do until they have). */
   sunTimeCanReset?: boolean;
   onSunTimeChange?: (hours: number) => void;
-  onSunDateChange?: (iso: string) => void;
   onSunPresetSelect?: (preset: SunTimePreset) => void;
   onSunTimeReset?: () => void;
   /** Views Menu PRD — real admin-saved camera Shots (Experience Editor v2,
@@ -116,22 +127,30 @@ export function ViewerHUD({
   cameraPresets?: CameraPreset[];
   activeViewPresetId?: string | null;
   onSelectViewPreset?: (preset: CameraPreset) => void;
+  /** Units Bar (2026-08-17) — real project inventory (same `units`
+   * ArchVizClient already feeds UnitsWorkspace) and the same
+   * `UnitFilterState` shared with it, so this bar's Surface/Bedrooms/
+   * Bathrooms/Availability controls genuinely narrow the same list. */
+  units?: Unit[];
+  unitFilters?: UnitFilterState;
+  onUnitFiltersChange?: Dispatch<SetStateAction<UnitFilterState>>;
+  /** Whether the real UnitsWorkspace side panel is open — owned by
+   * ArchVizClient (see layoutState.ts), driven by UnitsBar's own "List
+   * Units" trigger below. */
+  unitsListOpen?: boolean;
+  onToggleUnitsList?: () => void;
 }) {
-  const { locale } = useT();
   const reducedMotion = useEffectiveReducedMotion();
   const isDesktop = useIsDesktop();
   const [loadSequenceDone, setLoadSequenceDone] = useState(false);
-  const { leftPanelOpen, headerReversed } = getViewerLayoutState(activeModule, isDesktop);
-
-  // More / Settings Menu PRD §14 "Interface Auto-Hide" — only while the
-  // visitor is genuinely idle in Explore (default ON, real preference —
-  // see useViewerPreferences). Gated off whenever any module panel is
-  // open: dimming chrome someone is actively reading (Units/Views/
-  // Sun & Time/the More menu itself) would fight the interaction, not
-  // support it, which isn't this PRD section's intent.
-  const idle = useIdleFade(3500);
-  const { interfaceAutoHide } = useViewerPreferences();
-  const chromeDimmed = interfaceAutoHide && idle && activeModule === "explore";
+  const { leftPanelOpen } = getViewerLayoutState(activeModule, isDesktop, !!unitsListOpen);
+  // ViewerModuleLayer's "coming soon" placeholder should stay hidden for
+  // Units on *any* device now — UnitsBar (rendered below) covers it for
+  // real everywhere (mobile bottom sheet + desktop bar, 2026-08-17), not
+  // just desktop. Distinct from `leftPanelOpen` on purpose: that only
+  // tracks the real 380px side panel, which stays desktop-only and only
+  // opens once its own "List Units" trigger is clicked.
+  const unitsHandledByUnitsBar = activeModule === "units";
 
   const overlayRef = useRef<HTMLDivElement>(null);
   const identityRef = useRef<HTMLDivElement>(null);
@@ -170,34 +189,14 @@ export function ViewerHUD({
   // Front Page PRD §16 "Tap Outside" — closes an open module and returns
   // the nav to its Explore/default look. Inactive (and therefore free)
   // whenever Explore is already the active module. Units Search Mode PRD
-  // §2 gives Units its own real panel (UnitsWorkspace) with its own
-  // explicit close (× / clicking Units again / PRD §31) rather than a
-  // stray click anywhere outside the nav — so this only excludes Units
-  // when that real panel is actually open (desktop); on narrower
-  // viewports Units falls back to the same placeholder views/sunTime use
-  // (see layoutState.ts), which should close on outside-tap same as theirs.
+  // §2 gives the real 380px UnitsWorkspace side panel its own explicit
+  // close (× / clicking Units again / PRD §31) rather than a stray click
+  // anywhere outside the nav — so this only excludes Units while that real
+  // panel is actually open (`leftPanelOpen`, desktop-only, see
+  // layoutState.ts). UnitsBar itself (both its desktop bar and mobile
+  // sheet) is a normal module panel like Views/Sun & Time and should close
+  // on outside-tap same as theirs, so it isn't excluded here.
   useClickOutside(navGroupRef, () => onActiveModuleChange("explore"), activeModule !== "explore" && !leftPanelOpen);
-
-  // `locale` comes from a persisted (skipHydration) store, so it can read
-  // "sq" on the server/first client paint and something else once
-  // rehydrated — formatting with it immediately caused a real SSR/client
-  // text mismatch (React hydration error) here. This text is invisible
-  // until Sun & Time is actually opened (well after mount), so deferring
-  // it past hydration via the existing `useHasMounted` costs nothing
-  // visible and sidesteps the mismatch cleanly.
-  const mounted = useHasMounted();
-
-  const sunTimeLabel = useMemo(() => {
-    if (!mounted || viewerTimeHours == null || !simulationDate) return null;
-    const hoursNorm = ((viewerTimeHours % 24) + 24) % 24;
-    const h = Math.floor(hoursNorm);
-    const m = Math.round((hoursNorm - h) * 60);
-    const time = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-    const date = new Date(simulationDate);
-    if (Number.isNaN(date.getTime())) return time;
-    const formattedDate = new Intl.DateTimeFormat(locale, { day: "numeric", month: "long" }).format(date);
-    return `${time} · ${formattedDate}`;
-  }, [mounted, viewerTimeHours, simulationDate, locale]);
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20">
@@ -214,22 +213,27 @@ export function ViewerHUD({
 
       <header
         className={cn(
-          "absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] transition-opacity duration-700 sm:p-4",
+          // `items-center` (was `items-start`) — now that ProjectIdentity/
+          // NorthCompass/ViewerUtilities all share one fixed `h-12`
+          // (direct design feedback, 2026-08-17), this is defensive
+          // correctness rather than a visible change today: it keeps them
+          // aligned even if a future height ever drifts, instead of
+          // silently relying on every child happening to be the same size.
+          "absolute inset-x-0 top-0 flex items-center justify-between gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] transition-opacity duration-700 sm:p-4",
           chromeDimmed && "opacity-40"
         )}
       >
-        {/* Units Search Mode PRD §8 — order swaps (identity first, compass
-            second) while a real UnitsWorkspace panel sits to the left, so
-            identity reads as adjacent to that workspace. Plain `order`
-            swap, not yet an animated one — PRD asks for the latter, but
-            the panel-open choreography below is Phase 1's real complexity
-            budget; flagged as a follow-up polish pass, not a functional gap. */}
+        {/* Always "[ROZARIS|Project] [North]" — identity first, compass
+            second, unconditionally. Units Search Mode PRD §8 originally
+            swapped this back to "compass first" while that panel was
+            open; dropped per direct design feedback (opening Units should
+            NOT swap this order) — see layoutState.ts's own doc comment. */}
         <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
-          <div ref={compassRef} className={cn("pointer-events-auto shrink-0 opacity-0", headerReversed ? "order-2" : "order-1")}>
-            <NorthCompass viewerRef={viewerRef} northOffsetDeg={northOffsetDeg} />
-          </div>
-          <div ref={identityRef} className={cn("pointer-events-auto min-w-0 opacity-0", headerReversed ? "order-1" : "order-2")}>
+          <div ref={identityRef} className="pointer-events-auto min-w-0 opacity-0">
             <ProjectIdentity projectName={project.name} developerName={project.developerName} city={project.city} />
+          </div>
+          <div ref={compassRef} className="pointer-events-auto shrink-0 opacity-0">
+            <NorthCompass viewerRef={viewerRef} northOffsetDeg={northOffsetDeg} />
           </div>
         </div>
         <div ref={utilitiesRef} className="pointer-events-auto shrink-0 opacity-0">
@@ -249,31 +253,57 @@ export function ViewerHUD({
       <div
         ref={navGroupRef}
         className={cn(
-          "pointer-events-none absolute inset-x-0 bottom-[max(1.5rem,env(safe-area-inset-bottom))] flex justify-center transition-opacity duration-700 sm:bottom-8",
+          // Bottom inset now matches the header's own top inset exactly
+          // (`pt-[max(0.75rem,...)]` mobile, `sm:p-4` desktop above) —
+          // was `1.5rem`/`sm:bottom-8`, visibly more offset than the
+          // header; direct design feedback wanted the two symmetric.
+          //
+          // `pl-/pr-[max(0.75rem,env(safe-area-inset-*))]` (mobile only,
+          // direct design feedback, 2026-08-17) — the exact same left/
+          // right formula the header itself uses. Below `lg` (below
+          // `useIsDesktop`'s own 1024px floor, the same split point every
+          // other Units-only gate in this file already uses), `navRef`
+          // stretches to fill this padded strip edge-to-edge instead of
+          // staying a narrow fixed-width pill — real bug found live-
+          // testing: ViewerNavigation's 4 fixed-`w-24` desktop items add
+          // up to ~424px, wider than many real phone viewports (e.g.
+          // 390px), so the "centered" pill was actually overflowing off
+          // the left edge, uncentered and partly clipped. `lg:px-0` drops
+          // this padding again at desktop, where the existing centered
+          // fixed-width pill (unrelated, already-shipped design) is
+          // unchanged.
+          "pointer-events-none absolute inset-x-0 bottom-[max(0.75rem,env(safe-area-inset-bottom))] flex justify-center pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] transition-opacity duration-700 sm:bottom-4 lg:px-0",
           chromeDimmed && "opacity-40"
         )}
       >
-        <div ref={navRef} className="pointer-events-auto relative opacity-0">
-          {/* "units" gets the real UnitsWorkspace panel (rendered by the
-              parent) instead of this placeholder whenever that panel is
-              actually open (desktop) — see the module doc comment above. */}
-          {!leftPanelOpen && (
+        <div ref={navRef} className="pointer-events-auto relative w-full opacity-0 lg:w-fit">
+          {/* "units" gets UnitsBar (below) on every device now instead of
+              this placeholder — see the module doc comment above. */}
+          {!unitsHandledByUnitsBar && (
             <ViewerModuleLayer activeModule={activeModule} onClose={() => onActiveModuleChange("explore")} />
           )}
+          <UnitsBar
+            activeModule={activeModule}
+            isDesktop={isDesktop}
+            units={units ?? []}
+            filters={unitFilters ?? DEFAULT_UNIT_FILTERS}
+            onFiltersChange={onUnitFiltersChange ?? (() => {})}
+            listOpen={!!unitsListOpen}
+            onToggleList={() => onToggleUnitsList?.()}
+            onClose={() => onActiveModuleChange("explore")}
+          />
           {sunTimeBounds && sunTimeline && sunTimePresets && (
             <SunTimeWorkspace
               activeModule={activeModule}
               isDesktop={isDesktop}
               interactive={!!sunTimeInteractive}
               timeHours={viewerTimeHours ?? 12}
-              simulationDate={simulationDate ?? new Date().toISOString()}
               bounds={sunTimeBounds}
               timeline={sunTimeline}
               presets={sunTimePresets}
               activePresetId={activeSunPreset ?? null}
               canReset={!!sunTimeCanReset}
               onTimeChange={(h) => onSunTimeChange?.(h)}
-              onDateChange={(iso) => onSunDateChange?.(iso)}
               onPresetSelect={(p) => onSunPresetSelect?.(p)}
               onReset={() => onSunTimeReset?.()}
             />
@@ -284,7 +314,7 @@ export function ViewerHUD({
             activePresetId={activeViewPresetId ?? null}
             onSelectPreset={(p) => onSelectViewPreset?.(p)}
           />
-          <ViewerNavigation activeModule={activeModule} onSelect={onActiveModuleChange} sunTimeLabel={sunTimeLabel} />
+          <ViewerNavigation activeModule={activeModule} onSelect={onActiveModuleChange} />
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { Crosshair, LayoutGrid, Layers, Sun } from "lucide-react";
+import { Building2, Clock, Compass, Image } from "lucide-react";
 
 /**
  * Viewer Front Page / Idle Experience — shared HUD types.
@@ -23,10 +23,13 @@ export type ActiveModule = "none" | "explore" | "units" | "views" | "sunTime";
 export const NAV_ITEMS: Exclude<ActiveModule, "none">[] = ["explore", "units", "views", "sunTime"];
 
 /** Shared between ViewerNavigation (bottom pill) and ViewerModuleLayer
- * (the placeholder panel above it) so both agree on one glyph per module. */
-export const MODULE_ICONS: Record<Exclude<ActiveModule, "none">, typeof Crosshair> = {
-  explore: Crosshair,
-  units: LayoutGrid,
-  views: Layers,
-  sunTime: Sun,
+ * (the placeholder panel above it) so both agree on one glyph per module.
+ * Swapped to match a direct design reference (2026-08-17): compass/
+ * buildings/picture-frame/clock, replacing the earlier crosshair/grid/
+ * layers/sun set. */
+export const MODULE_ICONS: Record<Exclude<ActiveModule, "none">, typeof Compass> = {
+  explore: Compass,
+  units: Building2,
+  views: Image,
+  sunTime: Clock,
 };

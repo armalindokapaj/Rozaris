@@ -10,6 +10,7 @@ import type { AreaUnit } from "@/hooks/useViewerPreferences";
 import { convertUnitPrice, formatUnitArea } from "./unitDisplay";
 import {
   activeFilterCount,
+  BEDROOM_OPTIONS,
   bedroomLabel,
   DEFAULT_UNIT_FILTERS,
   filterUnits,
@@ -25,7 +26,6 @@ const STATUS_PILLS: { id: StatusFilter; dotClass?: string }[] = [
   { id: "sold", dotClass: "bg-red-400" },
   { id: "all" },
 ];
-const BEDROOM_OPTIONS = [0, 1, 2, 3, 4];
 export const UNITS_PAGE_SIZE = 30;
 
 const STATUS_DOT: Record<Unit["status"], string> = {
@@ -97,12 +97,20 @@ function NumberField({ placeholder, value, onChange }: { placeholder: string; va
  * it's an inert affordance, same honesty pattern as ViewerModuleLayer's
  * "coming soon" placeholders elsewhere in this file tree.
  *
- * `filters`/`viewMode`/`visibleCount` are controlled by the parent
- * (UnitsWorkspace), not owned here — a real bug found live-testing:
- * clicking into a unit's detail view unmounts this component (Unit
- * Detail PRD §1's "same panel, never a second one" swap), so state that
- * lived here as plain `useState` reset the moment you clicked "Back to
- * search". Same fix as favorites already got.
+ * `filters`/`viewMode`/`visibleCount` are controlled by the parent, not
+ * owned here — a real bug found live-testing: clicking into a unit's
+ * detail view unmounts this component (Unit Detail PRD §1's "same panel,
+ * never a second one" swap), so state that lived here as plain `useState`
+ * reset the moment you clicked "Back to search". Same fix as favorites
+ * already got. `filters` itself moved one level further up, from
+ * UnitsWorkspace to ArchVizClient, for the Units Bar redesign
+ * (2026-08-17) — UnitsBar is a sibling of UnitsWorkspace (both live under
+ * ViewerHUD's parent), not its child, and needs to read/write the exact
+ * same state so its Bedrooms/Bathrooms/Surface/Availability controls
+ * genuinely narrow this same list rather than a disconnected copy.
+ * Bathrooms/Surface have no control of their own in *this* panel yet
+ * (still true of "Advanced filters" below), but the state itself is real
+ * and shared, so filtering set from UnitsBar is reflected here too.
  */
 export function UnitSearchView({
   units,

@@ -7,6 +7,13 @@ import Link from "next/link";
  * behavior from the pre-rebuild header is the ROZARIS wordmark linking
  * back to /search, since that's real existing navigation, not something
  * this PRD asked to remove.
+ *
+ * Fixed `h-12` (direct design feedback, 2026-08-17) — this is the
+ * reference height every other piece of viewer chrome now matches:
+ * NorthCompass, ViewerUtilities, and ViewerNavigation. Previously this
+ * pill's height was organic (driven by its two lines of text + `py-2`),
+ * which is what everything else *used* to independently approximate
+ * (`h-11`) rather than actually match.
  */
 export function ProjectIdentity({
   projectName,
@@ -18,7 +25,7 @@ export function ProjectIdentity({
   city: string;
 }) {
   return (
-    <div className="viewer-glass flex min-w-0 items-center gap-2.5 rounded-panel px-3.5 py-2 sm:gap-3 sm:px-4">
+    <div className="viewer-glass flex h-12 min-w-0 items-center gap-2.5 rounded-panel px-3.5 sm:gap-3 sm:px-4">
       <Link
         href="/search"
         className="hidden shrink-0 font-serif text-sm tracking-[0.14em] text-white transition-colors hover:text-white/70 sm:block"

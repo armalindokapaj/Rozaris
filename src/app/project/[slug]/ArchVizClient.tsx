@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
+import { useIdleFade } from "@/hooks/useIdleFade";
+import { useViewerPreferences } from "@/hooks/useViewerPreferences";
 import { useProjectConstruction } from "@/hooks/useProjectConstruction";
 import { useProjectDetailModel } from "@/hooks/useProjectDetailModel";
 import { useProject3DConfig } from "@/hooks/useProject3DConfig";
@@ -14,6 +16,7 @@ import { ViewerHUD } from "@/components/project/viewer-hud/ViewerHUD";
 import { getViewerLayoutState } from "@/components/project/viewer-hud/layoutState";
 import type { ActiveModule } from "@/components/project/viewer-hud/types";
 import { UnitsWorkspace } from "@/components/project/units-workspace/UnitsWorkspace";
+import { DEFAULT_UNIT_FILTERS, type UnitFilterState } from "@/components/project/units-workspace/unitFilters";
 import { computeSunTimeline, geographicSunPosition, sunPositionForAnchors, sunTimelinePresets, type SunTimePreset } from "@/lib/sunPosition";
 import type { CameraPreset } from "@/lib/types";
 import { ConstructionTimelineStrip } from "@/components/project/ConstructionTimelineStrip";
@@ -74,8 +77,38 @@ export function ArchVizClient({ project }: { project: Project }) {
   // sibling of ViewerHUD (PRD §36's own component tree), not a child of
   // it, and both need to react to the same active menu.
   const [activeModule, setActiveModule] = useState<ActiveModule>("explore");
+  // Units Bar redesign (2026-08-17) — the real UnitsWorkspace side panel no
+  // longer opens the instant Units becomes the active module; it now waits
+  // for an explicit click on UnitsBar's own "List Units" trigger. Reset
+  // whenever the visitor leaves Units (a different nav item, Explore,
+  // Escape/click-outside, the bar's own × — all of these already funnel
+  // through `handleActiveModuleChange` below) rather than via a
+  // setState-in-effect, which this codebase's react-hooks/set-state-in-
+  // effect lint rule rejects (see useViewerPreferences.ts's own doc
+  // comment for the same constraint).
+  const [unitsListOpen, setUnitsListOpen] = useState(false);
+  const handleActiveModuleChange = useCallback((module: ActiveModule) => {
+    setActiveModule(module);
+    setUnitsListOpen((prev) => (module === "units" ? prev : false));
+  }, []);
+  const handleToggleUnitsList = useCallback(() => setUnitsListOpen((prev) => !prev), []);
+  // Shared with UnitsBar (via ViewerHUD) and UnitsWorkspace/UnitSearchView
+  // — one real `UnitFilterState`, not two independently-maintained copies,
+  // so Surface/Bedrooms/Bathrooms/Availability set from the new floating
+  // bar genuinely narrow the same left-panel list.
+  const [unitFilters, setUnitFilters] = useState<UnitFilterState>(DEFAULT_UNIT_FILTERS);
   const isDesktop = useIsDesktop();
-  const { leftPanelOpen } = getViewerLayoutState(activeModule, isDesktop);
+  const { leftPanelOpen } = getViewerLayoutState(activeModule, isDesktop, unitsListOpen);
+  // More / Settings Menu PRD §14 "Interface Auto-Hide" — lifted here from
+  // ViewerHUD (2026-08-17) because the camera's own idle auto-rotate (see
+  // `cameraConfig` below) needs the exact same signal, and two independent
+  // `useIdleFade` timers would be wasteful/could drift. 60s (was 3.5s) —
+  // direct design feedback: "works only if the user hasn't clicked the UI
+  // for 60 seconds". Still gated to Explore-only + the real preference,
+  // same as before this move.
+  const idle = useIdleFade(60000);
+  const { interfaceAutoHide } = useViewerPreferences();
+  const chromeDimmed = interfaceAutoHide && idle && activeModule === "explore";
   const compareCount = useAppStore((s) => s.compare.length);
   const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
   const construction = useProjectConstruction(project);
@@ -162,10 +195,14 @@ export function ArchVizClient({ project }: { project: Project }) {
     setLiveSunTimeHours(hours);
     setActiveSunPreset(null);
   }, []);
-  const handleSunDateChange = useCallback((iso: string) => {
-    setLiveSunDate(iso);
-    setActiveSunPreset(null);
-  }, []);
+  // `handleSunDateChange` (the live-date-override write path, PRD §29) was
+  // removed as dead code alongside SunTimeWorkspace's own date picker
+  // (direct design feedback, 2026-08-17: "Date to be removed") — no UI
+  // anywhere calls it anymore. `liveSunDate`/`setLiveSunDate` themselves
+  // stay real (still read below, and `handleSunTimeReset` still clears
+  // them) — only the setter's own trigger is gone, so a future date
+  // control can call `setLiveSunDate` directly without rebuilding
+  // anything here.
   const handleSunPresetSelect = useCallback((preset: SunTimePreset) => {
     setLiveSunTimeHours(preset.hour);
     setActiveSunPreset(preset.id);
@@ -203,9 +240,19 @@ export function ArchVizClient({ project }: { project: Project }) {
       cameraPanEnabled: viewerConfig.cameraPanEnabled,
       cameraZoomEnabled: viewerConfig.cameraZoomEnabled,
       cameraDampingEnabled: viewerConfig.cameraDampingEnabled,
-      autoRotate: viewerConfig.autoRotate,
+      // Driven by the same Interface Auto-Hide idle signal now, not the
+      // admin's static per-project `viewerConfig.autoRotate` (direct
+      // design feedback, 2026-08-17: "Default Camera will be rotation
+      // off... only when Interface Auto-Hide is activated then the camera
+      // will rotate slowly"). `viewerConfig.autoRotate` itself is
+      // deliberately no longer read here — real, still in the DB/admin
+      // schema, just not consulted by the public viewer, a flagged scope
+      // change rather than a silently dropped field. THREE.OrbitControls'
+      // own default `autoRotateSpeed` (2.0 → one revolution per ~30s at
+      // 60fps) already reads as "slowly" without a new speed setting.
+      autoRotate: chromeDimmed,
     }),
-    [viewerConfig]
+    [viewerConfig, chromeDimmed]
   );
 
   const qualityConfig = useMemo(
@@ -470,9 +517,11 @@ export function ArchVizClient({ project }: { project: Project }) {
           comment for why that's deliberate). */}
       <UnitsWorkspace
         open={leftPanelOpen}
-        onClose={() => setActiveModule("explore")}
+        onClose={() => handleActiveModuleChange("explore")}
         units={units}
         onSelectUnitIn3D={handleSelectUnitIn3D}
+        filters={unitFilters}
+        onFiltersChange={setUnitFilters}
       />
 
       {/* The 3D viewport + everything positioned relative to it (HUD,
@@ -485,7 +534,8 @@ export function ArchVizClient({ project }: { project: Project }) {
           viewerRef={viewerRef}
           sceneReady={sceneReady}
           activeModule={activeModule}
-          onActiveModuleChange={setActiveModule}
+          onActiveModuleChange={handleActiveModuleChange}
+          chromeDimmed={chromeDimmed}
           project={moreMenuProject}
           fullscreen={fullscreen}
           onToggleFullscreen={toggleFullscreen}
@@ -494,7 +544,6 @@ export function ArchVizClient({ project }: { project: Project }) {
           fullscreenEnabled={viewerConfig.viewerUI.fullscreenEnabled !== false}
           northOffsetDeg={viewerConfig.northOffsetDeg}
           viewerTimeHours={effectiveSunTimeHours}
-          simulationDate={effectiveSunDate}
           sunTimeInteractive={sunTimeInteractive}
           sunTimeBounds={sunTimeBounds}
           sunTimeline={sunTimeline}
@@ -502,12 +551,16 @@ export function ArchVizClient({ project }: { project: Project }) {
           activeSunPreset={activeSunPreset}
           sunTimeCanReset={liveSunTimeHours != null || liveSunDate != null}
           onSunTimeChange={handleSunTimeChange}
-          onSunDateChange={handleSunDateChange}
           onSunPresetSelect={handleSunPresetSelect}
           onSunTimeReset={handleSunTimeReset}
           cameraPresets={viewerConfig.cameraPresets}
           activeViewPresetId={activeViewPresetId}
           onSelectViewPreset={handleSelectViewPreset}
+          units={units}
+          unitFilters={unitFilters}
+          onUnitFiltersChange={setUnitFilters}
+          unitsListOpen={unitsListOpen}
+          onToggleUnitsList={handleToggleUnitsList}
         />
 
         {/* Pre-dates the Front Page rebuild and isn't governed by its PRD

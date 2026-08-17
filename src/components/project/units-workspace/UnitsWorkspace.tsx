@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { gsap } from "gsap";
 import { ArrowLeft, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
@@ -10,7 +10,7 @@ import { useViewerPreferences } from "@/hooks/useViewerPreferences";
 import type { Unit } from "@/lib/types";
 import { UnitSearchView, UNITS_PAGE_SIZE } from "./UnitSearchView";
 import { UnitDetailView } from "./UnitDetailView";
-import { DEFAULT_UNIT_FILTERS, type UnitFilterState } from "./unitFilters";
+import type { UnitFilterState } from "./unitFilters";
 
 /** PRD §4 — "Recommended desktop width: 360–420px... large displays ~28–
  * 32% max viewport width." Fixed for Phase 1 rather than the responsive
@@ -46,6 +46,12 @@ const PANEL_WIDTH = 380;
  * rows from this project aren't Listing records that store would
  * recognize.
  *
+ * `filters` is now a controlled prop (Units Bar redesign, 2026-08-17) —
+ * owned by ArchVizClient, not this component, so the new floating
+ * UnitsBar (a sibling of this panel, rendered inside ViewerHUD) can share
+ * and mutate the exact same filter state. `viewMode`/`visibleCount` stay
+ * local; nothing outside this panel needs them yet.
+ *
  * Two-layer slide (PRD §5 Step 1, `translateX(-100%) → 0`, 400–550ms):
  * the *outer* div's `width` is what's actually tweened 0→380px — a real
  * layout-affecting animation, deliberately, because it's a flex sibling
@@ -65,11 +71,15 @@ export function UnitsWorkspace({
   onClose,
   units,
   onSelectUnitIn3D,
+  filters,
+  onFiltersChange,
 }: {
   open: boolean;
   onClose: () => void;
   units: Unit[];
   onSelectUnitIn3D: (unitId: string | null) => void;
+  filters: UnitFilterState;
+  onFiltersChange: Dispatch<SetStateAction<UnitFilterState>>;
 }) {
   const { t } = useT();
   const reducedMotion = useEffectiveReducedMotion();
@@ -77,11 +87,10 @@ export function UnitsWorkspace({
   const innerRef = useRef<HTMLDivElement>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  // Search/filter/sort/view state — lives here rather than inside
-  // UnitSearchView so it survives that component unmounting when a unit
-  // is selected (see UnitSearchView's own doc comment for the real bug
-  // this fixes: filters silently reset on "Back to search").
-  const [filters, setFilters] = useState<UnitFilterState>(DEFAULT_UNIT_FILTERS);
+  // Search/sort/view state — stays local (survives UnitSearchView
+  // unmounting when a unit is selected, see UnitSearchView's own doc
+  // comment); `filters` itself is a controlled prop now, shared with
+  // UnitsBar (see this component's own doc comment).
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [visibleCount, setVisibleCount] = useState(UNITS_PAGE_SIZE);
   // More / Settings Menu PRD §11-12 — Currency reuses the real platform
@@ -202,7 +211,7 @@ export function UnitsWorkspace({
             onToggleFavorite={toggleFavorite}
             onSelectUnit={handleSelectUnit}
             filters={filters}
-            onFiltersChange={setFilters}
+            onFiltersChange={onFiltersChange}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
             visibleCount={visibleCount}

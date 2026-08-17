@@ -214,15 +214,15 @@ body {
   border: 1px solid color-mix(in srgb, white 12%, transparent);
 }
 
-/* Project Viewer Front Page (Idle Experience PRD §11) — "controlled
-   architectural glassmorphism", scoped to ViewerHUD only. Deliberately a
-   separate class from `.glass-panel-dark` above (used site-wide with a
-   different, more opaque recipe) rather than overloading it: the PRD
-   specifies this exact rgba/blur/border combination for the Viewer only. */
+/* Project Viewer Front Page chrome, scoped to ViewerHUD only. Was
+   "controlled architectural glassmorphism" (translucent + backdrop-blur,
+   per the original Idle Experience PRD §11) — switched to a fully solid,
+   opaque panel per direct design feedback (no see-through into the 3D
+   scene behind it). Kept as its own class rather than merging into
+   `.glass-panel-dark` above since the two still carry different exact
+   colors/radii conventions across this file tree. */
 .viewer-glass {
-  background: rgba(12, 14, 18, 0.68);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background: #0c0e12;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: var(--shadow-1);
 }
@@ -259,6 +259,31 @@ body {
   .viewer-loading-bar::after {
     animation: none;
     transform: translateX(75%);
+  }
+}
+
+/* More / Settings Menu — real open transition (previously flagged as a
+   gap in MoreMenu.tsx's own doc comment: "deliberately no open/close
+   fade"). Desktop dropdown only — the mobile bottom sheet already reads
+   as a real physical sheet via its own slide-adjacent position, and
+   `.viewer-glass` there is already flush with the screen edge, so a
+   fade+shift would fight rather than reinforce that. */
+@keyframes rz-more-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.viewer-dropdown-in {
+  animation: rz-more-menu-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .viewer-dropdown-in {
+    animation: none;
   }
 }
 

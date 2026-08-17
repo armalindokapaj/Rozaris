@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -25,7 +24,6 @@ import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { useAppStore } from "@/lib/store";
 import { useViewerPreferences } from "@/hooks/useViewerPreferences";
-import { useHasMounted } from "@/hooks/useHasMounted";
 import { cn } from "@/lib/utils";
 import type { Currency, Locale, PropertyType } from "@/lib/types";
 
@@ -47,13 +45,24 @@ export interface MoreMenuProjectInfo {
  * same hand-rolled open/close-triple pattern that predecessor already
  * used — see its own doc comment for why `useDropdown` isn't used here).
  *
- * All 5 real items open in the SAME dropdown (desktop) / bottom sheet
- * (mobile), branching on `section` with a "← Back" header — same
- * container-reuse pattern UnitsWorkspace already established for its own
- * search↔detail swap, not a coincidence: both PRDs describe the same
- * "one panel, multiple views" shape. §22 "Global Menu-State Rule" is
- * satisfied for free — this component never touches `activeModule`/
- * Sun & Time/Units state, so opening it can't disturb any of that.
+ * All 5 real items open in the SAME dropdown, on every device — mobile
+ * used to get a distinct `position:fixed`, body-portaled bottom sheet
+ * (worked around a real containing-block bug: ViewerHUD's own load-
+ * sequence GSAP tween leaves an identity `transform` on this button's
+ * header ancestor, which makes THAT the containing block for any `fixed`
+ * descendant instead of the real viewport). Replaced (direct design
+ * feedback, 2026-08-17: "Top right settings will dropdown from the 3
+ * dots" on mobile too, not a full-width sheet) with the exact same
+ * `position:absolute` dropdown desktop already used — anchored to
+ * `rootRef` (`position:relative`), so it was never actually susceptible
+ * to that transform/containing-block bug in the first place (that bug is
+ * specific to `fixed`, not `absolute`), no portal needed. Branches on
+ * `section` with a "← Back" header — same container-reuse pattern
+ * UnitsWorkspace already established for its own search↔detail swap, not
+ * a coincidence: both PRDs describe the same "one panel, multiple views"
+ * shape. §22 "Global Menu-State Rule" is satisfied for free — this
+ * component never touches `activeModule`/Sun & Time/Units state, so
+ * opening it can't disturb any of that.
  *
  * Real vs. flagged, section by section:
  * - Project Information: real project fields; "View Project Page" links
@@ -92,7 +101,6 @@ export interface MoreMenuProjectInfo {
 export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
   const { t } = useT();
   const isDesktop = useIsDesktop();
-  const mounted = useHasMounted();
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<MoreSection>("none");
   const [linkCopied, setLinkCopied] = useState(false);
@@ -110,12 +118,11 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
     setSection("none");
   }
 
-  // Desktop only: the mobile sheet is portaled to document.body (see
-  // below), so it's no longer a DOM descendant of `rootRef` — this
-  // containment check would otherwise treat every tap inside the sheet
-  // itself as an "outside" click and close it mid-interaction. The
-  // portal's own backdrop `onClick` handles mobile's outside-tap instead.
-  useClickOutside(rootRef, closeAll, open && isDesktop);
+  // Applies on every device now (was desktop-only while mobile had its own
+  // portaled backdrop handling outside-tap instead — see the module doc
+  // comment) — direct design feedback: "clicking outside the dropdown
+  // removes the settings menu" on mobile too.
+  useClickOutside(rootRef, closeAll, open);
 
   useEffect(() => {
     if (!open) return;
@@ -162,16 +169,18 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
       )}
 
       {section === "none" && (
-        <div role="menu">
+        <div role="menu" className="space-y-0.5">
           {menuItems.map(({ id, icon: Icon, label }) => (
             <button
               key={id}
               type="button"
               role="menuitem"
               onClick={() => setSection(id)}
-              className="flex h-11 w-full items-center gap-3 rounded-control px-3 text-sm font-medium text-white transition-colors hover:bg-white/10"
+              className="flex h-11 w-full items-center gap-2.5 rounded-control px-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
             >
-              <Icon className="h-4 w-4 text-white/60" aria-hidden="true" />
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-white/5">
+                <Icon className="h-4 w-4 text-white/70" aria-hidden="true" />
+              </span>
               {label}
             </button>
           ))}
@@ -180,9 +189,11 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
             href={projectPageHref}
             role="menuitem"
             onClick={closeAll}
-            className="flex h-11 w-full items-center gap-3 rounded-control px-3 text-sm font-medium text-white transition-colors hover:bg-white/10"
+            className="flex h-11 w-full items-center gap-2.5 rounded-control px-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
           >
-            <LogOut className="h-4 w-4 text-white/60" aria-hidden="true" />
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-white/5">
+              <LogOut className="h-4 w-4 text-white/70" aria-hidden="true" />
+            </span>
             {t("more.exitViewer")}
           </Link>
         </div>
@@ -251,48 +262,36 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
       {section === "settings" && (
         <div className="space-y-3 px-2.5 py-1.5">
           <SettingsRow label={t("more.settingsLanguage")}>
-            <select
+            <SegmentedToggle
               value={locale}
-              onChange={(e) => setLocale(e.target.value as Locale)}
-              className="h-8 rounded-control border border-white/15 bg-white/5 px-2 text-xs text-white"
-            >
-              <option value="en" className="bg-neutral-900">
-                English
-              </option>
-              <option value="sq" className="bg-neutral-900">
-                Shqip
-              </option>
-            </select>
+              options={[
+                { value: "en", label: "EN" },
+                { value: "sq", label: "SQ" },
+              ]}
+              onChange={(v) => setLocale(v as Locale)}
+            />
           </SettingsRow>
 
           <SettingsRow label={t("more.settingsAreaUnits")}>
-            <select
+            <SegmentedToggle
               value={areaUnit}
-              onChange={(e) => setAreaUnit(e.target.value as "m2" | "ft2")}
-              className="h-8 rounded-control border border-white/15 bg-white/5 px-2 text-xs text-white"
-            >
-              <option value="m2" className="bg-neutral-900">
-                m²
-              </option>
-              <option value="ft2" className="bg-neutral-900">
-                ft²
-              </option>
-            </select>
+              options={[
+                { value: "m2", label: "m²" },
+                { value: "ft2", label: "ft²" },
+              ]}
+              onChange={(v) => setAreaUnit(v as "m2" | "ft2")}
+            />
           </SettingsRow>
 
           <SettingsRow label={t("more.settingsCurrency")}>
-            <select
+            <SegmentedToggle
               value={currency}
-              onChange={(e) => setCurrency(e.target.value as Currency)}
-              className="h-8 rounded-control border border-white/15 bg-white/5 px-2 text-xs text-white"
-            >
-              <option value="EUR" className="bg-neutral-900">
-                EUR
-              </option>
-              <option value="ALL" className="bg-neutral-900">
-                ALL
-              </option>
-            </select>
+              options={[
+                { value: "EUR", label: "EUR" },
+                { value: "ALL", label: "ALL" },
+              ]}
+              onChange={(v) => setCurrency(v as Currency)}
+            />
           </SettingsRow>
 
           <SettingsRow label={t("more.settingsReducedMotion")}>
@@ -334,7 +333,7 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
   );
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative flex self-stretch">
       <button
         type="button"
         onClick={() => {
@@ -352,38 +351,34 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
         aria-haspopup="menu"
         aria-expanded={open}
         title={t("viewer.more")}
-        className="flex w-11 items-center justify-center transition-colors hover:text-white/70"
+        className={cn(
+          "flex w-11 items-center justify-center rounded-control transition-colors",
+          open ? "bg-white/10 text-white" : "hover:bg-white/10 hover:text-white/70"
+        )}
       >
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
       </button>
-      {open && isDesktop && (
-        <div role="dialog" className="viewer-glass absolute right-0 top-[calc(100%+8px)] w-64 rounded-panel">
+      {open && (
+        <div
+          role="dialog"
+          // `w-56` (was `w-64` on every device) below `sm`, back to the
+          // original `w-64` at `sm`+ — direct design feedback, 2026-08-17,
+          // mobile only: "try to make it narrower". The Settings section's
+          // own controls (now `SegmentedToggle` pills instead of native
+          // `<select>`s) comfortably fit the narrower width too.
+          className="viewer-dropdown-in viewer-glass absolute right-0 top-[calc(100%+8px)] w-56 overflow-hidden rounded-panel shadow-[var(--shadow-2)] sm:w-64"
+        >
+          {/* Only shown for the root list — an open subsection already gets
+              its own "← Back / Section Title" row inside `body` below,
+              which is that section's header equivalent. */}
+          {section === "none" && (
+            <div className="border-b border-white/10 px-3.5 py-2.5">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">{t("viewer.more")}</span>
+            </div>
+          )}
           {body}
         </div>
       )}
-      {/* Mobile bottom sheet — real bug found live-testing: ViewerHUD's
-          own load-sequence GSAP tween leaves an identity `transform`
-          (matrix(1,0,0,1,0,0)) on this button's ancestor even after it
-          settles, which — per the standard CSS containing-block rule —
-          makes THAT element the containing block for any `position:
-          fixed` descendant instead of the real viewport. The sheet was
-          rendering pinned to the header's own small box instead of the
-          screen. `createPortal` into `document.body` sidesteps the whole
-          ancestor chain, the correct fix (not "stop animating the
-          header", which every other module panel in this file tree also
-          depends on). Gated on `mounted` since `document` doesn't exist
-          during SSR. */}
-      {open && !isDesktop && mounted &&
-        createPortal(
-          <>
-            <div className="fixed inset-0 z-40" aria-hidden="true" onClick={closeAll} />
-            <div role="dialog" className="viewer-glass fixed inset-x-0 bottom-0 z-50 rounded-t-panel pb-[env(safe-area-inset-bottom)]">
-              <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-white/20" aria-hidden="true" />
-              {body}
-            </div>
-          </>,
-          document.body
-        )}
     </div>
   );
 }
@@ -421,6 +416,46 @@ function ToggleButton({
     >
       <span className="rounded-pill bg-black/20 px-1.5 py-0.5">{on ? onLabel : offLabel}</span>
     </button>
+  );
+}
+
+/** Replaces the old native `<select>` for Language/Area Units/Currency
+ * (direct design feedback, 2026-08-17, mobile: "fix dropdown options" /
+ * "try to make it narrower") — each of these is really a 2-way choice, so
+ * a segmented pill (same shape/height as `ToggleButton`, which every
+ * other Settings row already uses) reads more consistently than a select
+ * with a chevron, and is genuinely narrower. It also sidesteps a real
+ * native-`<select>` risk the old markup had: `<option>` only had a
+ * `bg-neutral-900` class, and mobile browsers render an OS-native
+ * options list that's well known for ignoring/only partially honoring
+ * that kind of styling — this control never opens a native picker at
+ * all, so there's nothing left for an OS to mis-render. */
+function SegmentedToggle<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex h-7 items-center gap-0.5 rounded-pill bg-white/10 p-0.5">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          aria-pressed={value === opt.value}
+          className={cn(
+            "rounded-pill px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors",
+            value === opt.value ? "bg-brand-500 text-white" : "text-white/60 hover:text-white"
+          )}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

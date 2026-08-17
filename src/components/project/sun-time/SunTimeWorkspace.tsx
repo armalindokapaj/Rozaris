@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, type ChangeEvent } from "react";
 import { gsap } from "gsap";
-import { Calendar, RotateCcw, Sun } from "lucide-react";
+import { Moon, RotateCcw, Sun, Sunrise, Sunset } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
-import { useHasMounted } from "@/hooks/useHasMounted";
 import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
-import { useClickOutside } from "@/hooks/useClickOutside";
 import { clamp, cn } from "@/lib/utils";
 import type { SunTimePreset, SunTimeline } from "@/lib/sunPosition";
 import type { ActiveModule } from "../viewer-hud/types";
 
-function formatHM(hours: number): string {
+/** Exported for ViewsWorkspace's own compact "Sun & Time · 14:30" readout
+ * (2026-08-17 redesign) — one shared formatter rather than a second copy
+ * of the same carry-safe HH:MM logic. */
+export function formatHM(hours: number): string {
   const norm = ((hours % 24) + 24) % 24;
   const h = Math.floor(norm);
   const m = Math.round((norm - h) * 60);
@@ -20,28 +21,27 @@ function formatHM(hours: number): string {
   return `${String(carry ? (h + 1) % 24 : h).padStart(2, "0")}:${String(carry ? 0 : m).padStart(2, "0")}`;
 }
 
-/** Sun & Time PRD §9's "Afternoon"/"Sunset"-style period word under the
- * big time readout — not spec'd as an exact formula, just an example
- * (§44's render shows "Afternoon" at 16:42 with sunset at 20:16). This is
- * a reasonable approximation banded off the real sunrise/solar-noon/
- * sunset timeline, not a literal PRD requirement. */
-function periodKey(hours: number, timeline: SunTimeline): string {
-  if (timeline.alwaysUp) return "sunTime.periodAfternoon";
-  if (timeline.alwaysDown) return "sunTime.periodNight";
-  const { sunriseHour, sunsetHour, solarNoonHour } = timeline;
-  if (sunriseHour == null || sunsetHour == null) return "sunTime.periodAfternoon";
-  if (hours < sunriseHour || hours >= sunsetHour + 1) return "sunTime.periodNight";
-  if (hours < sunriseHour + 1) return "sunTime.periodSunrise";
-  if (hours >= sunsetHour) return "sunTime.periodSunset";
-  if (hours >= sunsetHour - 1.5) return "sunTime.periodEvening";
-  return hours < solarNoonHour ? "sunTime.periodMorning" : "sunTime.periodAfternoon";
-}
-
 const PRESET_LABEL_KEY: Record<SunTimePreset["id"], string> = {
   morning: "sunTime.presetMorning",
   noon: "sunTime.presetNoon",
   goldenHour: "sunTime.presetGoldenHour",
   evening: "sunTime.presetEvening",
+};
+
+/** Icon per real preset (2026-08-17 redesign) — the reference render's own
+ * preset row used generic "Morning/Afternoon/Evening/Night" placeholders
+ * that don't match this app's actual four presets (Morning/Noon/Golden
+ * Hour/Evening, each tied to a real point on the sun's real elevation
+ * curve — see sunPosition.ts). Renaming "Golden Hour" to "Night" to match
+ * the mockup's wording would be factually wrong (golden hour is warm
+ * daylight, not darkness), so the visual *style* is matched but the real
+ * labels/data are kept; icons chosen to still read as a clear morning→
+ * noon→golden-hour→evening progression. */
+const PRESET_ICON: Record<SunTimePreset["id"], typeof Sun> = {
+  morning: Sunrise,
+  noon: Sun,
+  goldenHour: Sunset,
+  evening: Moon,
 };
 
 /**
@@ -58,24 +58,36 @@ const PRESET_LABEL_KEY: Record<SunTimePreset["id"], string> = {
  * renders provided): §34/§38's "auto-minimize to a compact readout after
  * 2-4s idle" isn't implemented — the panel's open/closed state is tied
  * only to `activeModule`, same as every other module panel in this file
- * tree. The nav pill's own hover/tap-expand label (ViewerNavigation) still
- * shows the compact "16:35 · 21 June" readout PRD §35 describes for the
- * *idle bottom-nav* state, which is the one behavior from that section
- * that was already built (Front Page PRD) and needed no new work here.
+ * tree. §35's compact "16:35 · 21 June" idle-bottom-nav readout also isn't
+ * shown any more — ViewerNavigation's own rebuild (2026-08-17, direct
+ * design reference) dropped that inline label along with its old
+ * hover/tap-expand mechanic in favor of a fixed icon+label pill.
+ *
+ * Date picker removed entirely (direct design feedback, 2026-08-17: "Date
+ * to be removed", both bars) — `simulationDate`/`onDateChange` were
+ * dropped from this component's own props along with it (nothing left
+ * here to read or call them). The real value/write-path they used to
+ * carry didn't disappear, just moved to live one level up only:
+ * `effectiveSunDate`'s real sunrise/sunset math still runs in
+ * ArchVizClient (feeds `environmentConfig` → the actual 3D sun position)
+ * regardless of whether any UI can currently change it — PRD §29's live-
+ * date-override capability (`liveSunDate`/`setLiveSunDate`) stays real
+ * too, just with no trigger wired to it right now (ArchVizClient's own
+ * `handleSunDateChange` was removed as dead code alongside this; a future
+ * date control anywhere in the app can call `setLiveSunDate` directly
+ * again without any of this needing to be rebuilt).
  */
 export function SunTimeWorkspace({
   activeModule,
   isDesktop,
   interactive,
   timeHours,
-  simulationDate,
   bounds,
   timeline,
   presets,
   activePresetId,
   canReset,
   onTimeChange,
-  onDateChange,
   onPresetSelect,
   onReset,
 }: {
@@ -83,23 +95,18 @@ export function SunTimeWorkspace({
   isDesktop: boolean;
   interactive: boolean;
   timeHours: number;
-  simulationDate: string;
   bounds: { startHours: number; endHours: number; stepMinutes: number };
   timeline: SunTimeline;
   presets: SunTimePreset[];
   activePresetId: SunTimePreset["id"] | null;
   canReset: boolean;
   onTimeChange: (hours: number) => void;
-  onDateChange: (iso: string) => void;
   onPresetSelect: (preset: SunTimePreset) => void;
   onReset: () => void;
 }) {
-  const { t, locale } = useT();
+  const { t } = useT();
   const reducedMotion = useEffectiveReducedMotion();
-  const mounted = useHasMounted();
   const panelRef = useRef<HTMLDivElement>(null);
-  const dateMenuRef = useRef<HTMLDivElement>(null);
-  const [dateMenuOpen, setDateMenuOpen] = useState(false);
   const open = activeModule === "sunTime";
 
   useEffect(() => {
@@ -113,60 +120,48 @@ export function SunTimeWorkspace({
     });
   }, [open, reducedMotion]);
 
-  // Deliberately no separate "close the date popover when the whole panel
-  // closes" effect — this codebase's react-hooks/set-state-in-effect and
-  // react-hooks/refs rules both reject the usual ways to express that (a
-  // synchronous setState in an effect, or the ref-during-render pattern
-  // React's own docs otherwise recommend for it). In practice this is
-  // already covered: switching to a different nav module is itself a
-  // click outside `dateMenuRef`, which this handles below.
-  useClickOutside(dateMenuRef, () => setDateMenuOpen(false), dateMenuOpen);
-
-  const dateLabel = useMemo(() => {
-    if (!mounted) return "";
-    const d = new Date(simulationDate);
-    if (Number.isNaN(d.getTime())) return "";
-    return new Intl.DateTimeFormat(locale, { day: "numeric", month: "long" }).format(d);
-  }, [mounted, simulationDate, locale]);
-
-  const quickDates = useMemo(() => {
-    if (!mounted) return [];
-    const year = new Date(simulationDate).getUTCFullYear() || new Date().getUTCFullYear();
-    return [3, 6, 9, 12].map((month) => {
-      const iso = new Date(Date.UTC(year, month - 1, 21)).toISOString();
-      return { iso, label: new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }).format(new Date(iso)) };
-    });
-  }, [mounted, simulationDate, locale]);
-
   function handleSliderInput(e: ChangeEvent<HTMLInputElement>) {
     onTimeChange(clamp(Number(e.target.value), bounds.startHours, bounds.endHours));
   }
 
-  const period = mounted ? t(periodKey(timeHours, timeline)) : "";
+  // Value-based fill (was a static always-100%-width dawn→dusk rainbow
+  // gradient) — direct design reference, 2026-08-17: a solid brand-color
+  // fill that stops at the thumb, matching every other slider/progress
+  // affordance this pass's purple accent language already uses elsewhere
+  // (bottom nav's active underline, Views' active preset, etc.) rather
+  // than a one-off multi-color gradient found nowhere else in the app.
+  const fillPercent = clamp(((timeHours - bounds.startHours) / Math.max(1e-6, bounds.endHours - bounds.startHours)) * 100, 0, 100);
+  // Decorative tick row under the track, per the reference — purely
+  // visual (not individually interactive; the real input handles the
+  // actual dragging/keyboard control above it).
+  const TICK_COUNT = 12;
 
   const sliderTrack = (
-    <div className="relative flex h-5 items-center">
-      <div className="pointer-events-none absolute inset-x-0 h-1.5 overflow-hidden rounded-full bg-white/10">
-        <div
-          className="h-full rounded-full"
-          style={{
-            width: "100%",
-            background: "linear-gradient(90deg, #8973f8 0%, #f8b955 55%, #f8734f 100%)",
-            opacity: interactive ? 1 : 0.35,
-          }}
+    <div>
+      <div className="relative flex h-5 items-center">
+        <div className="pointer-events-none absolute inset-x-0 h-1.5 overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full bg-brand-400"
+            style={{ width: `${fillPercent}%`, opacity: interactive ? 1 : 0.35 }}
+          />
+        </div>
+        <input
+          type="range"
+          min={bounds.startHours}
+          max={bounds.endHours}
+          step={Math.max(bounds.stepMinutes, 1) / 60}
+          value={timeHours}
+          onChange={handleSliderInput}
+          disabled={!interactive}
+          aria-label={t("sunTime.title")}
+          className="rz-range-thumb disabled:cursor-not-allowed"
         />
       </div>
-      <input
-        type="range"
-        min={bounds.startHours}
-        max={bounds.endHours}
-        step={Math.max(bounds.stepMinutes, 1) / 60}
-        value={timeHours}
-        onChange={handleSliderInput}
-        disabled={!interactive}
-        aria-label={t("sunTime.title")}
-        className="rz-range-thumb disabled:cursor-not-allowed"
-      />
+      <div className="mt-1 flex justify-between px-0.5" aria-hidden="true">
+        {Array.from({ length: TICK_COUNT }).map((_, i) => (
+          <span key={i} className="h-1 w-1 rounded-full bg-white/15" />
+        ))}
+      </div>
     </div>
   );
 
@@ -182,69 +177,62 @@ export function SunTimeWorkspace({
     </button>
   );
 
-  const dateMenu = (
-    <div ref={dateMenuRef} className="relative shrink-0">
+  // Extracted from the buttons' own wrapper (2026-08-17, mobile redesign)
+  // so desktop and mobile can lay the exact same 4 real buttons out
+  // differently — desktop keeps its horizontal scroll row, mobile now
+  // groups all 4 into one bordered 2x2 "box" (see `presetGrid` below,
+  // direct design feedback: "all 4 presets to be inside the box").
+  const presetButtons = presets.map((preset) => {
+    const isActive = activePresetId === preset.id;
+    const PresetIcon = PRESET_ICON[preset.id];
+    return (
       <button
+        key={preset.id}
         type="button"
-        onClick={() => setDateMenuOpen((v) => !v)}
-        aria-haspopup="dialog"
-        aria-expanded={dateMenuOpen}
-        className="viewer-glass flex h-9 items-center gap-1.5 rounded-control px-3 text-xs font-medium text-white"
+        onClick={() => onPresetSelect(preset)}
+        disabled={!interactive}
+        className={cn(
+          "flex shrink-0 items-center gap-1.5 rounded-control px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+          isActive ? "bg-brand-500 text-white" : "border border-white/15 text-white/75 hover:border-white/25 hover:text-white"
+        )}
       >
-        <Calendar className="h-3.5 w-3.5 text-brand-400" aria-hidden="true" />
-        {dateLabel}
+        <PresetIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        {t(PRESET_LABEL_KEY[preset.id])}
       </button>
-      {dateMenuOpen && (
-        <div role="dialog" className="viewer-glass absolute bottom-[calc(100%+8px)] right-0 z-10 w-52 rounded-panel p-2">
-          <div className="grid grid-cols-2 gap-1">
-            {quickDates.map((qd) => (
-              <button
-                key={qd.iso}
-                type="button"
-                onClick={() => {
-                  onDateChange(qd.iso);
-                  setDateMenuOpen(false);
-                }}
-                className="rounded-control px-1.5 py-1.5 text-center text-[11px] font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
-              >
-                {qd.label}
-              </button>
-            ))}
-          </div>
-          <label className="mt-2 flex items-center justify-between gap-2 border-t border-white/10 px-1 pt-2 text-xs text-white/60">
-            {t("sunTime.chooseDate")}
-            <input
-              type="date"
-              value={simulationDate.slice(0, 10)}
-              onChange={(e) => {
-                if (!e.target.value) return;
-                onDateChange(new Date(`${e.target.value}T00:00:00.000Z`).toISOString());
-              }}
-              className="rounded-control border border-white/15 bg-white/5 px-1.5 py-1 text-xs text-white [color-scheme:dark]"
-            />
-          </label>
-        </div>
-      )}
+    );
+  });
+
+  // Both branches now share this single 2x2 grid (direct design feedback,
+  // 2026-08-17: desktop's separate scrollable single-row `presetRow` —
+  // itself a fix for a real `flex-wrap`/`w-fit` clipping bug — was
+  // replaced by the same box-of-4 the mobile sheet already used, once
+  // desktop also wanted "all 4 presets 2x2" instead of a scrolling row).
+  // 2 columns comfortably fit all 4 with no need to scroll.
+  const presetGrid = (
+    <div className="grid grid-cols-2 gap-1.5 rounded-control border border-white/10 bg-white/[0.03] p-1.5 [&>button]:justify-center">
+      {presetButtons}
     </div>
   );
 
-  const presetRow = (
-    <div className={cn("flex gap-1.5", isDesktop ? "flex-wrap" : "overflow-x-auto pb-0.5")}>
-      {presets.map((preset) => (
-        <button
-          key={preset.id}
-          type="button"
-          onClick={() => onPresetSelect(preset)}
-          disabled={!interactive}
-          className={cn(
-            "shrink-0 rounded-pill px-3.5 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-            activePresetId === preset.id ? "bg-brand-500 text-white" : "bg-white/10 text-white/75 hover:bg-white/15 hover:text-white"
-          )}
-        >
-          {t(PRESET_LABEL_KEY[preset.id])}
-        </button>
-      ))}
-    </div>
+  // Compact icon-only reset trigger — desktop bar only (see doc comment);
+  // the mobile branch below keeps the original icon+text button
+  // (`resetButton`), which has room for it. Its own `dateMenuCompact`
+  // sibling was removed (direct design feedback, 2026-08-17: "Date to be
+  // removed") — neither bar offers a date picker anymore; the whole
+  // date-menu feature (state, `dateLabel`/`quickDates` derivations, the
+  // `<Calendar>` trigger) was removed from this component entirely, not
+  // just hidden on one branch.
+  const resetButtonCompact = (
+    <button
+      type="button"
+      onClick={onReset}
+      disabled={!canReset}
+      aria-label={t("sunTime.reset")}
+      title={t("sunTime.reset")}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control text-white/60 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+    >
+      <RotateCcw className="h-4 w-4" aria-hidden="true" />
+    </button>
   );
 
   if (isDesktop) {
@@ -255,47 +243,63 @@ export function SunTimeWorkspace({
         aria-label={t("sunTime.title")}
         aria-hidden={!open}
         className={cn(
-          "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 w-[min(860px,calc(100vw-2rem))] -translate-x-1/2 rounded-panel p-4 opacity-0",
+          // Fixed `w-[720px]` (not `w-fit`) — same "w-fit under-measures a
+          // busy flex row" Chromium bug UnitsBar's own doc comment already
+          // documents in detail, reproduced here too every time this row's
+          // content changed shape (real, verified via `scrollWidth` vs.
+          // `offsetWidth` mismatches each time). No `h-[60px]` any more —
+          // the title zone and "Presets" label are both gone (direct
+          // design feedback, 2026-08-17) and the 4 presets are now a 2x2
+          // grid, taller than the old single-row layout the fixed 60px
+          // height was tuned for; `py-2.5` + `items-stretch` (default,
+          // left implicit) lets the bar's own height follow whichever
+          // zone is tallest instead.
+          "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 flex w-[720px] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-panel px-3.5 py-2.5 opacity-0 ring-2 ring-brand-400/50 sm:px-4",
           open ? "pointer-events-auto" : "pointer-events-none"
         )}
       >
-        <div className="flex items-start gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-end justify-between gap-3 text-white">
-              <div className="flex flex-col items-start">
-                <span className="text-sm tabular-nums text-white/70">
-                  {timeline.sunriseHour != null ? formatHM(timeline.sunriseHour) : "—"}
-                </span>
-                <span className="mt-3 text-[11px] text-white/40">{t("sunTime.sunrise")}</span>
-              </div>
-              <div className="flex flex-col items-center">
-                <span className="text-2xl font-semibold tabular-nums">{formatHM(timeHours)}</span>
-                <span className="mt-0.5 text-[11px] text-brand-400/90">{period}</span>
-              </div>
-              <div className="flex flex-col items-end">
-                <span className="text-sm tabular-nums text-white/70">
-                  {timeline.sunsetHour != null ? formatHM(timeline.sunsetHour) : "—"}
-                </span>
-                <span className="mt-3 text-[11px] text-white/40">{t("sunTime.sunset")}</span>
-              </div>
-            </div>
-            <div className="mt-2 flex items-center gap-2">
-              <Sun className="h-4 w-4 shrink-0 text-white/30" aria-hidden="true" />
-              <div className="flex-1">{sliderTrack}</div>
-              <Sun className="h-4 w-4 shrink-0 fill-brand-400/40 text-brand-400" aria-hidden="true" />
-            </div>
-            {!interactive && <p className="mt-2 text-[11px] text-white/35">{t("sunTime.readOnlyHint")}</p>}
+        {/* Slider zone — sunrise/sunset real values flank the real
+            interactive track, same as the pre-redesign layout; just
+            arranged inline instead of stacked above it. Fixed `w-72` (not
+            `flex-1`) — real bug found live-testing: a `flex-1` item
+            inside this bar's `w-fit` outer container made the browser's
+            fit-content sizing under-allocate space for everything after
+            it, silently clipping the last ~300px of the Presets zone
+            (only Morning/Noon were visible; Golden Hour/Evening/date/
+            reset all existed in the DOM but sat past the container's own
+            right edge). A fixed width removes the ambiguity entirely —
+            same reason ViewsWorkspace's own `w-fit` bar never needed
+            `flex-1` anywhere. */}
+        <div className="flex w-72 shrink-0 flex-col justify-center gap-1 px-4">
+          <div className="flex items-center gap-3">
+            <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums text-white/70">
+              <Sunrise className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {timeline.sunriseHour != null ? formatHM(timeline.sunriseHour) : "—"}
+            </span>
+            <div className="flex-1">{sliderTrack}</div>
+            <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums text-brand-400">
+              <Sun className="h-4 w-4 shrink-0 fill-brand-400/40" aria-hidden="true" />
+              {timeline.sunsetHour != null ? formatHM(timeline.sunsetHour) : "—"}
+            </span>
           </div>
-
-          <div className="flex shrink-0 flex-col gap-2 pt-1">
-            <div className="flex gap-2">
-              {dateMenu}
-              {resetButton}
-            </div>
-          </div>
+          {!interactive && <p className="text-[11px] text-white/35">{t("sunTime.readOnlyHint")}</p>}
         </div>
 
-        <div className="mt-3 border-t border-white/10 pt-3">{presetRow}</div>
+        <span className="my-1 w-px shrink-0 bg-white/10" aria-hidden="true" />
+
+        {/* Presets zone — real Morning/Noon/Golden Hour/Evening presets
+            (see PRESET_ICON's own doc comment for why the reference
+            mockup's generic labels weren't copied verbatim). "Presets"
+            label removed and the row remodeled into the same 2x2
+            `presetGrid` box the mobile sheet already used (direct design
+            feedback, 2026-08-17: "remove text Presets" / "remodel to have
+            all 4 presets 2x2 view") — one shared grid for both branches
+            now instead of desktop's own separate scrollable `presetRow`.
+            Reset sits beside the grid, vertically centered. */}
+        <div className="flex shrink-0 items-center gap-2.5 pl-3.5 sm:pl-4">
+          {presetGrid}
+          {resetButtonCompact}
+        </div>
       </div>
     );
   }
@@ -311,15 +315,12 @@ export function SunTimeWorkspace({
         open ? "pointer-events-auto" : "pointer-events-none"
       )}
     >
+      {/* Date removed (direct design feedback, 2026-08-17: "the date to be
+          removed") — just the live time value + reset now, same trim the
+          desktop bar got. */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-baseline gap-2 text-white">
-          <span className="text-lg font-semibold tabular-nums">{formatHM(timeHours)}</span>
-          <span className="text-xs text-white/50">· {dateLabel}</span>
-        </div>
-        <div className="flex shrink-0 gap-1.5">
-          {dateMenu}
-          {resetButton}
-        </div>
+        <span className="text-lg font-semibold tabular-nums text-white">{formatHM(timeHours)}</span>
+        {resetButton}
       </div>
       <div className="mt-2.5 flex items-center gap-1.5">
         <span className="shrink-0 text-[10px] text-white/40">
@@ -331,7 +332,11 @@ export function SunTimeWorkspace({
         </span>
       </div>
       {!interactive && <p className="mt-2 text-[11px] text-white/35">{t("sunTime.readOnlyHint")}</p>}
-      <div className="mt-2.5">{presetRow}</div>
+      {/* Presets grouped into one 2x2 box (direct design feedback: "all 4
+          presets to be inside the box, not with slider on the right") —
+          see `presetGrid`'s own doc comment; desktop adopted the same box
+          shortly after. */}
+      <div className="mt-2.5">{presetGrid}</div>
     </div>
   );
 }
