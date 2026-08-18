@@ -10,6 +10,7 @@ import { ProjectIdentity } from "./ProjectIdentity";
 import { ViewerUtilities } from "./ViewerUtilities";
 import { FirstVisitHint } from "./FirstVisitHint";
 import { ProjectViewerDock } from "./dock/ProjectViewerDock";
+import { getViewerLayoutState } from "./layoutState";
 import type { ActiveModule } from "./types";
 import type { ThreeProjectViewerHandle } from "../viewerTypes";
 import type { SunTimePreset, SunTimeline } from "@/lib/sunPosition";
@@ -155,6 +156,11 @@ export function ViewerHUD({
   const reducedMotion = useEffectiveReducedMotion();
   const isDesktop = useIsDesktop();
   const [loadSequenceDone, setLoadSequenceDone] = useState(false);
+  // Same one real gate `UnitsWorkspace`'s own `open` prop already uses
+  // (`getViewerLayoutState`, layoutState.ts) — not a second hand-rolled
+  // "is the units list open" check, so this can't drift from whether the
+  // real 380px panel is actually open.
+  const { leftPanelOpen } = getViewerLayoutState(activeModule, isDesktop, !!unitsListOpen);
 
   const overlayRef = useRef<HTMLDivElement>(null);
   const identityRef = useRef<HTMLDivElement>(null);
@@ -188,6 +194,53 @@ export function ViewerHUD({
       tl.kill();
     };
   }, [sceneReady, reducedMotion]);
+
+  // Dock folds away while the real Units list panel is open, and unfolds
+  // once it closes (2026-08-18 direct instruction: "the dock folds from
+  // the sides to the middle... after the dock fades with a 250ms time then
+  // the 'filter list panel' slides from the left... the opposite happens"
+  // on close — panel slides away, "the dock comes up with the reverse
+  // animation from the middle then expanding to the sides"). A real
+  // sequenced handoff between two sibling components (this dock lives
+  // here, the panel is `UnitsWorkspace.tsx`, a sibling under
+  // `ProjectViewerRuntime`, not a child of this one) — rather than adding
+  // cross-component state/callbacks to know when each side's animation
+  // truly finishes, both sides key off the exact same `leftPanelOpen`
+  // boolean and use each other's own *known, fixed* duration as their own
+  // delay: this fold has no delay opening (starts the instant
+  // `leftPanelOpen` goes true, so the panel — which waits 250ms, see
+  // `UnitsWorkspace.tsx`'s own doc comment — starts exactly as this
+  // finishes) but restoring waits `0.4s`, `UnitsWorkspace.tsx`'s own real
+  // close-animation duration, so the unfold only starts once the panel has
+  // actually finished sliding away.
+  //
+  // `scaleX` from a centered `transformOrigin` (not the old plain
+  // `autoAlpha`/`y` fade) is what actually reads as "folds from the sides
+  // to the middle" — both edges visually converge on the shell's own
+  // center rather than the whole thing just dimming in place. Paired with
+  // `autoAlpha` for a real fade (not just a squeeze to a hairline), and
+  // gated on `loadSequenceDone` so it can never fire before/during the
+  // initial reveal and fight that tween. `leftPanelOpen` is real, not
+  // `unitsListOpen` alone — see this component's own `getViewerLayoutState`
+  // call above — so on mobile (where the real panel doesn't open yet
+  // regardless of that toggle) this is naturally a no-op today, and starts
+  // working on its own the moment a real mobile panel exists.
+  useEffect(() => {
+    if (!loadSequenceDone) return;
+    const el = navRef.current;
+    if (!el) return;
+    const tween = gsap.to(el, {
+      scaleX: leftPanelOpen ? 0 : 1,
+      autoAlpha: leftPanelOpen ? 0 : 1,
+      transformOrigin: "50% 50%",
+      duration: reducedMotion ? 0.001 : 0.25,
+      delay: leftPanelOpen || reducedMotion ? 0 : 0.4,
+      ease: leftPanelOpen ? "power2.in" : "power2.out",
+    });
+    return () => {
+      tween.kill();
+    };
+  }, [leftPanelOpen, loadSequenceDone, reducedMotion]);
 
   // Front Page PRD §16 "Tap Outside" — used to close an open module on any
   // outside click and return the nav to Explore/default. Removed (direct

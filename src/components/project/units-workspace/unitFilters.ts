@@ -19,6 +19,18 @@ export function bedroomLabel(bedrooms: number): string {
 export const BEDROOM_OPTIONS = [0, 1, 2, 3, 4];
 
 export type StatusFilter = "available" | "reserved" | "sold" | "all";
+
+/** Status → indicator-dot Tailwind class — real, established colors (moved
+ * here from UnitSearchView.tsx, 2026-08-18) so the dock's own Availability
+ * pills (UnitsContent.tsx, direct instruction: "Available (Green color)...
+ * Reserved (Orange Color)... Sold (red color)") reuse the exact same
+ * scheme UnitSearchView's filter pills and per-row status dots already
+ * shipped with, instead of a second, independently-drifting copy. */
+export const STATUS_DOT: Record<Unit["status"], string> = {
+  available: "bg-emerald-400",
+  reserved: "bg-amber-400",
+  sold: "bg-red-400",
+};
 export type SortOption = "recommended" | "priceAsc" | "priceDesc" | "areaAsc" | "areaDesc" | "floorAsc" | "floorDesc";
 
 export interface UnitFilterState {
@@ -47,7 +59,7 @@ export interface UnitFilterState {
 
 export const DEFAULT_UNIT_FILTERS: UnitFilterState = {
   query: "",
-  status: "available",
+  status: "all",
   bedrooms: null,
   bathrooms: null,
   building: null,
@@ -62,9 +74,12 @@ export const DEFAULT_UNIT_FILTERS: UnitFilterState = {
 
 /** How many of `DEFAULT_UNIT_FILTERS`' fields this state actually
  * diverges on — drives the render's own "Clear filters (2)" badge. Status
- * defaulting to "available" (not "all") is itself the PRD's own default,
- * so it's deliberately excluded from the count — clearing filters returns
- * to "Available" being selected, not "All". */
+ * is deliberately excluded from the count regardless of its default value
+ * (2026-08-18 direct instruction flipped that default from "available" to
+ * "all": "Unit search default filtering after clicked 'units' is 'all' at
+ * availability") — clearing filters returns to whichever status
+ * `DEFAULT_UNIT_FILTERS.status` names, without that alone counting as an
+ * "active" filter. */
 export function activeFilterCount(state: UnitFilterState): number {
   let n = 0;
   if (state.bedrooms != null) n++;

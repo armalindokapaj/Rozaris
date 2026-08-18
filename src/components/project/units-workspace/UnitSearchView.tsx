@@ -15,6 +15,7 @@ import {
   DEFAULT_UNIT_FILTERS,
   filterUnits,
   sortUnits,
+  STATUS_DOT,
   type SortOption,
   type StatusFilter,
   type UnitFilterState,
@@ -22,17 +23,11 @@ import {
 
 const STATUS_PILLS: { id: StatusFilter; dotClass?: string }[] = [
   { id: "available" },
-  { id: "reserved", dotClass: "bg-amber-400" },
-  { id: "sold", dotClass: "bg-red-400" },
+  { id: "reserved", dotClass: STATUS_DOT.reserved },
+  { id: "sold", dotClass: STATUS_DOT.sold },
   { id: "all" },
 ];
 export const UNITS_PAGE_SIZE = 30;
-
-const STATUS_DOT: Record<Unit["status"], string> = {
-  available: "bg-emerald-400",
-  reserved: "bg-amber-400",
-  sold: "bg-red-400",
-};
 
 /** Small hand-rolled dropdown, same pattern as ViewerUtilities/SunTime's
  * date menu (useState+ref+useClickOutside — this codebase's react-hooks/

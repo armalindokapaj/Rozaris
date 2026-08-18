@@ -2,7 +2,7 @@
 
 import { forwardRef, useRef, type ChangeEvent } from "react";
 import { gsap } from "gsap";
-import { ArrowLeft, Check, ChevronDown, Moon, RotateCcw, Sun, Sunrise, Sunset, X } from "lucide-react";
+import { Check, ChevronDown, Moon, RotateCcw, Sun, Sunrise, Sunset, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
 import { clamp, cn } from "@/lib/utils";
@@ -39,23 +39,25 @@ const PRESET_ICON: Record<SunTimePreset["id"], typeof Sun> = {
 
 /**
  * Morphing Bottom Dock PRD §8-9 "Time Dock" — desktop:
- * `← Time   03:11 ──●── 18:10   Golden Hour ▾   ×`, one row, fits the
- * dock's shared 62px height (see `layoutState.ts`'s `DOCK_HEIGHT_DESKTOP`
- * doc comment for why this no longer needs the taller ~104px the
- * pre-dock `SunTimeWorkspace` bar had) — the always-visible 2×2 preset
- * grid that pushed that bar's height past 62px becomes a single popover
- * trigger here instead, PRD §8's own wording ("display only Golden Hour
- * ▾... clicking opens a compact popover").
+ * `03:11 ──●── 18:10   Golden Hour ▾   ×`, one row, fits the dock's shared
+ * 62px height (see `layoutState.ts`'s `DOCK_HEIGHT_DESKTOP` doc comment for
+ * why this no longer needs the taller ~104px the pre-dock `SunTimeWorkspace`
+ * bar had) — the always-visible 2×2 preset grid that pushed that bar's
+ * height past 62px becomes a single popover trigger here instead, PRD §8's
+ * own wording ("display only Golden Hour ▾... clicking opens a compact
+ * popover"). No back control (2026-08-18 direct instruction: "remove text
+ * time and the sign back at the left side") — exiting Time is Escape,
+ * re-clicking the active "Time" nav item, or this row's own ×.
  *
  * Mobile keeps a 2-row layout close to `SunTimeWorkspace`'s own existing
- * mobile sheet (back+preset-trigger row, then a full-width slider row) —
- * full mobile choreography/spacing polish is deferred to a later phase
- * per the approved plan; this ports today's shape rather than redesigning
- * it fresh.
+ * mobile sheet (preset-trigger/reset/× row, then a full-width slider row,
+ * same back-less top row as desktop) — full mobile choreography/spacing
+ * polish is deferred to a later phase per the approved plan; this ports
+ * today's shape rather than redesigning it fresh.
  *
  * `forwardRef`, attached directly to this component's own root div (no
  * extra wrapper) — `ProjectViewerDock`'s content-reveal animation targets
- * `ref.current.children` (back/sunrise/slider/sunset/preset/× on desktop)
+ * `ref.current.children` (sunrise/slider/sunset/preset/× on desktop)
  * directly, so an intermediate wrapper div here would leave only 1 child
  * to "stagger".
  */
@@ -73,6 +75,14 @@ export const TimeContent = forwardRef<
     onTimeChange: (hours: number) => void;
     onPresetSelect: (preset: SunTimePreset) => void;
     onReset: () => void;
+    /** Still received from `DockContent` (which still receives it from
+     * `ProjectViewerDock`, unchanged) even though this component no longer
+     * renders a back control itself (2026-08-18: "remove text time and the
+     * sign back at the left side") — Escape and re-clicking the active nav
+     * item both still return to Explore via the same handler on the
+     * orchestrator side; only this component's own on-canvas button is
+     * gone. Kept in the prop type for parity with `UnitsContent`/
+     * `ViewsContent`, which still take it. */
     onBack: () => void;
     onClose: () => void;
     popoverOpen: boolean;
@@ -92,7 +102,6 @@ export const TimeContent = forwardRef<
     onTimeChange,
     onPresetSelect,
     onReset,
-    onBack,
     onClose,
     popoverOpen,
     onTogglePopover,
@@ -184,31 +193,38 @@ export const TimeContent = forwardRef<
     </div>
   );
 
-  const backButton = (
-    <button
-      type="button"
-      onClick={onBack}
-      className="flex shrink-0 items-center gap-1.5 rounded-control px-1.5 text-sm font-semibold text-white/80 transition-colors hover:text-white"
-    >
-      <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
-      {t("viewer.sunTime")}
-    </button>
-  );
-
+  // Purple, not the neutral white/50→white every other icon-only button in
+  // this dock uses (2026-08-18 direct instruction: "make the X [close
+  // button] in Purple", desktop and mobile both — this component doesn't
+  // branch its `closeButton` by device, so one change covers both).
   const closeButton = (
     <button
       type="button"
       onClick={onClose}
       aria-label={t("common.close")}
       title={t("common.close")}
-      className="flex shrink-0 items-center rounded-control px-1.5 text-white/50 transition-colors hover:text-white"
+      className="flex shrink-0 items-center rounded-control px-1.5 text-brand-400 transition-colors hover:text-brand-300"
     >
       <X className="h-4 w-4" aria-hidden="true" />
     </button>
   );
 
+  // Desktop's trailing divider ("the line between presets and ×") is
+  // deliberately a child of *this* relative wrapper rather than a sibling
+  // out in the row (2026-08-18 direct instruction: "Fix Presets dropdown
+  // menu, aligned with the line between presets and X") — `DockPopover`'s
+  // `anchorClassName="right-0"` resolves against this wrapper's own right
+  // edge, so folding the divider in here (instead of leaving it as the
+  // row's next flex child, after this wrapper) moves that edge from the
+  // trigger button's own right edge out to the divider's, which is what
+  // "aligned with the line" actually meant — the popover's right side now
+  // sits flush with that same vertical line, not a `gap-3` short of it.
+  // `isDesktop`-gated — mobile's own row has no adjacent × (a reset button
+  // sits between preset trigger and ×), so there's no "line" there to
+  // align to; folding it in unconditionally would just add a stray divider
+  // to mobile's row that never existed before.
   const presetTrigger = (
-    <div className="relative flex shrink-0 items-center">
+    <div className="relative flex shrink-0 items-center gap-3">
       <button
         type="button"
         onClick={onTogglePopover}
@@ -220,6 +236,7 @@ export const TimeContent = forwardRef<
         {presetTriggerLabel}
         <ChevronDown className={cn("h-3.5 w-3.5 text-white/50 transition-transform", popoverOpen && "rotate-180")} aria-hidden="true" />
       </button>
+      {isDesktop && <span className="h-6 w-px shrink-0 bg-white/10" aria-hidden="true" />}
       <DockPopover open={popoverOpen} onClose={onClosePopover} anchorClassName="right-0">
         {presetPopoverList}
       </DockPopover>
@@ -229,8 +246,6 @@ export const TimeContent = forwardRef<
   if (isDesktop) {
     return (
       <div ref={ref} className="flex h-full w-full items-center gap-3 px-3.5 sm:px-4">
-        {backButton}
-        <span className="h-6 w-px shrink-0 bg-white/10" aria-hidden="true" />
         <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums text-white/70">
           <Sunrise className="h-4 w-4 shrink-0" aria-hidden="true" />
           {timeline.sunriseHour != null ? formatHM(timeline.sunriseHour) : "—"}
@@ -242,7 +257,6 @@ export const TimeContent = forwardRef<
         </span>
         <span className="h-6 w-px shrink-0 bg-white/10" aria-hidden="true" />
         {presetTrigger}
-        <span className="h-6 w-px shrink-0 bg-white/10" aria-hidden="true" />
         {closeButton}
       </div>
     );
@@ -259,20 +273,17 @@ export const TimeContent = forwardRef<
   // `getBoundingClientRect()` after, not just eyeballed.
   return (
     <div ref={ref} className="flex w-full flex-col gap-1.5 px-4 py-2">
-      <div className="flex items-center justify-between gap-2">
-        {backButton}
-        <div className="flex items-center gap-2">
-          {presetTrigger}
-          <button
-            type="button"
-            onClick={onReset}
-            disabled={!canReset}
-            className="flex h-7 shrink-0 items-center gap-1.5 rounded-control border border-white/15 px-2.5 text-xs font-medium text-white transition-opacity disabled:opacity-40"
-          >
-            <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-          {closeButton}
-        </div>
+      <div className="flex items-center justify-end gap-2">
+        {presetTrigger}
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={!canReset}
+          className="flex h-7 shrink-0 items-center gap-1.5 rounded-control border border-white/15 px-2.5 text-xs font-medium text-white transition-opacity disabled:opacity-40"
+        >
+          <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+        {closeButton}
       </div>
       <div className="flex items-center gap-1.5">
         <span className="shrink-0 text-[10px] text-white/40">{timeline.sunriseHour != null ? formatHM(timeline.sunriseHour) : "—"}</span>

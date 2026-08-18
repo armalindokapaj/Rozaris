@@ -105,7 +105,18 @@ export function UnitsWorkspace({
     if (!outer || !inner) return;
     const dur = reducedMotion ? 0.001 : open ? 0.48 : 0.4;
     const ease = open ? "power2.out" : "power2.in";
-    const tl = gsap.timeline();
+    // Opening only waits (2026-08-18 direct instruction: "the dock folds
+    // from the sides to the middle... after the dock fades with a 250ms
+    // time then the 'filter list panel' slides from the left") — the
+    // dock's own fold-out (ViewerHUD.tsx's `navRef` effect) takes exactly
+    // 250ms with no delay of its own, so this panel starting 250ms late is
+    // what makes the two read as one sequenced handoff rather than two
+    // things happening at once. Closing has no delay (starts the instant
+    // `open` goes false) — the dock's own restore is what waits on *this*
+    // animation's duration instead (see that effect's own doc comment for
+    // why 0.4s, not 0.25s, is what it waits for).
+    const delay = open && !reducedMotion ? 0.25 : 0;
+    const tl = gsap.timeline({ delay });
     tl.to(outer, { width: open ? PANEL_WIDTH : 0, duration: dur, ease }, 0).to(
       inner,
       { x: open ? 0 : -PANEL_WIDTH, duration: dur, ease },

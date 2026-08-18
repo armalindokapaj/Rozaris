@@ -77,7 +77,7 @@ export function getViewerLayoutState(activeModule: ActiveModule, isDesktop: bool
  * not derived from GSAP's `"auto"` the way `nav`/`views` are —
  * `ProjectViewerDock.tsx`'s own `targetWidth === "auto"` fix (see that
  * file's doc comment) only measures reliably for a mode it's actually
- * *entering* live, and Units still has enough zones (back/list/Surface/
+ * *entering* live, and Units still has enough zones (list/Surface/
  * Rooms/Availability/×) that a naive per-child intrinsic-width sum isn't
  * trustworthy either (the exact same concern `UnitsBar.tsx`'s own doc
  * comment raised for Chromium's `fit-content` pass on a row this size).
@@ -87,7 +87,15 @@ export function getViewerLayoutState(activeModule: ActiveModule, isDesktop: bool
  * (`useIsDesktop`'s 1024px floor, ~992px usable). Condensing the count to
  * a bare numeric badge and merging Bedrooms+Bathrooms into one "Rooms"
  * trigger (`UnitsContent.tsx`'s own doc comment) brought the real measured
- * width down to ~869px — a manual DOM probe (`el.style.width = "auto"`,
+ * width down to ~869px, then a real back button (later removed) held it at
+ * 872px. Removing that back button (2026-08-18: "remove back sign and text
+ * units") shrank real content back down — but a 4th Availability pill
+ * ("All", added the same day: "'Units' filtering system must include: a)
+ * All...") grew it again, landing the real measured width at ~863px, not a
+ * simple reversion to the old ~869px. Re-measured after both changes
+ * landed (same direct instruction that flagged the resulting gap: "there
+ * is too much empty blank space after the button X") rather than assumed —
+ * same manual DOM probe (`el.style.width = "auto"`,
  * read `getBoundingClientRect().width`, restore), not a visual guess.
  *
  * One shared `height` for every mode, not a per-mode height — PRD §6 is
@@ -115,7 +123,7 @@ export function getViewerLayoutState(activeModule: ActiveModule, isDesktop: bool
  */
 export const DOCK_DIMENSIONS = {
   sunTime: { widthDesktop: 660 },
-  units: { widthDesktop: 872 },
+  units: { widthDesktop: 863 },
 } as const;
 
 export const DOCK_HEIGHT_DESKTOP = 62;

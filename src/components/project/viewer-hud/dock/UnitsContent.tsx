@@ -1,17 +1,24 @@
 "use client";
 
 import { forwardRef, useMemo, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
-import { ArrowLeft, Building2, Check, ChevronDown, X } from "lucide-react";
+import { Building2, Check, ChevronDown, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { useViewerPreferences } from "@/hooks/useViewerPreferences";
 import { clamp, cn } from "@/lib/utils";
 import { formatUnitArea } from "../../units-workspace/unitDisplay";
-import { BEDROOM_OPTIONS, bedroomLabel, filterUnits, type StatusFilter, type UnitFilterState } from "../../units-workspace/unitFilters";
+import { BEDROOM_OPTIONS, bedroomLabel, filterUnits, STATUS_DOT, type StatusFilter, type UnitFilterState } from "../../units-workspace/unitFilters";
 import type { Unit } from "@/lib/types";
 import { DockPopover } from "./DockPopover";
 import type { DockPopoverId } from "./DockContent";
 
-const AVAILABILITY_PILLS: StatusFilter[] = ["available", "reserved", "sold"];
+// Order + colors are a direct instruction (2026-08-18): "'Units' filtering
+// system must include: a) All b) Available (Green color) c) Reserved
+// (Orange Color) d) Sold (red color)" — "All" (previously missing here
+// entirely) now leads, and each status pill gets the same colored dot
+// `UnitSearchView.tsx`'s own filter pills and per-unit status rows already
+// use (`STATUS_DOT`, moved to `unitFilters.ts` as a shared export so both
+// surfaces read one real color scheme instead of two copies).
+const AVAILABILITY_PILLS: StatusFilter[] = ["all", "available", "reserved", "sold"];
 
 /**
  * Morphing Bottom Dock Phase 2 (2026-08-18) — Units' content, redesigned
@@ -60,6 +67,10 @@ export const UnitsContent = forwardRef<
     onFiltersChange: Dispatch<SetStateAction<UnitFilterState>>;
     listOpen: boolean;
     onToggleList: () => void;
+    /** Received but no longer rendered as an on-canvas button here
+     * (2026-08-18 direct instruction: "remove back sign and text units") —
+     * kept in the type for parity with `TimeContent`/`ViewsContent` (see
+     * `TimeContent.tsx`'s own doc comment on its own `onBack`). */
     onBack: () => void;
     onClose: () => void;
     openPopover: DockPopoverId | null;
@@ -67,7 +78,7 @@ export const UnitsContent = forwardRef<
     onClosePopover: () => void;
   }
 >(function UnitsContent(
-  { isDesktop, units, filters, onFiltersChange, listOpen, onToggleList, onBack, onClose, openPopover, onTogglePopover, onClosePopover },
+  { isDesktop, units, filters, onFiltersChange, listOpen, onToggleList, onClose, openPopover, onTogglePopover, onClosePopover },
   ref
 ) {
   const { t } = useT();
@@ -107,24 +118,15 @@ export const UnitsContent = forwardRef<
   const fillRightPct = areaBounds ? 100 - ((effMax - areaBounds.min) / (areaBounds.max - areaBounds.min)) * 100 : 0;
   const minThumbOnTop = areaBounds ? (effMin - areaBounds.min) / (areaBounds.max - areaBounds.min) > 0.5 : false;
 
-  const backButton = (
-    <button
-      type="button"
-      onClick={onBack}
-      className="flex shrink-0 items-center gap-1.5 rounded-control px-1.5 text-sm font-semibold text-white/80 transition-colors hover:text-white"
-    >
-      <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
-      {t("viewer.units")}
-    </button>
-  );
-
+  // Purple × — see `TimeContent.tsx`'s own doc comment on its identical
+  // `closeButton` for the direct instruction this matches.
   const closeButton = (
     <button
       type="button"
       onClick={onClose}
       aria-label={t("common.close")}
       title={t("common.close")}
-      className="flex shrink-0 items-center rounded-control px-1.5 text-white/50 transition-colors hover:text-white"
+      className="flex shrink-0 items-center rounded-control px-1.5 text-brand-400 transition-colors hover:text-brand-300"
     >
       <X className="h-4 w-4" aria-hidden="true" />
     </button>
@@ -289,6 +291,15 @@ export const UnitsContent = forwardRef<
   if (filters.bathrooms != null) roomsLabelParts.push(`${filters.bathrooms} ${t("units.filterBathrooms").toLowerCase()}`);
   const roomsSummary = roomsLabelParts.length > 0 ? roomsLabelParts.join(" · ") : t("common.any");
 
+  // Per-field summaries — mobile's own trigger (below) shows Bedrooms and
+  // Bathrooms as two divided halves instead of desktop's one merged
+  // "Rooms" line (2026-08-18 direct instruction: "have 'Bedrooms' and
+  // 'Bathrooms' divided space in the middle where it reads 'Rooms'"), so
+  // each half needs its own value independent of `roomsSummary` above
+  // (which stays desktop-only, unchanged).
+  const bedroomsSummary = filters.bedrooms != null ? bedroomLabel(filters.bedrooms) : t("common.any");
+  const bathroomsSummary = filters.bathrooms != null ? String(filters.bathrooms) : t("common.any");
+
   const roomsTrigger = (
     <div className="relative flex shrink-0 items-center">
       <button
@@ -329,6 +340,7 @@ export const UnitsContent = forwardRef<
       <div className={wrapperClassName}>
         {AVAILABILITY_PILLS.map((id) => {
           const isActive = filters.status === id;
+          const dotClass = id === "all" ? null : STATUS_DOT[id];
           return (
             <button
               key={id}
@@ -336,10 +348,11 @@ export const UnitsContent = forwardRef<
               onClick={() => onFiltersChange((prev) => ({ ...prev, status: id }))}
               aria-pressed={isActive}
               className={cn(
-                "whitespace-nowrap rounded-control px-2.5 py-1.5 text-xs font-medium transition-colors",
+                "flex items-center gap-1.5 whitespace-nowrap rounded-control px-2.5 py-1.5 text-xs font-medium transition-colors",
                 isActive ? "bg-brand-500 text-white" : "border border-white/15 text-white/75 hover:border-white/25 hover:text-white"
               )}
             >
+              {dotClass && <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", dotClass)} aria-hidden="true" />}
               {t(`units.status.${id}`)}
             </button>
           );
@@ -367,23 +380,48 @@ export const UnitsContent = forwardRef<
   // popover (tapping it still opens the same 2-column Bedrooms/Bathrooms
   // list `roomsTrigger` does above) — full-width row here just means a
   // bigger, clearer trigger, not a different interaction.
+  // × folded into this same row, next to the count badge (2026-08-18
+  // direct instruction: "Filter List number (68 now) moves more to the
+  // left and the X button goes to the number (68) to have more space at
+  // the top") — same "fold × into the existing content row instead of its
+  // own header row" move already made for Time's/Views' mobile rows this
+  // session. The badge no longer sits on a `flex-1` label pushing it to
+  // the button's far right edge; the label is `shrink-0` now so icon +
+  // label + badge sit grouped together right after each other, then the
+  // trigger button itself is `flex-1` to keep spanning most of the row,
+  // with × as a real sibling (not nested — a button-in-a-button isn't
+  // valid markup) at the true end of the row.
   const listTriggerMobile = (
-    <button
-      type="button"
-      onClick={onToggleList}
-      aria-pressed={listOpen}
-      aria-label={`${t("units.listUnits")} — ${t("units.foundCount", { count: filteredCount })}`}
-      className={cn(
-        "flex h-11 w-full items-center gap-2 rounded-control border px-3 text-sm font-medium transition-colors",
-        listOpen ? "border-brand-400/50 bg-brand-500/10 text-brand-400" : "border-white/15 text-white hover:border-white/25"
-      )}
-    >
-      <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-      <span className="flex-1 text-left">{t("units.filterListLabel")}</span>
-      <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs font-semibold text-white/70">{filteredCount}</span>
-    </button>
+    <div className="flex h-11 w-full items-center gap-2">
+      <button
+        type="button"
+        onClick={onToggleList}
+        aria-pressed={listOpen}
+        aria-label={`${t("units.listUnits")} — ${t("units.foundCount", { count: filteredCount })}`}
+        className={cn(
+          "flex h-11 flex-1 items-center gap-2 rounded-control border px-3 text-sm font-medium transition-colors",
+          listOpen ? "border-brand-400/50 bg-brand-500/10 text-brand-400" : "border-white/15 text-white hover:border-white/25"
+        )}
+      >
+        <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span className="shrink-0 text-left">{t("units.filterListLabel")}</span>
+        <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-xs font-semibold text-white/70">{filteredCount}</span>
+      </button>
+      {closeButton}
+    </div>
   );
 
+  // Two divided halves instead of one merged "Rooms ▾ <summary>" line
+  // (2026-08-18 direct instruction: "have 'Bedrooms' and 'Bathrooms'
+  // divided space in the middle where it reads 'Rooms'. careful with the
+  // dropdown menu filtering system.") — still one real `<button>`/one real
+  // `unitsRooms` popover underneath (the "careful with the dropdown" part):
+  // both halves are plain `<span>`s inside the same clickable button, not
+  // two separate triggers, so the exact same shared-popover wiring
+  // `roomsTrigger`'s own doc comment above documents (merged specifically
+  // to avoid a real measured-width problem two independent triggers hit)
+  // is untouched — this only changes what the *closed* trigger's own face
+  // shows.
   const roomsTriggerMobile = (
     <div className="relative flex w-full items-center">
       <button
@@ -391,16 +429,40 @@ export const UnitsContent = forwardRef<
         onClick={() => onTogglePopover("unitsRooms")}
         aria-haspopup="menu"
         aria-expanded={openPopover === "unitsRooms"}
-        className="flex h-11 w-full items-center gap-2 rounded-control border border-white/15 px-3 text-sm font-medium text-white transition-colors hover:border-white/25"
+        className="flex h-11 w-full items-stretch rounded-control border border-white/15 text-sm font-medium text-white transition-colors hover:border-white/25"
       >
-        <span className="text-white/50">{t("units.filterRooms")}</span>
-        <span className="flex-1 text-left">{roomsSummary}</span>
+        <span className="flex flex-1 flex-col items-start justify-center gap-0.5 px-3 text-left">
+          <span className="text-[11px] uppercase tracking-wide text-white/50">{t("units.filterBedrooms")}</span>
+          <span className="text-xs font-semibold text-white">{bedroomsSummary}</span>
+        </span>
+        <span className="my-2 w-px shrink-0 bg-white/15" aria-hidden="true" />
+        <span className="flex flex-1 flex-col items-start justify-center gap-0.5 px-3 text-left">
+          <span className="text-[11px] uppercase tracking-wide text-white/50">{t("units.filterBathrooms")}</span>
+          <span className="text-xs font-semibold text-white">{bathroomsSummary}</span>
+        </span>
         <ChevronDown
-          className={cn("h-3.5 w-3.5 shrink-0 text-white/50 transition-transform", openPopover === "unitsRooms" && "rotate-180")}
+          className={cn("mr-3 h-3.5 w-3.5 shrink-0 self-center text-white/50 transition-transform", openPopover === "unitsRooms" && "rotate-180")}
           aria-hidden="true"
         />
       </button>
-      <DockPopover open={openPopover === "unitsRooms"} onClose={onClosePopover} anchorClassName="left-0 flex gap-1">
+      {/* `inset-x-0` (not desktop's own `left-0`) — real alignment bug
+          found live-testing (2026-08-18 direct instruction: "Different
+          dropdown for Bedrooms and different dropdown for bathrooms. fix
+          the dropdown alignment again."): `left-0` only pins the
+          popover's *left* edge, so its own intrinsic (`min-content`)
+          width — sized just to fit its two option columns, ~230px — left
+          it far narrower than this `w-full` trigger's real width once the
+          trigger grew into the two-halves layout above, reading as a
+          small floating box disconnected from the "Bathrooms" half on the
+          trigger's right side entirely. `inset-x-0` stretches the popover
+          to the trigger's own full width instead, so each `optionList`'s
+          existing `flex-1` (same as `roomsTrigger`'s desktop popover
+          already had, unused until now because that popover was never
+          full-width) splits it into two halves landing directly under the
+          matching "Bedrooms"/"Bathrooms" half above — same one shared
+          popover/filtering wiring, unchanged (the "careful with the
+          dropdown" part). */}
+      <DockPopover open={openPopover === "unitsRooms"} onClose={onClosePopover} anchorClassName="inset-x-0 flex gap-1">
         {optionList(t("units.filterBedrooms"), filters.bedrooms, BEDROOM_OPTIONS, bedroomLabel, (v) =>
           onFiltersChange((prev) => ({ ...prev, bedrooms: v }))
         )}
@@ -415,8 +477,6 @@ export const UnitsContent = forwardRef<
   if (isDesktop) {
     return (
       <div ref={ref} className="flex h-full w-full items-center gap-2 px-3.5 sm:px-4">
-        {backButton}
-        {divider}
         {listTrigger}
         {divider}
         {surfaceTrigger}
@@ -445,10 +505,6 @@ export const UnitsContent = forwardRef<
   // which sidesteps the whole bug class rather than working around it.
   return (
     <div ref={ref} className="flex w-full flex-col gap-3 px-4 py-3">
-      <div className="flex items-center justify-between gap-2">
-        {backButton}
-        {closeButton}
-      </div>
       {listTriggerMobile}
       <div className="flex flex-col gap-1.5 rounded-control border border-white/15 px-3 py-2">
         <div className="flex items-baseline justify-between gap-2">

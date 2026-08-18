@@ -10,7 +10,6 @@ import {
   ExternalLink,
   Hand,
   Info,
-  LogOut,
   Mail,
   MessageCircle,
   MoreHorizontal,
@@ -108,21 +107,25 @@ export interface MoreMenuProjectInfo {
  * is dropped from this element (GSAP now owns the same two properties —
  * keeping both would fight over `opacity`/`transform` on open).
  *
- * Mobile-only trims (2026-08-18, direct instruction, all under "Mobile
- * view" — desktop's own width/text sizes/section list are all unchanged):
- * narrower panel (`w-48` vs desktop's `w-64`), the "MORE" section-header
- * row above the root list is gone ("Delete 'More'"), "Exit Viewer" is
- * gone from the root list ("Delete 'exit viewer'" — Project Information's
- * own "View Project Page" link is still the real way off this route on
- * mobile), and body text is resized down to match `ProjectIdentity`'s own
- * mobile scale ("Text on settings menu should be the same as the panel on
- * the Left" — the only other text-bearing panel sharing this same header
- * row, on the opposite side) — `text-[13px]`/`text-[11px]` in place of
- * `text-sm`/`text-xs`, via the `textPrimary`/`textSecondary` locals below.
- * Gated on `isDesktop` (this file's own existing 1024px hook) rather than
- * the old `sm:` (640px) breakpoint the width used before, so "mobile"
- * means the same viewport range here as it does for the bottom dock and
- * every other component this session touched.
+ * Mobile-only trim (2026-08-18, direct instruction, under "Mobile view" —
+ * desktop's own width/section list is otherwise unchanged): narrower panel
+ * (`w-48` vs desktop's `w-64`), and body text is resized down to match
+ * `ProjectIdentity`'s own mobile scale ("Text on settings menu should be
+ * the same as the panel on the Left" — the only other text-bearing panel
+ * sharing this same header row, on the opposite side) —
+ * `text-[13px]`/`text-[11px]` in place of `text-sm`/`text-xs`, via the
+ * `textPrimary`/`textSecondary` locals below. Gated on `isDesktop` (this
+ * file's own existing 1024px hook) rather than the old `sm:` (640px)
+ * breakpoint the width used before, so "mobile" means the same viewport
+ * range here as it does for the bottom dock and every other component this
+ * session touched.
+ *
+ * The "MORE" section-header row above the root list and "Exit Viewer" were
+ * originally mobile-only removals ("Delete 'More'"/"Delete 'exit viewer'")
+ * but a later direct instruction (2026-08-18, "In top right corner when
+ * clicking settings: Remove 'More' and 'exit viewer'") dropped both on
+ * desktop too — Project Information's own "View Project Page" link is
+ * still the real way off this route, on both devices.
  */
 export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
   const { t } = useT();
@@ -238,30 +241,6 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
               {label}
             </button>
           ))}
-          {/* "Exit Viewer" — desktop only (direct instruction, mobile:
-              "Delete 'exit viewer'"). Project Information's own "View
-              Project Page" link is still real navigation off this route on
-              mobile — this isn't the only way out, just the one being
-              removed here. */}
-          {isDesktop && (
-            <>
-              <div className="my-1 border-t border-white/10" />
-              <Link
-                href={projectPageHref}
-                role="menuitem"
-                onClick={closeAll}
-                className={cn(
-                  "flex h-11 w-full items-center gap-2.5 rounded-control px-2 font-medium text-white transition-colors hover:bg-white/10",
-                  textPrimary
-                )}
-              >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-white/5">
-                  <LogOut className="h-4 w-4 text-white/70" aria-hidden="true" />
-                </span>
-                {t("more.exitViewer")}
-              </Link>
-            </>
-          )}
         </div>
       )}
 
@@ -449,16 +428,6 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
           open ? "pointer-events-auto" : "pointer-events-none"
         )}
       >
-        {/* Only shown for the root list on desktop — mobile drops this
-            "MORE" header entirely (direct instruction, 2026-08-18:
-            "Delete 'More'") — an open subsection already gets its own
-            "← Back / Section Title" row inside `body` below, which is
-            that section's header equivalent. */}
-        {isDesktop && section === "none" && (
-          <div className="border-b border-white/10 px-3.5 py-2.5">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">{t("viewer.more")}</span>
-          </div>
-        )}
         {body}
       </div>
     </div>

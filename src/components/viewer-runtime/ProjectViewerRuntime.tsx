@@ -116,6 +116,15 @@ export function ProjectViewerRuntime({
     if (activeModule === "explore") viewerRef.current?.resetIdleTimer();
   }, [activeModule]);
   const handleToggleUnitsList = useCallback(() => setUnitsListOpen((prev) => !prev), []);
+  // Panel's own × (2026-08-18 direct instruction: "after the dock is
+  // restored, the dock is where it was before at 'units'") — used to call
+  // `handleActiveModuleChange("explore")`, which also reset `activeModule`,
+  // so the dock unfolded back into Nav/Explore instead of Units. This only
+  // closes the *list panel* (`unitsListOpen`), leaving `activeModule` at
+  // "units" so the fold/unfold handoff (ViewerHUD.tsx's own `navRef`
+  // effect) restores the dock to the same Units controls it showed before
+  // "Filter List" was clicked, not a different mode.
+  const handleCloseUnitsList = useCallback(() => setUnitsListOpen(false), []);
   // Shared with UnitsBar (via ViewerHUD) and UnitsWorkspace/UnitSearchView
   // — one real `UnitFilterState`, not two independently-maintained copies,
   // so Surface/Bedrooms/Bathrooms/Availability set from the new floating
@@ -627,7 +636,7 @@ export function ProjectViewerRuntime({
           comment for why that's deliberate). */}
       <UnitsWorkspace
         open={leftPanelOpen}
-        onClose={() => handleActiveModuleChange("explore")}
+        onClose={handleCloseUnitsList}
         units={units}
         onSelectUnitIn3D={handleSelectUnitIn3D}
         filters={unitFilters}
