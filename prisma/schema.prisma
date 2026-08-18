@@ -987,7 +987,28 @@ model Project3DConfig {
   cameraMaxDistanceMultiplier   Float   @default(2.5)
   cameraMaxPolarDeg             Int     @default(85)
   cameraMinPolarDeg             Int     @default(0)
+  /// Kept but no longer consulted by the public viewer — Idle Drone
+  /// Camera PRD replaced its cinematic-idle role. See idleDroneEnabled
+  /// below; a one-time migration copied each existing row's value here.
   autoRotate                    Boolean @default(true)
+  /// Idle Drone Camera PRD — procedural architectural orbit replacing
+  /// plain OrbitControls.autoRotate. See src/lib/render-engine/
+  /// idleDroneCamera.ts and Project3DConfig's own TS doc comment
+  /// (src/lib/types.ts) for the full field-by-field explanation.
+  idleDroneEnabled               Boolean @default(true)
+  idleDroneDelaySec              Int     @default(60)
+  idleDroneOrbitDurationSec      Float   @default(80)
+  idleDroneClockwise             Boolean @default(true)
+  idleDroneMotionEnabled         Boolean @default(true)
+  idleDroneHeightEnabled         Boolean @default(true)
+  idleDroneHeightAmplitude       Float   @default(0.18)
+  idleDroneDistanceEnabled       Boolean @default(true)
+  idleDroneDistanceAmplitude     Float   @default(0.05)
+  idleDroneTargetEnabled         Boolean @default(true)
+  idleDroneTargetAmplitude       Float   @default(0.06)
+  idleDroneVerticalCycles        Int     @default(2)
+  idleDronePhaseOffsetDeg        Float   @default(0)
+  idleDroneSmoothness            Float   @default(0.88)
   // "Construction Stage reveal" (the translucent per-building shell
   // outlines + progressive per-floor unit-box hiding based on
   // constructionProgressPercent, both procedural-mode-only — see

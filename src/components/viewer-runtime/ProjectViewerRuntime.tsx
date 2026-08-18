@@ -104,6 +104,17 @@ export function ProjectViewerRuntime({
     setActiveModule(module);
     setUnitsListOpen((prev) => (module === "units" ? prev : false));
   }, []);
+  // Idle Drone Camera PRD §44-47 — Units/Views/Sun&Time are active
+  // search/browsing states, not idle presentation ones; suspend the drone
+  // for as long as the visitor stays in one. Returning to Explore both
+  // lifts the suspension AND restarts the idle clock (resetIdleTimer) —
+  // without the reset, a visitor who spent 5 minutes in Units would land
+  // back in Explore with a stale `lastInteractionAt` and the drone would
+  // activate instantly instead of waiting a fresh delay (§46).
+  useEffect(() => {
+    viewerRef.current?.setIdleDroneSuspended(activeModule !== "explore");
+    if (activeModule === "explore") viewerRef.current?.resetIdleTimer();
+  }, [activeModule]);
   const handleToggleUnitsList = useCallback(() => setUnitsListOpen((prev) => !prev), []);
   // Shared with UnitsBar (via ViewerHUD) and UnitsWorkspace/UnitSearchView
   // — one real `UnitFilterState`, not two independently-maintained copies,
@@ -207,6 +218,7 @@ export function ProjectViewerRuntime({
   const handleSunTimeChange = useCallback((hours: number) => {
     setLiveSunTimeHours(hours);
     setActiveSunPreset(null);
+    viewerRef.current?.resetIdleTimer(); // Idle Drone Camera PRD §47 — scrubbing Time counts as interaction
   }, []);
   // `handleSunDateChange` (the live-date-override write path, PRD §29) was
   // removed as dead code alongside SunTimeWorkspace's own date picker
@@ -219,11 +231,13 @@ export function ProjectViewerRuntime({
   const handleSunPresetSelect = useCallback((preset: SunTimePreset) => {
     setLiveSunTimeHours(preset.hour);
     setActiveSunPreset(preset.id);
+    viewerRef.current?.resetIdleTimer();
   }, []);
   const handleSunTimeReset = useCallback(() => {
     setLiveSunTimeHours(null);
     setLiveSunDate(null);
     setActiveSunPreset(null);
+    viewerRef.current?.resetIdleTimer();
   }, []);
 
   // Views Menu PRD — real admin-saved camera Shots (viewerConfig.
@@ -232,6 +246,9 @@ export function ProjectViewerRuntime({
   // selected" if the visitor switches to Units/Explore and back to Views.
   const [activeViewPresetId, setActiveViewPresetId] = useState<string | null>(null);
   const handleSelectViewPreset = useCallback((preset: CameraPreset) => {
+    // Idle Drone Camera PRD §43 — no explicit resetIdleTimer() needed here:
+    // RenderEngine.flyToPreset() already calls idleDrone.notifyInteraction()
+    // itself (§18, every explicit transition preempts the drone).
     viewerRef.current?.flyToPreset(preset);
     setActiveViewPresetId(preset.id);
   }, []);
@@ -264,6 +281,20 @@ export function ProjectViewerRuntime({
       // own default `autoRotateSpeed` (2.0 → one revolution per ~30s at
       // 60fps) already reads as "slowly" without a new speed setting.
       autoRotate: chromeDimmed,
+      idleDroneEnabled: viewerConfig.idleDroneEnabled,
+      idleDroneDelaySec: viewerConfig.idleDroneDelaySec,
+      idleDroneOrbitDurationSec: viewerConfig.idleDroneOrbitDurationSec,
+      idleDroneClockwise: viewerConfig.idleDroneClockwise,
+      idleDroneMotionEnabled: viewerConfig.idleDroneMotionEnabled,
+      idleDroneHeightEnabled: viewerConfig.idleDroneHeightEnabled,
+      idleDroneHeightAmplitude: viewerConfig.idleDroneHeightAmplitude,
+      idleDroneDistanceEnabled: viewerConfig.idleDroneDistanceEnabled,
+      idleDroneDistanceAmplitude: viewerConfig.idleDroneDistanceAmplitude,
+      idleDroneTargetEnabled: viewerConfig.idleDroneTargetEnabled,
+      idleDroneTargetAmplitude: viewerConfig.idleDroneTargetAmplitude,
+      idleDroneVerticalCycles: viewerConfig.idleDroneVerticalCycles,
+      idleDronePhaseOffsetDeg: viewerConfig.idleDronePhaseOffsetDeg,
+      idleDroneSmoothness: viewerConfig.idleDroneSmoothness,
     }),
     [viewerConfig, chromeDimmed]
   );
@@ -567,6 +598,7 @@ export function ProjectViewerRuntime({
   // that needs gating here.
   const handleSelectUnitIn3D = useCallback((unitId: string | null) => {
     viewerRef.current?.setSelectedUnit(unitId);
+    if (unitId) viewerRef.current?.resetIdleTimer(); // Idle Drone Camera PRD §17 — a real unit selection
   }, []);
 
   // Units Blocks & POI Layer PRD §19-20 — the real "3D → List/Panel" half:

@@ -98,7 +98,7 @@ export function Inspector({
       ) : activeTab === "presets" ? (
         <PresetsPanel configEditor={configEditor} locale={locale} />
       ) : activeTab === "camera" ? (
-        <CameraPanel configEditor={configEditor} canEdit={true} />
+        <CameraPanel configEditor={configEditor} canEdit={true} viewerRef={viewerRef} />
       ) : activeTab === "shots" ? (
         <ShotsPanel configEditor={configEditor} canEdit={true} viewerRef={viewerRef} />
       ) : activeTab === "sections" ? (

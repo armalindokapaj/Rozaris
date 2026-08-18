@@ -27,6 +27,7 @@ import {
 } from "@/lib/viewerPresets";
 import { buildSectionCapGeometry, buildSectionPlanes, NO_ACTIVE_SECTION_PLANES, SECTION_INDICATOR_COLOR } from "./sections";
 import { applyUnitBoxAppearance, buildUnitRegistry, disposeUnitBoxAppearanceCaches, findUnitRootObjects, type UnitRuntimeEntry } from "./unitRegistry";
+import { IdleDroneController } from "./idleDroneCamera";
 import type {
   CameraPreset,
   DetailModelSlotRole,
@@ -289,6 +290,23 @@ export type CameraConfig = Pick<
   | "cameraZoomEnabled"
   | "cameraDampingEnabled"
   | "autoRotate"
+  // Idle Drone Camera PRD — folded into the same per-tab Pick/apply
+  // pattern every other Camera-tab field already uses, rather than a new
+  // sibling prop (see idleDroneCamera.ts's own doc comment).
+  | "idleDroneEnabled"
+  | "idleDroneDelaySec"
+  | "idleDroneOrbitDurationSec"
+  | "idleDroneClockwise"
+  | "idleDroneMotionEnabled"
+  | "idleDroneHeightEnabled"
+  | "idleDroneHeightAmplitude"
+  | "idleDroneDistanceEnabled"
+  | "idleDroneDistanceAmplitude"
+  | "idleDroneTargetEnabled"
+  | "idleDroneTargetAmplitude"
+  | "idleDroneVerticalCycles"
+  | "idleDronePhaseOffsetDeg"
+  | "idleDroneSmoothness"
 >;
 
 const DEFAULT_CAMERA_CONFIG: CameraConfig = {
@@ -308,6 +326,20 @@ const DEFAULT_CAMERA_CONFIG: CameraConfig = {
   cameraZoomEnabled: true,
   cameraDampingEnabled: true,
   autoRotate: false,
+  idleDroneEnabled: true,
+  idleDroneDelaySec: 60,
+  idleDroneOrbitDurationSec: 80,
+  idleDroneClockwise: true,
+  idleDroneMotionEnabled: true,
+  idleDroneHeightEnabled: true,
+  idleDroneHeightAmplitude: 0.18,
+  idleDroneDistanceEnabled: true,
+  idleDroneDistanceAmplitude: 0.05,
+  idleDroneTargetEnabled: true,
+  idleDroneTargetAmplitude: 0.06,
+  idleDroneVerticalCycles: 2,
+  idleDronePhaseOffsetDeg: 0,
+  idleDroneSmoothness: 0.88,
 };
 
 /**
@@ -613,6 +645,21 @@ export class RenderEngine {
   private cameraConfig: CameraConfig = DEFAULT_CAMERA_CONFIG;
   private boundingRadius = 20;
 
+  // Idle Drone Camera PRD — see idleDroneCamera.ts's own doc comment for
+  // why this is a self-contained controller rather than more flat fields
+  // here. `prefersReducedMotion` is read once at mount (§49);
+  // `visibilityHandler` is only kept so dispose() can remove the exact
+  // listener mount() added. `dronePathHelperGroup`/`showDronePath` are
+  // the editor-only "Show Drone Path" helper (§38-39) — never built for
+  // the public viewer since nothing there ever calls setShowDronePath().
+  private idleDrone = new IdleDroneController();
+  private prefersReducedMotion = false;
+  private visibilityHandler: (() => void) | null = null;
+  private dronePathHelperGroup: THREE.Group | null = null;
+  private showDronePath = false;
+  private droneRingLines: THREE.Line[] = [];
+  private droneMarker: THREE.Mesh | null = null;
+
   // Environment tab (PRD §7-13) — see EnvironmentConfig's own doc comment.
   private environmentConfig: EnvironmentConfig = DEFAULT_ENVIRONMENT_CONFIG;
   private envScene: THREE.Scene | null = null;
@@ -775,6 +822,14 @@ export class RenderEngine {
     scene.add(sectionHelperGroup);
     this.sectionHelperGroup = sectionHelperGroup;
 
+    // Idle Drone Camera PRD §38-39 — editor-only orbit-path helper, never
+    // clipped (same reasoning as sectionHelperGroup above), empty until
+    // setShowDronePath(true) actually populates it.
+    const dronePathHelperGroup = new THREE.Group();
+    dronePathHelperGroup.name = "RZ_DronePathHelper";
+    scene.add(dronePathHelperGroup);
+    this.dronePathHelperGroup = dronePathHelperGroup;
+
     this.isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
     const cfg = this.cameraConfig;
     const camera = new THREE.PerspectiveCamera(
@@ -869,6 +924,10 @@ export class RenderEngine {
     // sample-count reduction all land with their own Phase 2-4 features).
     controls.addEventListener("start", () => {
       this.cameraTransition = null;
+      // Idle Drone Camera PRD §17 — every real orbit/pan/zoom/touch/wheel
+      // gesture is exactly this event; stops the drone immediately with
+      // no animate-back (idleDrone.notifyInteraction's own doc comment).
+      this.idleDrone.notifyInteraction(performance.now());
       this.isInteracting = true;
       if (this.qualityConfig.interactionQualityReductionEnabled && !this.isMobileViewport) {
         this.interactionRenderScale = Math.max(0.5, this.effectiveRenderScale * 0.7);
@@ -923,8 +982,21 @@ export class RenderEngine {
       const unitId = unitIdAtPointer(event);
       this.selectedUnitId = unitId;
       this.refreshUnitRegistryAndAppearance();
+      this.idleDrone.notifyInteraction(performance.now()); // Idle Drone Camera PRD §17 — a real unit click
       this.callbacks.onUnitClick?.(unitId);
     });
+
+    // Idle Drone Camera PRD §49-50 — read the OS/browser reduced-motion
+    // preference once (drone stays fully disabled for the life of this
+    // mount if set, idleDroneCamera.ts's own step() doc comment) and pause
+    // the idle clock/drone while the tab is hidden, resetting (not
+    // resuming) on return so it never picks up mid-orbit after being away.
+    this.prefersReducedMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const visibilityHandler = () => {
+      if (!document.hidden) this.idleDrone.notifyInteraction(performance.now());
+    };
+    document.addEventListener("visibilitychange", visibilityHandler);
+    this.visibilityHandler = visibilityHandler;
 
     this.applyCameraConfig(this.cameraConfig);
     // Mount-time environment application stays direct/synchronous
@@ -1009,6 +1081,12 @@ export class RenderEngine {
       }
       controls.update();
       this.stepCameraTransition(now);
+      this.idleDrone.step(now, dtSeconds, camera, controls, {
+        transitionInFlight: this.cameraTransition != null,
+        prefersReducedMotion: this.prefersReducedMotion,
+        tabHidden: document.hidden,
+      });
+      if (this.showDronePath) this.updateDronePathHelper();
       this.sampleAdaptiveQuality();
       this.stepEnvironmentAnimation(dtSeconds);
       // CSM's cascades track the live camera frustum — must be recomputed
@@ -1369,6 +1447,7 @@ export class RenderEngine {
     const camera = this.camera;
     const controls = this.controls;
     if (!entry || !camera || !controls || !entry.poiEnabled || !this.unitsConfig.unitPoiCameraEnabled) return false;
+    this.idleDrone.notifyInteraction(performance.now()); // Idle Drone Camera PRD §18/§42 — POI focus always preempts the drone
 
     const distance = entry.poiDistanceOverride ?? entry.worldBoundingSphere.radius * this.unitsConfig.unitPoiCameraDistanceMultiplier;
     const height = entry.poiHeightOverride ?? this.unitsConfig.unitPoiCameraHeightOffset;
@@ -1566,7 +1645,16 @@ export class RenderEngine {
       const startDistance = this.boundingRadius * this.cameraConfig.cameraStartDistanceMultiplier;
       controls.target.copy(center);
       camera.position.set(center.x + startDistance, center.y + startDistance * 0.7, center.z + startDistance);
+      // Idle Drone Camera PRD §62 — the idle clock starts at Viewer Ready,
+      // not at engine construction (which would burn part of the delay
+      // during GLB/texture loading).
+      this.idleDrone.notifyInteraction(performance.now());
     }
+    // Idle Drone Camera PRD §20-21 — real bounds every time content
+    // (re)loads, so the orbit always scales to the CURRENT building, not
+    // a stale one from before a Replace.
+    this.idleDrone.setBounds({ center: center.clone(), buildingHeight: Math.max(size.y, 1), groundMinY: box.min.y, boundingRadius: this.boundingRadius });
+    if (this.showDronePath) this.rebuildDronePathHelper();
     this.applyCameraConfig(this.cameraConfig);
     // Real bug this avoids: without re-deriving sunDistance/re-applying
     // the Environment config once real content bounds are known, the sun
@@ -1662,7 +1750,11 @@ export class RenderEngine {
     controls.enableZoom = config.cameraZoomEnabled;
     controls.enableDamping = config.cameraDampingEnabled;
     controls.dampingFactor = 0.08;
-    controls.autoRotate = config.autoRotate;
+    // Idle Drone Camera PRD §53 — "ROZARIS owns automated movement;
+    // OrbitControls remains the manual navigation system." The two never
+    // fight: autoRotate only actually spins when a project has the drone
+    // turned off, preserving today's plain-spin fallback for it.
+    controls.autoRotate = config.autoRotate && !config.idleDroneEnabled;
     controls.minDistance = this.boundingRadius * config.cameraMinDistanceMultiplier;
     controls.maxDistance = this.boundingRadius * config.cameraMaxDistanceMultiplier;
     controls.minPolarAngle = THREE.MathUtils.degToRad(config.cameraMinPolarDeg);
@@ -1671,6 +1763,8 @@ export class RenderEngine {
     // "nullable means off" contract the schema field itself documents.
     controls.minAzimuthAngle = config.cameraMinAzimuthDeg != null ? THREE.MathUtils.degToRad(config.cameraMinAzimuthDeg) : -Infinity;
     controls.maxAzimuthAngle = config.cameraMaxAzimuthDeg != null ? THREE.MathUtils.degToRad(config.cameraMaxAzimuthDeg) : Infinity;
+    this.idleDrone.setConfig(config);
+    if (this.showDronePath) this.rebuildDronePathHelper();
   }
 
   // ---------------------------------------------------------------------
@@ -2133,6 +2227,7 @@ export class RenderEngine {
   flyToPreset(preset: CameraPreset) {
     const { camera, controls } = this;
     if (!camera || !controls) return;
+    this.idleDrone.notifyInteraction(performance.now()); // Idle Drone Camera PRD §18/§43 — Shots always preempt the drone
     this.cameraTransition = {
       startPos: camera.position.clone(),
       endPos: new THREE.Vector3(preset.position.x, preset.position.y, preset.position.z),
@@ -2165,6 +2260,110 @@ export class RenderEngine {
     const helper = new THREE.CameraHelper(previewCam);
     scene.add(helper);
     this.cameraHelper = helper;
+  }
+
+  // ---------------------------------------------------------------------
+  // Idle Drone Camera PRD §54-55 — the public surface ThreeProjectViewer's
+  // imperative handle exposes. Actual per-frame math lives in
+  // idleDroneCamera.ts; everything here is thin delegation + the
+  // editor-only path-helper visualization (§38-39), which genuinely does
+  // belong to RenderEngine (it creates real scene objects, which
+  // idleDroneCamera.ts deliberately never does — see its own doc comment).
+  // ---------------------------------------------------------------------
+
+  /** §16-17 — any outside-canvas UI trigger (Views/Shot select, Sun&Time
+   * scrub, a unit picked from a list, returning to Explore) calls this so
+   * the next idle window starts fresh instead of firing instantly off a
+   * stale timestamp. */
+  resetIdleTimer() {
+    this.idleDrone.notifyInteraction(performance.now());
+  }
+
+  /** Forces the drone off right now (e.g. an explicit "Reset Camera"
+   * action) — same effect as any other notifyInteraction. */
+  cancelIdleDrone() {
+    this.idleDrone.notifyInteraction(performance.now());
+  }
+
+  isIdleDroneActive(): boolean {
+    return this.idleDrone.isActive();
+  }
+
+  /** §45-47 — Units/Views/Sun&Time modes suspend the drone for as long as
+   * the visitor stays there; Explore resumes it (after a fresh delay via
+   * resetIdleTimer(), called separately by the caller). */
+  setIdleDroneSuspended(suspended: boolean) {
+    this.idleDrone.setSuspended(suspended);
+  }
+
+  /** §36-37 — Editor "Preview Drone Camera": ignores the idle delay,
+   * activates immediately with whatever cameraConfig is currently live
+   * (the unsaved draft). */
+  startIdleDronePreview() {
+    this.idleDrone.startPreview();
+  }
+
+  stopIdleDronePreview() {
+    this.idleDrone.stopPreview();
+  }
+
+  /** §38-39 — editor-only orbit-path helper (three altitude rings + a
+   * live position marker). No-op scene-wise for the public viewer, which
+   * never calls this. */
+  setShowDronePath(enabled: boolean) {
+    this.showDronePath = enabled;
+    if (enabled) this.rebuildDronePathHelper();
+    else this.clearDronePathHelper();
+  }
+
+  private clearDronePathHelper() {
+    const group = this.dronePathHelperGroup;
+    if (!group) return;
+    for (const line of this.droneRingLines) {
+      group.remove(line);
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    }
+    this.droneRingLines = [];
+    if (this.droneMarker) {
+      group.remove(this.droneMarker);
+      this.droneMarker.geometry.dispose();
+      (this.droneMarker.material as THREE.Material).dispose();
+      this.droneMarker = null;
+    }
+  }
+
+  private rebuildDronePathHelper() {
+    const group = this.dronePathHelperGroup;
+    if (!group) return;
+    this.clearDronePathHelper();
+    const points = this.idleDrone.getPathPoints();
+    if (!points) return;
+    const ringColors: Record<"high" | "mid" | "low", number> = { high: 0x60a5fa, mid: 0x818cf8, low: 0xf472b6 };
+    (["high", "mid", "low"] as const).forEach((key) => {
+      const geometry = new THREE.BufferGeometry().setFromPoints(points[key]);
+      const material = new THREE.LineBasicMaterial({ color: ringColors[key], transparent: true, opacity: 0.6 });
+      const line = new THREE.Line(geometry, material);
+      group.add(line);
+      this.droneRingLines.push(line);
+    });
+    const markerGeometry = new THREE.SphereGeometry(Math.max(0.3, this.boundingRadius * 0.03), 12, 12);
+    const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+    group.add(marker);
+    this.droneMarker = marker;
+  }
+
+  /** Called every frame (only while showDronePath is on) from the
+   * animation loop — keeps the live-position marker following the real
+   * camera and only visible while the drone (or its preview) is actually
+   * driving it. */
+  private updateDronePathHelper() {
+    const marker = this.droneMarker;
+    const camera = this.camera;
+    if (!marker || !camera) return;
+    marker.visible = this.idleDrone.isActive();
+    marker.position.copy(camera.position);
   }
 
   /** Async on purpose — WebGPURenderer presents to the canvas on its own
@@ -2223,6 +2422,18 @@ export class RenderEngine {
     this.cameraHelper = null;
     this.cameraTransition = null;
     this.hasFramedOnce = false;
+
+    // Idle Drone Camera PRD cleanup — real listener removal (not just a
+    // dropped reference) since document.addEventListener outlives this
+    // engine instance otherwise, and a real scene-object teardown for the
+    // path helper (clearDronePathHelper only removes/disposes; the group
+    // itself is owned by `scene`, already gone above).
+    if (this.visibilityHandler) document.removeEventListener("visibilitychange", this.visibilityHandler);
+    this.visibilityHandler = null;
+    this.clearDronePathHelper();
+    this.dronePathHelperGroup = null;
+    this.showDronePath = false;
+    this.idleDrone.reset();
     this.contentBounds = null;
     this.clippingGroup = null;
     this.sectionHelperGroup = null;

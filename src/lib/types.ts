@@ -287,7 +287,53 @@ export interface Project3DConfig {
    * (mirrors cameraMaxPolarDeg's floor/ceiling pair; 0 = can look straight
    * down from directly above, the OrbitControls default). */
   cameraMinPolarDeg: number;
+  /** Kept but no longer consulted by the public viewer — Idle Drone Camera
+   * PRD §10/§60 replaced its cinematic-idle role. New rows still default
+   * `true` (see defaultProject3DConfig); an existing row's value was
+   * copied into `idleDroneEnabled` once by the migration that added the
+   * fields below, so a project's idle behavior didn't change the moment
+   * this shipped. */
   autoRotate: boolean;
+  /** Idle Drone Camera PRD — replaces plain `OrbitControls.autoRotate`
+   * with a procedural architectural orbit (rise/fall, breathe distance, a
+   * drifting look-target, all scaled off the project's own bounds — see
+   * src/lib/render-engine/idleDroneCamera.ts). `idleDroneEnabled` is the
+   * master per-project switch; `idleDroneMotionEnabled` is a convenience
+   * master over the three wave toggles below it (turning it off, or
+   * turning all three sub-toggles off, both behave as a plain controlled
+   * orbit — PRD §7's own example). Amplitudes are fractions (0-1) of the
+   * project's own building height/base distance, not absolute meters, so
+   * one set of defaults looks right on a villa and a tower alike (§21).
+   * `idleDronePhaseOffsetDeg` exists for API/schema completeness (§9/§11)
+   * but isn't exposed as its own editor slider — absent from the PRD's
+   * own §6 UI mock, defaults to 0. */
+  idleDroneEnabled: boolean;
+  /** Seconds of inactivity before the drone activates. 5-600, default 60. */
+  idleDroneDelaySec: number;
+  /** Seconds per full orbit revolution. 20-300, default 80. */
+  idleDroneOrbitDurationSec: number;
+  idleDroneClockwise: boolean;
+  /** Master convenience toggle over the three wave toggles below — see
+   * this field's own note above. */
+  idleDroneMotionEnabled: boolean;
+  idleDroneHeightEnabled: boolean;
+  /** Fraction (0-0.5) of building height. Default 0.18. */
+  idleDroneHeightAmplitude: number;
+  idleDroneDistanceEnabled: boolean;
+  /** Fraction (0-0.25) of the orbit's own base distance. Default 0.05. */
+  idleDroneDistanceAmplitude: number;
+  idleDroneTargetEnabled: boolean;
+  /** Fraction (0-0.25) of building height, applied to the look-target's Y. Default 0.06. */
+  idleDroneTargetAmplitude: number;
+  /** Altitude wave cycles per full orbit. 1-4, default 2. */
+  idleDroneVerticalCycles: number;
+  /** Degrees, 0-360 — not exposed as its own editor slider (see this
+   * field group's own doc comment above). */
+  idleDronePhaseOffsetDeg: number;
+  /** 0-1 damping strength — higher is slower/gentler, not a raw per-frame
+   * lerp factor (idleDroneCamera.ts's dampingFactor() maps it to a time
+   * constant). Default 0.88. */
+  idleDroneSmoothness: number;
   status: "draft" | "published";
 
   /** Three.js WebGPURenderer target — "auto"/"webgpu" both let the renderer
@@ -1388,6 +1434,23 @@ export interface ExperienceDocument {
     maxDistanceMultiplier: number;
     maxPolarDeg: number;
     autoRotate: boolean;
+    /** Idle Drone Camera PRD §56 — snapshot shape, deliberately mirroring
+     * that section's JSON literally. Not consumed by any live read path
+     * yet (same "additive, no consumer yet" status the class doc comment
+     * on ExperienceDocument itself already flags). */
+    idleDrone: {
+      enabled: boolean;
+      delaySec: number;
+      orbitDurationSec: number;
+      clockwise: boolean;
+      motionEnabled: boolean;
+      height: { enabled: boolean; amplitude: number };
+      distance: { enabled: boolean; amplitude: number };
+      target: { enabled: boolean; amplitude: number };
+      verticalCycles: number;
+      phaseOffsetDeg: number;
+      smoothness: number;
+    };
   };
   effects: {
     qualityPreset: QualityPreset;

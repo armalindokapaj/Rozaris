@@ -64,6 +64,22 @@ export interface ThreeProjectViewerHandle {
    * "N mapped / loaded" without duplicating the engine's own resolution
    * logic. */
   getUnitRegistrySnapshot: () => { unitId: string; unitCode: string; poiYawDeg: number }[];
+  /** Idle Drone Camera PRD §16-17 — any outside-canvas UI trigger (Views/
+   * Shot select, Sun&Time scrub, a unit picked from a list, returning to
+   * Explore) calls this so the next idle window starts fresh instead of
+   * firing off a stale timestamp. */
+  resetIdleTimer: () => void;
+  isIdleDroneActive: () => boolean;
+  /** §45-47 — Units/Views/Sun&Time modes suspend the drone for as long as
+   * the visitor stays there. */
+  setIdleDroneSuspended: (suspended: boolean) => void;
+  /** §36-37 — Editor "Preview Drone Camera": ignores the idle delay,
+   * activates immediately with the live (unsaved) draft settings. */
+  previewIdleDrone: () => void;
+  stopIdleDronePreview: () => void;
+  /** §38-39 — editor-only orbit-path helper; a no-op scene-wise for the
+   * public viewer, which never calls this. */
+  setShowDronePath: (enabled: boolean) => void;
 }
 
 export interface ThreeProjectViewerProps {
