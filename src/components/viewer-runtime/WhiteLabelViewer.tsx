@@ -1,36 +1,47 @@
+"use client";
+
+import { useEmbedBootstrap } from "@/hooks/useEmbedBootstrap";
+import { ProjectViewerRuntime } from "@/components/viewer-runtime/ProjectViewerRuntime";
+
 /**
- * Multi-Channel Publishing PRD Phase 4 — the white-label half of the
- * PRD's own two-wrapper diagram. Deliberately NOT implemented yet, and
- * not a fake pass-through either — flagged honestly rather than either
- * skipped silently or built untested:
+ * Multi-Channel Publishing PRD Phase 5 — the white-label half of the
+ * PRD's own two-wrapper diagram, now real (was a deliberate `throw` stub
+ * through Phase 4 — see git history on this file for why, and
+ * `useEmbedBootstrap.ts`/`manifestAdapter.ts` for how the
+ * `ViewerReleaseManifest` → `ProjectViewerRuntimeBootstrap` gap that stub
+ * flagged actually got closed).
  *
- * - No route calls this (that's Phase 5: `/embed/[publicKey]`, CSP
- *   `frame-ancestors`, allowed-origin enforcement via
- *   `resolvePublishTarget()`, which already exists and is already
- *   verified — see [[rozaris-multichannel-publishing-prd]]).
- * - The real blocker isn't wiring a fetch call — it's that a
- *   `ViewerReleaseManifest` (per-slot `DetailModelVersion` entries,
- *   merged `unitBindings`/`unitPoi`, a full `Project3DConfig` snapshot —
- *   see `compileRelease.ts`) doesn't map 1:1 onto
- *   `ProjectViewerRuntimeBootstrap`'s shape (which `MarketplaceViewer`
- *   fills from 4 *live* hooks, including one — `useProjectConstruction`
- *   — that has no manifest equivalent at all: construction-progress
- *   isn't part of a compiled release today). Writing that adapter blind,
- *   with no `/embed` route to exercise it through and no real
- *   confirmation it produces a bootstrap `ProjectViewerRuntime` actually
- *   renders correctly, would be untested code pretending to be real —
- *   the same trap `googleSheets.ts`'s doc comment warns about, just for
- *   rendering instead of network I/O.
- *
- * What Phase 5 needs to do here: fetch `bootstrap`+`manifest`+`inventory`
- * from `/api/viewer/v1/t/[publicKey]/*` (all three already exist and are
- * curl-verified), decide how (or whether) to represent construction
- * progress for a white-label channel, then render exactly this:
- *
- *   <ProjectViewerRuntime bootstrap={adapted} channel="white_label" />
+ * Rendered by `/embed/[publicKey]/page.tsx`. Deliberately minimal here —
+ * loading/error UI is plain and unbranded rather than guessing at a
+ * design for `target.branding` (fetched by the hook but not consumed
+ * yet — real branding/theming is unbuilt, flagged rather than faked with
+ * a default look that might not match what an admin actually configures
+ * later).
  */
-export function WhiteLabelViewer({ publicKey }: { publicKey: string }): never {
-  throw new Error(
-    `WhiteLabelViewer is not implemented yet (publicKey: ${publicKey}) — Phase 5 (\`/embed/[publicKey]\`) wires this up. See this file's own doc comment.`
-  );
+export function WhiteLabelViewer({ publicKey }: { publicKey: string }) {
+  const state = useEmbedBootstrap(publicKey);
+
+  if (state.status === "loading") {
+    return (
+      <div className="flex h-dvh w-full items-center justify-center bg-neutral-900">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    // 409 ("no release deployed yet") and 403 ("suspended"/license
+    // window) are real, expected states an admin can hit while setting a
+    // channel up — worth a distinct-enough message from a bare 404, but
+    // deliberately not over-designed (see this file's own doc comment on
+    // why branding isn't applied here).
+    return (
+      <div className="flex h-dvh w-full flex-col items-center justify-center gap-2 bg-neutral-900 px-6 text-center text-white">
+        <p className="text-sm font-medium">This viewer isn&apos;t available right now.</p>
+        <p className="text-xs text-neutral-400">{state.error}</p>
+      </div>
+    );
+  }
+
+  return <ProjectViewerRuntime bootstrap={state.bootstrap} channel="white_label" />;
 }

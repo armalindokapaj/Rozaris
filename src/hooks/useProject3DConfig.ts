@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { defaultProject3DConfig } from "@/lib/store";
+import { normalizeProject3DConfigRow } from "@/lib/project3DConfig";
 import type { Project3DConfig } from "@/lib/types";
 
 /**
@@ -29,22 +30,7 @@ export function useProject3DConfig(projectId: string): Project3DConfig {
         // though `Project3DConfig`'s TS type declares them non-null —
         // every real project's saved config predates today, so this
         // isn't a hypothetical edge case, it's the common case.
-        setConfig(
-          row
-            ? {
-                ...row,
-                cameraPresets: row.cameraPresets ?? [],
-                viewerUI: row.viewerUI ?? defaultProject3DConfig.viewerUI,
-                sections: row.sections ?? [],
-                // Environment → Sun & Sky's solarAnchors (PRD §9) — same
-                // nullable-Json?-column pattern as the three above; every
-                // row saved before this migration has it as real `null`.
-                solarAnchors: row.solarAnchors ?? [],
-                // Lighting tab's artificialLights (PRD §20) — same pattern.
-                artificialLights: row.artificialLights ?? [],
-              }
-            : defaultProject3DConfig
-        );
+        setConfig(normalizeProject3DConfigRow(row));
       })
       .catch(() => {
         if (!cancelled) setConfig(defaultProject3DConfig);

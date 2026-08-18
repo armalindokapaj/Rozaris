@@ -38,6 +38,28 @@ export async function getProjectBySlug(slug: string): Promise<Project | null> {
   return row ? normalizeProject(row) : null;
 }
 
+/**
+ * Multi-Channel Publishing PRD Phase 5 — the white-label bootstrap
+ * route's project lookup. Deliberately narrower gate than
+ * `PUBLIC_WHERE` (`deletedAt: null` only, no `approvalStatus: "active"`
+ * filter): a `ProjectPublishTarget` is a deliberate, admin-configured
+ * distribution channel, not the anonymous marketplace catalog
+ * `approvalStatus` moderates — conflating the two would make a white-label
+ * client's embed go dark the moment a project's catalog moderation state
+ * changes for reasons that have nothing to do with whether that specific
+ * channel should still serve. `resolvePublishTarget()` already checks
+ * `deletedAt` independently on both the project and its publisher; this
+ * repeats only the project half so `getProjectById` is safe to call on
+ * its own, not because the caller is expected to skip that check.
+ */
+export async function getProjectById(id: string): Promise<Project | null> {
+  const row = await prisma.project.findFirst({
+    where: { id, deletedAt: null },
+    include: PUBLIC_INCLUDE,
+  });
+  return row ? normalizeProject(row) : null;
+}
+
 /** Every slug worth pre-rendering at build time. Live projects created
  * after a deployment simply aren't in this list; `dynamicParams` (Next's
  * default, unchanged here) renders those on demand instead of 404ing. */

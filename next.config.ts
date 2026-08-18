@@ -61,6 +61,77 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // Multi-Channel Publishing PRD Phase 5 — `/embed/[publicKey]` is
+      // meant to be iframed into a THIRD PARTY's own page; the blanket
+      // `frame-ancestors 'none'`/`X-Frame-Options: DENY` above would
+      // block that outright, which defeats the entire route's purpose.
+      // Per this exact Next.js version's own bundled docs
+      // (node_modules/next/dist/docs/.../headers.md: "If two headers
+      // match the same path and set the same header key, the last
+      // header key will override the first"), this later, more specific
+      // `source` correctly overrides the blanket rule above for this one
+      // path — confirmed against the framework's own documented
+      // behavior, not assumed.
+      //
+      // `frame-ancestors *` here is a deliberate choice, not a
+      // shortcut: this route can't do genuine per-target
+      // `allowedOrigins`-based CSP locking statically (that needs a DB
+      // lookup keyed by `publicKey`, which `headers()` can't do — it's
+      // evaluated without per-request access). The real access boundary
+      // is already `publicKey` itself (`resolveTarget.ts`'s own doc
+      // comment: "a publicKey IS the access control here") — framing
+      // this page from an arbitrary origin gets an attacker nothing they
+      // couldn't already get by opening the URL directly. The one place
+      // `allowedOrigins` actually IS enforced (real, already
+      // curl-verified) is server-side in `resolvePublishTarget()`
+      // against every `fetch()` call `useEmbedBootstrap` makes to
+      // `/api/viewer/v1/t/[publicKey]/*` — browsers reliably send a real
+      // `Origin` header on those (fetch/XHR), unlike a bare top-level
+      // iframe navigation, which doesn't always carry one. Genuine
+      // dynamic per-target frame-ancestors (via middleware + a DB/cache
+      // lookup) is real future work, flagged rather than half-built
+      // blind.
+      {
+        source: "/embed/:publicKey*",
+        headers: [
+          // The blanket rule above sets X-Frame-Options: DENY for
+          // "/:path*" — that match still applies here too (Next.js
+          // merges same-key headers by "last one wins," it doesn't let a
+          // more specific rule silently omit/unset a key the broader
+          // rule already set), so this has to be an explicit override,
+          // not a gap left for CSP frame-ancestors to quietly win by
+          // default. X-Frame-Options has no "allow" value (only DENY/
+          // SAMEORIGIN/the deprecated, unsupported-in-modern-browsers
+          // ALLOW-FROM) — every modern browser already prioritizes CSP
+          // frame-ancestors over X-Frame-Options when both are present
+          // (CSP living standard), and any browser old enough to NOT
+          // understand frame-ancestors also, in practice, treats an
+          // unrecognized X-Frame-Options value as "ignore this header"
+          // rather than "deny" — so an explicit non-standard value here
+          // is strictly safer than leaving DENY in place for a route
+          // whose entire purpose is being framed by someone else.
+          { key: "X-Frame-Options", value: "ALLOWALL" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), payment=()" },
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "base-uri 'self'",
+              "form-action 'self'",
+              "object-src 'none'",
+              "frame-ancestors *",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+              "worker-src 'self' blob:",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https:",
+              "font-src 'self' data:",
+              "connect-src 'self' https: wss: blob:",
+            ].join("; "),
+          },
+        ],
+      },
     ];
   },
 };

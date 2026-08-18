@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { resolvePublishTarget } from "@/lib/viewer/resolveTarget";
+import { getProjectById } from "@/lib/projects.server";
 
 /**
  * Multi-Channel Publishing PRD Phase 5, §14 "Runtime bootstrap" — the one
@@ -28,11 +29,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ publ
 
   // project.deletedAt/publisher.deletedAt are already checked inside
   // resolvePublishTarget() (security-audit fix, 2026-08-18) — this fetch is
-  // just for the response body's slug/name, not a second gate.
-  const project = await prisma.project.findUnique({
-    where: { id: target.projectId },
-    select: { id: true, slug: true, name: true },
-  });
+  // not a second gate (getProjectById's own deletedAt filter is
+  // belt-and-suspenders, see its doc comment).
+  //
+  // Phase 5 (2026-08-18): returns the FULL public `Project` shape now,
+  // not just `{id, slug, name}` — `WhiteLabelViewer` needs everything
+  // `ProjectViewerRuntime`'s tree reads off `bootstrap.project`
+  // (developer contact info, city, propertyType, completionLabel, status,
+  // units, buildings, constructionStages, ...). Not a new exposure: this
+  // is exactly what `/project/[slug]` already serves any anonymous
+  // marketplace visitor today via the same `normalizeProject`/
+  // `PUBLIC_INCLUDE` path.
+  const project = await getProjectById(target.projectId);
   if (!project) {
     return NextResponse.json({ error: "Project not found." }, { status: 404 });
   }
@@ -59,6 +67,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ publ
     select: { revision: true },
   });
 
+  // `project.units` is deliberately dropped from the wire, not just left
+  // unread — `getProjectById`'s `Project.units` is the RAW admin list,
+  // unaware of this specific target's `PublishTargetUnitOverride` rows
+  // (hidden units, custom/withheld prices). The separate `/inventory`
+  // endpoint (Phase 6) already applies those overrides correctly; sending
+  // the raw list here too would let any caller bypass them by reading
+  // `project.units` instead of `/inventory` — same "static experience vs.
+  // live inventory" split the PRD itself insists on (§5-6). The client
+  // adapter reconstructs `project.units` from the override-aware
+  // `/inventory` response instead of trusting this field.
+  const { units: _rawUnitsExcludedFromWire, ...publicProject } = project;
+  void _rawUnitsExcludedFromWire;
+
   return NextResponse.json({
     target: {
       publicKey: target.publicKey,
@@ -66,7 +87,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ publ
       branding: target.branding ?? null,
       viewerOverrides: target.viewerOverrides ?? null,
     },
-    project: { id: project.id, slug: project.slug, name: project.name },
+    project: publicProject,
     release: {
       id: release.id,
       version: release.version,

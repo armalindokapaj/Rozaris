@@ -27,6 +27,31 @@ export interface ViewerReleaseManifestModel {
   castShadow: boolean;
   receiveShadow: boolean;
   nodeOverrides: unknown;
+  /** Multi-Channel Publishing PRD Phase 5 addition — RenderEngine's
+   * `applyNodeOverrides` cross-references this against `nodeOverrides`
+   * (both keyed by `rzNodeId`) to resolve a mesh's runtime `.name` before
+   * a Materials-tab override can apply at all; without it, node overrides
+   * silently no-op (an empty `sceneManifest` produces an empty
+   * name-lookup map, not an error). Not present on any `ViewerRelease`
+   * compiled before this field existed — every reader must treat it as
+   * optional and fall back to `[]`, matching `useProjectDetailModel`'s
+   * own nullable-column handling for the live path. */
+  sceneManifest: unknown;
+  /** Multi-Channel Publishing PRD Phase 5 addition — per-slot mesh→unit
+   * mapping. The top-level `unitBindings`/`unitPoi` maps below stay
+   * (merged across every slot, for the runtime's raycast-hit lookup) —
+   * this is the per-model breakdown `applyUnitBoxes` actually needs (see
+   * its own "only matches against that slot's own unitLinks map" doc
+   * comment on `ProjectViewerRuntime`). Same optional/fall-back-to-`[]`
+   * rule as `sceneManifest` above for pre-existing compiled releases. */
+  unitLinks: Array<{
+    meshName: string;
+    unitId: string;
+    poiYawDeg: number;
+    poiEnabled: boolean;
+    poiDistanceOverride: number | null;
+    poiHeightOverride: number | null;
+  }>;
 }
 
 export interface ViewerReleaseManifest {
@@ -123,6 +148,15 @@ export async function compileViewerRelease(projectId: string, actor: string) {
       castShadow: published.castShadow,
       receiveShadow: published.receiveShadow,
       nodeOverrides: published.nodeOverrides,
+      sceneManifest: published.sceneManifest,
+      unitLinks: published.unitLinks.map((link) => ({
+        meshName: link.meshName,
+        unitId: link.unitId,
+        poiYawDeg: link.poiYawDeg,
+        poiEnabled: link.poiEnabled,
+        poiDistanceOverride: link.poiDistanceOverride,
+        poiHeightOverride: link.poiHeightOverride,
+      })),
     });
 
     for (const link of published.unitLinks) {
