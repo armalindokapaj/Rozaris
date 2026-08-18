@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { gsap } from "gsap";
-import { Building2, Camera, LayoutGrid, Plane, Signpost } from "lucide-react";
+import { Building2, Camera, LayoutGrid, Plane, Signpost, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
 import { cn } from "@/lib/utils";
@@ -26,12 +26,15 @@ import type { ActiveModule } from "../viewer-hud/types";
  * title zone's "VIEWS" text and the Sun & Time readout's own text label
  * (icon-only versions of both), then the whole title zone AND the Sun &
  * Time readout were dropped entirely ("Remove everything except Shots")
- * — this bar is now just the preset row by itself, no title badge, no
- * dividers, no jump-to-Sun&Time shortcut. `viewerTimeHours`/
+ * — this bar was just the preset row by itself for a while, no title
+ * badge, no dividers, no jump-to-Sun&Time shortcut. `viewerTimeHours`/
  * `onOpenSunTime` were removed from this component's own props along
  * with that (ViewerHUD's own call site below simply stops passing them —
  * `viewerTimeHours` itself stays real there, still feeding
- * SunTimeWorkspace directly).
+ * SunTimeWorkspace directly). One divider + a trailing × zone came back
+ * (direct instruction 2026-08-18, see the desktop branch's own doc
+ * comment) — not a full reversal, "Shots" is still the only *content*
+ * zone, × is just an explicit close affordance next to it.
  *
  * Mobile branch (direct instruction, 2026-08-17: "Check all the Radius of
  * the Boxes, check every distance and alignment. Needs to be perfect when
@@ -89,12 +92,16 @@ export function ViewsWorkspace({
   presets,
   activePresetId,
   onSelectPreset,
+  onClose,
 }: {
   activeModule: ActiveModule;
   isDesktop: boolean;
   presets: CameraPreset[];
   activePresetId: string | null;
   onSelectPreset: (preset: CameraPreset) => void;
+  /** Desktop bar's own × (2026-08-18) — same handler ViewerHUD's click-
+   * outside and re-tapping "Views" both already call. */
+  onClose: () => void;
 }) {
   const { t } = useT();
   const reducedMotion = useEffectiveReducedMotion();
@@ -137,8 +144,16 @@ export function ViewsWorkspace({
               onClick={() => onSelectPreset(preset)}
               aria-pressed={isActive}
               className={cn(
-                "relative flex shrink-0 items-center gap-2 whitespace-nowrap px-3 text-sm font-medium transition-colors sm:px-3.5",
-                isActive ? "text-brand-400" : "text-white/70 hover:text-white"
+                // `bg-brand-500/10` + `rounded-t-control` on the active
+                // preset (direct instruction 2026-08-18: "Shot 4... Shot 1
+                // at views... need to be in purple color overlay") — was
+                // text-color + underline only, missing the same purple
+                // wash `ViewerNavigation`'s own active nav item gets even
+                // though this bar already "shares ViewerNavigation's exact
+                // visual language" per its own doc comment above; brought
+                // in line with it rather than inventing a new treatment.
+                "relative flex shrink-0 items-center gap-2 whitespace-nowrap rounded-t-control px-3 text-sm font-medium transition-colors sm:px-3.5",
+                isActive ? "bg-brand-500/10 text-brand-400" : "text-white/70 hover:bg-white/5 hover:text-white"
               )}
             >
               <Icon className="h-5 w-5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
@@ -185,11 +200,30 @@ export function ViewsWorkspace({
       aria-label={t("viewer.views")}
       aria-hidden={!open}
       className={cn(
-        "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 flex h-[60px] w-fit max-w-[min(900px,calc(100vw-2rem))] -translate-x-1/2 items-stretch overflow-hidden rounded-panel px-3.5 ring-2 ring-brand-400/50 sm:px-4",
+        // `min-h-[104px]` (was `h-[60px]`) — direct instruction 2026-08-18:
+        // match Sun & Time's own real rendered height (measured 102px,
+        // small buffer), the same shared value UnitsBar's desktop bar now
+        // also uses instead of each bar picking its own. `w-fit` still
+        // grows to fit `presetRow` + the new divider/× zone below with no
+        // fixed-width guesswork needed (unlike UnitsBar, this bar has few
+        // enough zones that Chromium's intrinsic-width pass measures it
+        // correctly — see UnitsBar's own doc comment for why *that* bar
+        // can't rely on the same thing).
+        "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 flex min-h-[104px] w-fit max-w-[min(900px,calc(100vw-2rem))] -translate-x-1/2 items-stretch overflow-hidden rounded-panel px-3.5 ring-2 ring-brand-400/50 sm:px-4",
         open ? "pointer-events-auto" : "pointer-events-none"
       )}
     >
       {presetRow}
+      <span className="my-3 w-px shrink-0 bg-white/10" aria-hidden="true" />
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={t("common.close")}
+        title={t("common.close")}
+        className="flex shrink-0 items-center pl-3.5 text-white/50 transition-colors hover:text-white sm:pl-4"
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
     </div>
   );
 }

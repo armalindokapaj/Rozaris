@@ -2555,6 +2555,7 @@ const sq: Dictionary = {
     filterSurface: "Surface",
     filterBedrooms: "Bedrooms",
     filterBathrooms: "Bathrooms",
+    filterRooms: "Rooms",
     filterAvailability: "Availability",
     noResults: "No units match these filters.",
     floorLabel: "Floor {floor}",

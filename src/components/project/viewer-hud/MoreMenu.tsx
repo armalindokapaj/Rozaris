@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { gsap } from "gsap";
 import {
   ArrowLeft,
   BadgeCheck,
@@ -22,6 +23,7 @@ import {
 import { useT } from "@/lib/i18n/useT";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { useClickOutside } from "@/hooks/useClickOutside";
+import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
 import { useAppStore } from "@/lib/store";
 import { useViewerPreferences } from "@/hooks/useViewerPreferences";
 import { cn } from "@/lib/utils";
@@ -94,17 +96,49 @@ export interface MoreMenuProjectInfo {
  *   touching every module's state, out of proportion for this pass;
  *   flagged, not faked.
  *
- * Deliberately no open/close fade — the predecessor dropdown this
- * replaces was instant conditional rendering too; PRD §4's ~180-250ms
- * fade+shift is a real, minor, flagged gap, not a silent regression.
+ * Fade in/out (2026-08-18, direct instruction: "Settings dropdown is
+ * better animated fade in fade out") — the dropdown used to only fade IN
+ * (`viewer-dropdown-in`, a CSS keyframe) via plain `{open && (...)}`
+ * conditional rendering, which meant CLOSING had no animation at all (an
+ * instant unmount). Restructured to the same pattern every other animated
+ * HUD panel in this file tree already uses (`UnitsBar`/`ViewsWorkspace`/
+ * `ViewerModuleLayer`): stays permanently mounted, toggles via a GSAP
+ * `autoAlpha`/`y` tween keyed off `open` instead of a CSS enter-only
+ * keyframe, so both directions animate. The old `viewer-dropdown-in` class
+ * is dropped from this element (GSAP now owns the same two properties —
+ * keeping both would fight over `opacity`/`transform` on open).
+ *
+ * Mobile-only trims (2026-08-18, direct instruction, all under "Mobile
+ * view" — desktop's own width/text sizes/section list are all unchanged):
+ * narrower panel (`w-48` vs desktop's `w-64`), the "MORE" section-header
+ * row above the root list is gone ("Delete 'More'"), "Exit Viewer" is
+ * gone from the root list ("Delete 'exit viewer'" — Project Information's
+ * own "View Project Page" link is still the real way off this route on
+ * mobile), and body text is resized down to match `ProjectIdentity`'s own
+ * mobile scale ("Text on settings menu should be the same as the panel on
+ * the Left" — the only other text-bearing panel sharing this same header
+ * row, on the opposite side) — `text-[13px]`/`text-[11px]` in place of
+ * `text-sm`/`text-xs`, via the `textPrimary`/`textSecondary` locals below.
+ * Gated on `isDesktop` (this file's own existing 1024px hook) rather than
+ * the old `sm:` (640px) breakpoint the width used before, so "mobile"
+ * means the same viewport range here as it does for the bottom dock and
+ * every other component this session touched.
  */
 export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
   const { t } = useT();
   const isDesktop = useIsDesktop();
+  const reducedMotion = useEffectiveReducedMotion();
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<MoreSection>("none");
   const [linkCopied, setLinkCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Mobile-only text scale, matched to `ProjectIdentity`'s own two sizes
+  // (see this component's own doc comment) — desktop keeps the original
+  // `text-sm`/`text-xs` everywhere untouched.
+  const textPrimary = isDesktop ? "text-sm" : "text-[13px]";
+  const textSecondary = isDesktop ? "text-xs" : "text-[11px]";
 
   const locale = useAppStore((s) => s.locale);
   const setLocale = useAppStore((s) => s.setLocale);
@@ -132,6 +166,20 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open]);
+
+  // Real fade in AND fade out (see this component's own doc comment) —
+  // the panel stays mounted (no more `{open && (...)}`) and this is the
+  // only thing that ever moves its opacity/position.
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    gsap.to(el, {
+      autoAlpha: open ? 1 : 0,
+      y: open ? 0 : -6,
+      duration: reducedMotion ? 0 : 0.18,
+      ease: open ? "power2.out" : "power1.in",
+    });
+  }, [open, reducedMotion]);
 
   const projectPageHref = `/projects/${project.slug}`;
   const shareUrl = typeof window !== "undefined" ? window.location.href : "";
@@ -161,7 +209,10 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
         <button
           type="button"
           onClick={() => setSection("none")}
-          className="mb-1 flex w-full items-center gap-1.5 rounded-control px-2.5 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white/60 hover:bg-white/5 hover:text-white"
+          className={cn(
+            "mb-1 flex w-full items-center gap-1.5 rounded-control px-2.5 py-2 font-semibold uppercase tracking-[0.12em] text-white/60 hover:bg-white/5 hover:text-white",
+            textSecondary
+          )}
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
           {sectionTitle}
@@ -176,7 +227,10 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
               type="button"
               role="menuitem"
               onClick={() => setSection(id)}
-              className="flex h-11 w-full items-center gap-2.5 rounded-control px-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
+              className={cn(
+                "flex h-11 w-full items-center gap-2.5 rounded-control px-2 font-medium text-white transition-colors hover:bg-white/10",
+                textPrimary
+              )}
             >
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-white/5">
                 <Icon className="h-4 w-4 text-white/70" aria-hidden="true" />
@@ -184,34 +238,46 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
               {label}
             </button>
           ))}
-          <div className="my-1 border-t border-white/10" />
-          <Link
-            href={projectPageHref}
-            role="menuitem"
-            onClick={closeAll}
-            className="flex h-11 w-full items-center gap-2.5 rounded-control px-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
-          >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-white/5">
-              <LogOut className="h-4 w-4 text-white/70" aria-hidden="true" />
-            </span>
-            {t("more.exitViewer")}
-          </Link>
+          {/* "Exit Viewer" — desktop only (direct instruction, mobile:
+              "Delete 'exit viewer'"). Project Information's own "View
+              Project Page" link is still real navigation off this route on
+              mobile — this isn't the only way out, just the one being
+              removed here. */}
+          {isDesktop && (
+            <>
+              <div className="my-1 border-t border-white/10" />
+              <Link
+                href={projectPageHref}
+                role="menuitem"
+                onClick={closeAll}
+                className={cn(
+                  "flex h-11 w-full items-center gap-2.5 rounded-control px-2 font-medium text-white transition-colors hover:bg-white/10",
+                  textPrimary
+                )}
+              >
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-white/5">
+                  <LogOut className="h-4 w-4 text-white/70" aria-hidden="true" />
+                </span>
+                {t("more.exitViewer")}
+              </Link>
+            </>
+          )}
         </div>
       )}
 
       {section === "projectInformation" && (
         <div className="space-y-3 px-2.5 py-1.5">
           <div>
-            <p className="text-sm font-semibold text-white">{project.name}</p>
-            <p className="mt-0.5 flex items-center gap-1 text-xs text-white/60">
+            <p className={cn("font-semibold text-white", textPrimary)}>{project.name}</p>
+            <p className={cn("mt-0.5 flex items-center gap-1 text-white/60", textSecondary)}>
               {project.developerName}
               {project.developerVerified && <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-brand-400" aria-label={t("more.verified")} />}
             </p>
           </div>
-          <p className="text-xs text-white/60">{project.city}</p>
-          <p className="text-xs text-white/60">{t(`more.propertyType.${project.propertyType}`)}</p>
+          <p className={cn("text-white/60", textSecondary)}>{project.city}</p>
+          <p className={cn("text-white/60", textSecondary)}>{t(`more.propertyType.${project.propertyType}`)}</p>
           {project.completionLabel && (
-            <p className="text-xs text-white/60">
+            <p className={cn("text-white/60", textSecondary)}>
               {t("more.completion")}: {project.completionLabel}
             </p>
           )}
@@ -220,7 +286,10 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
             target="_blank"
             rel="noopener noreferrer"
             onClick={closeAll}
-            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-control bg-brand-500 text-xs font-semibold text-white hover:bg-brand-400"
+            className={cn(
+              "flex h-9 w-full items-center justify-center gap-1.5 rounded-control bg-brand-500 font-semibold text-white hover:bg-brand-400",
+              textSecondary
+            )}
           >
             {t("more.viewProjectPage")}
             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -233,7 +302,7 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
           <button
             type="button"
             onClick={handleCopyLink}
-            className="flex h-10 w-full items-center gap-3 rounded-control px-2.5 text-sm font-medium text-white hover:bg-white/10"
+            className={cn("flex h-10 w-full items-center gap-3 rounded-control px-2.5 font-medium text-white hover:bg-white/10", textPrimary)}
           >
             <Copy className="h-4 w-4 text-white/60" aria-hidden="true" />
             {linkCopied ? t("more.linkCopied") : t("more.copyLink")}
@@ -243,7 +312,7 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
             target="_blank"
             rel="noopener noreferrer"
             onClick={closeAll}
-            className="flex h-10 w-full items-center gap-3 rounded-control px-2.5 text-sm font-medium text-white hover:bg-white/10"
+            className={cn("flex h-10 w-full items-center gap-3 rounded-control px-2.5 font-medium text-white hover:bg-white/10", textPrimary)}
           >
             <MessageCircle className="h-4 w-4 text-white/60" aria-hidden="true" />
             {t("more.shareWhatsApp")}
@@ -251,7 +320,7 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
           <a
             href={`mailto:?body=${encodeURIComponent(shareUrl)}`}
             onClick={closeAll}
-            className="flex h-10 w-full items-center gap-3 rounded-control px-2.5 text-sm font-medium text-white hover:bg-white/10"
+            className={cn("flex h-10 w-full items-center gap-3 rounded-control px-2.5 font-medium text-white hover:bg-white/10", textPrimary)}
           >
             <Mail className="h-4 w-4 text-white/60" aria-hidden="true" />
             {t("more.shareEmail")}
@@ -310,7 +379,10 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
           <button
             type="button"
             onClick={reset}
-            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-control border border-white/10 text-xs font-medium text-white/70 hover:bg-white/5 hover:text-white"
+            className={cn(
+              "flex h-9 w-full items-center justify-center gap-1.5 rounded-control border border-white/10 font-medium text-white/70 hover:bg-white/5 hover:text-white",
+              textSecondary
+            )}
           >
             <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
             {t("more.settingsReset")}
@@ -358,35 +430,46 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
       >
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
       </button>
-      {open && (
-        <div
-          role="dialog"
-          // `w-56` (was `w-64` on every device) below `sm`, back to the
-          // original `w-64` at `sm`+ — direct design feedback, 2026-08-17,
-          // mobile only: "try to make it narrower". The Settings section's
-          // own controls (now `SegmentedToggle` pills instead of native
-          // `<select>`s) comfortably fit the narrower width too.
-          className="viewer-dropdown-in viewer-glass absolute right-0 top-[calc(100%+8px)] w-56 overflow-hidden rounded-panel shadow-[var(--shadow-2)] sm:w-64"
-        >
-          {/* Only shown for the root list — an open subsection already gets
-              its own "← Back / Section Title" row inside `body` below,
-              which is that section's header equivalent. */}
-          {section === "none" && (
-            <div className="border-b border-white/10 px-3.5 py-2.5">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">{t("viewer.more")}</span>
-            </div>
-          )}
-          {body}
-        </div>
-      )}
+      {/* Always mounted now (was `{open && (...)}`) — GSAP's own
+          `autoAlpha`/`y` effect above is what actually shows/hides this,
+          so both open AND close animate (see this component's own doc
+          comment). `invisible opacity-0` is the matching static initial
+          state every other GSAP-toggled panel in this file tree starts
+          from (`UnitsBar`/`ViewsWorkspace`'s own identical pattern).
+          Width: `w-48` below desktop (was `w-56` — direct instruction,
+          2026-08-18: "Settings menu is too large"), `w-64` at desktop,
+          unchanged from before. */}
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-hidden={!open}
+        className={cn(
+          "viewer-glass invisible absolute right-0 top-[calc(100%+8px)] overflow-hidden rounded-panel opacity-0 shadow-[var(--shadow-2)]",
+          isDesktop ? "w-64" : "w-48",
+          open ? "pointer-events-auto" : "pointer-events-none"
+        )}
+      >
+        {/* Only shown for the root list on desktop — mobile drops this
+            "MORE" header entirely (direct instruction, 2026-08-18:
+            "Delete 'More'") — an open subsection already gets its own
+            "← Back / Section Title" row inside `body` below, which is
+            that section's header equivalent. */}
+        {isDesktop && section === "none" && (
+          <div className="border-b border-white/10 px-3.5 py-2.5">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">{t("viewer.more")}</span>
+          </div>
+        )}
+        {body}
+      </div>
     </div>
   );
 }
 
 function SettingsRow({ label, children }: { label: string; children: React.ReactNode }) {
+  const isDesktop = useIsDesktop();
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs text-white/70">{label}</span>
+      <span className={cn("text-white/70", isDesktop ? "text-xs" : "text-[11px]")}>{label}</span>
       {children}
     </div>
   );
@@ -460,8 +543,9 @@ function SegmentedToggle<T extends string>({
 }
 
 function HelpRow({ icon: Icon, gesture, action }: { icon: typeof Hand; gesture: string; action: string }) {
+  const isDesktop = useIsDesktop();
   return (
-    <div className="flex items-center justify-between rounded-control bg-white/[0.03] px-3 py-2 text-xs">
+    <div className={cn("flex items-center justify-between rounded-control bg-white/[0.03] px-3 py-2", isDesktop ? "text-xs" : "text-[11px]")}>
       <span className="flex items-center gap-2 text-white/70">
         <Icon className="h-3.5 w-3.5 text-white/40" aria-hidden="true" />
         {gesture}

@@ -4,21 +4,15 @@ import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 
 import { gsap } from "gsap";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
-import { useClickOutside } from "@/hooks/useClickOutside";
 import { cn } from "@/lib/utils";
 import { NorthCompass } from "./NorthCompass";
 import { ProjectIdentity } from "./ProjectIdentity";
 import { ViewerUtilities } from "./ViewerUtilities";
-import { ViewerNavigation } from "./ViewerNavigation";
-import { ViewerModuleLayer } from "./ViewerModuleLayer";
 import { FirstVisitHint } from "./FirstVisitHint";
-import { getViewerLayoutState } from "./layoutState";
+import { ProjectViewerDock } from "./dock/ProjectViewerDock";
 import type { ActiveModule } from "./types";
 import type { ThreeProjectViewerHandle } from "../viewerTypes";
-import { SunTimeWorkspace } from "../sun-time/SunTimeWorkspace";
 import type { SunTimePreset, SunTimeline } from "@/lib/sunPosition";
-import { ViewsWorkspace } from "../views-workspace/ViewsWorkspace";
-import { UnitsBar } from "../units-workspace/UnitsBar";
 import { DEFAULT_UNIT_FILTERS, type UnitFilterState } from "../units-workspace/unitFilters";
 import type { CameraPreset, Unit } from "@/lib/types";
 import type { MoreMenuProjectInfo } from "./MoreMenu";
@@ -38,19 +32,37 @@ import type { MoreMenuProjectInfo } from "./MoreMenu";
  * Units Search Mode PRD's own component tree (§36) has `UnitsWorkspace`
  * as a sibling of `ViewerHUD` under `ProjectViewer`, needing the same
  * state, so the parent (ProjectViewerRuntime) owns it and both read/drive it.
- * "explore" is the default/fallback (see ViewerNavigation's doc comment).
- * Every module now has a real panel: "units" gets UnitsBar on every device
- * (a desktop bar or a mobile bottom sheet, both real — see that
- * component's own doc comment), plus the real UnitsWorkspace side panel
- * (rendered by the parent, desktop only, and only once its own "List
- * Units" trigger has been clicked — see layoutState.ts's `unitsListOpen`
- * doc comment), "sunTime" gets SunTimeWorkspace, "views" gets
- * ViewsWorkspace. ViewerModuleLayer's "coming soon" placeholder no longer
- * has any real module left to show for — it's dead weight kept mounted
- * only because nothing currently needs it removed. All the real state/
- * data plumbing for Sun & Time, Views, and Units lives in the parent
- * (ProjectViewerRuntime), this
- * component just threads it through to the panels below.
+ * "explore" is the default/fallback.
+ *
+ * Bottom UI (2026-08-18, Morphing Bottom Dock PRD): all four nav items —
+ * Explore/Units/Views/Time — are now rendered by one persistent
+ * `<ProjectViewerDock>` (`./dock/ProjectViewerDock.tsx`) that physically
+ * morphs between a Navigation state and each module's own controls,
+ * replacing what used to be `<ViewerNavigation>` (the static pill) +
+ * `<SunTimeWorkspace>`/`<UnitsBar>`/`<ViewsWorkspace>` (separate floating
+ * panels above it). Phase 1 shipped Nav ↔ Time only; Phase 2 (this
+ * revision) folds Units and Views onto the same dock, so `<UnitsBar>`/
+ * `<ViewsWorkspace>` are no longer rendered here at all. `ViewerNavigation
+ * .tsx`, `SunTimeWorkspace.tsx`, `UnitsBar.tsx`, and `ViewsWorkspace.tsx`
+ * are all left in place, unreferenced, as historical reference (same
+ * convention Phase 1 already set) — not deleted this pass. The real 380px
+ * `UnitsWorkspace` side panel itself (rendered by the parent, desktop
+ * only, only once the dock's own "List Units" trigger has been clicked —
+ * see layoutState.ts's `unitsListOpen` doc comment) is unaffected; only
+ * the *filter bar* moved onto the dock.
+ *
+ * `ViewerModuleLayer`'s "coming soon" placeholder is no longer rendered
+ * here either — it only ever showed for Units (`open = activeModule ===
+ * "units"` in that file), and the call site already only mounted it when
+ * Units was *not* the active module, so it was 100% dead weight even
+ * before this revision (flagged as such in Phase 1's own doc comment).
+ * With Units now fully real on the dock, there's no module left it could
+ * ever plausibly cover — removed the render call; the file itself is left
+ * in place, unreferenced.
+ *
+ * All the real state/data plumbing for Sun & Time, Views, and Units lives
+ * in the parent (ProjectViewerRuntime); this component just threads it
+ * through.
  */
 export function ViewerHUD({
   viewerRef,
@@ -143,21 +155,12 @@ export function ViewerHUD({
   const reducedMotion = useEffectiveReducedMotion();
   const isDesktop = useIsDesktop();
   const [loadSequenceDone, setLoadSequenceDone] = useState(false);
-  const { leftPanelOpen } = getViewerLayoutState(activeModule, isDesktop, !!unitsListOpen);
-  // ViewerModuleLayer's "coming soon" placeholder should stay hidden for
-  // Units on *any* device now — UnitsBar (rendered below) covers it for
-  // real everywhere (mobile bottom sheet + desktop bar, 2026-08-17), not
-  // just desktop. Distinct from `leftPanelOpen` on purpose: that only
-  // tracks the real 380px side panel, which stays desktop-only and only
-  // opens once its own "List Units" trigger is clicked.
-  const unitsHandledByUnitsBar = activeModule === "units";
 
   const overlayRef = useRef<HTMLDivElement>(null);
   const identityRef = useRef<HTMLDivElement>(null);
   const compassRef = useRef<HTMLDivElement>(null);
   const utilitiesRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLDivElement>(null);
-  const navGroupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!sceneReady) return;
@@ -186,17 +189,17 @@ export function ViewerHUD({
     };
   }, [sceneReady, reducedMotion]);
 
-  // Front Page PRD §16 "Tap Outside" — closes an open module and returns
-  // the nav to its Explore/default look. Inactive (and therefore free)
-  // whenever Explore is already the active module. Units Search Mode PRD
-  // §2 gives the real 380px UnitsWorkspace side panel its own explicit
-  // close (× / clicking Units again / PRD §31) rather than a stray click
-  // anywhere outside the nav — so this only excludes Units while that real
-  // panel is actually open (`leftPanelOpen`, desktop-only, see
-  // layoutState.ts). UnitsBar itself (both its desktop bar and mobile
-  // sheet) is a normal module panel like Views/Sun & Time and should close
-  // on outside-tap same as theirs, so it isn't excluded here.
-  useClickOutside(navGroupRef, () => onActiveModuleChange("explore"), activeModule !== "explore" && !leftPanelOpen);
+  // Front Page PRD §16 "Tap Outside" — used to close an open module on any
+  // outside click and return the nav to Explore/default. Removed (direct
+  // instruction 2026-08-18): a plain outside-click and a drag-to-orbit/pan
+  // gesture on the 3D canvas fire the exact same `mousedown` this used to
+  // listen for, so rotating the model while, say, Units' filter bar was
+  // open silently closed it mid-drag — real, reproducible, and the
+  // opposite of what a visitor doing that is trying to do. An open module
+  // now closes only two ways: its own × (Units/Views/Sun & Time's bars
+  // each have one, see their own doc comments) or re-clicking that same
+  // item in the bottom nav (ViewerNavigation's own toggle-off, unchanged).
+  // `navGroupRef` above had no other reader and was removed with this.
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20">
@@ -223,35 +226,53 @@ export function ViewerHUD({
           chromeDimmed && "opacity-40"
         )}
       >
-        {/* Always "[ROZARIS|Project] [North]" — identity first, compass
-            second, unconditionally. Units Search Mode PRD §8 originally
-            swapped this back to "compass first" while that panel was
-            open; dropped per direct design feedback (opening Units should
-            NOT swap this order) — see layoutState.ts's own doc comment. */}
+        {/* Desktop: "[ROZARIS|Project] [North] ... [Utilities]" — identity
+            first, compass second, unconditionally. Units Search Mode PRD
+            §8 originally swapped this back to "compass first" while that
+            panel was open; dropped per direct design feedback (opening
+            Units should NOT swap this order) — see layoutState.ts's own
+            doc comment.
+
+            Mobile (2026-08-18, direct instruction: "North sign is moved
+            on the right next to settings") — the compass moves out of the
+            identity group and into the utilities group instead, right
+            before the (now Settings-only, see ViewerUtilities.tsx's own
+            doc comment) `•••` button. Same `compassRef` div either way —
+            the load-sequence GSAP stagger below targets that ref directly,
+            not any particular parent, so which group it's physically in
+            doesn't affect that animation. */}
         <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
           <div ref={identityRef} className="pointer-events-auto min-w-0 opacity-0">
             <ProjectIdentity projectName={project.name} developerName={project.developerName} city={project.city} />
           </div>
-          <div ref={compassRef} className="pointer-events-auto shrink-0 opacity-0">
-            <NorthCompass viewerRef={viewerRef} northOffsetDeg={northOffsetDeg} />
-          </div>
+          {isDesktop && (
+            <div ref={compassRef} className="pointer-events-auto shrink-0 opacity-0">
+              <NorthCompass viewerRef={viewerRef} northOffsetDeg={northOffsetDeg} />
+            </div>
+          )}
         </div>
-        <div ref={utilitiesRef} className="pointer-events-auto shrink-0 opacity-0">
-          <ViewerUtilities
-            screenshotEnabled={screenshotEnabled}
-            fullscreenEnabled={fullscreenEnabled}
-            fullscreen={fullscreen}
-            onToggleFullscreen={onToggleFullscreen}
-            onScreenshot={onScreenshot}
-            project={project}
-          />
+        <div className="flex shrink-0 items-center gap-2">
+          {!isDesktop && (
+            <div ref={compassRef} className="pointer-events-auto shrink-0 opacity-0">
+              <NorthCompass viewerRef={viewerRef} northOffsetDeg={northOffsetDeg} />
+            </div>
+          )}
+          <div ref={utilitiesRef} className="pointer-events-auto shrink-0 opacity-0">
+            <ViewerUtilities
+              screenshotEnabled={screenshotEnabled}
+              fullscreenEnabled={fullscreenEnabled}
+              fullscreen={fullscreen}
+              onToggleFullscreen={onToggleFullscreen}
+              onScreenshot={onScreenshot}
+              project={project}
+            />
+          </div>
         </div>
       </header>
 
       <FirstVisitHint ready={loadSequenceDone} />
 
       <div
-        ref={navGroupRef}
         className={cn(
           // Bottom inset now matches the header's own top inset exactly
           // (`pt-[max(0.75rem,...)]` mobile, `sm:p-4` desktop above) —
@@ -277,44 +298,29 @@ export function ViewerHUD({
         )}
       >
         <div ref={navRef} className="pointer-events-auto relative w-full opacity-0 lg:w-fit">
-          {/* "units" gets UnitsBar (below) on every device now instead of
-              this placeholder — see the module doc comment above. */}
-          {!unitsHandledByUnitsBar && (
-            <ViewerModuleLayer activeModule={activeModule} onClose={() => onActiveModuleChange("explore")} />
-          )}
-          <UnitsBar
+          <ProjectViewerDock
             activeModule={activeModule}
+            onActiveModuleChange={onActiveModuleChange}
             isDesktop={isDesktop}
+            sunTimeInteractive={!!sunTimeInteractive}
+            sunTimeBounds={sunTimeBounds}
+            sunTimeline={sunTimeline}
+            sunTimePresets={sunTimePresets}
+            activeSunPreset={activeSunPreset ?? null}
+            sunTimeCanReset={!!sunTimeCanReset}
+            viewerTimeHours={viewerTimeHours ?? 12}
+            onSunTimeChange={(h) => onSunTimeChange?.(h)}
+            onSunPresetSelect={(p) => onSunPresetSelect?.(p)}
+            onSunTimeReset={() => onSunTimeReset?.()}
             units={units ?? []}
-            filters={unitFilters ?? DEFAULT_UNIT_FILTERS}
-            onFiltersChange={onUnitFiltersChange ?? (() => {})}
-            listOpen={!!unitsListOpen}
-            onToggleList={() => onToggleUnitsList?.()}
+            unitFilters={unitFilters ?? DEFAULT_UNIT_FILTERS}
+            onUnitFiltersChange={onUnitFiltersChange ?? (() => {})}
+            unitsListOpen={!!unitsListOpen}
+            onToggleUnitsList={() => onToggleUnitsList?.()}
+            cameraPresets={cameraPresets ?? []}
+            activeViewPresetId={activeViewPresetId ?? null}
+            onSelectViewPreset={(p) => onSelectViewPreset?.(p)}
           />
-          {sunTimeBounds && sunTimeline && sunTimePresets && (
-            <SunTimeWorkspace
-              activeModule={activeModule}
-              isDesktop={isDesktop}
-              interactive={!!sunTimeInteractive}
-              timeHours={viewerTimeHours ?? 12}
-              bounds={sunTimeBounds}
-              timeline={sunTimeline}
-              presets={sunTimePresets}
-              activePresetId={activeSunPreset ?? null}
-              canReset={!!sunTimeCanReset}
-              onTimeChange={(h) => onSunTimeChange?.(h)}
-              onPresetSelect={(p) => onSunPresetSelect?.(p)}
-              onReset={() => onSunTimeReset?.()}
-            />
-          )}
-          <ViewsWorkspace
-            activeModule={activeModule}
-            isDesktop={isDesktop}
-            presets={cameraPresets ?? []}
-            activePresetId={activeViewPresetId ?? null}
-            onSelectPreset={(p) => onSelectViewPreset?.(p)}
-          />
-          <ViewerNavigation activeModule={activeModule} onSelect={onActiveModuleChange} />
         </div>
       </div>
     </div>

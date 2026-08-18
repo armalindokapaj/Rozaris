@@ -2558,6 +2558,11 @@ const en = {
     filterSurface: "Surface",
     filterBedrooms: "Bedrooms",
     filterBathrooms: "Bathrooms",
+    // Morphing Bottom Dock Phase 2 (2026-08-18) — the dock's own merged
+    // Bedrooms+Bathrooms popover trigger (`UnitsContent.tsx`'s own
+    // `roomsTrigger`) needed a field-name prefix that covers both, not
+    // just "Bedrooms" reused and now technically inaccurate.
+    filterRooms: "Rooms",
     filterAvailability: "Availability",
     noResults: "No units match these filters.",
     floorLabel: "Floor {floor}",

@@ -45,6 +45,12 @@ type NavId = Exclude<ActiveModule, "none">;
  * clicking it while already active is a no-op; clicking a different item
  * switches to it, and clicking that same active item again returns to
  * Explore.
+ *
+ * Briefly (2026-08-18) had a small purple overlay across this whole pill's
+ * own `viewer-glass` background; reverted the same day (direct
+ * instruction: "make it black like Rozaris at top left bar") — purple
+ * stays scoped to the active item's own state below (`bg-brand-500/10` +
+ * `text-brand-400` + underline), not the pill's fill.
  */
 export function ViewerNavigation({
   activeModule,

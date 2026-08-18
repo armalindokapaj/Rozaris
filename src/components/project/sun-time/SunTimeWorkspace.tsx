@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type ChangeEvent } from "react";
 import { gsap } from "gsap";
-import { Moon, RotateCcw, Sun, Sunrise, Sunset } from "lucide-react";
+import { Moon, RotateCcw, Sun, Sunrise, Sunset, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
 import { clamp, cn } from "@/lib/utils";
@@ -90,6 +90,7 @@ export function SunTimeWorkspace({
   onTimeChange,
   onPresetSelect,
   onReset,
+  onClose,
 }: {
   activeModule: ActiveModule;
   isDesktop: boolean;
@@ -103,6 +104,9 @@ export function SunTimeWorkspace({
   onTimeChange: (hours: number) => void;
   onPresetSelect: (preset: SunTimePreset) => void;
   onReset: () => void;
+  /** Desktop bar's own × (2026-08-18) — same handler ViewerHUD's click-
+   * outside and re-tapping "Time" both already call. */
+  onClose: () => void;
 }) {
   const { t } = useT();
   const reducedMotion = useEffectiveReducedMotion();
@@ -222,7 +226,7 @@ export function SunTimeWorkspace({
         aria-label={t("sunTime.title")}
         aria-hidden={!open}
         className={cn(
-          // Fixed `w-[592px]` (not `w-fit`) — same "w-fit under-measures a
+          // Fixed `w-[632px]` (not `w-fit`) — same "w-fit under-measures a
           // busy flex row" Chromium bug UnitsBar's own doc comment already
           // documents in detail, reproduced here too every time this row's
           // content changed shape (real, verified via per-child
@@ -235,16 +239,29 @@ export function SunTimeWorkspace({
           // presets are now a 2x2 grid, taller than the old single-row
           // layout the fixed 60px height was tuned for; `py-2.5` +
           // `items-stretch` (default, left implicit) lets the bar's own
-          // height follow whichever zone is tallest instead. Re-measured
-          // 720px→672px→592px (direct design feedback, 2026-08-17: "remove
-          // empty space on the right") after the compact reset button was
-          // removed from the Presets zone (below: "remove reset button on
-          // the right") — the 672px step was a guess made without
-          // re-measuring and left a real ~99px empty gap after the preset
-          // grid (confirmed live); 592px is content's own real last pixel
-          // (573px) plus the same 16px `sm:px-4` the left side already
-          // uses.
-          "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 flex w-[592px] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-panel px-3.5 py-2.5 opacity-0 ring-2 ring-brand-400/50 sm:px-4",
+          // height follow whichever zone is tallest instead — this is the
+          // real ~102px this panel now naturally renders at, and the
+          // value ViewsWorkspace/UnitsBar's own desktop bars were given an
+          // explicit `min-h-[104px]` to match (direct instruction
+          // 2026-08-18: "I liked the idea of the height of the Time
+          // Menu... make it default for units, views, Time"); this bar
+          // keeps deriving its height from content rather than also
+          // switching to a fixed `min-h`, since content is *why* the
+          // shared value is what it is — an explicit `min-h-[104px]` sits
+          // alongside `py-2.5` here too, purely so the "104px is the
+          // shared default" convention is visible in this file as well,
+          // not just the two bars that actually needed the floor raised.
+          // Width re-measured 720px→672px→592px (direct design feedback,
+          // 2026-08-17: "remove empty space on the right") after the
+          // compact reset button was removed from the Presets zone (below:
+          // "remove reset button on the right") — the 672px step was a
+          // guess made without re-measuring and left a real ~99px empty
+          // gap after the preset grid (confirmed live); 592px was content's
+          // own real last pixel (573px) plus the same 16px `sm:px-4` the
+          // left side already uses. 632px adds the new ×  zone's own real
+          // measured width (divider + its own padding/icon) on top, same
+          // technique.
+          "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 flex min-h-[104px] w-[632px] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-panel px-3.5 py-2.5 opacity-0 ring-2 ring-brand-400/50 sm:px-4",
           open ? "pointer-events-auto" : "pointer-events-none"
         )}
       >
@@ -294,6 +311,22 @@ export function SunTimeWorkspace({
             instruction was about (the bar's fixed width above shrank to
             match). */}
         <div className="flex shrink-0 items-center pl-3.5 sm:pl-4">{presetGrid}</div>
+
+        <span className="my-1 w-px shrink-0 bg-white/10" aria-hidden="true" />
+
+        {/* × zone (2026-08-18, reinstated alongside Units/Views' own) —
+            trailing so it inherits the container's own right-edge
+            `px-3.5`/`sm:px-4` for free, same as every other bar's last
+            zone. */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={t("common.close")}
+          title={t("common.close")}
+          className="flex shrink-0 items-center pl-3.5 text-white/50 transition-colors hover:text-white sm:pl-4"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
       </div>
     );
   }

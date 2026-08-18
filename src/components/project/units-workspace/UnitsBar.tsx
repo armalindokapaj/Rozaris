@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
 import { gsap } from "gsap";
-import { Building2, ChevronDown } from "lucide-react";
+import { Building2, ChevronDown, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
 import { useClickOutside } from "@/hooks/useClickOutside";
@@ -182,12 +182,11 @@ function CompactFilterSelect({
  * the visitor explicitly clicks the title zone itself ("List Units"),
  * wired to `onToggleList` → `unitsListOpen` in ProjectViewerRuntime →
  * `getViewerLayoutState`'s new third input (see that module's doc
- * comment). Neither branch has its own close button any more (desktop's
- * own X was removed, direct instruction 2026-08-17) — closing is
- * ViewerHUD's existing global click-outside-the-nav-group handler and
- * re-tapping "Units" in the bottom nav, same as it always was for every
- * other module panel; `onClose` was a real prop here until this, now
- * fully removed rather than left unused.
+ * comment). Desktop's own × was removed (direct instruction 2026-08-17),
+ * then reinstated (direct instruction 2026-08-18) as an explicit trailing
+ * zone alongside ViewerHUD's own click-outside-the-nav-group handler and
+ * re-tapping "Units" in the bottom nav — all three now call the exact
+ * same `onClose` → `onActiveModuleChange("explore")`.
  *
  * `filters` is the same `UnitFilterState` UnitsWorkspace/UnitSearchView
  * already read/write (lifted one level further up, to ProjectViewerRuntime, so
@@ -228,6 +227,7 @@ export function UnitsBar({
   onFiltersChange,
   listOpen,
   onToggleList,
+  onClose,
 }: {
   activeModule: ActiveModule;
   isDesktop: boolean;
@@ -237,6 +237,9 @@ export function UnitsBar({
   /** Desktop only — see this component's own doc comment. */
   listOpen: boolean;
   onToggleList: () => void;
+  /** Desktop bar's own × (2026-08-18) — same handler ViewerHUD's click-
+   * outside and re-tapping "Units" both already call. */
+  onClose: () => void;
 }) {
   const { t } = useT();
   const reducedMotion = useEffectiveReducedMotion();
@@ -443,14 +446,24 @@ export function UnitsBar({
         // 1024px floor (`calc(100vw-2rem)` = 992px minimum) always has room
         // for it. Re-measured across this bar's revisions (each direct
         // design feedback: "remove empty space on the right"), most
-        // recently 940px→904px→856px→872px — that 856px step overshot:
-        // removing the close button + its divider, then guessing the new
-        // width down without re-measuring first, undershot by ~11px and
-        // let the Availability zone's own right edge overflow past the
-        // rounded corner (`scrollWidth` 866px vs. `offsetWidth` 856px,
-        // confirmed live). 872px is the real re-measured value with a
-        // small buffer, checked via the same real-child-rects technique
-        // every time, not guessed.
+        // recently 940px→904px→856px→872px→916px — that 856px step
+        // overshot: removing the close button + its divider, then guessing
+        // the new width down without re-measuring first, undershot by
+        // ~11px and let the Availability zone's own right edge overflow
+        // past the rounded corner (`scrollWidth` 866px vs. `offsetWidth`
+        // 856px, confirmed live). 872px was the real re-measured value for
+        // that state; 916px re-adds the × zone's own real measured width
+        // (divider + its own padding/icon) on top, same technique.
+        //
+        // `min-h-[104px]` (was `h-[60px]`) — direct instruction 2026-08-18:
+        // match Sun & Time's own real rendered height (measured 102px,
+        // small buffer), the same shared value ViewsWorkspace's desktop
+        // bar now also uses, rather than every bar picking its own. `min-`
+        // not a fixed height so nothing here needed to change if this
+        // bar's own content ever grows past it; every zone below already
+        // centers its content vertically (`justify-center`/`items-center`),
+        // so the extra height just gives them more breathing room instead
+        // of a taller, awkwardly top-aligned box.
         //
         // No `overflow-hidden` (unlike every sibling bar) — real bug found
         // live-testing: Bedrooms/Bathrooms's own dropdown panels open
@@ -465,7 +478,7 @@ export function UnitsBar({
         // reasoning ViewerUtilities' own doc comment gives for its
         // identical fix), so corner-clipping was never actually needed
         // here.
-        "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 flex h-[60px] w-[872px] max-w-[calc(100vw-2rem)] -translate-x-1/2 items-stretch rounded-panel px-3.5 opacity-0 ring-2 ring-brand-400/50 sm:px-4",
+        "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 flex min-h-[104px] w-[916px] max-w-[calc(100vw-2rem)] -translate-x-1/2 items-stretch rounded-panel px-3.5 opacity-0 ring-2 ring-brand-400/50 sm:px-4",
         open ? "pointer-events-auto" : "pointer-events-none"
       )}
     >
@@ -590,6 +603,21 @@ export function UnitsBar({
           feedback, 2026-08-17: "remove the word 'availability'") — the
           3 pills (Available/Reserved/Sold) read clearly on their own. */}
       <div className="flex shrink-0 items-center pl-3.5 sm:pl-4">{availabilityPills("flex items-center gap-1.5")}</div>
+
+      <span className="my-3 w-px shrink-0 bg-white/10" aria-hidden="true" />
+
+      {/* × zone (2026-08-18, reinstated) — trailing so it inherits the
+          container's own right-edge `px-3.5`/`sm:px-4` for free, same as
+          every other bar's last zone. */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={t("common.close")}
+        title={t("common.close")}
+        className="flex shrink-0 items-center pl-3.5 text-white/50 transition-colors hover:text-white sm:pl-4"
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
     </div>
   );
 }
