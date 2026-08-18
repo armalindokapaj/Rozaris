@@ -69,10 +69,10 @@ const PRESET_ICON: Record<SunTimePreset["id"], typeof Sun> = {
  * here to read or call them). The real value/write-path they used to
  * carry didn't disappear, just moved to live one level up only:
  * `effectiveSunDate`'s real sunrise/sunset math still runs in
- * ArchVizClient (feeds `environmentConfig` → the actual 3D sun position)
+ * ProjectViewerRuntime (feeds `environmentConfig` → the actual 3D sun position)
  * regardless of whether any UI can currently change it — PRD §29's live-
  * date-override capability (`liveSunDate`/`setLiveSunDate`) stays real
- * too, just with no trigger wired to it right now (ArchVizClient's own
+ * too, just with no trigger wired to it right now (ProjectViewerRuntime's own
  * `handleSunDateChange` was removed as dead code alongside this; a future
  * date control anywhere in the app can call `setLiveSunDate` directly
  * again without any of this needing to be rebuilt).

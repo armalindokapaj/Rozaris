@@ -36,7 +36,7 @@ const PANEL_WIDTH = 380;
  * no raycasting/pointer-picking exists anywhere in RenderEngine yet, a
  * real new system rather than plumbing, flagged rather than faked.
  *
- * `units` comes from the parent (ArchVizClient's own useProjectUnits call)
+ * `units` comes from the parent (ProjectViewerRuntime's own useProjectUnits call)
  * rather than being fetched here — it's also fed into `detailModelEntries`
  * for the 3D scene's own unit-status boxes, so one fetch serves both.
  *
@@ -47,7 +47,7 @@ const PANEL_WIDTH = 380;
  * recognize.
  *
  * `filters` is now a controlled prop (Units Bar redesign, 2026-08-17) —
- * owned by ArchVizClient, not this component, so the new floating
+ * owned by ProjectViewerRuntime, not this component, so the new floating
  * UnitsBar (a sibling of this panel, rendered inside ViewerHUD) can share
  * and mutate the exact same filter state. `viewMode`/`visibleCount` stay
  * local; nothing outside this panel needs them yet.
@@ -55,7 +55,7 @@ const PANEL_WIDTH = 380;
  * Two-layer slide (PRD §5 Step 1, `translateX(-100%) → 0`, 400–550ms):
  * the *outer* div's `width` is what's actually tweened 0→380px — a real
  * layout-affecting animation, deliberately, because it's a flex sibling
- * of the 3D viewport wrapper in ArchVizClient, so every frame of this
+ * of the 3D viewport wrapper in ProjectViewerRuntime, so every frame of this
  * tween reflows that sibling narrower, which RenderEngine's own
  * ResizeObserver (already in place, unrelated to this PRD) picks up on
  * its own — camera aspect, renderer size, and post-processing all follow

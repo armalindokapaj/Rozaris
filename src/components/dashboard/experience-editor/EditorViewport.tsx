@@ -63,7 +63,7 @@ export const EditorViewport = forwardRef<
     // state.
     //
     // Deliberately NOT keyed off ThreeProjectViewer's own `onReady` (unlike
-    // the public viewer's ArchVizClient/ViewerHUD) — `onReady` fires once,
+    // the public viewer's ProjectViewerRuntime/ViewerHUD) — `onReady` fires once,
     // ever, on the FIRST syncModels() call, and `detailModels` here starts
     // as `[]` (this editor's `useDetailModelSlots` fetch hasn't resolved
     // yet) then gets replaced with the real, heavy model once it has. That

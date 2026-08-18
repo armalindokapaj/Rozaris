@@ -982,7 +982,7 @@ export interface ViewerUIToggles {
   filterTypeEnabled?: boolean;
   filterPriceEnabled?: boolean;
   /** Viewer Controls subtab — resetEnabled/fullscreenEnabled/
-   * screenshotEnabled are real and wired into ArchVizClient.tsx's header
+   * screenshotEnabled are real and wired into ProjectViewerRuntime.tsx's header
    * buttons now; shotsMenuEnabled/shareEnabled aren't (no public Shots
    * menu or share affordance built yet). */
   resetEnabled?: boolean;

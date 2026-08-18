@@ -6,10 +6,6 @@ import { useAppStore } from "@/lib/store";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { useIdleFade } from "@/hooks/useIdleFade";
 import { useViewerPreferences } from "@/hooks/useViewerPreferences";
-import { useProjectConstruction } from "@/hooks/useProjectConstruction";
-import { useProjectDetailModel } from "@/hooks/useProjectDetailModel";
-import { useProject3DConfig } from "@/hooks/useProject3DConfig";
-import { useProjectUnits } from "@/hooks/useProjectUnits";
 import { useT } from "@/lib/i18n/useT";
 import { ThreeProjectViewer, type ThreeProjectViewerHandle } from "@/components/project/ThreeProjectViewer";
 import { ViewerHUD } from "@/components/project/viewer-hud/ViewerHUD";
@@ -23,7 +19,7 @@ import { ConstructionTimelineStrip } from "@/components/project/ConstructionTime
 import { UnitDiscoveryPanel } from "@/components/project/UnitDiscoveryPanel";
 import { UnitDetailPanel } from "@/components/project/UnitDetailPanel";
 import { UnitPreviewCard } from "@/components/project/UnitPreviewCard";
-import type { Project } from "@/lib/types";
+import type { ProjectViewerRuntimeBootstrap, ViewerChannel } from "@/lib/viewer/runtimeTypes";
 
 /** Sun & Time PRD — the public viewer's scrub range is a fixed constant
  * (direct instruction, 2026-08-17: "Time will always be from 06:00 to
@@ -33,35 +29,39 @@ const PUBLIC_VIEWER_TIME_START_HOURS = 6;
 const PUBLIC_VIEWER_TIME_END_HOURS = 21;
 
 /**
- * Front Page / Idle Experience rebuild (2026-08-16): the header/bottom-nav
- * chrome now comes from `<ViewerHUD>` (compass, project identity, utility
- * capsule, 4-icon nav, module placeholder) per its own PRD — see that
- * component's doc comment. `unitPanelOpen`/`selectedUnit`/`fullDetailOpen`
- * below predate this rebuild and are currently dead state: nothing sets
- * `unitPanelOpen` or `selectedUnit` to a truthy value anywhere in this
- * file, so `UnitDiscoveryPanel`/`UnitPreviewCard`/`UnitDetailPanel` can
- * never actually open yet. Left as-is rather than removed — the Units
- * Search Mode PRD replaces this whole flow with a real `UnitsWorkspace`
- * next, at which point this dead state goes away for real.
+ * Multi-Channel Publishing PRD Phase 4 — this is `ArchVizClient`, moved
+ * and generalized: identical rendering logic, but reading a
+ * `ProjectViewerRuntimeBootstrap` prop instead of calling
+ * `useProjectConstruction`/`useProjectDetailModel`/`useProject3DConfig`/
+ * `useProjectUnits` itself. Those 4 hooks (all tied to today's live
+ * project APIs) now live in `MarketplaceViewer`, the thin wrapper that
+ * replaces `ArchVizClient` at `/project/[slug]`; a future
+ * `WhiteLabelViewer` (Phase 5) assembles the same bootstrap shape from a
+ * `ViewerRelease` manifest instead. This component itself has zero
+ * awareness of which one produced its data — "one rendering engine...
+ * one bugfix fixes everyone," per the PRD.
  *
- * Interaction tab (PRD §39) — `viewerConfig.viewerUI` is real again:
- * Fullscreen/Screenshot/Information Card are genuinely wired (hidden
- * when off); every other Interaction toggle isn't read here yet since
- * the systems they'd gate (3D hover/select/highlight/isolation, a public
- * Filters UI, a public Shots menu) don't exist in this rebuilt viewer —
- * see InteractionPanel.tsx's own doc comment.
+ * UI-only global state (compare tray, viewer preferences, idle-fade,
+ * desktop/mobile breakpoint, i18n) stays read directly via hooks here
+ * rather than threaded through `bootstrap` — it's genuinely
+ * channel-agnostic app chrome, not project data, and both an embedded
+ * white-label viewer and the marketplace site should behave the same way
+ * for it.
  *
- * Real bug fixed alongside the Environment tab (PRD §7-13) build: this
- * component already fetched the real `viewerConfig` (useProject3DConfig)
- * for `viewerUI` gating, but never forwarded `cameraConfig`/
- * `qualityConfig`/`environmentConfig` to `<ThreeProjectViewer>` — so every
- * public visitor saw RenderEngine's hardcoded defaults instead of
- * whatever an admin actually saved on the Camera/Performance/Environment
- * tabs. Same class of gap as the Phase-1 Publish-pipeline bug (admin
- * editor's own live preview never round-trips through the public path
- * that would have caught it).
+ * Everything below this point is unchanged from `ArchVizClient` — see
+ * git history on that file (removed by this same change) for prior
+ * inline doc comments this component inherits verbatim where the logic
+ * itself didn't move.
  */
-export function ArchVizClient({ project }: { project: Project }) {
+export function ProjectViewerRuntime({
+  bootstrap,
+  channel,
+}: {
+  bootstrap: ProjectViewerRuntimeBootstrap;
+  channel: ViewerChannel;
+}) {
+  const { project, construction, detailModels, viewerConfig, units } = bootstrap;
+
   const mainRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<ThreeProjectViewerHandle>(null);
   const [unitPanelOpen, setUnitPanelOpen] = useState(false);
@@ -124,16 +124,6 @@ export function ArchVizClient({ project }: { project: Project }) {
   const chromeDimmed = interfaceAutoHide && idle && activeModule === "explore";
   const compareCount = useAppStore((s) => s.compare.length);
   const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
-  const construction = useProjectConstruction(project);
-  const detailModels = useProjectDetailModel(project.id);
-  const viewerConfig = useProject3DConfig(project.id);
-  // Units Search Mode PRD, Phase 3 (2026-08-16) — real Postgres units
-  // (same source the admin Configurator's own Units panel reads),
-  // replacing Phase 2's placeholder inventory (since removed). `?? []`
-  // while the initial GET is in flight or this project genuinely has
-  // none yet — an honestly empty list, not a fabricated one.
-  const { units: liveUnits } = useProjectUnits(project.id);
-  const units = useMemo(() => liveUnits ?? [], [liveUnits]);
   const selectedUnit = useMemo(() => units.find((u) => u.id === selectedUnitId) ?? null, [units, selectedUnitId]);
   // Same `units` handed to every slot — `applyUnitBoxes` only actually
   // matches entries against that slot's own `unitLinks` map, so a unit
@@ -592,7 +582,12 @@ export function ArchVizClient({ project }: { project: Project }) {
   }, []);
 
   return (
-    <div id="main-content" ref={mainRef} className="relative flex h-dvh w-full overflow-hidden bg-neutral-900">
+    <div
+      id="main-content"
+      ref={mainRef}
+      data-viewer-channel={channel}
+      className="relative flex h-dvh w-full overflow-hidden bg-neutral-900"
+    >
       {/* Units Search Mode PRD §3-5 — a real structural viewport column,
           not an overlay/modal: it's a flex sibling of the 3D viewport
           wrapper below, so its own width tween is what actually reflows

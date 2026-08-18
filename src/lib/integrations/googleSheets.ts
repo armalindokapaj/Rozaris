@@ -5,16 +5,24 @@ import type { RawInventoryRow } from "./normalization";
  * fetches a Sheet via its public CSV export URL
  * (`docs.google.com/spreadsheets/d/{id}/export?format=csv`), which needs
  * NO credential at all as long as the sheet is shared "Anyone with the
- * link can view" — the PRD's "Simple client" tier (§6). This is real,
- * working code, not a stub — but it has never been run against an actual
- * live Google Sheet in this environment: doing that would mean creating
- * and publicly link-sharing a file in the user's real Google Drive to
- * test against, which wasn't asked for and isn't something to do without
- * checking first, and the only Drive tool available here can share with a
- * specific email address, not "anyone with a link," so it couldn't have
- * produced a fetchable URL anyway. Same honesty as `rateLimit.ts`'s "no
- * real distributed store" and `verification.ts`'s "no real KYC" —
- * flagged, not hidden.
+ * link can view" — the PRD's "Simple client" tier (§6).
+ *
+ * **Happy path live-verified (2026-08-18)** against a real, long-lived
+ * publicly-shared Google Sheet (Google's own Sheets-API-quickstart sample
+ * — not anything created for this test, since the only Drive tool
+ * available here can share with a specific email address, not "anyone
+ * with a link," so it couldn't have produced a fetchable URL anyway):
+ * confirmed the 307 redirect Google issues from `/export?format=csv` to
+ * its `googleusercontent.com` CDN is followed correctly by a plain
+ * `fetch()` (no `redirect` option needed), `Content-Type` comes back
+ * `text/csv` (not the HTML sign-in page), and the header row is parsed
+ * and searched for `UNIT` correctly (that real sheet has no UNIT column,
+ * so getting exactly that error — not a network/parsing error — is what
+ * proves the pipeline ran for real). A nonexistent sheet id correctly
+ * 404s into this function's own "not shared" error. `parseInventoryCsv`
+ * itself separately verified against real UNIT/PRICE/STATUS-shaped CSV
+ * text (quoted comma-containing prices, missing cells, unknown extra
+ * columns, missing UNIT column) — all correct.
  *
  * The "Professional"/"Enterprise" tiers (§6 — private sheets via real
  * OAuth/service-account auth against the Sheets API v4) are NOT

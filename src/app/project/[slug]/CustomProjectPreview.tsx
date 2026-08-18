@@ -2,7 +2,7 @@
 
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
-import { ArchVizClient } from "./ArchVizClient";
+import { MarketplaceViewer } from "./MarketplaceViewer";
 
 /**
  * MVP admin "Preview Experience" gap-filler — see the
@@ -30,5 +30,5 @@ export function CustomProjectPreview({ slug }: { slug: string }) {
     );
   }
 
-  return <ArchVizClient project={project} />;
+  return <MarketplaceViewer project={project} />;
 }

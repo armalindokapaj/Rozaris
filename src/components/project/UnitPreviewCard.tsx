@@ -17,7 +17,7 @@ const STATUS_LABEL_KEY: Record<Unit["status"], string> = {
  * Small floating card shown when a unit is clicked in the 3D viewer —
  * deliberately not a full-screen modal: no backdrop, so the scene stays
  * interactive and clicking a *different* unit just swaps this card's
- * content in place (ArchVizClient re-points `selectedUnit`, no explicit
+ * content in place (ProjectViewerRuntime re-points `selectedUnit`, no explicit
  * close needed first). "View Unit" escalates to the full UnitDetailPanel
  * (gallery, publisher contact) for anyone who wants more than this.
  */

@@ -180,7 +180,7 @@ function CompactFilterSelect({
  * language (`viewer-glass` + `rounded-panel` + purple ring, `h-[60px]`,
  * title-zone-then-dividers layout) — and the real panel only opens once
  * the visitor explicitly clicks the title zone itself ("List Units"),
- * wired to `onToggleList` → `unitsListOpen` in ArchVizClient →
+ * wired to `onToggleList` → `unitsListOpen` in ProjectViewerRuntime →
  * `getViewerLayoutState`'s new third input (see that module's doc
  * comment). Neither branch has its own close button any more (desktop's
  * own X was removed, direct instruction 2026-08-17) — closing is
@@ -190,7 +190,7 @@ function CompactFilterSelect({
  * fully removed rather than left unused.
  *
  * `filters` is the same `UnitFilterState` UnitsWorkspace/UnitSearchView
- * already read/write (lifted one level further up, to ArchVizClient, so
+ * already read/write (lifted one level further up, to ProjectViewerRuntime, so
  * this sibling bar can share it) — every control here (Surface/Bedrooms/
  * Bathrooms/Availability) genuinely narrows the real left-panel list, not
  * a disconnected copy. Two fields are new on `UnitFilterState` itself,

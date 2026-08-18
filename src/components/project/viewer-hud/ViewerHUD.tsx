@@ -37,7 +37,7 @@ import type { MoreMenuProjectInfo } from "./MoreMenu";
  * (PRD §20) is now a *controlled* prop rather than local state — the
  * Units Search Mode PRD's own component tree (§36) has `UnitsWorkspace`
  * as a sibling of `ViewerHUD` under `ProjectViewer`, needing the same
- * state, so the parent (ArchVizClient) owns it and both read/drive it.
+ * state, so the parent (ProjectViewerRuntime) owns it and both read/drive it.
  * "explore" is the default/fallback (see ViewerNavigation's doc comment).
  * Every module now has a real panel: "units" gets UnitsBar on every device
  * (a desktop bar or a mobile bottom sheet, both real — see that
@@ -49,7 +49,7 @@ import type { MoreMenuProjectInfo } from "./MoreMenu";
  * has any real module left to show for — it's dead weight kept mounted
  * only because nothing currently needs it removed. All the real state/
  * data plumbing for Sun & Time, Views, and Units lives in the parent
- * (ArchVizClient), this
+ * (ProjectViewerRuntime), this
  * component just threads it through to the panels below.
  */
 export function ViewerHUD({
@@ -89,7 +89,7 @@ export function ViewerHUD({
   activeModule: ActiveModule;
   onActiveModuleChange: (module: ActiveModule) => void;
   /** More / Settings Menu PRD §14 "Interface Auto-Hide" — computed by the
-   * parent now (2026-08-17), not here: ArchVizClient also needs it to
+   * parent now (2026-08-17), not here: ProjectViewerRuntime also needs it to
    * drive the 3D camera's own idle auto-rotate (see that component's own
    * doc comment), and two independent `useIdleFade` timers in two
    * components would be wasteful and could drift out of sync with each
@@ -128,14 +128,14 @@ export function ViewerHUD({
   activeViewPresetId?: string | null;
   onSelectViewPreset?: (preset: CameraPreset) => void;
   /** Units Bar (2026-08-17) — real project inventory (same `units`
-   * ArchVizClient already feeds UnitsWorkspace) and the same
+   * ProjectViewerRuntime already feeds UnitsWorkspace) and the same
    * `UnitFilterState` shared with it, so this bar's Surface/Bedrooms/
    * Bathrooms/Availability controls genuinely narrow the same list. */
   units?: Unit[];
   unitFilters?: UnitFilterState;
   onUnitFiltersChange?: Dispatch<SetStateAction<UnitFilterState>>;
   /** Whether the real UnitsWorkspace side panel is open — owned by
-   * ArchVizClient (see layoutState.ts), driven by UnitsBar's own "List
+   * ProjectViewerRuntime (see layoutState.ts), driven by UnitsBar's own "List
    * Units" trigger below. */
   unitsListOpen?: boolean;
   onToggleUnitsList?: () => void;

@@ -103,7 +103,7 @@ function NumberField({ placeholder, value, onChange }: { placeholder: string; va
  * never a second one" swap), so state that lived here as plain `useState`
  * reset the moment you clicked "Back to search". Same fix as favorites
  * already got. `filters` itself moved one level further up, from
- * UnitsWorkspace to ArchVizClient, for the Units Bar redesign
+ * UnitsWorkspace to ProjectViewerRuntime, for the Units Bar redesign
  * (2026-08-17) — UnitsBar is a sibling of UnitsWorkspace (both live under
  * ViewerHUD's parent), not its child, and needs to read/write the exact
  * same state so its Bedrooms/Bathrooms/Surface/Availability controls

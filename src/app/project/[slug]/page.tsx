@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { getAllProjectSlugs, getProjectBySlug } from "@/lib/projects.server";
 import { SITE_URL } from "@/lib/constants";
-import { ArchVizClient } from "./ArchVizClient";
+import { MarketplaceViewer } from "./MarketplaceViewer";
 import { CustomProjectPreview } from "./CustomProjectPreview";
 
 export async function generateStaticParams() {
@@ -84,7 +84,7 @@ export default async function ProjectArchVizPage({
           ?debugShadowMap=1 query param) so this route can still prerender
           statically — same precedent as rent-vs-buy/page.tsx. */}
       <Suspense fallback={null}>
-        <ArchVizClient project={project} />
+        <MarketplaceViewer project={project} />
       </Suspense>
     </>
   );

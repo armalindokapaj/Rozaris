@@ -9,7 +9,7 @@ import type { ViewerUIToggles } from "@/lib/types";
  * persisted toggles on the pre-existing `Project3DConfig.viewerUI` field
  * (extended this pass, no migration needed — it's a nullable Json?
  * column). Honest per-toggle: Fullscreen/Screenshot/Information Card are
- * wired into the real public viewer (ArchVizClient.tsx) now; the rest
+ * wired into the real public viewer (ProjectViewerRuntime.tsx) now; the rest
  * (3D hover/select/highlight/isolation, Filters UI, a public Shots menu)
  * gate systems the ground-up-rebuilt public viewer doesn't have yet —
  * each says so via its hint rather than pretending otherwise. The Viewer

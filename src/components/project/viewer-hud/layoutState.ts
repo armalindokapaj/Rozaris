@@ -26,7 +26,7 @@ import type { ActiveModule } from "./types";
  * opens a floating filter bar (UnitsBar) instead — matching Views/
  * Sun & Time's own bar treatment — and the real 380px panel only opens
  * once the visitor explicitly clicks its "List Units" trigger inside that
- * bar. `unitsListOpen` (owned by ArchVizClient, toggled by that click)
+ * bar. `unitsListOpen` (owned by ProjectViewerRuntime, toggled by that click)
  * is the new third input this now needs.
  */
 export interface ViewerLayoutState {
