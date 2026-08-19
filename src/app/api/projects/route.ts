@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
@@ -145,6 +146,20 @@ export async function POST(request: Request) {
         locationId: location.id,
       },
     });
+
+    // Same ISR staleness the publication route now fixes (see its doc
+    // comment) — an edit to an already-`active` project (new hero image,
+    // renamed, etc.) needs its cached `/project/[slug]` and `/projects/[slug]`
+    // pages invalidated too, not just approval-status flips. Revalidate the
+    // old slug as well when a rename changed it, so that stale page doesn't
+    // keep serving the pre-rename content at its old URL.
+    revalidatePath(`/project/${project.slug}`);
+    revalidatePath(`/projects/${project.slug}`);
+    if (existingById && existingById.slug !== project.slug) {
+      revalidatePath(`/project/${existingById.slug}`);
+      revalidatePath(`/projects/${existingById.slug}`);
+    }
+    revalidatePath("/new-projects");
 
     const actor = gate.user?.email ?? gate.user?.name ?? "unattributed";
     await logAuditEvent({

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
@@ -72,6 +73,22 @@ export async function PATCH(
       // instead of a fabricated number.
       data: { approvalStatus: parsed.data.approvalStatus, reviewedAt: new Date() },
     });
+
+    // The DB write above is the source of truth, but `/project/[slug]` and
+    // `/projects/[slug]` are ISR pages (generateStaticParams + no
+    // `revalidate` export) — a slug not yet in the build-time static list
+    // renders on first visit and then caches indefinitely, `dynamicParams`
+    // or not. A project approved *after* someone (often its own admin,
+    // testing) already hit its page while `pending` gets stuck serving
+    // that cached "not found" render forever, even though this write just
+    // made it real. Same story in reverse for `archived`. `/new-projects`
+    // has no dynamic segment at all, so it's fully static from the last
+    // deploy — any approvalStatus change makes it stale too. Real bug hit
+    // live: DB flipped to `active`, public catalog (client-fetched, never
+    // cached) picked it up immediately, this page didn't.
+    revalidatePath(`/project/${updated.slug}`);
+    revalidatePath(`/projects/${updated.slug}`);
+    revalidatePath("/new-projects");
 
     const actor = gate.user?.email ?? gate.user?.name ?? "admin";
     await logAuditEvent({
