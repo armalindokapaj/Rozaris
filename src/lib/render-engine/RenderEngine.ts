@@ -69,6 +69,7 @@ export const DEFAULT_ENVIRONMENT_CONFIG: EnvironmentConfig = {
   backdropEnabled: false,
   backdropImageUrl: null,
   backdropRotationDeg: 0,
+  backdropPitchDeg: 0,
   environmentIntensity: 1,
   cloudsEnabled: false,
   cloudCoverage: 0.4,
@@ -917,6 +918,11 @@ export class RenderEngine {
     });
     const backdropMesh = new THREE.Mesh(new THREE.SphereGeometry(SKY_DOME_SCALE * 0.9, 60, 40), backdropMaterial);
     backdropMesh.visible = false;
+    // "YXZ" (yaw outer, pitch inner) so backdropPitchDeg's up/down tilt is
+    // always relative to wherever backdropRotationDeg's left/right spin
+    // has already turned the photo — the standard FPS-camera Euler order
+    // for decoupling the two, not the Object3D default ("XYZ").
+    backdropMesh.rotation.order = "YXZ";
     scene.add(backdropMesh);
     this.backdropMesh = backdropMesh;
 
@@ -1941,6 +1947,7 @@ export class RenderEngine {
     const backdropMesh = this.backdropMesh;
     if (backdropMesh) {
       backdropMesh.rotation.y = THREE.MathUtils.degToRad(config.backdropRotationDeg);
+      backdropMesh.rotation.x = THREE.MathUtils.degToRad(config.backdropPitchDeg);
       backdropMesh.visible = config.backdropEnabled && !!config.backdropImageUrl;
       if (config.backdropImageUrl !== this.backdropImageUrl) {
         this.backdropImageUrl = config.backdropImageUrl;

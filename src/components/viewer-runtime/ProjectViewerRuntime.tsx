@@ -352,6 +352,7 @@ export function ProjectViewerRuntime({
       backdropEnabled: viewerConfig.backdropEnabled,
       backdropImageUrl: viewerConfig.backdropImageUrl,
       backdropRotationDeg: viewerConfig.backdropRotationDeg,
+      backdropPitchDeg: viewerConfig.backdropPitchDeg,
       environmentIntensity: viewerConfig.environmentIntensity,
       cloudsEnabled: viewerConfig.cloudsEnabled,
       cloudCoverage: viewerConfig.cloudCoverage,

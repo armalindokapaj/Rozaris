@@ -1186,12 +1186,14 @@ model Project3DConfig {
   /// sun above keep showing through the transparent pixels — see
   /// RenderEngine.ts's backdropMesh. `backdropImageUrl` is a Vercel Blob
   /// URL (`panoramas/` prefix, /api/blob/upload); `backdropRotationDeg`
-  /// aligns the photo's real captured heading with the scene's own
-  /// `northOffsetDeg`. Default off/null: zero behavior change for any
-  /// existing project.
+  /// (move left/right) aligns the photo's real captured heading with the
+  /// scene's own `northOffsetDeg`; `backdropPitchDeg` (move up/down, ±90°)
+  /// tilts it to line the photo's own horizon up with the platform's.
+  /// Default off/null/0: zero behavior change for any existing project.
   backdropEnabled     Boolean @default(false)
   backdropImageUrl    String?
   backdropRotationDeg Float   @default(0)
+  backdropPitchDeg    Float   @default(0)
 
   // Full-configurator pass — Fog, per-project unit status colors, and
   // per-project post-processing overrides (ANDed with, not replacing,

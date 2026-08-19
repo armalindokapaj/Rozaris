@@ -205,7 +205,7 @@ export function SunSkySubtab({ configEditor }: { configEditor: UseProjectConfigE
           <>
             <ToggleRow label="360° Backdrop" checked={draft.backdropEnabled} onChange={(v) => update({ backdropEnabled: v })} />
             <SliderRow
-              label="Rotation"
+              label="Move Left / Right"
               value={draft.backdropRotationDeg}
               min={-180}
               max={180}
@@ -214,9 +214,28 @@ export function SunSkySubtab({ configEditor }: { configEditor: UseProjectConfigE
               disabled={!draft.backdropEnabled}
               onChange={(v) => update({ backdropRotationDeg: v })}
             />
+            <SliderRow
+              label="Move Up / Down"
+              value={draft.backdropPitchDeg}
+              min={-90}
+              max={90}
+              step={1}
+              suffix="°"
+              disabled={!draft.backdropEnabled}
+              onChange={(v) => update({ backdropPitchDeg: v })}
+            />
+            {(draft.backdropRotationDeg !== 0 || draft.backdropPitchDeg !== 0) && (
+              <button
+                type="button"
+                onClick={() => update({ backdropRotationDeg: 0, backdropPitchDeg: 0 })}
+                className="w-full py-1 text-center text-[10px] font-semibold text-neutral-500 hover:text-neutral-300"
+              >
+                Reset position
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => update({ backdropImageUrl: null, backdropEnabled: false })}
+              onClick={() => update({ backdropImageUrl: null, backdropEnabled: false, backdropRotationDeg: 0, backdropPitchDeg: 0 })}
               className="mt-0.5 flex w-full items-center justify-center gap-1.5 rounded-md py-1 text-[10px] font-semibold text-red-500 hover:bg-red-500/10"
             >
               <Trash2 className="h-3 w-3" /> Remove Photo

@@ -453,11 +453,19 @@ export interface Project3DConfig {
    * light source either way. `backdropImageUrl` is a Vercel Blob URL
    * (`panoramas/` prefix — see /api/blob/upload's own doc comment);
    * `backdropRotationDeg` lets an admin spin the photo to line its real
-   * captured compass heading up with the scene's `northOffsetDeg`. Default
-   * off/null: zero behavior change for any existing project. */
+   * captured compass heading up with the scene's `northOffsetDeg` (move
+   * left/right); `backdropPitchDeg` tilts it to line the photo's own
+   * horizon up with the platform's (move up/down). Both are real rotations
+   * of the backdrop sphere (Euler order "YXZ" — yaw applied before pitch,
+   * so "up/down" always means up/down from wherever "left/right" has
+   * already turned it, not a raw single-axis spin), not a texture-UV
+   * offset — the only way to reposition a full spherical panorama without
+   * warping it. Default off/null/0: zero behavior change for any existing
+   * project. */
   backdropEnabled: boolean;
   backdropImageUrl: string | null;
   backdropRotationDeg: number;
+  backdropPitchDeg: number;
 
   /** Exponential fog (THREE.FogExp2) — off by default, so every existing
    * project renders unchanged until an admin enables it. */
@@ -942,6 +950,7 @@ export type EnvironmentConfig = Pick<
   | "backdropEnabled"
   | "backdropImageUrl"
   | "backdropRotationDeg"
+  | "backdropPitchDeg"
   | "environmentIntensity"
   | "cloudsEnabled"
   | "cloudCoverage"

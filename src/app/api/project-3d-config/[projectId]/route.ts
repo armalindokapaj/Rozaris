@@ -231,6 +231,7 @@ const patchSchema = z.object({
   backdropEnabled: z.boolean().optional(),
   backdropImageUrl: z.string().url().nullable().optional(),
   backdropRotationDeg: z.number().min(-360).max(360).optional(),
+  backdropPitchDeg: z.number().min(-90).max(90).optional(),
   fogEnabled: z.boolean().optional(),
   fogColor: hexColorSchema.optional(),
   fogDensity: z.number().min(0).max(0.1).optional(),

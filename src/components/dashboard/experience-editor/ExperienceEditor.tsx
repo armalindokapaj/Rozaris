@@ -264,6 +264,7 @@ export function ExperienceEditor({
       backdropEnabled: configEditor.draft.backdropEnabled,
       backdropImageUrl: configEditor.draft.backdropImageUrl,
       backdropRotationDeg: configEditor.draft.backdropRotationDeg,
+      backdropPitchDeg: configEditor.draft.backdropPitchDeg,
       environmentIntensity: configEditor.draft.environmentIntensity,
       cloudsEnabled: configEditor.draft.cloudsEnabled,
       cloudCoverage: configEditor.draft.cloudCoverage,
