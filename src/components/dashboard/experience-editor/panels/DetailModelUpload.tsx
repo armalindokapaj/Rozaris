@@ -31,6 +31,7 @@ export function DetailModelUpload({ slots: detail, locale }: { slots: UseDetailM
   const {
     slots,
     activeSlotId,
+    versionsBySlot,
     versions,
     activeVersion,
     canEditDetail,
@@ -56,6 +57,7 @@ export function DetailModelUpload({ slots: detail, locale }: { slots: UseDetailM
       <SlotTabStrip
         slots={slots}
         activeSlotId={activeSlotId}
+        versionsBySlot={versionsBySlot}
         onSelect={handleSelectSlot}
         onAdd={handleAddSlot}
         onRename={handleRenameSlot}
