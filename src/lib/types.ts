@@ -444,6 +444,21 @@ export interface Project3DConfig {
   skyMieCoefficient: number;
   skyMieDirectionalG: number;
 
+  /** 360° Backdrop Photo — an admin-uploaded equirectangular PNG (real
+   * site-context photography: surrounding buildings/terrain/horizon) with
+   * a transparent sky region, rendered as an unlit sphere just inside the
+   * SkyMesh dome above. The transparent (alpha=0) pixels let the physical
+   * Sky/sun keep showing through — this layer supplies real surroundings,
+   * it never replaces or drives lighting; the sun/sky above stay the only
+   * light source either way. `backdropImageUrl` is a Vercel Blob URL
+   * (`panoramas/` prefix — see /api/blob/upload's own doc comment);
+   * `backdropRotationDeg` lets an admin spin the photo to line its real
+   * captured compass heading up with the scene's `northOffsetDeg`. Default
+   * off/null: zero behavior change for any existing project. */
+  backdropEnabled: boolean;
+  backdropImageUrl: string | null;
+  backdropRotationDeg: number;
+
   /** Exponential fog (THREE.FogExp2) — off by default, so every existing
    * project renders unchanged until an admin enables it. */
   fogEnabled: boolean;
@@ -924,6 +939,9 @@ export type EnvironmentConfig = Pick<
   | "skyRayleigh"
   | "skyMieCoefficient"
   | "skyMieDirectionalG"
+  | "backdropEnabled"
+  | "backdropImageUrl"
+  | "backdropRotationDeg"
   | "environmentIntensity"
   | "cloudsEnabled"
   | "cloudCoverage"

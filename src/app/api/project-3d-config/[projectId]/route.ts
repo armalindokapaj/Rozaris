@@ -223,6 +223,14 @@ const patchSchema = z.object({
   skyRayleigh: z.number().min(0).max(4).optional(),
   skyMieCoefficient: z.number().min(0).max(0.1).optional(),
   skyMieDirectionalG: z.number().min(0).max(1).optional(),
+  // 360° Backdrop Photo — real-photo site context composited under the
+  // physical sky via a transparent-PNG sphere (RenderEngine.ts's
+  // backdropMesh). `backdropImageUrl` is a Vercel Blob URL, uploaded via
+  // /api/blob/upload's `panoramas/` pathname prefix, never taken as an
+  // arbitrary external URL.
+  backdropEnabled: z.boolean().optional(),
+  backdropImageUrl: z.string().url().nullable().optional(),
+  backdropRotationDeg: z.number().min(-360).max(360).optional(),
   fogEnabled: z.boolean().optional(),
   fogColor: hexColorSchema.optional(),
   fogDensity: z.number().min(0).max(0.1).optional(),

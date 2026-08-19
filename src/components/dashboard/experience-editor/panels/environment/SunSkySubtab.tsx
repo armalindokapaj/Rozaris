@@ -1,9 +1,14 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
+import { Plus, Trash2, Upload } from "lucide-react";
 import { ColorRow, GroupCard, SectionHeading, SelectRow, SliderRow, ToggleRow } from "../../fields";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 import type { SolarAnchor } from "@/lib/types";
+
+// Keep in sync with /api/blob/upload's own `panoramas/` size cap.
+const MAX_BACKDROP_BYTES = 45 * 1024 * 1024;
 
 /**
  * Environment → Sun & Sky (PRD §8-10) — the "ROZARIS Manual Time + Sun
@@ -16,6 +21,33 @@ import type { SolarAnchor } from "@/lib/types";
  */
 export function SunSkySubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleBackdropFile(file: File) {
+    if (file.type !== "image/png") {
+      setUploadError("Must be a PNG (the transparent-sky technique needs a real alpha channel).");
+      return;
+    }
+    if (file.size > MAX_BACKDROP_BYTES) {
+      setUploadError(`Too large — ${Math.round(file.size / 1024 / 1024)}MB, max ${MAX_BACKDROP_BYTES / 1024 / 1024}MB.`);
+      return;
+    }
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const blob = await upload(`panoramas/${Date.now()}-${file.name}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/blob/upload",
+      });
+      update({ backdropImageUrl: blob.url, backdropEnabled: true });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   function addAnchor() {
     const anchor: SolarAnchor = {
@@ -136,6 +168,61 @@ export function SunSkySubtab({ configEditor }: { configEditor: UseProjectConfigE
         <SliderRow label="Mie Coefficient" value={draft.skyMieCoefficient} min={0} max={0.1} step={0.001} disabled={!draft.skyEnabled} onChange={(v) => update({ skyMieCoefficient: v })} />
         <SliderRow label="Mie Directional G" value={draft.skyMieDirectionalG} min={0} max={1} step={0.01} disabled={!draft.skyEnabled} onChange={(v) => update({ skyMieDirectionalG: v })} />
         <SliderRow label="Environment Intensity" value={draft.environmentIntensity} min={0} max={4} step={0.05} onChange={(v) => update({ environmentIntensity: v })} />
+      </GroupCard>
+
+      <SectionHeading>360° Backdrop Photo</SectionHeading>
+      <GroupCard>
+        <p className="px-0.5 pb-1 text-[10px] leading-snug text-neutral-500">
+          An equirectangular (2:1) 360° photo of the real site surroundings, exported as a PNG with the sky area made transparent — the
+          physical Sky above keeps showing through the transparent pixels, so the real sun/time-of-day still drive the lighting.
+        </p>
+        {uploadError && <p className="rounded bg-red-500/10 px-2 py-1 text-[10px] font-medium text-red-400">{uploadError}</p>}
+        {draft.backdropImageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded Blob URL, no next/image domain config to trust
+          <img src={draft.backdropImageUrl} alt="" className="mb-1.5 h-20 w-full rounded-md border border-neutral-800 object-cover" />
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleBackdropFile(file);
+            e.target.value = "";
+          }}
+        />
+        <button
+          type="button"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+          className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-neutral-700 py-1.5 text-[11px] font-semibold text-neutral-400 hover:border-neutral-500 hover:text-neutral-200 disabled:opacity-50"
+        >
+          <Upload className="h-3.5 w-3.5" />
+          {uploading ? "Uploading…" : draft.backdropImageUrl ? "Replace Photo" : "Upload Photo"}
+        </button>
+        {draft.backdropImageUrl && (
+          <>
+            <ToggleRow label="360° Backdrop" checked={draft.backdropEnabled} onChange={(v) => update({ backdropEnabled: v })} />
+            <SliderRow
+              label="Rotation"
+              value={draft.backdropRotationDeg}
+              min={-180}
+              max={180}
+              step={1}
+              suffix="°"
+              disabled={!draft.backdropEnabled}
+              onChange={(v) => update({ backdropRotationDeg: v })}
+            />
+            <button
+              type="button"
+              onClick={() => update({ backdropImageUrl: null, backdropEnabled: false })}
+              className="mt-0.5 flex w-full items-center justify-center gap-1.5 rounded-md py-1 text-[10px] font-semibold text-red-500 hover:bg-red-500/10"
+            >
+              <Trash2 className="h-3 w-3" /> Remove Photo
+            </button>
+          </>
+        )}
       </GroupCard>
     </div>
   );

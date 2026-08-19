@@ -66,6 +66,9 @@ export const DEFAULT_ENVIRONMENT_CONFIG: EnvironmentConfig = {
   skyRayleigh: 2.4,
   skyMieCoefficient: 0.004,
   skyMieDirectionalG: 0.78,
+  backdropEnabled: false,
+  backdropImageUrl: null,
+  backdropRotationDeg: 0,
   environmentIntensity: 1,
   cloudsEnabled: false,
   cloudCoverage: 0.4,
@@ -666,6 +669,14 @@ export class RenderEngine {
   private pmrem: THREE.PMREMGenerator | null = null;
   private envRenderTarget: THREE.RenderTarget | null = null;
   private skyMesh: InstanceType<typeof SkyMesh> | null = null;
+  /** 360° Backdrop Photo — a real Mesh (not the SkyMesh dome itself), see
+   * this field group's own doc comment on EnvironmentConfig. Always
+   * constructed in mount() like skyMesh/waterMesh/groundMesh, just
+   * toggles `.visible`; its texture only reloads when `backdropImageUrl`
+   * actually changes (backdropImageUrl tracks the URL the live `map`
+   * texture was loaded from). */
+  private backdropMesh: THREE.Mesh | null = null;
+  private backdropImageUrl: string | null = null;
   private waterMesh: InstanceType<typeof WaterMesh> | null = null;
   private groundMesh: THREE.Mesh | null = null;
   private groundColorUniform: { value: THREE.Color } | null = null;
@@ -881,6 +892,33 @@ export class RenderEngine {
     skyMesh.scale.setScalar(SKY_DOME_SCALE);
     scene.add(skyMesh);
     this.skyMesh = skyMesh;
+
+    // 360° Backdrop Photo — a plain equirect-UV sphere just inside the
+    // SkyMesh dome, unlit (MeshBasicMaterial, untouched by scene
+    // lighting — it's a real photo, not a lit surface) and alpha-blended
+    // (`transparent: true`) with `depthWrite: false` so it never fights
+    // the sky/other transparent layers for the depth buffer, but
+    // `depthTest: true` so real scene geometry (buildings) still
+    // correctly occludes it. No renderOrder trick needed: SkyMesh itself
+    // renders depthWrite:false in the opaque pass (see SkyMesh.js), so by
+    // the time this transparent sphere draws, every pixel already holds
+    // either real (depth-tested) building color or the sky's — alpha=1
+    // photo pixels replace that; alpha=0 "sky hole" pixels blend through
+    // at 0%, leaving the real sky exactly as rendered underneath. BackSide
+    // matches skyMesh's own convention (camera sits inside both).
+    // `toneMapped` left at its true default deliberately — the photo
+    // shares the same tone-mapping curve/exposure as the physical sky it
+    // borders, so an admin's exposure slider moves both together instead
+    // of leaving a brightness seam at the horizon.
+    const backdropMaterial = new THREE.MeshBasicMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.BackSide,
+    });
+    const backdropMesh = new THREE.Mesh(new THREE.SphereGeometry(SKY_DOME_SCALE * 0.9, 60, 40), backdropMaterial);
+    backdropMesh.visible = false;
+    scene.add(backdropMesh);
+    this.backdropMesh = backdropMesh;
 
     const waterNormals = new THREE.TextureLoader().load("/textures/waternormals.jpg", (tex) => {
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -1896,6 +1934,41 @@ export class RenderEngine {
       cloudSystem.mesh.visible = useRealCloudLayer;
     }
 
+    // 360° Backdrop Photo — cheap live updates (visibility/rotation) run
+    // on every call; the texture itself only (re)loads when the URL
+    // actually changes, same "expensive work gated behind a real change"
+    // discipline as scheduleEnvironmentRebuild below.
+    const backdropMesh = this.backdropMesh;
+    if (backdropMesh) {
+      backdropMesh.rotation.y = THREE.MathUtils.degToRad(config.backdropRotationDeg);
+      backdropMesh.visible = config.backdropEnabled && !!config.backdropImageUrl;
+      if (config.backdropImageUrl !== this.backdropImageUrl) {
+        this.backdropImageUrl = config.backdropImageUrl;
+        const material = backdropMesh.material as THREE.MeshBasicMaterial;
+        const previousTexture = material.map;
+        if (config.backdropImageUrl) {
+          const url = config.backdropImageUrl;
+          new THREE.TextureLoader().load(url, (texture) => {
+            // The URL can change again (or clear) while this in-flight
+            // load was still fetching — only apply it if it's still the
+            // one currently requested, and never onto a disposed mesh.
+            if (this.backdropImageUrl !== url || !this.backdropMesh) {
+              texture.dispose();
+              return;
+            }
+            texture.colorSpace = THREE.SRGBColorSpace;
+            material.map = texture;
+            material.needsUpdate = true;
+            previousTexture?.dispose();
+          });
+        } else {
+          material.map = null;
+          material.needsUpdate = true;
+          previousTexture?.dispose();
+        }
+      }
+    }
+
     if (waterMesh) {
       waterMesh.visible = config.waterEnabled;
       waterMesh.position.y = config.waterHeight;
@@ -2467,6 +2540,11 @@ export class RenderEngine {
     this.skyMesh?.geometry.dispose();
     (this.skyMesh?.material as THREE.Material | undefined)?.dispose();
     this.skyMesh = null;
+    this.backdropMesh?.geometry.dispose();
+    ((this.backdropMesh?.material as THREE.MeshBasicMaterial | undefined)?.map)?.dispose();
+    (this.backdropMesh?.material as THREE.Material | undefined)?.dispose();
+    this.backdropMesh = null;
+    this.backdropImageUrl = null;
     this.waterMesh?.geometry.dispose();
     (this.waterMesh?.material as THREE.Material | undefined)?.dispose();
     this.waterMesh = null;

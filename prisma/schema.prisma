@@ -1180,6 +1180,19 @@ model Project3DConfig {
   skyMieCoefficient  Float   @default(0.004)
   skyMieDirectionalG Float   @default(0.78)
 
+  /// 360° Backdrop Photo — an admin-uploaded equirectangular PNG (real
+  /// site-context photography) with a transparent sky region, composited
+  /// as an unlit sphere just inside the SkyMesh dome so the physical sky/
+  /// sun above keep showing through the transparent pixels — see
+  /// RenderEngine.ts's backdropMesh. `backdropImageUrl` is a Vercel Blob
+  /// URL (`panoramas/` prefix, /api/blob/upload); `backdropRotationDeg`
+  /// aligns the photo's real captured heading with the scene's own
+  /// `northOffsetDeg`. Default off/null: zero behavior change for any
+  /// existing project.
+  backdropEnabled     Boolean @default(false)
+  backdropImageUrl    String?
+  backdropRotationDeg Float   @default(0)
+
   // Full-configurator pass — Fog, per-project unit status colors, and
   // per-project post-processing overrides (ANDed with, not replacing,
   // QUALITY_TIERS' own tier-level flags — see viewerPresets.ts).

@@ -16,6 +16,13 @@ import { auth } from "@/auth";
  * session (src/auth.ts), established when the Admin console's "Sign In as
  * Admin" button also calls next-auth/react's signIn() — see
  * src/app/admin/page.tsx and src/lib/adminAuth.ts.
+ *
+ * Also issues tokens for 360° Backdrop Photo uploads (`panoramas/` prefix,
+ * SunSkySubtab.tsx) — PNG-only (the format needs to carry a real alpha
+ * channel for the transparent-sky technique to work; JPEG/WebP-lossy have
+ * no alpha) and a larger size cap than photo ads, since an equirectangular
+ * capture at useful resolution (4K-8K wide) is a much bigger PNG than a
+ * small lossy ad banner.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   const body = (await request.json()) as HandleUploadBody;
@@ -28,11 +35,16 @@ export async function POST(request: Request): Promise<NextResponse> {
         const session = await auth();
         if (session?.user?.role !== "admin") throw new Error("Not authorized");
         const isAdPhoto = pathname.startsWith("ads/");
+        const isBackdropPhoto = pathname.startsWith("panoramas/");
         return {
           allowedContentTypes: isAdPhoto
             ? ["image/jpeg", "image/png", "image/webp", "image/gif"]
-            : ["model/gltf-binary", "application/octet-stream"],
-          maximumSizeInBytes: isAdPhoto ? 8 * 1024 * 1024 : 60 * 1024 * 1024, // keep in sync with MapModelEditor's/AdvertisingTab's client-side checks
+            : isBackdropPhoto
+              ? ["image/png"]
+              : ["model/gltf-binary", "application/octet-stream"],
+          // keep in sync with MapModelEditor's/AdvertisingTab's/
+          // SunSkySubtab's own client-side checks
+          maximumSizeInBytes: isAdPhoto ? 8 * 1024 * 1024 : isBackdropPhoto ? 45 * 1024 * 1024 : 60 * 1024 * 1024,
           addRandomSuffix: true,
           tokenPayload: JSON.stringify({ pathname }),
         };

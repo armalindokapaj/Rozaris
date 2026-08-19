@@ -136,6 +136,10 @@ export const defaultProject3DConfig: Project3DConfig = {
   skyRayleigh: 2.4,
   skyMieCoefficient: 0.004,
   skyMieDirectionalG: 0.78,
+  // 360° Backdrop Photo — off/null by default, zero behavior change.
+  backdropEnabled: false,
+  backdropImageUrl: null,
+  backdropRotationDeg: 0,
   fogEnabled: false,
   fogColor: "#c9d6e0",
   fogDensity: 0.015,
