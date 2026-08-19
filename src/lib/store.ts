@@ -141,6 +141,7 @@ export const defaultProject3DConfig: Project3DConfig = {
   backdropImageUrl: null,
   backdropRotationDeg: 0,
   backdropPitchDeg: 0,
+  backdropElevation: 0,
   fogEnabled: false,
   fogColor: "#c9d6e0",
   fogDensity: 0.015,

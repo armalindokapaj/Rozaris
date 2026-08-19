@@ -70,6 +70,7 @@ export const DEFAULT_ENVIRONMENT_CONFIG: EnvironmentConfig = {
   backdropImageUrl: null,
   backdropRotationDeg: 0,
   backdropPitchDeg: 0,
+  backdropElevation: 0,
   environmentIntensity: 1,
   cloudsEnabled: false,
   cloudCoverage: 0.4,
@@ -1948,6 +1949,7 @@ export class RenderEngine {
     if (backdropMesh) {
       backdropMesh.rotation.y = THREE.MathUtils.degToRad(config.backdropRotationDeg);
       backdropMesh.rotation.x = THREE.MathUtils.degToRad(config.backdropPitchDeg);
+      backdropMesh.position.y = config.backdropElevation;
       backdropMesh.visible = config.backdropEnabled && !!config.backdropImageUrl;
       if (config.backdropImageUrl !== this.backdropImageUrl) {
         this.backdropImageUrl = config.backdropImageUrl;

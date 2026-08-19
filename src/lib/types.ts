@@ -460,12 +460,17 @@ export interface Project3DConfig {
    * so "up/down" always means up/down from wherever "left/right" has
    * already turned it, not a raw single-axis spin), not a texture-UV
    * offset — the only way to reposition a full spherical panorama without
-   * warping it. Default off/null/0: zero behavior change for any existing
-   * project. */
+   * warping it. `backdropElevation` is a different kind of move —
+   * translates the sphere's own center up/down (world Y, scene units), not
+   * a rotation — for when the photo's horizon is already level (pitch=0)
+   * but was shot from a different height than the model's own ground,
+   * so the horizon line sits at the wrong height relative to the scene.
+   * Default off/null/0: zero behavior change for any existing project. */
   backdropEnabled: boolean;
   backdropImageUrl: string | null;
   backdropRotationDeg: number;
   backdropPitchDeg: number;
+  backdropElevation: number;
 
   /** Exponential fog (THREE.FogExp2) — off by default, so every existing
    * project renders unchanged until an admin enables it. */
@@ -951,6 +956,7 @@ export type EnvironmentConfig = Pick<
   | "backdropImageUrl"
   | "backdropRotationDeg"
   | "backdropPitchDeg"
+  | "backdropElevation"
   | "environmentIntensity"
   | "cloudsEnabled"
   | "cloudCoverage"

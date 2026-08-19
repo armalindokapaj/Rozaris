@@ -215,7 +215,7 @@ export function SunSkySubtab({ configEditor }: { configEditor: UseProjectConfigE
               onChange={(v) => update({ backdropRotationDeg: v })}
             />
             <SliderRow
-              label="Move Up / Down"
+              label="Tilt Up / Down"
               value={draft.backdropPitchDeg}
               min={-90}
               max={90}
@@ -224,10 +224,23 @@ export function SunSkySubtab({ configEditor }: { configEditor: UseProjectConfigE
               disabled={!draft.backdropEnabled}
               onChange={(v) => update({ backdropPitchDeg: v })}
             />
-            {(draft.backdropRotationDeg !== 0 || draft.backdropPitchDeg !== 0) && (
+            <SliderRow
+              label="Elevation"
+              value={draft.backdropElevation}
+              min={-500}
+              max={500}
+              step={1}
+              disabled={!draft.backdropEnabled}
+              onChange={(v) => update({ backdropElevation: v })}
+            />
+            <p className="px-0.5 text-[10px] leading-snug text-neutral-600">
+              Tilt rotates the photo (fixes a level-but-wrong-angle horizon). Elevation raises/lowers it instead — use when the horizon is
+              already level but the photo was shot from a different height than the model&apos;s own ground.
+            </p>
+            {(draft.backdropRotationDeg !== 0 || draft.backdropPitchDeg !== 0 || draft.backdropElevation !== 0) && (
               <button
                 type="button"
-                onClick={() => update({ backdropRotationDeg: 0, backdropPitchDeg: 0 })}
+                onClick={() => update({ backdropRotationDeg: 0, backdropPitchDeg: 0, backdropElevation: 0 })}
                 className="w-full py-1 text-center text-[10px] font-semibold text-neutral-500 hover:text-neutral-300"
               >
                 Reset position
@@ -235,7 +248,9 @@ export function SunSkySubtab({ configEditor }: { configEditor: UseProjectConfigE
             )}
             <button
               type="button"
-              onClick={() => update({ backdropImageUrl: null, backdropEnabled: false, backdropRotationDeg: 0, backdropPitchDeg: 0 })}
+              onClick={() =>
+                update({ backdropImageUrl: null, backdropEnabled: false, backdropRotationDeg: 0, backdropPitchDeg: 0, backdropElevation: 0 })
+              }
               className="mt-0.5 flex w-full items-center justify-center gap-1.5 rounded-md py-1 text-[10px] font-semibold text-red-500 hover:bg-red-500/10"
             >
               <Trash2 className="h-3 w-3" /> Remove Photo

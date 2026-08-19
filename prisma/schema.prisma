@@ -1188,12 +1188,16 @@ model Project3DConfig {
   /// URL (`panoramas/` prefix, /api/blob/upload); `backdropRotationDeg`
   /// (move left/right) aligns the photo's real captured heading with the
   /// scene's own `northOffsetDeg`; `backdropPitchDeg` (move up/down, ±90°)
-  /// tilts it to line the photo's own horizon up with the platform's.
+  /// tilts it to line the photo's own horizon up with the platform's;
+  /// `backdropElevation` (±500 scene units) instead TRANSLATES the
+  /// sphere's own center — for a photo whose horizon is already level but
+  /// was shot from a different height than the model's own ground.
   /// Default off/null/0: zero behavior change for any existing project.
   backdropEnabled     Boolean @default(false)
   backdropImageUrl    String?
   backdropRotationDeg Float   @default(0)
   backdropPitchDeg    Float   @default(0)
+  backdropElevation   Float   @default(0)
 
   // Full-configurator pass — Fog, per-project unit status colors, and
   // per-project post-processing overrides (ANDed with, not replacing,
