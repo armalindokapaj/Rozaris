@@ -1,28 +1,32 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import { Plus, Ban, CheckCircle2, Gem, ArrowRightLeft, Copy, History } from "lucide-react";
+import { Plus, Ban, CheckCircle2, Gem, ArrowRightLeft, Copy, History, Link2Off } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { formatRelativeDate } from "@/lib/utils";
 import { NewListingForm } from "@/components/dashboard/NewListingForm";
 import { AnalyticsSummaryInline } from "@/components/common/AnalyticsSummaryInline";
 import { isListingIdle, isListingStale } from "@/lib/moderation";
-import type { Listing } from "@/lib/types";
+import type { Listing, Project } from "@/lib/types";
 
 interface PublisherOption {
   id: string;
   name: string;
 }
 
-/** `GET /api/admin/listings?status=all`'s shape — the public `Listing`
- * type plus the admin-only idle/staleness fields it deliberately omits. */
+/** `GET /api/admin/listings?status=all`'s shape — see that route's own doc
+ * comment for why these admin-only fields sit outside the public `Listing`
+ * type. `projectId` added alongside the others once a Listing could
+ * optionally belong to a Project (see the schema's own doc comment on
+ * `Listing.projectId`). */
 type AdminListingRow = Listing & {
   idleUntil: string | null;
   idleReason: string | null;
   lastRenewedAt: string;
   locationConfirmed: boolean;
   duplicateOfId: string | null;
+  projectId: string | null;
 };
 
 const STATUS_STYLE: Record<Listing["status"], string> = {
@@ -38,79 +42,61 @@ const STATUS_STYLE: Record<Listing["status"], string> = {
 };
 
 /**
- * Real create/edit/moderate surface for `Listing` from the admin console —
- * previously the only admin-facing listing surface was the Queue tab's
- * approve/reject actions on already-submitted rows; Admin had no way to
- * create one directly, or to see/manage a listing once it left "pending"
- * (see the "Rozaris Platform Audit" memory). Reuses `NewListingForm`
- * (publisher-picker added here) for creation rather than a second form.
+ * The former standalone "Listings" admin tab (`ListingsManagementTab`,
+ * retired), now nested inside a single Project's `EditProjectModal` — per
+ * the "Listings & Projects becomes just Projects" restructuring, a listing
+ * is managed from inside the project it belongs to instead of a flat,
+ * platform-wide table. Fetches the full admin listing set and filters to
+ * this project client-side rather than adding a `?projectId=` query param
+ * to the route — at real-world row counts here that's simpler than a new
+ * server-side filter, and it's the same list `GET .../listings?status=all`
+ * always returned anyway.
+ *
+ * A listing created here is attached to this project from the start
+ * (`NewListingForm`'s optional `projectId`); an existing one can be
+ * detached back to standalone via the same publication route's
+ * `projectId: null`, same pattern `duplicateOfId` already uses.
  */
-export function ListingsManagementTab() {
+export function ProjectListingsPanel({ project, publishers }: { project: Project; publishers: PublisherOption[] }) {
   const { t } = useT();
   const priceFmt = usePriceFormat();
   const [listings, setListings] = useState<AdminListingRow[]>([]);
-  const [publishers, setPublishers] = useState<PublisherOption[]>([]);
   const [creating, setCreating] = useState(false);
-  const [publisherId, setPublisherId] = useState("");
   const [managing, setManaging] = useState<string | null>(null);
 
   function refresh() {
     fetch("/api/admin/listings?status=all")
       .then((r) => (r.ok ? r.json() : []))
-      .then((rows: AdminListingRow[]) => setListings(rows))
+      .then((rows: AdminListingRow[]) => setListings(rows.filter((l) => l.projectId === project.id)))
       .catch(() => {});
   }
 
-  useEffect(() => {
-    refresh();
-    fetch("/api/admin/publishers")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((rows: PublisherOption[]) => setPublishers(rows))
-      .catch(() => {});
-  }, []);
+  useEffect(refresh, [project.id]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 border-t border-neutral-200 pt-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-serif text-xl text-neutral-900">{t("admin.listingsMgmtTitle")}</h1>
-          <p className="text-sm text-neutral-500">{t("admin.listingsMgmtSubtitle")}</p>
-        </div>
+        <h3 className="text-sm font-bold text-neutral-900">{t("admin.listingsMgmtTitle")}</h3>
         <button
+          type="button"
           onClick={() => setCreating((v) => !v)}
-          className="flex items-center gap-1.5 rounded-control bg-neutral-900 px-3.5 py-2 text-xs font-semibold text-white"
+          className="flex items-center gap-1.5 rounded-control bg-neutral-900 px-2.5 py-1.5 text-xs font-semibold text-white"
         >
           <Plus className="h-3.5 w-3.5" /> {t("admin.newListing")}
         </button>
       </div>
 
       {creating && (
-        <div className="space-y-3 rounded-panel border border-neutral-200 bg-white p-4">
-          <label className="block max-w-xs">
-            <span className="mb-1.5 block text-xs font-medium text-neutral-500">{t("admin.postingOnBehalfOf")}</span>
-            <select
-              value={publisherId}
-              onChange={(e) => setPublisherId(e.target.value)}
-              className="w-full rounded-control border border-neutral-200 px-2.5 py-1.5 text-sm"
-            >
-              <option value="">{t("dashboard.selectNeighborhood")}</option>
-              {publishers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {publisherId && (
-            <NewListingForm
-              publisherId={publisherId}
-              onSaved={() => {
-                setCreating(false);
-                refresh();
-              }}
-              onCancel={() => setCreating(false)}
-            />
-          )}
+        <div className="rounded-panel border border-neutral-200 bg-neutral-50 p-3">
+          <NewListingForm
+            publisherId={project.developer.id}
+            projectId={project.id}
+            onSaved={() => {
+              setCreating(false);
+              refresh();
+            }}
+            onCancel={() => setCreating(false)}
+          />
         </div>
       )}
 
@@ -118,21 +104,19 @@ export function ListingsManagementTab() {
         <table className="w-full text-sm">
           <thead className="border-b border-neutral-100 bg-neutral-50 text-left text-xs text-neutral-500">
             <tr>
-              <th className="px-4 py-2.5 font-medium">{t("dashboard.titleLabel")}</th>
-              <th className="px-4 py-2.5 font-medium">{t("admin.colPublisher")}</th>
-              <th className="px-4 py-2.5 font-medium">{t("dashboard.priceLabel")}</th>
-              <th className="px-4 py-2.5 font-medium">{t("admin.colStatus")}</th>
-              <th className="px-4 py-2.5 font-medium" />
+              <th className="px-3 py-2 font-medium">{t("dashboard.titleLabel")}</th>
+              <th className="px-3 py-2 font-medium">{t("dashboard.priceLabel")}</th>
+              <th className="px-3 py-2 font-medium">{t("admin.colStatus")}</th>
+              <th className="px-3 py-2 font-medium" />
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {listings.map((l) => (
               <Fragment key={l.id}>
                 <tr>
-                  <td className="px-4 py-3 font-medium text-neutral-800">{l.title}</td>
-                  <td className="px-4 py-3 text-neutral-600">{l.publisher.name}</td>
-                  <td className="px-4 py-3 tabular-nums text-neutral-600">{priceFmt(l.price)}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5 font-medium text-neutral-800">{l.title}</td>
+                  <td className="px-3 py-2.5 tabular-nums text-neutral-600">{priceFmt(l.price)}</td>
+                  <td className="px-3 py-2.5">
                     <span className={`rounded-full px-2 py-1 text-xs font-semibold ${STATUS_STYLE[l.status]}`}>
                       {l.status}
                     </span>
@@ -151,14 +135,10 @@ export function ListingsManagementTab() {
                         <Gem className="h-3 w-3" /> {t("admin.premiumBadge")}
                       </span>
                     )}
-                    {l.duplicateOfId && (
-                      <span className="ml-1.5 rounded-full bg-neutral-200 px-2 py-1 text-xs font-semibold text-neutral-600">
-                        {t("admin.duplicateBadge")}
-                      </span>
-                    )}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-3 py-2.5 text-right">
                     <button
+                      type="button"
                       onClick={() => setManaging(managing === l.id ? null : l.id)}
                       className="text-xs font-semibold text-brand-600 hover:underline"
                     >
@@ -168,7 +148,7 @@ export function ListingsManagementTab() {
                 </tr>
                 {managing === l.id && (
                   <tr>
-                    <td colSpan={5} className="bg-neutral-50 px-4 py-4">
+                    <td colSpan={4} className="bg-neutral-50 px-3 py-3">
                       <ListingManagePanel listing={l} publishers={publishers} onDone={refresh} />
                     </td>
                   </tr>
@@ -177,7 +157,7 @@ export function ListingsManagementTab() {
             ))}
             {listings.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-sm text-neutral-400">
+                <td colSpan={4} className="px-3 py-6 text-center text-xs text-neutral-400">
                   {t("admin.noListingsYet")}
                 </td>
               </tr>
@@ -238,6 +218,7 @@ function ListingManagePanel({
         <div className="rounded-control bg-warning/10 px-3 py-2 text-xs text-neutral-700">
           {t("admin.draftNoLocationNote")}
           <button
+            type="button"
             disabled={busy}
             onClick={() => patch({ status: "pending" })}
             className="ml-2 font-semibold text-brand-700 hover:underline"
@@ -250,6 +231,7 @@ function ListingManagePanel({
       <div className="flex flex-wrap gap-1.5">
         {(["pending", "active", "suspended", "archived", "rejected"] as const).map((s) => (
           <button
+            type="button"
             key={s}
             disabled={busy || listing.status === s}
             onClick={() => {
@@ -284,6 +266,7 @@ function ListingManagePanel({
           />
         </div>
         <button
+          type="button"
           disabled={busy || !reason.trim()}
           onClick={() => patch({ idleDays, reason })}
           className="flex items-center gap-1.5 rounded-control bg-warning/90 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
@@ -291,6 +274,7 @@ function ListingManagePanel({
           <Ban className="h-3.5 w-3.5" /> {t("admin.makeIdle")}
         </button>
         <button
+          type="button"
           disabled={busy}
           onClick={() => patch({ idleDays: 0 })}
           className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
@@ -301,6 +285,7 @@ function ListingManagePanel({
 
       <div className="flex flex-wrap items-end gap-2 border-t border-neutral-200 pt-3">
         <button
+          type="button"
           disabled={busy}
           onClick={() => patch({ premium: !listing.premium })}
           className={`flex items-center gap-1.5 rounded-control px-3 py-1.5 text-xs font-semibold disabled:opacity-40 ${
@@ -331,6 +316,7 @@ function ListingManagePanel({
             </select>
           </div>
           <button
+            type="button"
             disabled={busy || !transferTo}
             onClick={() => {
               patch({ transferToPublisherId: transferTo });
@@ -342,8 +328,21 @@ function ListingManagePanel({
           </button>
         </div>
 
+        {/* Projects console — sends this listing back to standalone
+            (`projectId: null`) without deleting it, mirroring the
+            duplicate-flag clear button just below. */}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => patch({ projectId: null })}
+          className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+        >
+          <Link2Off className="h-3.5 w-3.5" /> {t("admin.removeFromProject")}
+        </button>
+
         {listing.duplicateOfId ? (
           <button
+            type="button"
             disabled={busy}
             onClick={() => patch({ duplicateOfId: null })}
             className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
@@ -362,6 +361,7 @@ function ListingManagePanel({
               />
             </div>
             <button
+              type="button"
               disabled={busy || !duplicateTarget.trim()}
               onClick={() => {
                 patch({ duplicateOfId: duplicateTarget.trim(), status: "suspended", reason: "Marked as duplicate" });
@@ -375,6 +375,7 @@ function ListingManagePanel({
         )}
 
         <button
+          type="button"
           onClick={() => setHistoryOpen((v) => !v)}
           className="ml-auto flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
         >

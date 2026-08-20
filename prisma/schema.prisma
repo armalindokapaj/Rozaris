@@ -532,6 +532,16 @@ model Listing {
   propertyId String
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
+  /// Admin "Projects" console — optionally ties this listing to one
+  /// Project (a development), so admin manages it from inside that
+  /// project's own edit view instead of a separate flat Listings tab.
+  /// Nullable and `SetNull` on delete: an unlinked/standalone listing (an
+  /// individual seller's ad with no development behind it) is a normal,
+  /// supported case, and deleting a Project must never cascade-delete the
+  /// listings that happened to point at it.
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
   transactions Transaction[]
   priceHistory PriceHistoryEntry[]
 
@@ -723,6 +733,12 @@ model Project {
   inventoryConnectors InventoryConnector[]
   /// Phase 9 — see ProjectMembership's own doc comment.
   memberships         ProjectMembership[]
+  /// Admin's "Projects" console — a Listing (marketplace ad) can optionally
+  /// belong to one Project (a development), managed from inside that
+  /// project's own edit view instead of a separate flat Listings tab.
+  /// Nullable: a listing may stand alone with no project (an individual
+  /// seller's ad), same as before this relation existed.
+  listings            Listing[]
 
   @@map("projects")
 }

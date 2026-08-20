@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { X, Boxes, Map as MapIcon } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
 import { useLocations } from "@/hooks/useLocations";
+import { ProjectListingsPanel } from "@/components/dashboard/admin/ProjectListingsPanel";
 import type { Project, ProjectSetting, PropertyType } from "@/lib/types";
 
 const PROPERTY_TYPES: PropertyType[] = ["apartment", "villa", "studio", "commercial", "office"];
@@ -27,6 +29,14 @@ interface PublisherOption {
  * reuses the exact same upsert-by-id route (`POST /api/projects`) that
  * route's own doc comment already documents as "creates/updates" — the
  * gap was purely a missing UI, not a missing route.
+ *
+ * "Listings & Projects becomes just Projects" restructuring: this is now
+ * also the one place admin manages a project end-to-end — the standalone
+ * Listings tab was retired in favor of `ProjectListingsPanel` nested below
+ * (this project's own listings only), and the header shortcuts jump
+ * straight into the full-page Map Control / 3D Experience editors instead
+ * of requiring a separate tab switch + re-finding this same project in
+ * that grid.
  */
 export function EditProjectModal({
   project,
@@ -40,6 +50,7 @@ export function EditProjectModal({
   onSaved: () => void;
 }) {
   const { t, locale } = useT();
+  const router = useRouter();
   const propertyTypeLabels = PROPERTY_TYPE_LABELS[locale];
   const neighborhoods = useLocations("neighborhood");
 
@@ -133,11 +144,34 @@ export function EditProjectModal({
       aria-label={t("admin.editProjectTitle")}
     >
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-panel bg-white shadow-[var(--shadow-3)]">
-        <div className="sticky top-0 flex items-center justify-between border-b border-neutral-100 bg-white px-5 py-4">
-          <h2 className="text-base font-bold text-neutral-900">{t("admin.editProjectTitle", { name: project.name })}</h2>
-          <button onClick={onClose} aria-label={t("common.close")} className="rounded-control p-2 text-neutral-500 hover:bg-neutral-100">
-            <X className="h-4 w-4" />
-          </button>
+        <div className="sticky top-0 space-y-3 border-b border-neutral-100 bg-white px-5 py-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-neutral-900">{t("admin.editProjectTitle", { name: project.name })}</h2>
+            <button onClick={onClose} aria-label={t("common.close")} className="rounded-control p-2 text-neutral-500 hover:bg-neutral-100">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {/* Restructuring's "shortcuts to Map Control and 3D Configurator
+              for each project" — the same two full-page editors
+              `Project3DGrid`'s own cards already link to, surfaced here so
+              opening them doesn't require leaving this view to go find the
+              project again in a separate tab. */}
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => router.push(`/admin/3d-map-control/${project.id}`)}
+              className="flex items-center gap-1.5 rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+            >
+              <MapIcon className="h-3.5 w-3.5" /> {t("admin.openMapControlShortcut")}
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push(`/admin/3d-experience/${project.id}`)}
+              className="flex items-center gap-1.5 rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+            >
+              <Boxes className="h-3.5 w-3.5" /> {t("admin.open3DExperienceShortcut")}
+            </button>
+          </div>
         </div>
 
         <div className="space-y-4 p-5">
@@ -314,6 +348,8 @@ export function EditProjectModal({
             <input type="checkbox" checked={premium} onChange={(e) => setPremium(e.target.checked)} />
             {t("admin.premiumBadge")}
           </label>
+
+          <ProjectListingsPanel project={project} publishers={publishers} />
         </div>
 
         <div className="border-t border-neutral-100 p-4">

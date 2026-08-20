@@ -95,6 +95,10 @@ const listingSchema = z.object({
   lat: z.number().optional(),
   lng: z.number().optional(),
   locationConfirmed: z.boolean().optional().default(false),
+  // Projects console — created directly from inside a Project's edit view,
+  // this is that project's id. Optional: a listing created from anywhere
+  // else stands alone with no project, same as before this field existed.
+  projectId: z.string().min(1).optional(),
 });
 
 export async function POST(request: Request) {
@@ -155,6 +159,13 @@ export async function POST(request: Request) {
       { error: "This account is restricted from publishing new listings." },
       { status: 403 }
     );
+  }
+
+  if (data.projectId) {
+    const project = await prisma.project.findFirst({ where: { id: data.projectId, deletedAt: null } });
+    if (!project) {
+      return NextResponse.json({ error: `Unknown project "${data.projectId}".` }, { status: 400 });
+    }
   }
 
   // Canonical Location System — validates against the real `locations`

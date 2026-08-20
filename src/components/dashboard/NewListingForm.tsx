@@ -117,10 +117,16 @@ function Pill({
 
 export function NewListingForm({
   publisherId,
+  projectId,
   onSaved,
   onCancel,
 }: {
   publisherId: string;
+  /** Admin "Projects" console — when set, the created listing is attached
+   * to this Project from the start (see `POST /api/listings`'s optional
+   * `projectId`). Omitted everywhere else this form is already used, so
+   * those callers keep creating standalone listings exactly as before. */
+  projectId?: string;
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -228,6 +234,7 @@ export function NewListingForm({
           descriptionEn: description,
           descriptionSq: description,
           publisherId,
+          projectId,
           lat: location?.lat,
           lng: location?.lng,
           locationConfirmed: location !== null,

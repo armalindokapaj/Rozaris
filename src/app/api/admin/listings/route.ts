@@ -51,6 +51,10 @@ export async function GET(request: Request) {
         lastRenewedAt: r.lastRenewedAt,
         locationConfirmed: r.property.locationConfirmed,
         duplicateOfId: r.duplicateOfId,
+        // Admin "Projects" console — which Project (if any) this listing is
+        // managed under. Same admin-only treatment as the fields above:
+        // left off the public `Listing` shape `normalizeListing` returns.
+        projectId: r.projectId,
       }))
     );
   }

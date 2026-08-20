@@ -26,6 +26,9 @@ const bodySchema = z.object({
   /// Listings Control's "Mark duplicate" — a real (id or slug) pointer to
   /// another listing, resolved server-side below. `null` clears it.
   duplicateOfId: z.string().min(1).nullable().optional(),
+  /// Projects console — attaches/detaches this listing to/from a Project
+  /// (a development). `null` clears it back to a standalone listing.
+  projectId: z.string().min(1).nullable().optional(),
 });
 
 /**
@@ -85,6 +88,20 @@ export async function PATCH(
     duplicateTargetId = target.id;
   }
 
+  let projectTarget: { id: string; name: string } | null = null;
+  let clearProject = false;
+  if (parsed.data.projectId === null) {
+    clearProject = true;
+  } else if (parsed.data.projectId) {
+    projectTarget = await prisma.project.findFirst({
+      where: { id: parsed.data.projectId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    if (!projectTarget) {
+      return NextResponse.json({ error: "Target project not found." }, { status: 400 });
+    }
+  }
+
   try {
     const idleUpdate =
       parsed.data.idleDays == null
@@ -110,6 +127,8 @@ export async function PATCH(
           ...(parsed.data.premium != null ? { premium: parsed.data.premium } : {}),
           ...(transferTarget ? { publisherId: transferTarget.id } : {}),
           ...(duplicateTargetId !== undefined ? { duplicateOfId: duplicateTargetId } : {}),
+          ...(projectTarget ? { projectId: projectTarget.id } : {}),
+          ...(clearProject ? { projectId: null } : {}),
         },
       });
 
@@ -144,6 +163,8 @@ export async function PATCH(
     if (duplicateTargetId !== undefined) {
       actions.push(duplicateTargetId ? `Listing marked duplicate of ${duplicateTargetId}` : "Listing duplicate flag cleared");
     }
+    if (projectTarget) actions.push(`Listing attached to project "${projectTarget.name}"`);
+    if (clearProject) actions.push("Listing detached from project");
 
     const actor = gate.user?.email ?? gate.user?.name ?? "admin";
     for (const action of actions) {

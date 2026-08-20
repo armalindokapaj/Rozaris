@@ -40,7 +40,6 @@ import { useAppStore } from "@/lib/store";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
 import { useAdminProjects } from "@/hooks/useAdminProjects";
 import { useAdminPublishers } from "@/hooks/useAdminPublishers";
-import { listings } from "@/lib/mockData";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
@@ -54,7 +53,6 @@ import { Admin3DHealthTab } from "@/components/dashboard/admin/Admin3DHealthTab"
 import { AdminAnalyticsTab } from "@/components/dashboard/admin/AdminAnalyticsTab";
 import { UsersTab } from "@/components/dashboard/admin/UsersTab";
 import { PublishersTab } from "@/components/dashboard/admin/PublishersTab";
-import { ListingsManagementTab } from "@/components/dashboard/admin/ListingsManagementTab";
 import { ApprovalCenterTab } from "@/components/dashboard/admin/ApprovalCenterTab";
 import { ReportsTab } from "@/components/dashboard/admin/ReportsTab";
 import { AdvertisingTab } from "@/components/dashboard/admin/AdvertisingTab";
@@ -76,7 +74,6 @@ import type { Project } from "@/lib/types";
 const TABS = [
   { id: "dashboard", labelKey: "admin.tabDashboard", icon: LayoutDashboard, group: "overview" },
   { id: "content", labelKey: "admin.tabContent", icon: Box, group: "content" },
-  { id: "listings", labelKey: "admin.tabListings", icon: ListChecks, group: "content" },
   { id: "timeline", labelKey: "admin.tabTimeline", icon: HardHat, group: "content" },
   { id: "mapControl", labelKey: "admin.tabMapControl", icon: MapIcon, group: "3d" },
   { id: "experience", labelKey: "admin.tab3DExperience", icon: Boxes, group: "3d" },
@@ -443,7 +440,6 @@ function AdminPageInner() {
             {tab === "moderation" && <ModerationTab />}
 
             {tab === "content" && <ContentTab />}
-            {tab === "listings" && <ListingsManagementTab />}
             {tab === "advertising" && <AdvertisingTab />}
             {tab === "marketData" && <MarketDataTab />}
 
@@ -1123,7 +1119,7 @@ function ContentTab() {
     <div className="space-y-4">
       <h1 className="font-serif text-xl text-neutral-900">{t("admin.contentTitle")}</h1>
       <p className="text-sm text-neutral-500">
-        {t("admin.contentSubtitle", { listings: listings.length, projects: liveProjects.length })}
+        {t("admin.contentSubtitle", { projects: liveProjects.length })}
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {liveProjects.map((p) => (
