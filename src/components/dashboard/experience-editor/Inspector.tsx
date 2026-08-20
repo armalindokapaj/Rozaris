@@ -44,6 +44,7 @@ export function Inspector({
   configEditor,
   viewerRef,
   units,
+  createUnit,
   statusPreviewEnabled,
   onStatusPreviewChange,
   onGroundAlign,
@@ -56,6 +57,7 @@ export function Inspector({
   configEditor: UseProjectConfigEditorReturn;
   viewerRef: RefObject<ThreeProjectViewerHandle | null>;
   units: Unit[] | null;
+  createUnit: (unit: Unit) => Promise<boolean>;
   statusPreviewEnabled: boolean;
   onStatusPreviewChange: (v: boolean) => void;
   onGroundAlign: () => void;
@@ -78,10 +80,12 @@ export function Inspector({
         </div>
       ) : activeTab === "units" ? (
         <UnitsPanel
+          project={project}
           detail={detail}
           modelEditor={modelEditor}
           configEditor={configEditor}
           units={units}
+          createUnit={createUnit}
           canEdit={detail.canEditDetail}
           statusPreviewEnabled={statusPreviewEnabled}
           onStatusPreviewChange={onStatusPreviewChange}

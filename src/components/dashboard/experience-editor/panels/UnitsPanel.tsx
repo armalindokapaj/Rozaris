@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type RefObject } from "react";
-import { ScanSearch, Plus } from "lucide-react";
+import { ScanSearch, Plus, Wand2 } from "lucide-react";
 import { extractUnitNodeNames } from "@/lib/glbUnitNodes";
 import { cn } from "@/lib/utils";
 import { ColorRow, GroupCard, SectionHeading, SliderRow, ToggleRow } from "../fields";
@@ -9,7 +9,7 @@ import type { UseModelEditorReturn } from "@/hooks/useModelEditor";
 import type { UseDetailModelSlotsReturn } from "@/hooks/useDetailModelSlots";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
-import type { Unit } from "@/lib/types";
+import type { Project, Unit } from "@/lib/types";
 
 const COMPASS_DIRECTIONS: { label: string; deg: number }[] = [
   { label: "N", deg: 0 },
@@ -31,19 +31,23 @@ const COMPASS_DIRECTIONS: { label: string; deg: number }[] = [
  * separate preview implementation, per §25.
  */
 export function UnitsPanel({
+  project,
   detail,
   modelEditor,
   configEditor,
   units,
+  createUnit,
   canEdit,
   statusPreviewEnabled,
   onStatusPreviewChange,
   viewerRef,
 }: {
+  project: Project;
   detail: UseDetailModelSlotsReturn;
   modelEditor: UseModelEditorReturn;
   configEditor: UseProjectConfigEditorReturn;
   units: Unit[] | null;
+  createUnit: (unit: Unit) => Promise<boolean>;
   canEdit: boolean;
   statusPreviewEnabled: boolean;
   onStatusPreviewChange: (v: boolean) => void;
@@ -59,6 +63,7 @@ export function UnitsPanel({
   const [manualMapping, setManualMapping] = useState(true);
   const [detectedNodes, setDetectedNodes] = useState<string[] | null>(null);
   const [detecting, setDetecting] = useState(false);
+  const [creatingUnits, setCreatingUnits] = useState(false);
 
   const [syncedGlbUrl, setSyncedGlbUrl] = useState(activeVersion?.publicAssetUrl ?? null);
   if ((activeVersion?.publicAssetUrl ?? null) !== syncedGlbUrl) {
@@ -86,6 +91,54 @@ export function UnitsPanel({
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVersion?.publicAssetUrl, autoDetect, activeSlot?.role]);
+
+  // The step that kept getting missed (real support case, not
+  // hypothetical): Auto Detect correctly finds `Unit_<code>` meshes, but
+  // if no `Unit` row with a matching code exists yet, there's nothing to
+  // auto-match against and every mesh just silently sits at "needs
+  // review" forever — indistinguishable in the UI from a genuine naming
+  // mismatch. This closes that gap directly: stub-creates a real `Unit`
+  // (placeholder price/area — `code` taken from the mesh name so
+  // `autoMatchUnitNodes` links it immediately after) for every detected
+  // mesh that isn't linked yet, then re-runs the exact same auto-match
+  // the mount-time effect above uses, using the freshly-created units
+  // rather than waiting on this hook's own next poll.
+  async function createUnitsFromDetectedMeshes() {
+    if (!detectedNodes) return;
+    const missing = detectedNodes.filter((n) => !modelEditor.linkFor(n));
+    if (missing.length === 0) return;
+    setCreatingUnits(true);
+    try {
+      const created: Unit[] = [];
+      for (let i = 0; i < missing.length; i++) {
+        const meshName = missing[i];
+        const code = meshName.replace(/^unit_?/i, "") || meshName;
+        const unit: Unit = {
+          id: `${project.id}-unit-${code}-${Date.now()}-${i}`,
+          code,
+          type: "residential",
+          buildingName: project.buildings[0] ?? "A",
+          floor: 1,
+          area: 60,
+          bedrooms: 1,
+          bathrooms: 1,
+          price: 1,
+          currency: "EUR",
+          transaction: "sale",
+          status: "available",
+          images: [],
+          floorPlanImage: "",
+        };
+        const ok = await createUnit(unit);
+        if (ok) created.push(unit);
+      }
+      if (created.length > 0) {
+        modelEditor.autoDetectLinks(detectedNodes, [...(units ?? []), ...created]);
+      }
+    } finally {
+      setCreatingUnits(false);
+    }
+  }
 
   const needsReview = (detectedNodes ?? []).filter((n) => !modelEditor.linkFor(n)).length;
   const matched = (detectedNodes ?? []).length - needsReview;
@@ -197,6 +250,19 @@ export function UnitsPanel({
                 {matched} mapped, {needsReview} need review
               </span>
             </p>
+          )}
+
+          {needsReview > 0 && canEdit && (
+            <button
+              onClick={() => void createUnitsFromDetectedMeshes()}
+              disabled={creatingUnits}
+              className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-500/50 bg-indigo-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-indigo-300 hover:bg-indigo-500/20 disabled:opacity-50"
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              {creatingUnits
+                ? "Creating…"
+                : `Create ${needsReview} unit${needsReview === 1 ? "" : "s"} from detected meshes`}
+            </button>
           )}
 
           {detectedNodes && detectedNodes.length > 0 && (

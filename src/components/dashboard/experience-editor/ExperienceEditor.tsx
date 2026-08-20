@@ -138,7 +138,7 @@ export function ExperienceEditor({
   const detail = useDetailModelSlots(project.id);
   const modelEditor = useModelEditor(project.id, detail.activeVersion, detail.canEditDetail);
   const configEditor = useProjectConfigEditor(project.id, true);
-  const { units } = useProjectUnits(project.id);
+  const { units, createUnit } = useProjectUnits(project.id);
 
   const detailModels = useMemo(() => {
     const entries = detail.slots.flatMap((slot) => {
@@ -486,6 +486,7 @@ export function ExperienceEditor({
               configEditor={configEditor}
               viewerRef={viewerRef}
               units={units}
+              createUnit={createUnit}
               statusPreviewEnabled={statusPreviewEnabled}
               onStatusPreviewChange={setStatusPreviewEnabled}
               onGroundAlign={handleGroundAlign}
