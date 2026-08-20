@@ -18,6 +18,7 @@ import { buildScenePostPipeline, computeScenePostSignature, type ScenePostPipeli
 import { ensureLutLoading } from "./lut";
 import { ArtificialLightSystem } from "./artificialLights";
 import { DRACO_DECODER_PATH } from "@/lib/gltfDecoder";
+import { cleanGlbNodeName } from "@/lib/glbNodeName";
 import {
   FOG_SKY_HORIZON_COLOR,
   GROUND_INFINITE_SIZE,
@@ -1432,15 +1433,21 @@ export class RenderEngine {
     root.traverse((child) => {
       const mesh = child as THREE.Mesh;
       if (!mesh.isMesh) return;
+      // Cleaned the same way `sceneManifest`'s names are (glbNodeName.ts) —
+      // `nameToOverride` is keyed off those cleaned names, so the live
+      // lookup below has to match on the same string or every node behind
+      // a stripped prefix (e.g. a Blender "Layer:" export) would silently
+      // never find its override.
+      const name = cleanGlbNodeName(mesh.name);
       // Unit_<number> boxes get their own dedicated status-color tinting
       // (applyUnitBoxes) — Materials-tab overrides don't apply to them,
       // same exclusion the pre-rebuild engine had.
-      if (UNIT_NODE_PATTERN.test(mesh.name)) return;
+      if (UNIT_NODE_PATTERN.test(name)) return;
       if (!this.originalMaterials.has(mesh)) {
         this.originalMaterials.set(mesh, normalizeMaterials(mesh.material));
       }
       const originals = this.originalMaterials.get(mesh)!;
-      const override = nameToOverride.get(mesh.name);
+      const override = nameToOverride.get(name);
 
       const currentIsOriginal = normalizeMaterials(mesh.material).every((m, i) => m === originals[i]);
 

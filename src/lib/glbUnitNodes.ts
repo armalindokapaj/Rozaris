@@ -2,6 +2,7 @@ import * as THREE from "three/webgpu";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { DRACO_DECODER_PATH } from "@/lib/gltfDecoder";
+import { cleanGlbNodeName } from "@/lib/glbNodeName";
 import type { Unit } from "@/lib/types";
 
 const UNIT_NODE_PATTERN = /^Unit_/i;
@@ -24,8 +25,9 @@ export async function extractUnitNodeNames(glbUrl: string): Promise<string[]> {
     const gltf = await loader.loadAsync(glbUrl);
     const names = new Set<string>();
     gltf.scene.traverse((child) => {
-      if (child.name && UNIT_NODE_PATTERN.test(child.name)) {
-        names.add(child.name);
+      const name = cleanGlbNodeName(child.name);
+      if (name && UNIT_NODE_PATTERN.test(name)) {
+        names.add(name);
       }
     });
     return Array.from(names).sort((a, b) =>

@@ -15,6 +15,7 @@
  */
 
 import type { SceneManifestNode } from "@/lib/types";
+import { cleanGlbNodeName } from "@/lib/glbNodeName";
 
 const UNIT_NODE_PATTERN = /^Unit_/i;
 
@@ -85,7 +86,7 @@ export function buildSceneManifest(json: GltfJson): SceneManifestNode[] {
     (node.children ?? []).forEach((childIndex) => parentOf.set(childIndex, i));
   });
 
-  const ids = nodes.map((node, i) => `rz_${i}_${slugifyNodeName(node.name || `node${i}`)}`);
+  const ids = nodes.map((node, i) => `rz_${i}_${slugifyNodeName(cleanGlbNodeName(node.name || `node${i}`))}`);
 
   function depthOf(index: number, guard = 0): number {
     // `guard` caps recursion on a malformed/cyclic children graph — real
@@ -97,7 +98,7 @@ export function buildSceneManifest(json: GltfJson): SceneManifestNode[] {
 
   return nodes.map((node, i) => {
     const parent = parentOf.get(i);
-    const name = node.name || `Node ${i}`;
+    const name = cleanGlbNodeName(node.name || `Node ${i}`);
     return {
       rzNodeId: ids[i],
       name,
@@ -190,7 +191,13 @@ export async function validateGlb(
   }
 
   const unitNodeNames = Array.from(
-    new Set((json.nodes ?? []).map((n) => n.name).filter((n): n is string => !!n && UNIT_NODE_PATTERN.test(n)))
+    new Set(
+      (json.nodes ?? [])
+        .map((n) => n.name)
+        .filter((n): n is string => !!n)
+        .map((n) => cleanGlbNodeName(n))
+        .filter((n) => UNIT_NODE_PATTERN.test(n))
+    )
   ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
 
   if (meshCount === 0) issues.push("No meshes found in the GLB.");

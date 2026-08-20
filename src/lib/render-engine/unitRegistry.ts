@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu";
 import type { Unit, UnitMeshLink, UnitsConfig } from "@/lib/types";
 import { unitSelectedOutlineColorNumber, unitStatusColorNumber } from "@/lib/unitStatusVisuals";
+import { cleanGlbNodeName } from "@/lib/glbNodeName";
 
 const UNIT_NODE_PATTERN = /^Unit_/i;
 
@@ -48,8 +49,9 @@ export interface UnitRuntimeEntry {
 export function findUnitRootObjects(root: THREE.Object3D): Map<string, THREE.Object3D> {
   const roots = new Map<string, THREE.Object3D>();
   function walk(node: THREE.Object3D) {
-    if (UNIT_NODE_PATTERN.test(node.name)) {
-      if (!roots.has(node.name)) roots.set(node.name, node);
+    const name = cleanGlbNodeName(node.name);
+    if (UNIT_NODE_PATTERN.test(name)) {
+      if (!roots.has(name)) roots.set(name, node);
       return; // don't descend into a matched root looking for nested matches
     }
     for (const child of node.children) walk(child);
