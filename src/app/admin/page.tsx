@@ -12,9 +12,6 @@ import {
   BarChart3,
   LineChart,
   TrendingUp,
-  Check,
-  X,
-  HardHat,
   Plus,
   Map as MapIcon,
   UserCog,
@@ -53,6 +50,7 @@ import { Admin3DHealthTab } from "@/components/dashboard/admin/Admin3DHealthTab"
 import { AdminAnalyticsTab } from "@/components/dashboard/admin/AdminAnalyticsTab";
 import { UsersTab } from "@/components/dashboard/admin/UsersTab";
 import { PublishersTab } from "@/components/dashboard/admin/PublishersTab";
+import { ListingsTab } from "@/components/dashboard/admin/ListingsTab";
 import { ApprovalCenterTab } from "@/components/dashboard/admin/ApprovalCenterTab";
 import { ReportsTab } from "@/components/dashboard/admin/ReportsTab";
 import { AdvertisingTab } from "@/components/dashboard/admin/AdvertisingTab";
@@ -73,8 +71,15 @@ import type { Project } from "@/lib/types";
 // unchanged so old `?tab=` deep links still land right.
 const TABS = [
   { id: "dashboard", labelKey: "admin.tabDashboard", icon: LayoutDashboard, group: "overview" },
+  // "Projects" (content) then "Listings" directly below it — the flat,
+  // platform-wide catch-all for whatever isn't (yet) attached to a
+  // project; day-to-day listing management happens nested inside a
+  // project's own edit view instead (see EditProjectModal's doc comment).
+  // "Timeline" was here too until construction-timeline requests moved
+  // into that same per-project view (ProjectTimelinePanel) — no longer a
+  // separate top-level tab.
   { id: "content", labelKey: "admin.tabContent", icon: Box, group: "content" },
-  { id: "timeline", labelKey: "admin.tabTimeline", icon: HardHat, group: "content" },
+  { id: "listings", labelKey: "admin.tabListings", icon: ListChecks, group: "content" },
   { id: "mapControl", labelKey: "admin.tabMapControl", icon: MapIcon, group: "3d" },
   { id: "experience", labelKey: "admin.tab3DExperience", icon: Boxes, group: "3d" },
   { id: "health3d", labelKey: "admin.tab3DHealth", icon: HeartPulse, group: "3d" },
@@ -371,7 +376,11 @@ function AdminPageInner() {
                           {queueCount}
                         </span>
                       )}
-                      {id === "timeline" && pendingTimelineCount > 0 && (
+                      {/* Timeline requests moved inside each project's own
+                          edit view (ProjectTimelinePanel) — this badge
+                          rides along on "Projects" (content) instead of a
+                          dedicated tab of its own now. */}
+                      {id === "content" && pendingTimelineCount > 0 && (
                         <span className="ml-auto rounded-full bg-danger px-1.5 text-[10px] font-bold text-white">
                           {pendingTimelineCount}
                         </span>
@@ -423,8 +432,6 @@ function AdminPageInner() {
 
             {tab === "queue" && <ApprovalCenterTab />}
 
-            {tab === "timeline" && <TimelineTab />}
-
             {tab === "mapControl" && <Project3DGrid focus="map" />}
 
             {tab === "experience" && <Project3DGrid focus="experience" />}
@@ -440,6 +447,7 @@ function AdminPageInner() {
             {tab === "moderation" && <ModerationTab />}
 
             {tab === "content" && <ContentTab />}
+            {tab === "listings" && <ListingsTab />}
             {tab === "advertising" && <AdvertisingTab />}
             {tab === "marketData" && <MarketDataTab />}
 
@@ -498,96 +506,6 @@ function AdminFooterBar() {
         {healthy === null ? t("admin.footerStatusUnknown") : healthy ? t("admin.footerStatusOk") : t("admin.footerStatusIssues")}
       </span>
       <span>{t("admin.footerCopyright")}</span>
-    </div>
-  );
-}
-
-function TimelineTab() {
-  const { t } = useT();
-  const timelineRequests = useAppStore((s) => s.timelineRequests);
-  const overrides = useAppStore((s) => s.projectConstructionOverrides);
-  const approveTimelineRequest = useAppStore((s) => s.approveTimelineRequest);
-  const rejectTimelineRequest = useAppStore((s) => s.rejectTimelineRequest);
-  const { projects: liveProjects } = useAdminProjects();
-
-  const pending = timelineRequests.filter((r) => r.status === "pending");
-  const decided = timelineRequests.filter((r) => r.status !== "pending");
-
-  function livePercentFor(projectId: string) {
-    const override = overrides[projectId];
-    if (override) return override.progressPercent;
-    return liveProjects.find((p) => p.id === projectId)?.progressPercent ?? 0;
-  }
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="font-serif text-xl text-neutral-900">{t("admin.timelineQueueTitle")}</h1>
-        <p className="text-sm text-neutral-500">{t("admin.timelineQueueSubtitle")}</p>
-      </div>
-
-      {pending.length === 0 ? (
-        <p className="rounded-panel border border-dashed border-neutral-300 bg-white p-8 text-center text-sm text-neutral-400">
-          {t("admin.timelineQueueClear")}
-        </p>
-      ) : (
-        <div className="space-y-2.5">
-          {pending.map((r) => (
-            <div
-              key={r.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-neutral-200 bg-white p-4"
-            >
-              <div>
-                <p className="text-sm font-semibold text-neutral-900">{r.projectName}</p>
-                <p className="text-xs text-neutral-500">
-                  {t("admin.timelineRequestSummary", {
-                    name: r.publisherName,
-                    percent: r.draft.progressPercent,
-                    livePercent: livePercentFor(r.projectId),
-                  })}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => approveTimelineRequest(r.id)}
-                  className="flex items-center gap-1.5 rounded-control bg-green-600 px-3 py-2 text-xs font-semibold text-white hover:bg-green-700"
-                >
-                  <Check className="h-3.5 w-3.5" /> {t("admin.approve")}
-                </button>
-                <button
-                  onClick={() => rejectTimelineRequest(r.id)}
-                  className="flex items-center gap-1.5 rounded-control border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
-                >
-                  <X className="h-3.5 w-3.5" /> {t("admin.reject")}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {decided.length > 0 && (
-        <div className="space-y-2">
-          {decided.slice(0, 8).map((r) => (
-            <div
-              key={r.id}
-              className="flex items-center justify-between gap-3 rounded-control border border-neutral-100 px-4 py-2.5 text-xs"
-            >
-              <span className="text-neutral-600">
-                {r.projectName} · {r.draft.progressPercent}%
-              </span>
-              <span
-                className={cn(
-                  "font-semibold",
-                  r.status === "approved" ? "text-green-600" : "text-red-500"
-                )}
-              >
-                {r.status === "approved" ? t("admin.timelineApproved") : t("admin.timelineRejected")}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

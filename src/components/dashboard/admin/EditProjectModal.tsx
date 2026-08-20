@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n/useT";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
 import { useLocations } from "@/hooks/useLocations";
 import { ProjectListingsPanel } from "@/components/dashboard/admin/ProjectListingsPanel";
+import { ProjectTimelinePanel } from "@/components/dashboard/admin/ProjectTimelinePanel";
 import type { Project, ProjectSetting, PropertyType } from "@/lib/types";
 
 const PROPERTY_TYPES: PropertyType[] = ["apartment", "villa", "studio", "commercial", "office"];
@@ -33,7 +34,10 @@ interface PublisherOption {
  * "Listings & Projects becomes just Projects" restructuring: this is now
  * also the one place admin manages a project end-to-end — the standalone
  * Listings tab was retired in favor of `ProjectListingsPanel` nested below
- * (this project's own listings only), and the header shortcuts jump
+ * (this project's own listings only, alongside a global `ListingsTab` for
+ * ones that were never attached), the standalone Timeline tab's queue is
+ * now `ProjectTimelinePanel` (this project's own pending/decided
+ * construction-timeline requests only), and the header shortcuts jump
  * straight into the full-page Map Control / 3D Experience editors instead
  * of requiring a separate tab switch + re-finding this same project in
  * that grid.
@@ -349,6 +353,7 @@ export function EditProjectModal({
             {t("admin.premiumBadge")}
           </label>
 
+          <ProjectTimelinePanel project={project} />
           <ProjectListingsPanel project={project} publishers={publishers} />
         </div>
 
