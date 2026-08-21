@@ -1218,6 +1218,7 @@ const sq: Dictionary = {
     mapModelBuildingLabel: "Ndërtesa #{index}",
     mapModelRemoveOne: "Hiq këtë ndërtesë",
     mapModelPositionHint: "Tërhiq shenjuesin në hartë për ta ripozicionuar modelin",
+    mapModelPositionHintPreUpload: "Set where the model will go — you can upload the file after",
     mapModelRelocate: "Ndrysho vendndodhjen",
     mapModelRelocateDone: "Përfundo",
     mapModelRelocateHint: "Kliko kudo në hartë për ta zhvendosur modelin atje",

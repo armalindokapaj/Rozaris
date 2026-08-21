@@ -1212,6 +1212,7 @@ const en = {
     mapModelBuildingLabel: "Building #{index}",
     mapModelRemoveOne: "Remove this building",
     mapModelPositionHint: "Drag the pin on the map to reposition the model",
+    mapModelPositionHintPreUpload: "Set where the model will go — you can upload the file after",
     mapModelRelocate: "Relocate position",
     mapModelRelocateDone: "Done relocating",
     mapModelRelocateHint: "Click anywhere on the map to move the model there",

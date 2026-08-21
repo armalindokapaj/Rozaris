@@ -457,7 +457,12 @@ export function MapModelEditor({
 
   const hasModel = !!activeVersion;
   const previewUrl = localPreviewUrl ?? (activeVersion?.publicAssetUrl || null);
-  const canEdit = isDraftActive;
+  // "Move location first, then add the 3D model" — before any version
+  // exists at all, there's no published state to protect yet, so editing
+  // (position, scale, rotation, hide-building) is open from the start
+  // rather than locked until a draft exists. Once a model has been
+  // uploaded, the usual draft/published rule takes back over.
+  const canEdit = isDraftActive || !hasModel;
   const positionMoved =
     Math.abs(longitude - project.coords.lng) > 1e-9 || Math.abs(latitude - project.coords.lat) > 1e-9;
 
@@ -521,6 +526,55 @@ export function MapModelEditor({
         </div>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scroll-thin p-5">
+            {/* "Move location first, then add the 3D model" — this used to
+                only appear once a model existed (`{hasModel && ...}`
+                inside the fieldset below), forcing upload-then-position as
+                the only order. `canEdit` now covers the pre-upload state
+                too (see its own comment), and the position marker itself
+                renders regardless of `glbUrl` (MapModelMapPreview), so
+                this is real and usable before anything's been uploaded —
+                moved ahead of the Upload section to match. */}
+            <fieldset disabled={!canEdit} className="disabled:opacity-50">
+              <div className="space-y-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-medium text-neutral-600">
+                    <MapPin className="h-3.5 w-3.5 text-brand-500" />
+                    {hasModel ? t("admin.mapModelPositionHint") : t("admin.mapModelPositionHintPreUpload")}
+                  </div>
+                  {positionMoved && (
+                    <button
+                      onClick={() => {
+                        setRelocating(false);
+                        setLongitude(project.coords.lng);
+                        setLatitude(project.coords.lat);
+                      }}
+                      className="shrink-0 text-[11px] font-semibold text-red-500 hover:underline"
+                    >
+                      {t("admin.mapModelResetPosition")}
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    // Mutually exclusive with "Pick buildings to remove" —
+                    // see that button's own comment.
+                    setPicking(false);
+                    setRelocating((v) => !v);
+                  }}
+                  aria-pressed={relocating}
+                  className={cn(
+                    "flex w-full items-center justify-center gap-1.5 rounded-control py-2 text-xs font-semibold",
+                    relocating
+                      ? "bg-brand-500 text-white hover:bg-brand-600"
+                      : "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100"
+                  )}
+                >
+                  <Crosshair className="h-3.5 w-3.5" />
+                  {relocating ? t("admin.mapModelRelocateDone") : t("admin.mapModelRelocate")}
+                </button>
+              </div>
+            </fieldset>
+
             <section>
               <input
                 ref={fileInputRef}
@@ -642,47 +696,6 @@ export function MapModelEditor({
             )}
 
             <fieldset disabled={!canEdit} className="space-y-5 disabled:opacity-50">
-              {hasModel && (
-                <div className="space-y-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-xs font-medium text-neutral-600">
-                      <MapPin className="h-3.5 w-3.5 text-brand-500" />
-                      {t("admin.mapModelPositionHint")}
-                    </div>
-                    {positionMoved && (
-                      <button
-                        onClick={() => {
-                          setRelocating(false);
-                          setLongitude(project.coords.lng);
-                          setLatitude(project.coords.lat);
-                        }}
-                        className="shrink-0 text-[11px] font-semibold text-red-500 hover:underline"
-                      >
-                        {t("admin.mapModelResetPosition")}
-                      </button>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => {
-                      // Mutually exclusive with "Pick buildings to remove"
-                      // — see that button's own comment.
-                      setPicking(false);
-                      setRelocating((v) => !v);
-                    }}
-                    aria-pressed={relocating}
-                    className={cn(
-                      "flex w-full items-center justify-center gap-1.5 rounded-control py-2 text-xs font-semibold",
-                      relocating
-                        ? "bg-brand-500 text-white hover:bg-brand-600"
-                        : "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100"
-                    )}
-                  >
-                    <Crosshair className="h-3.5 w-3.5" />
-                    {relocating ? t("admin.mapModelRelocateDone") : t("admin.mapModelRelocate")}
-                  </button>
-                </div>
-              )}
-
               <SliderField
                 label={t("admin.mapModelScale")}
                 min={0.01}

@@ -221,18 +221,21 @@ export function MapModelMapPreview({
     );
   }, [ready, glbUrl, modelPosition.lat, modelPosition.lng, scale, rotationDeg, altitudeOffset]);
 
-  // --- Position marker: shown whenever there's a model to move ---
+  // --- Position marker: shown whenever positioning is enabled — no longer
+  // gated on `glbUrl` existing. "Move location first, then add the 3D
+  // model" needs a real, visible marker to place BEFORE anything's been
+  // uploaded, not just once a model is already sitting on the map. ---
   useEffect(() => {
     const map = mapRef.current;
     const marker = positionMarkerRef.current;
     if (!ready || !map || !marker) return;
-    if (!glbUrl || !canMoveModel) {
+    if (!canMoveModel) {
       marker.remove();
       return;
     }
     marker.setLngLat([modelPosition.lng, modelPosition.lat]);
     marker.addTo(map);
-  }, [ready, glbUrl, canMoveModel, modelPosition.lat, modelPosition.lng]);
+  }, [ready, canMoveModel, modelPosition.lat, modelPosition.lng]);
 
   const loadError = glbUrl != null && failedGlbUrl === glbUrl;
 
