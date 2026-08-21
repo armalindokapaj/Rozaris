@@ -6,6 +6,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { logApiError } from "@/lib/apiErrorLog";
 import { recordSaleOrRentalIfNewlyCompleted } from "@/lib/transactions";
 import { unitStatusForListingStatus } from "@/lib/units";
+import { resolveLocation } from "@/lib/locations";
 
 const bodySchema = z.object({
   status: z
@@ -33,6 +34,16 @@ const bodySchema = z.object({
   /// "Units & Listings, Untangled" — links/unlinks this listing to a Unit
   /// (the 3D-mapped inventory record). `null` clears it.
   unitId: z.string().min(1).nullable().optional(),
+  /// Locations tab's "Fix" action (`GET /api/admin/locations/issues`) —
+  /// admin manually reassigns THIS listing's own location. Only valid for
+  /// a standalone listing (no `projectId`, after whatever this same
+  /// request leaves it as): a project-attached one's location always
+  /// follows its project ("unit location follows project location" — see
+  /// `POST /api/listings`'s doc comment), so re-sending the *same*
+  /// `projectId` it already has is the correct way to fix a project-
+  /// attached listing's drifted location (re-triggers the sync block
+  /// below), not this field.
+  neighborhoodId: z.string().min(1).optional(),
 });
 
 /**
@@ -153,6 +164,21 @@ export async function PATCH(
     }
   }
 
+  let manualLocation: Awaited<ReturnType<typeof resolveLocation>> = null;
+  if (parsed.data.neighborhoodId) {
+    const effectiveProjectId = projectTarget ? projectTarget.id : clearProject ? null : existing.projectId;
+    if (effectiveProjectId) {
+      return NextResponse.json(
+        { error: "This listing's location comes from its project — fix the project's location, or detach this listing from it first." },
+        { status: 400 }
+      );
+    }
+    manualLocation = await resolveLocation(parsed.data.neighborhoodId);
+    if (!manualLocation) {
+      return NextResponse.json({ error: `Unknown location "${parsed.data.neighborhoodId}".` }, { status: 400 });
+    }
+  }
+
   try {
     const idleUpdate =
       parsed.data.idleDays == null
@@ -205,6 +231,23 @@ export async function PATCH(
         });
       }
 
+      // Locations tab's "Fix" action — a standalone listing's location,
+      // reassigned by hand (see `manualLocation`'s resolution above; a
+      // project-attached listing never reaches here, rejected earlier).
+      if (manualLocation) {
+        await tx.property.update({
+          where: { id: row.propertyId },
+          data: {
+            neighborhoodId: manualLocation.id,
+            city: manualLocation.cityName,
+            locationId: manualLocation.id,
+            lat: manualLocation.lat ?? undefined,
+            lng: manualLocation.lng ?? undefined,
+            locationConfirmed: true,
+          },
+        });
+      }
+
       // Real Transaction event — see src/lib/transactions.ts's doc comment.
       await recordSaleOrRentalIfNewlyCompleted(tx, {
         listingId: row.id,
@@ -243,6 +286,7 @@ export async function PATCH(
     if (parsed.data.premium != null) {
       actions.push(parsed.data.premium ? "Listing marked premium/featured" : "Listing premium/featured removed");
     }
+    if (manualLocation) actions.push(`Listing location fixed → "${manualLocation.officialName}"`);
     if (transferTarget) actions.push(`Listing transferred to publisher "${transferTarget.name}"`);
     if (duplicateTargetId !== undefined) {
       actions.push(duplicateTargetId ? `Listing marked duplicate of ${duplicateTargetId}` : "Listing duplicate flag cleared");

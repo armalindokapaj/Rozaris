@@ -226,10 +226,21 @@ model VerificationToken {
 // Albanian location has one official name and one permanent ID; nothing in
 // ROZARIS stores a location as free text. See MEMORY note "rozaris-
 // controlled-taxonomy-spec" for the full spec this schema is the first slice
-// of. Self-referential hierarchy: Country -> County -> Municipality ->
-// City/Town -> Administrative Unit -> Neighborhood/Area (villages/
-// settlements are real Locations too, not just the 7 Tirana neighborhoods
-// mockData.ts already hardcodes).
+// of.
+//
+// Hierarchy — user's 2026-08-21 correction: Albania's real estate taxonomy
+// doesn't need Country/County/Administrative-Unit levels (Albania's own
+// admin hierarchy has counties, but nothing on this platform ever searches
+// or filters by one, so it was dead structure). `Municipality` (Bashkia) is
+// now the top of the tree (`parentId: null`), same self-referential
+// `Location` model as before, just shallower:
+//   Municipality -> City OR Village -> Neighborhood
+//   Municipality -> Neighborhood (directly, for a municipality/village with
+//     no distinct city center — e.g. Himarë)
+// `Village` covers a unit whose real address is a village, not a city
+// neighborhood — it's a sibling of City under the same Municipality, not a
+// City subtype. Enforced server-side (`POST`/`PATCH /api/admin/locations*`),
+// not just a UI convention.
 //
 // Rollout note: `Project.locationId` sits alongside the existing
 // `city`/`neighborhoodId` string columns (Project hasn't gone through the
@@ -245,11 +256,9 @@ model VerificationToken {
 // ---------------------------------------------------------------------------
 
 enum LocationType {
-  country
-  county
   municipality
   city
-  administrative_unit
+  village
   neighborhood
 }
 
@@ -1214,6 +1223,37 @@ model Project3DConfig {
   skyMieCoefficient  Float   @default(0.004)
   skyMieDirectionalG Float   @default(0.78)
 
+  /// Experience Editor "Map" tab — places this project's own detailed 3D
+  /// model (its `DetailModelSlot` with `role: "building"`, the same GLB
+  /// Studio renders) onto a real Mapbox map at its real-world location, as
+  /// an alternate, toggle-able view alongside the freestanding Studio scene
+  /// (mutually exclusive, never both mounted at once — see
+  /// ProjectViewerRuntime.tsx's `viewMode`). Deliberately separate from, and
+  /// not to be confused with, `MapModelVersion` below: that's a different
+  /// feature (the platform-wide public Search Map's lightweight per-project
+  /// proxy GLB, shown alongside every other project at once). This one is
+  /// single-project, driven by this same config row, and reads the sun
+  /// fields above (`sunAzimuthDeg`/`sunElevationDeg`/`manualSunIntensity`/
+  /// `manualSunColorHex`/etc., via src/lib/sunPosition.ts) to light the
+  /// Mapbox render to match — see ProjectMapView.tsx.
+  mapViewEnabled    Boolean @default(false)
+  /// Null on either falls back to the project's own `coords` (Project
+  /// model) — an admin only needs to set these once they actually drag the
+  /// model to a different spot than the project's default pin.
+  mapViewLatitude   Float?
+  mapViewLongitude  Float?
+  mapViewAltitude   Float   @default(0)
+  mapViewHeadingDeg Float   @default(0)
+  mapViewScale      Float   @default(1)
+  /// The Mapbox camera itself (distinct from the three fields above, which
+  /// place the *model* on the map) — how far zoomed in, tilted, and rotated
+  /// the map is when this project's Map tab/view opens. Defaults match the
+  /// literals ProjectMapView.tsx used before these fields existed, so an
+  /// unmigrated/never-edited row renders identically to before.
+  mapViewZoom       Float   @default(17.5)
+  mapViewPitchDeg   Float   @default(60)
+  mapViewBearingDeg Float   @default(-20)
+
   /// 360° Backdrop Photo — an admin-uploaded equirectangular PNG (real
   /// site-context photography) with a transparent sky region, composited
   /// as an unlit sphere just inside the SkyMesh dome so the physical sky/
@@ -1785,10 +1825,20 @@ model MapModelVersion {
   id                String                 @id @default(cuid())
   projectId         String
   version           Int
-  sourceAssetUrl    String
-  publicAssetUrl    String
-  fileName          String
-  fileSize          Int
+  /// Nullable as of "save location before uploading a model" — a version
+  /// can now exist as pure placement (latitude/longitude/altitude/heading/
+  /// scale/hideBaseBuilding, all below) with no GLB at all, saved and even
+  /// published in that state; the model itself gets attached later via the
+  /// same PATCH route the placement fields already use. Every consumer
+  /// (MapModelEditor.tsx, ProjectModelLayer.ts, the public Search Map) must
+  /// treat a null publicAssetUrl as "positioned, no 3D model yet" — not an
+  /// error state. Previously all four of these were required together at
+  /// creation time (upload-first was the only order); zero behavior change
+  /// for any version that already has a file.
+  sourceAssetUrl    String?
+  publicAssetUrl    String?
+  fileName          String?
+  fileSize          Int?
   triangleCount     Int?
   meshCount         Int?
   materialCount     Int?

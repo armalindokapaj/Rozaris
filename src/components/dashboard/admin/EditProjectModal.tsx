@@ -56,7 +56,9 @@ export function EditProjectModal({
   const { t, locale } = useT();
   const router = useRouter();
   const propertyTypeLabels = PROPERTY_TYPE_LABELS[locale];
-  const neighborhoods = useLocations("neighborhood");
+  // Both levels — a development can sit directly in a Village with no
+  // neighborhood layer at all (2026-08-21 spec).
+  const neighborhoods = useLocations(["neighborhood", "village"]);
 
   const [name, setName] = useState(project.name);
   const [neighborhoodId, setNeighborhoodId] = useState(project.neighborhoodId);

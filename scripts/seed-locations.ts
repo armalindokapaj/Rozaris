@@ -2,13 +2,20 @@
  * Seeds the Canonical Location System (Location + LocationAlias) — first
  * slice of the user's 2026-08-15 spec (see MEMORY note
  * "rozaris-controlled-taxonomy-spec"). Builds the real hierarchy
- * Country -> County -> Municipality -> City -> Neighborhood for every
- * location mockData.ts already references, using the SAME ids
- * mockData.neighborhoods uses (`n-blloku`, ...) so existing Listing/Project
- * rows' `neighborhoodId` strings resolve to a real Location with zero
- * drift. Also covers the two project-only neighborhood ids (`n-vlore-riviera`,
- * `n-korce-ridge`) that mockData.ts references but never defines in the
- * `neighborhoods` array.
+ * Municipality -> City -> Neighborhood for every location mockData.ts
+ * already references, using the SAME ids mockData.neighborhoods uses
+ * (`n-blloku`, ...) so existing Listing/Project rows' `neighborhoodId`
+ * strings resolve to a real Location with zero drift. Also covers the two
+ * project-only neighborhood ids (`n-vlore-riviera`, `n-korce-ridge`) that
+ * mockData.ts references but never defines in the `neighborhoods` array.
+ *
+ * Flattened 2026-08-21 (user correction: "Albania doesn't have Counties" —
+ * nothing on this platform ever searches/filters by Country/County, so
+ * that layer was dead structure). `Municipality` is now the top of the
+ * tree (`parentId: null`) — the live DB's pre-existing Country/County rows
+ * were removed and every Municipality re-parented to `null` by a one-time
+ * migration script (already run; not part of this idempotent seed). Don't
+ * re-add them here.
  *
  * Idempotent — upserts every row, safe to re-run.
  *
@@ -21,7 +28,7 @@ const prisma = new PrismaClient();
 type Seed = {
   id: string;
   parentId: string | null;
-  type: "country" | "county" | "municipality" | "city" | "administrative_unit" | "neighborhood";
+  type: "municipality" | "city" | "village" | "neighborhood";
   officialName: string;
   slug: string;
   latitude?: number;
@@ -32,11 +39,8 @@ type Seed = {
 const CITY_CENTER = { lat: 41.3275, lng: 19.8187 };
 
 const seeds: Seed[] = [
-  { id: "AL", parentId: null, type: "country", officialName: "Albania", slug: "albania", aliases: ["Shqiperi", "Shqipëri", "Shqipëria"] },
-
   // Tirana branch — matches every Tirana neighborhood mockData.ts hardcodes.
-  { id: "AL-TR", parentId: "AL", type: "county", officialName: "Tirana County", slug: "tirana-county" },
-  { id: "MUN-TIRANA", parentId: "AL-TR", type: "municipality", officialName: "Tirana Municipality", slug: "tirana-municipality" },
+  { id: "MUN-TIRANA", parentId: null, type: "municipality", officialName: "Tirana Municipality", slug: "tirana-municipality" },
   {
     id: "CITY-TIRANA",
     parentId: "MUN-TIRANA",
@@ -56,20 +60,21 @@ const seeds: Seed[] = [
 
   // Vlorë branch — covers Project "Riviera Bay Residence" (mockData.ts's
   // orphaned `n-vlore-riviera` neighborhoodId, never in the neighborhoods array).
-  { id: "AL-VL", parentId: "AL", type: "county", officialName: "Vlorë County", slug: "vlore-county" },
-  { id: "MUN-VLORE", parentId: "AL-VL", type: "municipality", officialName: "Vlorë Municipality", slug: "vlore-municipality" },
+  { id: "MUN-VLORE", parentId: null, type: "municipality", officialName: "Vlorë Municipality", slug: "vlore-municipality" },
   { id: "CITY-VLORE", parentId: "MUN-VLORE", type: "city", officialName: "Vlorë", slug: "vlore", aliases: ["Vlore", "Vlora"] },
   { id: "n-vlore-riviera", parentId: "CITY-VLORE", type: "neighborhood", officialName: "Riviera", slug: "vlore-riviera" },
 
   // Himarë / Dhërmi — from the user's own spec example, not yet referenced
-  // by any real row, seeded so the hierarchy is real ahead of need.
-  { id: "MUN-HIMARE", parentId: "AL-VL", type: "municipality", officialName: "Himarë Municipality", slug: "himare-municipality" },
+  // by any real row, seeded so the hierarchy is real ahead of need. No
+  // distinct "city" node — Dhërmi's neighborhood sits directly under its
+  // Municipality, exactly the "neighbourhood under a municipality with no
+  // city center" case the 2026-08-21 spec calls out.
+  { id: "MUN-HIMARE", parentId: null, type: "municipality", officialName: "Himarë Municipality", slug: "himare-municipality" },
   { id: "n-dhermi", parentId: "MUN-HIMARE", type: "neighborhood", officialName: "Dhërmi", slug: "dhermi", aliases: ["Dhermi", "Dhermi Beach", "Dhermi Albania"] },
 
   // Korçë branch — covers Project "Alpine Ridge Residences" (mockData.ts's
   // orphaned `n-korce-ridge` neighborhoodId).
-  { id: "AL-KO", parentId: "AL", type: "county", officialName: "Korçë County", slug: "korce-county" },
-  { id: "MUN-KORCE", parentId: "AL-KO", type: "municipality", officialName: "Korçë Municipality", slug: "korce-municipality" },
+  { id: "MUN-KORCE", parentId: null, type: "municipality", officialName: "Korçë Municipality", slug: "korce-municipality" },
   { id: "CITY-KORCE", parentId: "MUN-KORCE", type: "city", officialName: "Korçë", slug: "korce", aliases: ["Korce", "Korça"] },
   { id: "n-korce-ridge", parentId: "CITY-KORCE", type: "neighborhood", officialName: "Ridge", slug: "korce-ridge" },
 ];
@@ -90,7 +95,8 @@ async function main() {
       create: data,
       update: data,
     });
-    existing ? updated++ : created++;
+    if (existing) updated++;
+    else created++;
 
     for (const alias of aliases ?? []) {
       await prisma.locationAlias.upsert({

@@ -149,7 +149,9 @@ export function NewListingForm({
 }) {
   const { t, locale } = useT();
   const flags = useFeatureFlags();
-  const neighborhoods = useLocations("neighborhood");
+  // Both levels — a unit can sit directly in a Village with no
+  // neighborhood layer at all (2026-08-21 spec).
+  const neighborhoods = useLocations(["neighborhood", "village"]);
   const propertyTypeLabels = PROPERTY_TYPE_LABELS[locale];
   const conditionLabels = CONDITION_LABELS[locale];
   const amenityLabels = AMENITY_LABELS[locale];

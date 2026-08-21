@@ -38,7 +38,9 @@ export function NewProjectModal({
   const addProject = useAppStore((s) => s.addProject);
   const { t, locale } = useT();
   const propertyTypeLabels = PROPERTY_TYPE_LABELS[locale];
-  const neighborhoods = useLocations("neighborhood");
+  // Both levels — a development can sit directly in a Village with no
+  // neighborhood layer at all (2026-08-21 spec).
+  const neighborhoods = useLocations(["neighborhood", "village"]);
 
   const [name, setName] = useState("");
   const [neighborhoodIdInput, setNeighborhoodIdInput] = useState("");

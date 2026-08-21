@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Ban, CheckCircle2, Gem, ArrowRightLeft, Copy, History, FolderInput, Link2 } from "lucide-react";
+import { Ban, CheckCircle2, Gem, ArrowRightLeft, Copy, History, FolderInput, Link2, MapPin, RefreshCw } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { formatRelativeDate } from "@/lib/utils";
 import { AnalyticsSummaryInline } from "@/components/common/AnalyticsSummaryInline";
+import { useLocations } from "@/hooks/useLocations";
 import type { Listing } from "@/lib/types";
 
 interface PublisherOption {
@@ -91,6 +92,17 @@ export function ListingManagePanel({
   const [duplicateTarget, setDuplicateTarget] = useState("");
   const [projectSelection, setProjectSelection] = useState(listing.projectId ?? "");
   const [unitSelection, setUnitSelection] = useState(listing.unitId ?? "");
+  // General location reassignment — was previously only reachable from the
+  // Locations tab's "Issues" list, and only for a listing already flagged
+  // as broken (unresolvable). This makes it available for ANY listing at
+  // any time, e.g. one that resolves fine but was just assigned the wrong
+  // neighborhood by mistake. Real Canonical Location System options (same
+  // source EditProjectModal/NewListingForm already use), not the old
+  // mockData.neighborhoods list.
+  // Both levels — a listing can sit directly in a Village with no
+  // neighborhood layer at all (2026-08-21 spec).
+  const neighborhoods = useLocations(["neighborhood", "village"]);
+  const [neighborhoodSelection, setNeighborhoodSelection] = useState(listing.neighborhoodId ?? "");
   // Every real unit, platform-wide — not scoped to whichever project is
   // currently picked in the dropdown above. Picking a unit is now its own
   // complete action (see the Link button below), so its options shouldn't
@@ -351,6 +363,58 @@ export function ListingManagePanel({
           >
             <Link2 className="h-3.5 w-3.5" /> {t("admin.moveToUnitAction")}
           </button>
+        </div>
+
+        {/* General location reassignment (see `neighborhoodSelection`'s own
+            doc comment above) — a project-attached listing's location
+            always follows its project, so this offers "Resync from
+            project" instead of a picker for that case (re-sends the same
+            `projectId`, which re-triggers the location-sync write on the
+            server regardless of whether it's actually changing). */}
+        <div className="flex items-end gap-1.5">
+          {listing.projectId ? (
+            <>
+              <p className="max-w-[220px] text-xs text-neutral-500">
+                {t("admin.locations.belongsToProjectNote", {
+                  project: projects.find((p) => p.id === listing.projectId)?.name ?? listing.projectId,
+                })}
+              </p>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => patch({ projectId: listing.projectId })}
+                className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+              >
+                <RefreshCw className="h-3.5 w-3.5" /> {t("admin.locations.resyncFromProjectAction")}
+              </button>
+            </>
+          ) : (
+            <>
+              <div>
+                <span className="mb-1 block text-xs font-medium text-neutral-500">{t("admin.locations.locationLabel")}</span>
+                <select
+                  value={neighborhoodSelection}
+                  onChange={(e) => setNeighborhoodSelection(e.target.value)}
+                  className="min-w-[160px] rounded-control border border-neutral-200 px-2.5 py-1.5 text-sm"
+                >
+                  <option value="">{t("admin.locations.assignPickerPlaceholder")}</option>
+                  {neighborhoods.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.officialName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                disabled={busy || !neighborhoodSelection || neighborhoodSelection === (listing.neighborhoodId ?? "")}
+                onClick={() => patch({ neighborhoodId: neighborhoodSelection })}
+                className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+              >
+                <MapPin className="h-3.5 w-3.5" /> {t("admin.locations.reassignAction")}
+              </button>
+            </>
+          )}
         </div>
 
         {listing.duplicateOfId ? (

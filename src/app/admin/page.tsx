@@ -14,6 +14,7 @@ import {
   TrendingUp,
   Plus,
   Map as MapIcon,
+  MapPin,
   UserCog,
   Flag,
   ShieldAlert,
@@ -61,6 +62,7 @@ import { SuperAdminTab, type SectionId } from "@/components/dashboard/admin/supe
 import { RecycleBinPanel } from "@/components/dashboard/admin/superadmin/RecycleBinPanel";
 import { AdminTeamTab } from "@/components/dashboard/admin/AdminTeamTab";
 import { PlatformSettingsTab } from "@/components/dashboard/admin/PlatformSettingsTab";
+import { LocationsTab } from "@/components/dashboard/admin/LocationsTab";
 import type { Project } from "@/lib/types";
 
 // Grouped per PRD_ROZARIS_Admin_Dashboard §4 "Information Architecture"
@@ -80,6 +82,13 @@ const TABS = [
   // separate top-level tab.
   { id: "content", labelKey: "admin.tabContent", icon: Box, group: "content" },
   { id: "listings", labelKey: "admin.tabListings", icon: ListChecks, group: "content" },
+  // Canonical Location System's admin write surface (see MEMORY note
+  // "rozaris-controlled-taxonomy-spec") — manually add/rename a
+  // neighborhood/city/etc., and fix any Listing/Project whose location
+  // doesn't resolve to a real, active one. Sits under "content" alongside
+  // Projects/Listings since it's the taxonomy backing both, not a rarely-
+  // touched platform setting.
+  { id: "locations", labelKey: "admin.tabLocations", icon: MapPin, group: "content" },
   { id: "mapControl", labelKey: "admin.tabMapControl", icon: MapIcon, group: "3d" },
   { id: "experience", labelKey: "admin.tab3DExperience", icon: Boxes, group: "3d" },
   { id: "health3d", labelKey: "admin.tab3DHealth", icon: HeartPulse, group: "3d" },
@@ -448,6 +457,7 @@ function AdminPageInner() {
 
             {tab === "content" && <ContentTab />}
             {tab === "listings" && <ListingsTab />}
+            {tab === "locations" && <LocationsTab />}
             {tab === "advertising" && <AdvertisingTab />}
             {tab === "marketData" && <MarketDataTab />}
 

@@ -93,7 +93,9 @@ export default function NewAdminProjectPage() {
   // bug found live (reported as "can't put a city name to create a
   // project"). Fixed by picking a real neighborhood instead of typing a
   // city, exactly like the other two creation surfaces.
-  const neighborhoods = useLocations("neighborhood");
+  // Both levels — a development can sit directly in a Village with no
+  // neighborhood layer at all (2026-08-21 spec).
+  const neighborhoods = useLocations(["neighborhood", "village"]);
   const [neighborhoodIdChoice, setNeighborhoodIdChoice] = useState("");
   // Derived, not effect-synced (avoids a setState-in-effect render
   // cascade): defaults to the first loaded neighborhood until the admin

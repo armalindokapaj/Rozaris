@@ -1,5 +1,9 @@
 @import "tailwindcss";
 @import "mapbox-gl/dist/mapbox-gl.css";
+/* Admin Locations tab's boundary-drawing tool (LocationBoundaryEditor) —
+   the official Mapbox GL Draw plugin's own control styles (polygon/trash
+   toolbar buttons, vertex handles). */
+@import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 
 /* ROZARIS UI Design System v1.0 (Aug 2026) — Editorial Minimalism +
    Compact Utility UI. Flat solid surfaces, restrained radius, one brand
