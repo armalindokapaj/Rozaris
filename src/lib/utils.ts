@@ -6,20 +6,29 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// sq-AL groups thousands with a space ("150 000") rather than en-US's comma
+// ("150,000") — in Albanian, a comma is the decimal separator, so showing
+// prices with commas reads as a foreign format (or worse, a different
+// number). ROZARIS defaults to the `sq` locale, so that's the default here
+// too; pass `locale: "en"` explicitly for the few call sites that render
+// under an English UI.
+const PRICE_INTL_LOCALE: Record<Locale, string> = { en: "en-US", sq: "sq-AL" };
+
 export function formatPrice(
   amount: number,
   currency: Currency = "EUR",
-  opts: { compact?: boolean } = {}
+  opts: { compact?: boolean; locale?: Locale } = {}
 ) {
   const value = currency === "ALL" ? amount : amount;
+  const intlLocale = PRICE_INTL_LOCALE[opts.locale ?? "sq"];
   if (opts.compact) {
-    const formatter = new Intl.NumberFormat("en", {
+    const formatter = new Intl.NumberFormat(intlLocale, {
       notation: "compact",
       maximumFractionDigits: 1,
     });
     return `${currency === "EUR" ? "€" : "L"}${formatter.format(value)}`;
   }
-  const formatter = new Intl.NumberFormat("en-US", {
+  const formatter = new Intl.NumberFormat(intlLocale, {
     maximumFractionDigits: 0,
   });
   return `${currency === "EUR" ? "€" : "L"}${formatter.format(value)}`;

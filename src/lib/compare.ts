@@ -1,7 +1,7 @@
 import { getNeighborhood } from "./mockData";
 import type { CompareEntity, Locale } from "./types";
 import { AMENITY_LABELS, PROPERTY_TYPE_LABELS } from "./constants";
-import { transactionLabel } from "./utils";
+import { transactionLabel, formatPrice } from "./utils";
 import en from "./i18n/en";
 import sq from "./i18n/sq";
 
@@ -58,12 +58,12 @@ export function buildCompareRows(
   };
 
   return [
-    field(f.price, (i) => `${i.entity.currency === "EUR" ? "€" : "L"}${i.entity.price.toLocaleString()}`),
+    field(f.price, (i) => formatPrice(i.entity.price, i.entity.currency, { locale })),
     field(f.pricePerSqm, (i) =>
       i.kind === "listing" && i.entity.pricePerSqm
-        ? `${i.entity.currency === "EUR" ? "€" : "L"}${Math.round(i.entity.pricePerSqm).toLocaleString()}`
+        ? formatPrice(Math.round(i.entity.pricePerSqm), i.entity.currency, { locale })
         : i.kind === "unit"
-        ? `${i.entity.currency === "EUR" ? "€" : "L"}${Math.round(i.entity.price / i.entity.area).toLocaleString()}`
+        ? formatPrice(Math.round(i.entity.price / i.entity.area), i.entity.currency, { locale })
         : null
     ),
     field(f.area, (i) => `${i.entity.area} m²`),

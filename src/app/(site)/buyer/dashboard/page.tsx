@@ -1110,7 +1110,7 @@ function IdentityVerificationCard() {
 /** §10.1 "Change password" + "Active sessions/devices" + "Sign out all
  * other sessions" — real bcrypt password change + real `Session` rows. */
 function SecurityTab() {
-  const { t } = useT();
+  const { t, locale } = useT();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [changing, setChanging] = useState(false);
@@ -1202,7 +1202,9 @@ function SecurityTab() {
             {sessions.map((s) => (
               <div key={s.id} className="flex items-center justify-between rounded-control border border-neutral-100 p-2.5">
                 <p className="text-xs text-neutral-600">
-                  {t("buyer.sessionExpires", { date: new Date(s.expires).toLocaleString() })}
+                  {t("buyer.sessionExpires", {
+                    date: new Date(s.expires).toLocaleString(locale === "sq" ? "sq-AL" : "en-US"),
+                  })}
                 </p>
                 <button
                   onClick={() => revokeSession(s.id)}

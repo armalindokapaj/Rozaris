@@ -58,7 +58,10 @@ export async function notifyPriceDrop(listing: {
   });
   if (savers.length === 0) return;
 
-  const formattedPrice = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(listing.price);
+  // sq-AL groups thousands with a space ("150 000"), matching formatPrice's
+  // own locale handling (src/lib/utils.ts) — this baked-in string can't
+  // reformat per-viewer later, so it follows the site's `sq` default.
+  const formattedPrice = new Intl.NumberFormat("sq-AL", { maximumFractionDigits: 0 }).format(listing.price);
   await Promise.all(
     savers.map((s) =>
       notify({
