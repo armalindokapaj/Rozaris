@@ -1214,6 +1214,37 @@ model Project3DConfig {
   skyMieCoefficient  Float   @default(0.004)
   skyMieDirectionalG Float   @default(0.78)
 
+  /// Experience Editor "Map" tab — places this project's own detailed 3D
+  /// model (its `DetailModelSlot` with `role: "building"`, the same GLB
+  /// Studio renders) onto a real Mapbox map at its real-world location, as
+  /// an alternate, toggle-able view alongside the freestanding Studio scene
+  /// (mutually exclusive, never both mounted at once — see
+  /// ProjectViewerRuntime.tsx's `viewMode`). Deliberately separate from, and
+  /// not to be confused with, `MapModelVersion` below: that's a different
+  /// feature (the platform-wide public Search Map's lightweight per-project
+  /// proxy GLB, shown alongside every other project at once). This one is
+  /// single-project, driven by this same config row, and reads the sun
+  /// fields above (`sunAzimuthDeg`/`sunElevationDeg`/`manualSunIntensity`/
+  /// `manualSunColorHex`/etc., via src/lib/sunPosition.ts) to light the
+  /// Mapbox render to match — see ProjectMapView.tsx.
+  mapViewEnabled    Boolean @default(false)
+  /// Null on either falls back to the project's own `coords` (Project
+  /// model) — an admin only needs to set these once they actually drag the
+  /// model to a different spot than the project's default pin.
+  mapViewLatitude   Float?
+  mapViewLongitude  Float?
+  mapViewAltitude   Float   @default(0)
+  mapViewHeadingDeg Float   @default(0)
+  mapViewScale      Float   @default(1)
+  /// The Mapbox camera itself (distinct from the three fields above, which
+  /// place the *model* on the map) — how far zoomed in, tilted, and rotated
+  /// the map is when this project's Map tab/view opens. Defaults match the
+  /// literals ProjectMapView.tsx used before these fields existed, so an
+  /// unmigrated/never-edited row renders identically to before.
+  mapViewZoom       Float   @default(17.5)
+  mapViewPitchDeg   Float   @default(60)
+  mapViewBearingDeg Float   @default(-20)
+
   /// 360° Backdrop Photo — an admin-uploaded equirectangular PNG (real
   /// site-context photography) with a transparent sky region, composited
   /// as an unlit sphere just inside the SkyMesh dome so the physical sky/
