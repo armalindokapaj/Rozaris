@@ -13,9 +13,15 @@ import { prisma } from "@/lib/db";
  */
 function toLegacyShape(v: {
   projectId: string;
-  publicAssetUrl: string;
-  fileName: string;
-  fileSize: number;
+  // Nullable since the "position before uploading a model" migration
+  // (`MapModelVersion.publicAssetUrl`/`fileName`/`fileSize` all went
+  // `String?`/`Int?`) — these annotations had drifted from the schema
+  // (stale non-null types), which broke the type check below against a
+  // real Prisma row. `glbUrl: null` (etc.) is exactly the "positioned, no
+  // 3D model yet" state that column's own doc comment describes.
+  publicAssetUrl: string | null;
+  fileName: string | null;
+  fileSize: number | null;
   scale: number;
   heading: number;
   altitude: number;
