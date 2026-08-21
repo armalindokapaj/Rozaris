@@ -20,6 +20,12 @@ interface ProjectOption {
 interface UnitOption {
   id: string;
   code: string;
+  /** `GET /api/admin/units`'s shape — which project this unit actually
+   * belongs to, so picking one can set the listing's project at the same
+   * time (see "A listing assigned a unit joins its project automatically"
+   * below) without a separate, easy-to-forget "Move to project" step. */
+  projectId: string;
+  projectName: string;
 }
 
 /** `GET /api/admin/listings?status=all`'s shape — see that route's own doc
@@ -85,26 +91,16 @@ export function ListingManagePanel({
   const [duplicateTarget, setDuplicateTarget] = useState("");
   const [projectSelection, setProjectSelection] = useState(listing.projectId ?? "");
   const [unitSelection, setUnitSelection] = useState(listing.unitId ?? "");
+  // Every real unit, platform-wide — not scoped to whichever project is
+  // currently picked in the dropdown above. Picking a unit is now its own
+  // complete action (see the Link button below), so its options shouldn't
+  // depend on a separate control being set correctly first.
   const [unitOptions, setUnitOptions] = useState<UnitOption[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  // A Unit belongs to exactly one Project, so the picker's options depend
-  // on whichever project this listing currently is (or is about to be)
-  // under. Cleared synchronously during render the moment the project
-  // selection itself changes (same "adjusting state when a prop/tracked
-  // value changes" pattern useModelEditor.ts's syncedVersionId already
-  // uses) so stale options never flash before the effect below's fetch
-  // resolves; that effect then only ever fires when there's a project to
-  // actually query, so it never needs a synchronous setState of its own.
-  const [syncedProjectSelection, setSyncedProjectSelection] = useState(projectSelection);
-  if (projectSelection !== syncedProjectSelection) {
-    setSyncedProjectSelection(projectSelection);
-    setUnitOptions([]);
-  }
   useEffect(() => {
-    if (!projectSelection) return;
     let cancelled = false;
-    fetch(`/api/projects/${projectSelection}/units`)
+    fetch("/api/admin/units")
       .then((r) => (r.ok ? r.json() : []))
       .then((rows: UnitOption[]) => {
         if (!cancelled) setUnitOptions(rows);
@@ -115,7 +111,15 @@ export function ListingManagePanel({
     return () => {
       cancelled = true;
     };
-  }, [projectSelection]);
+  }, []);
+
+  const unitOptionsByProject = new Map<string, { projectName: string; units: UnitOption[] }>();
+  for (const u of unitOptions) {
+    if (!unitOptionsByProject.has(u.projectId)) {
+      unitOptionsByProject.set(u.projectId, { projectName: u.projectName, units: [] });
+    }
+    unitOptionsByProject.get(u.projectId)!.units.push(u);
+  }
 
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
@@ -291,10 +295,13 @@ export function ListingManagePanel({
 
         {/* "Units & Listings, Untangled" — links this listing to the
             specific 3D-mapped inventory record (Unit) it's advertising.
-            Options are scoped to whichever project is currently selected
-            above, since a Unit always belongs to exactly one project;
-            empty (and this whole control effectively inert) until a
-            project is chosen. */}
+            Options span every project (grouped by one, via `<optgroup>`)
+            rather than only whichever project happens to be selected in
+            the dropdown above — picking a unit here is a complete action
+            on its own: the Link button below always sends that unit's own
+            `projectId` alongside it, so a listing assigned a unit joins
+            that unit's project automatically, with no separate "Move to
+            project" step to remember first. */}
         <div className="flex items-end gap-1.5">
           <div>
             <span className="mb-1 block text-xs font-medium text-neutral-500">{t("admin.linkedUnitLabel")}</span>
@@ -305,10 +312,14 @@ export function ListingManagePanel({
               className="min-w-[160px] rounded-control border border-neutral-200 px-2.5 py-1.5 text-sm disabled:opacity-50"
             >
               <option value="">{t("admin.unassignedOption")}</option>
-              {unitOptions.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.code}
-                </option>
+              {Array.from(unitOptionsByProject.entries()).map(([projectId, group]) => (
+                <optgroup key={projectId} label={group.projectName}>
+                  {group.units.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.code}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
@@ -316,23 +327,23 @@ export function ListingManagePanel({
             type="button"
             disabled={busy || unitOptions.length === 0 || unitSelection === (listing.unitId ?? "")}
             onClick={() => {
-              // Bug fix: the unit picker's options are scoped to whichever
-              // project is CURRENTLY SELECTED above (`projectSelection`),
-              // not necessarily the listing's already-saved `projectId` —
-              // picking a project to browse its units, then a unit, then
-              // clicking Link without first clicking Move used to send
-              // `unitId` alone. The server then validated the unit against
-              // the listing's *old* project (see the publication route's
-              // `effectiveProjectId`), which either 400'd with a confusing
-              // "doesn't belong to this listing's project" error, or —
-              // if the listing had no project yet — silently linked a unit
-              // while leaving the listing itself unassigned. Send both
-              // fields together whenever the project selection has moved,
-              // so the move and the link land in the one request the
-              // server already validates as a pair.
+              // Bug fix (kept): send the unit's own project alongside it
+              // rather than trusting the separate Project dropdown to
+              // already agree — the server validates the pair together
+              // (see the publication route's `effectiveProjectId`), so a
+              // mismatched or stale project selection used to either 400
+              // or silently leave the listing unassigned. Now derived
+              // directly from the chosen unit instead of a second control
+              // the admin has to keep in sync by hand.
+              const chosen = unitOptions.find((u) => u.id === unitSelection);
+              const derivedProjectId = unitSelection ? (chosen?.projectId ?? null) : (projectSelection || null);
               const body: Record<string, unknown> = { unitId: unitSelection || null };
-              if (projectSelection !== (listing.projectId ?? "")) {
-                body.projectId = projectSelection || null;
+              // Only include `projectId` when it's actually changing —
+              // otherwise every Link/Unlink click would re-attach the
+              // listing to the project it's already on, re-triggering the
+              // location-sync write and audit-log entry for no real change.
+              if (derivedProjectId !== (listing.projectId ?? null)) {
+                body.projectId = derivedProjectId;
               }
               patch(body);
             }}
