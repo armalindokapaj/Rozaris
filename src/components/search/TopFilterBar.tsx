@@ -226,8 +226,16 @@ export function TopFilterBar({ className }: { className?: string }) {
           )}
         </FilterDropdown>
 
-        {/* Price */}
-        <FilterDropdown className="w-32 shrink-0" label={priceLabel} active={priceIsSet}>
+        {/* Price — button stays w-32, but the popover panel is widened past
+            it (to roughly the combined width of Price + Bedrooms +
+            Bathrooms) so the dual-thumb range slider has enough track to
+            drag precisely; left-aligned so it doesn't creep off-screen. */}
+        <FilterDropdown
+          className="w-32 shrink-0"
+          panelClassName="w-[22.75rem]"
+          label={priceLabel}
+          active={priceIsSet}
+        >
           {() => (
             <Section label={t("filters.priceRangeEur")}>
               <RangeSlider

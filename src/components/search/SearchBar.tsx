@@ -2,10 +2,12 @@
 
 import { useMemo, useRef, useState } from "react";
 import { Search, MapPin, Building2, LandPlot, X } from "lucide-react";
-import { neighborhoods, publishers, CITY } from "@/lib/mockData";
+import { publishers, CITY } from "@/lib/mockData";
 import { defaultFilters, useAppStore } from "@/lib/store";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { useLiveProjects } from "@/hooks/useLiveProjects";
+import { useLiveListings } from "@/hooks/useLiveListings";
+import { useLocations } from "@/hooks/useLocations";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/types";
@@ -21,7 +23,8 @@ type Suggestion = {
 function buildSuggestions(
   query: string,
   t: ReturnType<typeof useT>["t"],
-  projects: Project[]
+  projects: Project[],
+  neighborhoodSuggestions: Suggestion[]
 ): Suggestion[] {
   const q = query.trim().toLowerCase();
   const all: Suggestion[] = [
@@ -32,13 +35,7 @@ function buildSuggestions(
       type: "city",
       target: { lat: 41.3275, lng: 19.8187, zoom: 12.2 },
     },
-    ...neighborhoods.map((n) => ({
-      id: n.id,
-      label: n.name,
-      sublabel: t("search.neighborhoodSuffix", { count: n.listingCount }),
-      type: "neighborhood" as const,
-      target: { lat: n.coords.lat, lng: n.coords.lng, zoom: 15.2 },
-    })),
+    ...neighborhoodSuggestions,
     ...projects.map((p) => ({
       id: p.id,
       label: p.name,
@@ -84,11 +81,50 @@ export function SearchBar({
   const { t } = useT();
   useClickOutside(ref, () => setOpen(false), open);
   const liveProjects = useAppStore((s) => s.liveProjects);
+  const liveListings = useAppStore((s) => s.liveListings);
   useLiveProjects();
+  useLiveListings();
+  // Canonical Location System (see MEMORY note
+  // "rozaris-controlled-taxonomy-spec") — real neighborhood rows, not the
+  // fixed `mockData.neighborhoods` array this used to read.
+  const neighborhoodLocations = useLocations("neighborhood");
+
+  // Location suggestions used to be `mockData.neighborhoods` with a
+  // `listingCount` hand-typed once and never updated — stale "history"
+  // numbers that drifted from what's actually live. This instead counts
+  // real currently-active `Listing`/`Project` rows per location (both
+  // already server-filtered to "live" — see `useLiveListings`/
+  // `useLiveProjects`) and only ever surfaces a location that has at least
+  // one right now, sorted by how much is currently there.
+  const neighborhoodSuggestions = useMemo<Suggestion[]>(() => {
+    const counts = new Map<string, number>();
+    for (const l of liveListings ?? []) {
+      if (!l.neighborhoodId) continue;
+      counts.set(l.neighborhoodId, (counts.get(l.neighborhoodId) ?? 0) + 1);
+    }
+    for (const p of liveProjects ?? []) {
+      if (!p.neighborhoodId) continue;
+      counts.set(p.neighborhoodId, (counts.get(p.neighborhoodId) ?? 0) + 1);
+    }
+    return neighborhoodLocations
+      .map((n) => ({ n, count: counts.get(n.id) ?? 0 }))
+      .filter(({ count }) => count > 0)
+      .sort((a, b) => b.count - a.count)
+      .map(({ n, count }) => ({
+        id: n.id,
+        label: n.officialName,
+        sublabel: t("search.neighborhoodSuffix", { count }),
+        type: "neighborhood" as const,
+        target:
+          n.latitude != null && n.longitude != null
+            ? { lat: n.latitude, lng: n.longitude, zoom: 15.2 }
+            : undefined,
+      }));
+  }, [liveListings, liveProjects, neighborhoodLocations, t]);
 
   const suggestions = useMemo(
-    () => buildSuggestions(query, t, liveProjects ?? []),
-    [query, t, liveProjects]
+    () => buildSuggestions(query, t, liveProjects ?? [], neighborhoodSuggestions),
+    [query, t, liveProjects, neighborhoodSuggestions]
   );
 
   function selectSuggestion(s: Suggestion) {
