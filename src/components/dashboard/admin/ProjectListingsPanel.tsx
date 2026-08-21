@@ -19,6 +19,11 @@ interface ProjectOption {
   name: string;
 }
 
+interface UnitOption {
+  id: string;
+  code: string;
+}
+
 /**
  * The former standalone "Listings" admin tab, nested inside a single
  * Project's `EditProjectModal` — per the "Listings & Projects becomes just
@@ -40,6 +45,7 @@ export function ProjectListingsPanel({ project, publishers }: { project: Project
   const priceFmt = usePriceFormat();
   const [listings, setListings] = useState<AdminListingRow[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [units, setUnits] = useState<UnitOption[]>([]);
   const [creating, setCreating] = useState(false);
   const [managing, setManaging] = useState<string | null>(null);
 
@@ -57,6 +63,12 @@ export function ProjectListingsPanel({ project, publishers }: { project: Project
       .then((rows: ProjectOption[]) => setProjects(rows))
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    fetch(`/api/projects/${project.id}/units`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: UnitOption[]) => setUnits(rows))
+      .catch(() => {});
+  }, [project.id]);
 
   return (
     <div className="space-y-3 border-t border-neutral-200 pt-4">
@@ -76,6 +88,7 @@ export function ProjectListingsPanel({ project, publishers }: { project: Project
           <NewListingForm
             publisherId={project.developer.id}
             projectId={project.id}
+            unitOptions={units}
             onSaved={() => {
               setCreating(false);
               refresh();
@@ -90,6 +103,7 @@ export function ProjectListingsPanel({ project, publishers }: { project: Project
           <thead className="border-b border-neutral-100 bg-neutral-50 text-left text-xs text-neutral-500">
             <tr>
               <th className="px-3 py-2 font-medium">{t("dashboard.titleLabel")}</th>
+              <th className="px-3 py-2 font-medium">{t("admin.linkedUnitLabel")}</th>
               <th className="px-3 py-2 font-medium">{t("dashboard.priceLabel")}</th>
               <th className="px-3 py-2 font-medium">{t("admin.colStatus")}</th>
               <th className="px-3 py-2 font-medium" />
@@ -100,6 +114,9 @@ export function ProjectListingsPanel({ project, publishers }: { project: Project
               <Fragment key={l.id}>
                 <tr>
                   <td className="px-3 py-2.5 font-medium text-neutral-800">{l.title}</td>
+                  <td className="px-3 py-2.5 text-neutral-600">
+                    {l.unitCode ?? <span className="text-neutral-400">{t("admin.unassignedOption")}</span>}
+                  </td>
                   <td className="px-3 py-2.5 tabular-nums text-neutral-600">{priceFmt(l.price)}</td>
                   <td className="px-3 py-2.5">
                     <span className={`rounded-full px-2 py-1 text-xs font-semibold ${LISTING_STATUS_STYLE[l.status]}`}>
@@ -133,7 +150,7 @@ export function ProjectListingsPanel({ project, publishers }: { project: Project
                 </tr>
                 {managing === l.id && (
                   <tr>
-                    <td colSpan={4} className="bg-neutral-50 px-3 py-3">
+                    <td colSpan={5} className="bg-neutral-50 px-3 py-3">
                       <ListingManagePanel listing={l} publishers={publishers} projects={projects} onDone={refresh} />
                     </td>
                   </tr>
@@ -142,7 +159,7 @@ export function ProjectListingsPanel({ project, publishers }: { project: Project
             ))}
             {listings.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-xs text-neutral-400">
+                <td colSpan={5} className="px-3 py-6 text-center text-xs text-neutral-400">
                   {t("admin.noListingsYet")}
                 </td>
               </tr>

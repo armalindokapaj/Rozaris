@@ -113,3 +113,26 @@ export function groupUnitsByFloor(units: Unit[]): BuildingGroup[] {
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
+
+/** "Units & Listings, Untangled" — a linked Listing's `status` write
+ * pushes one-way onto its Unit (`PATCH /api/admin/listings/[id]/publication`),
+ * never the reverse: the Unit/GLB mapping pipeline has no public
+ * submission path of its own for a Unit's status to drift from, so
+ * Listing is treated as the side of truth for "did this actually sell."
+ * Only the statuses with an unambiguous availability meaning translate;
+ * everything else (draft/pending/suspended/archived/rejected/expired) is
+ * a marketplace-moderation state with no real Unit-availability
+ * equivalent, so it's left alone rather than guessed at. `rented` maps to
+ * `sold` since `Unit.status` has no third "rented" state of its own —
+ * both mean "no longer available." */
+export function unitStatusForListingStatus(listingStatus: string): Unit["status"] | null {
+  switch (listingStatus) {
+    case "active":
+      return "available";
+    case "sold":
+    case "rented":
+      return "sold";
+    default:
+      return null;
+  }
+}

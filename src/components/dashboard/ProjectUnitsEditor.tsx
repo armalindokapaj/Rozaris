@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Box, Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Box, Check, Link2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useProjectUnits } from "@/hooks/useProjectUnits";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
@@ -40,6 +40,23 @@ export function ProjectUnitsEditor({
   const units = liveUnits ?? project.units;
   const priceFmt = usePriceFormat();
   const { t } = useT();
+
+  // "Units & Listings, Untangled" — the reverse direction of the Unit
+  // picker on a listing: which of this project's units already have a
+  // marketplace ad pointed at them. Read-only here (nothing to edit from
+  // this side); the link itself is made/broken from the Listing's own
+  // manage panel.
+  const [linkedUnitIds, setLinkedUnitIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    fetch("/api/admin/listings?status=all")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: { projectId: string | null; unitId: string | null }[]) => {
+        setLinkedUnitIds(
+          new Set(rows.filter((l) => l.projectId === project.id && l.unitId).map((l) => l.unitId!))
+        );
+      })
+      .catch(() => {});
+  }, [project.id]);
 
   const [code, setCode] = useState("");
   const [buildingName, setBuildingName] = useState(project.buildings[0] ?? "A");
@@ -280,6 +297,14 @@ export function ProjectUnitsEditor({
                         <span className="font-normal text-neutral-500">
                           {t(`unit.status${u.status[0].toUpperCase()}${u.status.slice(1)}`)}
                         </span>
+                        {linkedUnitIds.has(u.id) && (
+                          <span
+                            title={t("admin.hasLinkedListing")}
+                            className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold text-brand-600"
+                          >
+                            <Link2 className="h-2.5 w-2.5" /> {t("admin.hasLinkedListing")}
+                          </span>
+                        )}
                       </span>
                       <span className="flex shrink-0 items-center gap-2 text-neutral-500">
                         {priceFmt(u.price, { compact: true })}

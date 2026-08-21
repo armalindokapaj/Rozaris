@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Ban, CheckCircle2, Gem, ArrowRightLeft, Copy, History, FolderInput } from "lucide-react";
+import { Ban, CheckCircle2, Gem, ArrowRightLeft, Copy, History, FolderInput, Link2 } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { formatRelativeDate } from "@/lib/utils";
 import { AnalyticsSummaryInline } from "@/components/common/AnalyticsSummaryInline";
@@ -17,12 +17,19 @@ interface ProjectOption {
   name: string;
 }
 
+interface UnitOption {
+  id: string;
+  code: string;
+}
+
 /** `GET /api/admin/listings?status=all`'s shape — see that route's own doc
  * comment for why these admin-only fields sit outside the public `Listing`
  * type. `projectId` added alongside the others once a Listing could
  * optionally belong to a Project (see the schema's own doc comment on
- * `Listing.projectId`). Shared by both consumers of this panel: the global
- * Listings tab and a single Project's nested listings section. */
+ * `Listing.projectId`); `unitId`/`unitCode` added the same way for the
+ * Unit link ("Units & Listings, Untangled"). Shared by both consumers of
+ * this panel: the global Listings tab and a single Project's nested
+ * listings section. */
 export type AdminListingRow = Listing & {
   idleUntil: string | null;
   idleReason: string | null;
@@ -30,6 +37,8 @@ export type AdminListingRow = Listing & {
   locationConfirmed: boolean;
   duplicateOfId: string | null;
   projectId: string | null;
+  unitId: string | null;
+  unitCode: string | null;
 };
 
 export const LISTING_STATUS_STYLE: Record<Listing["status"], string> = {
@@ -75,7 +84,38 @@ export function ListingManagePanel({
   const [transferTo, setTransferTo] = useState("");
   const [duplicateTarget, setDuplicateTarget] = useState("");
   const [projectSelection, setProjectSelection] = useState(listing.projectId ?? "");
+  const [unitSelection, setUnitSelection] = useState(listing.unitId ?? "");
+  const [unitOptions, setUnitOptions] = useState<UnitOption[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  // A Unit belongs to exactly one Project, so the picker's options depend
+  // on whichever project this listing currently is (or is about to be)
+  // under. Cleared synchronously during render the moment the project
+  // selection itself changes (same "adjusting state when a prop/tracked
+  // value changes" pattern useModelEditor.ts's syncedVersionId already
+  // uses) so stale options never flash before the effect below's fetch
+  // resolves; that effect then only ever fires when there's a project to
+  // actually query, so it never needs a synchronous setState of its own.
+  const [syncedProjectSelection, setSyncedProjectSelection] = useState(projectSelection);
+  if (projectSelection !== syncedProjectSelection) {
+    setSyncedProjectSelection(projectSelection);
+    setUnitOptions([]);
+  }
+  useEffect(() => {
+    if (!projectSelection) return;
+    let cancelled = false;
+    fetch(`/api/projects/${projectSelection}/units`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: UnitOption[]) => {
+        if (!cancelled) setUnitOptions(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setUnitOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectSelection]);
 
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
@@ -246,6 +286,39 @@ export function ListingManagePanel({
             className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
           >
             <FolderInput className="h-3.5 w-3.5" /> {t("admin.moveToProjectAction")}
+          </button>
+        </div>
+
+        {/* "Units & Listings, Untangled" — links this listing to the
+            specific 3D-mapped inventory record (Unit) it's advertising.
+            Options are scoped to whichever project is currently selected
+            above, since a Unit always belongs to exactly one project;
+            empty (and this whole control effectively inert) until a
+            project is chosen. */}
+        <div className="flex items-end gap-1.5">
+          <div>
+            <span className="mb-1 block text-xs font-medium text-neutral-500">{t("admin.linkedUnitLabel")}</span>
+            <select
+              value={unitSelection}
+              onChange={(e) => setUnitSelection(e.target.value)}
+              disabled={unitOptions.length === 0}
+              className="min-w-[160px] rounded-control border border-neutral-200 px-2.5 py-1.5 text-sm disabled:opacity-50"
+            >
+              <option value="">{t("admin.unassignedOption")}</option>
+              {unitOptions.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.code}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            disabled={busy || unitOptions.length === 0 || unitSelection === (listing.unitId ?? "")}
+            onClick={() => patch({ unitId: unitSelection || null })}
+            className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+          >
+            <Link2 className="h-3.5 w-3.5" /> {t("admin.moveToUnitAction")}
           </button>
         </div>
 

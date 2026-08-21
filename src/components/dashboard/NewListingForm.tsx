@@ -118,6 +118,7 @@ function Pill({
 export function NewListingForm({
   publisherId,
   projectId,
+  unitOptions,
   onSaved,
   onCancel,
 }: {
@@ -127,6 +128,12 @@ export function NewListingForm({
    * `projectId`). Omitted everywhere else this form is already used, so
    * those callers keep creating standalone listings exactly as before. */
   projectId?: string;
+  /** "Units & Listings, Untangled" — when supplied (only from inside a
+   * project's own Listings section), offers a picker over that project's
+   * real Units so the new listing can point at the specific inventory
+   * item it's advertising from the start, instead of having no relation
+   * to it at all. Omitted everywhere else, same as `projectId`. */
+  unitOptions?: { id: string; code: string }[];
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -137,6 +144,7 @@ export function NewListingForm({
   const conditionLabels = CONDITION_LABELS[locale];
   const amenityLabels = AMENITY_LABELS[locale];
 
+  const [unitId, setUnitId] = useState("");
   const [title, setTitle] = useState("");
   const [propertyType, setPropertyType] = useState<PropertyType | null>(null);
   const [neighborhoodId, setNeighborhoodId] = useState("");
@@ -179,6 +187,7 @@ export function NewListingForm({
     description.trim() !== "";
 
   function reset() {
+    setUnitId("");
     setTitle("");
     setPropertyType(null);
     setNeighborhoodId("");
@@ -235,6 +244,7 @@ export function NewListingForm({
           descriptionSq: description,
           publisherId,
           projectId,
+          unitId: unitId || undefined,
           lat: location?.lat,
           lng: location?.lng,
           locationConfirmed: location !== null,
@@ -260,6 +270,28 @@ export function NewListingForm({
         <p className="rounded-control bg-brand-50 px-3.5 py-2.5 text-xs leading-relaxed text-brand-700">
           {t("dashboard.staleReminderOnCreate", { days: STALE_LISTING_DAYS })}
         </p>
+      )}
+
+      {/* "Units & Listings, Untangled" — the bridge between this ad and
+          the 3D-mapped inventory record it's actually advertising.
+          Optional: a listing with no matching unit yet (or none at all)
+          is still a completely normal listing. */}
+      {unitOptions && unitOptions.length > 0 && (
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-neutral-500">{t("admin.linkedUnitLabel")}</span>
+          <select
+            value={unitId}
+            onChange={(e) => setUnitId(e.target.value)}
+            className="w-full rounded-control border border-neutral-200 bg-white px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+          >
+            <option value="">{t("admin.unassignedOption")}</option>
+            {unitOptions.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.code}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
 
       {/* Fields appear one by one, in the order a publisher fills them in. */}

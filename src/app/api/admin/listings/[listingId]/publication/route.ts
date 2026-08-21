@@ -5,6 +5,7 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { logApiError } from "@/lib/apiErrorLog";
 import { recordSaleOrRentalIfNewlyCompleted } from "@/lib/transactions";
+import { unitStatusForListingStatus } from "@/lib/units";
 
 const bodySchema = z.object({
   status: z
@@ -29,6 +30,9 @@ const bodySchema = z.object({
   /// Projects console — attaches/detaches this listing to/from a Project
   /// (a development). `null` clears it back to a standalone listing.
   projectId: z.string().min(1).nullable().optional(),
+  /// "Units & Listings, Untangled" — links/unlinks this listing to a Unit
+  /// (the 3D-mapped inventory record). `null` clears it.
+  unitId: z.string().min(1).nullable().optional(),
 });
 
 /**
@@ -102,6 +106,33 @@ export async function PATCH(
     }
   }
 
+  let unitTarget: { id: string; code: string; projectId: string } | null = null;
+  let clearUnit = false;
+  if (parsed.data.unitId === null) {
+    clearUnit = true;
+  } else if (parsed.data.unitId) {
+    unitTarget = await prisma.unit.findFirst({
+      where: { id: parsed.data.unitId, deletedAt: null },
+      select: { id: true, code: true, projectId: true },
+    });
+    if (!unitTarget) {
+      return NextResponse.json({ error: "Target unit not found." }, { status: 400 });
+    }
+    // A Unit belongs to exactly one Project (required column) — linking a
+    // listing to a unit under a DIFFERENT project than the one it's
+    // itself attached to would be a silent, confusing mismatch. Checked
+    // against whatever this same request leaves the listing's project as,
+    // not just its pre-existing one, so patching both fields together
+    // (the common case — creating from inside a project) is consistent.
+    const effectiveProjectId = projectTarget ? projectTarget.id : clearProject ? null : existing.projectId;
+    if (effectiveProjectId && unitTarget.projectId !== effectiveProjectId) {
+      return NextResponse.json(
+        { error: `Unit "${unitTarget.code}" doesn't belong to this listing's project.` },
+        { status: 400 }
+      );
+    }
+  }
+
   try {
     const idleUpdate =
       parsed.data.idleDays == null
@@ -129,6 +160,8 @@ export async function PATCH(
           ...(duplicateTargetId !== undefined ? { duplicateOfId: duplicateTargetId } : {}),
           ...(projectTarget ? { projectId: projectTarget.id } : {}),
           ...(clearProject ? { projectId: null } : {}),
+          ...(unitTarget ? { unitId: unitTarget.id } : {}),
+          ...(clearUnit ? { unitId: null } : {}),
         },
       });
 
@@ -142,6 +175,17 @@ export async function PATCH(
         price: row.price,
         currency: row.currency,
       });
+
+      // "Units & Listings, Untangled" — one-way status push onto the
+      // linked Unit (see unitStatusForListingStatus's own doc comment for
+      // why this direction only). Only on an actual status write, and
+      // only when a Unit is linked after this same update.
+      if (parsed.data.status && row.unitId) {
+        const mapped = unitStatusForListingStatus(row.status);
+        if (mapped) {
+          await tx.unit.update({ where: { id: row.unitId }, data: { status: mapped } });
+        }
+      }
 
       return row;
     });
@@ -165,6 +209,11 @@ export async function PATCH(
     }
     if (projectTarget) actions.push(`Listing attached to project "${projectTarget.name}"`);
     if (clearProject) actions.push("Listing detached from project");
+    if (unitTarget) actions.push(`Listing linked to unit "${unitTarget.code}"`);
+    if (clearUnit) actions.push("Listing unlinked from unit");
+    if (parsed.data.status && updated.unitId && unitStatusForListingStatus(updated.status)) {
+      actions.push(`Linked unit status → ${unitStatusForListingStatus(updated.status)} (from listing status)`);
+    }
 
     const actor = gate.user?.email ?? gate.user?.name ?? "admin";
     for (const action of actions) {

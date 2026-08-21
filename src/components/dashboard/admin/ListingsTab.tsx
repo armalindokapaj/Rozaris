@@ -85,6 +85,7 @@ export function ListingsTab() {
               <th className="px-4 py-2.5 font-medium">{t("dashboard.titleLabel")}</th>
               <th className="px-4 py-2.5 font-medium">{t("admin.colPublisher")}</th>
               <th className="px-4 py-2.5 font-medium">{t("admin.projectLabel")}</th>
+              <th className="px-4 py-2.5 font-medium">{t("admin.linkedUnitLabel")}</th>
               <th className="px-4 py-2.5 font-medium">{t("dashboard.priceLabel")}</th>
               <th className="px-4 py-2.5 font-medium">{t("admin.colStatus")}</th>
               <th className="px-4 py-2.5 font-medium" />
@@ -104,6 +105,9 @@ export function ListingsTab() {
                         {t("admin.unassignedOption")}
                       </span>
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-neutral-600">
+                    {l.unitCode ?? <span className="text-neutral-400">{t("admin.unassignedOption")}</span>}
                   </td>
                   <td className="px-4 py-3 tabular-nums text-neutral-600">{priceFmt(l.price)}</td>
                   <td className="px-4 py-3">
@@ -138,7 +142,7 @@ export function ListingsTab() {
                 </tr>
                 {managing === l.id && (
                   <tr>
-                    <td colSpan={6} className="bg-neutral-50 px-4 py-4">
+                    <td colSpan={7} className="bg-neutral-50 px-4 py-4">
                       <ListingManagePanel listing={l} publishers={publishers} projects={projects} onDone={refresh} />
                     </td>
                   </tr>
@@ -147,7 +151,7 @@ export function ListingsTab() {
             ))}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-neutral-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-neutral-400">
                   {t("admin.noListingsYet")}
                 </td>
               </tr>

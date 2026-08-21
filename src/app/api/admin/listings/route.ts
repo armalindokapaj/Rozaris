@@ -34,7 +34,7 @@ export async function GET(request: Request) {
   if (requested === "all") {
     const rows = await prisma.listing.findMany({
       where: { deletedAt: null },
-      include: { publisher: true, property: true },
+      include: { publisher: true, property: true, unit: { select: { code: true } } },
       orderBy: { createdAt: "desc" },
     });
     // The admin management table needs a few fields `normalizeListing`
@@ -55,6 +55,12 @@ export async function GET(request: Request) {
         // managed under. Same admin-only treatment as the fields above:
         // left off the public `Listing` shape `normalizeListing` returns.
         projectId: r.projectId,
+        // "Units & Listings, Untangled" — which Unit (if any) this listing
+        // is actually advertising. `unitCode` is denormalized here purely
+        // for display (avoids every list/detail consumer re-joining just
+        // to show a code); `unitId` is the real editable value.
+        unitId: r.unitId,
+        unitCode: r.unit?.code ?? null,
       }))
     );
   }

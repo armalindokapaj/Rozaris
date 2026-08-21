@@ -99,6 +99,11 @@ const listingSchema = z.object({
   // this is that project's id. Optional: a listing created from anywhere
   // else stands alone with no project, same as before this field existed.
   projectId: z.string().min(1).optional(),
+  // "Units & Listings, Untangled" — the 3D-mapped inventory record this ad
+  // is actually advertising, if the admin picked one from the project's
+  // own Units. Optional: most listings, and every one created outside a
+  // project's context, have none.
+  unitId: z.string().min(1).optional(),
 });
 
 export async function POST(request: Request) {
@@ -165,6 +170,20 @@ export async function POST(request: Request) {
     const project = await prisma.project.findFirst({ where: { id: data.projectId, deletedAt: null } });
     if (!project) {
       return NextResponse.json({ error: `Unknown project "${data.projectId}".` }, { status: 400 });
+    }
+  }
+
+  if (data.unitId) {
+    const unit = await prisma.unit.findFirst({ where: { id: data.unitId, deletedAt: null } });
+    if (!unit) {
+      return NextResponse.json({ error: `Unknown unit "${data.unitId}".` }, { status: 400 });
+    }
+    // A unit belongs to exactly one project (required column) — a listing
+    // linking to it under a DIFFERENT project than the one it's actually
+    // inventory for would be a silent, confusing mismatch nothing else
+    // would ever catch.
+    if (data.projectId && unit.projectId !== data.projectId) {
+      return NextResponse.json({ error: `Unit "${data.unitId}" doesn't belong to project "${data.projectId}".` }, { status: 400 });
     }
   }
 

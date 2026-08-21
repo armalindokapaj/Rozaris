@@ -542,6 +542,17 @@ model Listing {
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
+  /// "Units & Listings, Untangled" — the missing bridge between the
+  /// marketplace ad (this row) and the 3D-mapped inventory record a
+  /// project's Units tab actually maps onto a GLB mesh. Nullable: most of
+  /// this platform's history (and every standalone listing) has none.
+  /// When set, `PATCH /api/admin/listings/[id]/publication`'s `status`
+  /// write pushes one-way onto the linked Unit (never the reverse) — the
+  /// Unit/GLB pipeline has no public submission path of its own to drift
+  /// from, so Listing is treated as the side of truth for "did this sell."
+  unitId String?
+  unit   Unit?   @relation(fields: [unitId], references: [id], onDelete: SetNull)
+
   transactions Transaction[]
   priceHistory PriceHistoryEntry[]
 
@@ -793,6 +804,13 @@ model Unit {
   /// own doc comment for why this is an override list, not a duplicate of
   /// this row.
   publishTargetOverrides PublishTargetUnitOverride[]
+
+  /// "Units & Listings, Untangled" — the marketplace-ad side of this same
+  /// physical unit, if a publisher (or admin, from inside this unit's own
+  /// project) has posted one. Several listings could in principle point at
+  /// one unit (re-listed by a different agency); this unit needs none to
+  /// exist. See Listing.unitId's own doc comment for the write direction.
+  listings Listing[]
 
   /// Units Blocks & POI Layer PRD §6 — "Strengthen Unit identity."
   /// Confirmed via a live-DB scan before adding this (zero existing
