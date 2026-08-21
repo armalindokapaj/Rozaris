@@ -10,6 +10,7 @@ import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes"
 import { EditorTopBar } from "./EditorTopBar";
 import { SceneNavigator } from "./SceneNavigator";
 import { EditorViewport } from "./EditorViewport";
+import { MapEditorViewport } from "./MapEditorViewport";
 import { Inspector } from "./Inspector";
 import { StatusBar } from "./StatusBar";
 import type { EditorTabId } from "./tabs";
@@ -165,6 +166,16 @@ export function ExperienceEditor({
     });
     return entries;
   }, [detail.slots, detail.activeSlotId, detail.activeVersion, detail.versionsBySlot, modelEditor.transform, modelEditor.switches, modelEditor.overrides, modelEditor.links, units, statusPreviewEnabled]);
+
+  // "Map" tab — the same "building"-role model Studio renders (v1 scope:
+  // only that one slot, no Units/surroundings composition on the map — see
+  // Project3DConfig's own doc comment), read straight off `detailModels`
+  // above so this stays in sync with whatever draft/published state that
+  // memo already resolved rather than re-deriving it a second way.
+  const mapViewGlbUrl = useMemo(
+    () => detailModels.find((m) => m.slotRole === "building")?.model.glbUrl ?? null,
+    [detailModels]
+  );
 
   const unitsConfig = useMemo(
     () => ({
@@ -453,21 +464,37 @@ export function ExperienceEditor({
           {leftOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
         </button>
 
-        <EditorViewport
-          ref={viewerRef}
-          detailModels={detailModels}
-          slotsLoaded={detail.slotsLoaded}
-          cameraConfig={cameraConfig}
-          qualityConfig={qualityConfig}
-          environmentConfig={environmentConfig}
-          lightingConfig={lightingConfig}
-          renderingConfig={renderingConfig}
-          unitsConfig={unitsConfig}
-          onPerfStats={(stats) => {
-            setPerfStats(stats);
-            setEffectiveRenderScale(viewerRef.current?.getEffectiveRenderScale() ?? null);
-          }}
-        />
+        {activeTab === "map" ? (
+          <MapEditorViewport
+            project={project}
+            draft={configEditor.draft}
+            glbUrl={mapViewGlbUrl}
+            onMove={(point) => configEditor.update({ mapViewLatitude: point.lat, mapViewLongitude: point.lng })}
+            onCaptureCamera={(camera) =>
+              configEditor.update({
+                mapViewZoom: camera.zoom,
+                mapViewPitchDeg: camera.pitchDeg,
+                mapViewBearingDeg: camera.bearingDeg,
+              })
+            }
+          />
+        ) : (
+          <EditorViewport
+            ref={viewerRef}
+            detailModels={detailModels}
+            slotsLoaded={detail.slotsLoaded}
+            cameraConfig={cameraConfig}
+            qualityConfig={qualityConfig}
+            environmentConfig={environmentConfig}
+            lightingConfig={lightingConfig}
+            renderingConfig={renderingConfig}
+            unitsConfig={unitsConfig}
+            onPerfStats={(stats) => {
+              setPerfStats(stats);
+              setEffectiveRenderScale(viewerRef.current?.getEffectiveRenderScale() ?? null);
+            }}
+          />
+        )}
 
         <button
           onClick={() => setRightOpen((v) => !v)}

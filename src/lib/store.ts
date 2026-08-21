@@ -136,6 +136,19 @@ export const defaultProject3DConfig: Project3DConfig = {
   skyRayleigh: 2.4,
   skyMieCoefficient: 0.004,
   skyMieDirectionalG: 0.78,
+  // Experience Editor "Map" tab — off/null by default, zero behavior
+  // change; lat/lng null falls back to the project's own coords.
+  mapViewEnabled: false,
+  mapViewLatitude: null,
+  mapViewLongitude: null,
+  mapViewAltitude: 0,
+  mapViewHeadingDeg: 0,
+  mapViewScale: 1,
+  // Matches the literals ProjectMapView.tsx hardcoded before these fields
+  // existed, so an unmigrated row's map still opens exactly as before.
+  mapViewZoom: 17.5,
+  mapViewPitchDeg: 60,
+  mapViewBearingDeg: -20,
   // 360° Backdrop Photo — off/null by default, zero behavior change.
   backdropEnabled: false,
   backdropImageUrl: null,

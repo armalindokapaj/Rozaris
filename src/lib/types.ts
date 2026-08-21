@@ -444,6 +444,27 @@ export interface Project3DConfig {
   skyMieCoefficient: number;
   skyMieDirectionalG: number;
 
+  /** Experience Editor "Map" tab — places this project's own detailed
+   * "building"-role model onto a real Mapbox map at its real-world
+   * location, as an alternate, toggle-able view alongside the freestanding
+   * Studio scene (mutually exclusive — see ProjectViewerRuntime.tsx's
+   * `viewMode`). Separate from `MapModelVersion` (the platform-wide public
+   * Search Map's own lightweight per-project proxy GLB, a different
+   * feature) — this reads the sun fields above (via
+   * src/lib/sunPosition.ts) to light the Mapbox render to match. Null
+   * lat/lng falls back to the project's own `coords`. */
+  mapViewEnabled: boolean;
+  mapViewLatitude: number | null;
+  mapViewLongitude: number | null;
+  mapViewAltitude: number;
+  mapViewHeadingDeg: number;
+  mapViewScale: number;
+  /** The Mapbox camera itself (zoom/tilt/rotation of the map view), as
+   * opposed to the five fields above which place the *model* on it. */
+  mapViewZoom: number;
+  mapViewPitchDeg: number;
+  mapViewBearingDeg: number;
+
   /** 360° Backdrop Photo — an admin-uploaded equirectangular PNG (real
    * site-context photography: surrounding buildings/terrain/horizon) with
    * a transparent sky region, rendered as an unlit sphere just inside the

@@ -223,6 +223,21 @@ const patchSchema = z.object({
   skyRayleigh: z.number().min(0).max(4).optional(),
   skyMieCoefficient: z.number().min(0).max(0.1).optional(),
   skyMieDirectionalG: z.number().min(0).max(1).optional(),
+  // Experience Editor "Map" tab — places the project's own detailed model
+  // on a real Mapbox map. See Project3DConfig's own doc comment. Null
+  // lat/lng falls back to the project's `coords`, same convention as
+  // MapModelVersion's placement fields (a separate, unrelated feature).
+  mapViewEnabled: z.boolean().optional(),
+  mapViewLatitude: z.number().min(-90).max(90).nullable().optional(),
+  mapViewLongitude: z.number().min(-180).max(180).nullable().optional(),
+  mapViewAltitude: z.number().min(-500).max(2000).optional(),
+  mapViewHeadingDeg: z.number().min(-360).max(360).optional(),
+  mapViewScale: z.number().positive().max(10).optional(),
+  // The Mapbox camera itself, not the model's placement — Mapbox's own
+  // hard limits (zoom 0-22, pitch 0-85°).
+  mapViewZoom: z.number().min(0).max(22).optional(),
+  mapViewPitchDeg: z.number().min(0).max(85).optional(),
+  mapViewBearingDeg: z.number().min(-360).max(360).optional(),
   // 360° Backdrop Photo — real-photo site context composited under the
   // physical sky via a transparent-PNG sphere (RenderEngine.ts's
   // backdropMesh). `backdropImageUrl` is a Vercel Blob URL, uploaded via
