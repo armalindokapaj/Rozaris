@@ -354,6 +354,7 @@ export function ListingsTab() {
             <NewListingForm
               publisherId={newListingPublisherId}
               projectId={newListingProjectId || undefined}
+              projectName={projects.find((p) => p.id === newListingProjectId)?.name}
               unitOptions={newListingUnitOptions}
               onSaved={() => {
                 setCreating(false);

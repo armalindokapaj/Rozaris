@@ -147,6 +147,40 @@ export async function POST(request: Request) {
       },
     });
 
+    // "Unit location follows project location" (see POST /api/listings'
+    // own doc comment for the same rule at creation/link time) — every
+    // Listing already attached to this project needs to move with it too
+    // when its location is edited here, not just ones created or newly
+    // linked after the fact. Gated on an actual change (not every save —
+    // a rename or hero-image edit shouldn't touch every listing's
+    // Property row) and only for an existing project, since a brand-new
+    // one can't have any Listings yet.
+    if (
+      existingById &&
+      (existingById.neighborhoodId !== project.neighborhoodId ||
+        existingById.lat !== project.lat ||
+        existingById.lng !== project.lng ||
+        existingById.locationId !== project.locationId)
+    ) {
+      const affectedListings = await prisma.listing.findMany({
+        where: { projectId: project.id, deletedAt: null },
+        select: { propertyId: true },
+      });
+      if (affectedListings.length > 0) {
+        await prisma.property.updateMany({
+          where: { id: { in: affectedListings.map((l) => l.propertyId) } },
+          data: {
+            neighborhoodId: project.neighborhoodId,
+            city: project.city,
+            locationId: project.locationId,
+            lat: project.lat,
+            lng: project.lng,
+            locationConfirmed: true,
+          },
+        });
+      }
+    }
+
     // Same ISR staleness the publication route now fixes (see its doc
     // comment) — an edit to an already-`active` project (new hero image,
     // renamed, etc.) needs its cached `/project/[slug]` and `/projects/[slug]`

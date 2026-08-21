@@ -73,7 +73,13 @@ const listingSchema = z.object({
   // "Car Park"/"Private parking"/"Parking" as three different values for
   // what the UI's own checkbox list treats as one.
   amenities: z.array(z.enum(AMENITY_KEYS as [string, ...string[]])).optional().default([]),
-  neighborhoodId: z.string().min(1),
+  // Required only for a standalone listing — "unit location follows
+  // project location" means one attached to a Project (below) always
+  // takes that project's own location instead, so there's nothing for a
+  // publisher/admin to separately pick in that case. Enforced below,
+  // after `projectId` is known, rather than a `.refine()` here, since the
+  // error needs to name whichever of the two is actually missing.
+  neighborhoodId: z.string().min(1).optional(),
   images: z.array(z.string()).optional().default([]),
   floorPlanImage: z.string().optional(),
   facadeImage: z.string().optional(),
@@ -166,8 +172,9 @@ export async function POST(request: Request) {
     );
   }
 
+  let project: Awaited<ReturnType<typeof prisma.project.findFirst>> = null;
   if (data.projectId) {
-    const project = await prisma.project.findFirst({ where: { id: data.projectId, deletedAt: null } });
+    project = await prisma.project.findFirst({ where: { id: data.projectId, deletedAt: null } });
     if (!project) {
       return NextResponse.json({ error: `Unknown project "${data.projectId}".` }, { status: 400 });
     }
@@ -187,26 +194,17 @@ export async function POST(request: Request) {
     }
   }
 
-  // Canonical Location System — validates against the real `locations`
-  // table (scripts/seed-locations.ts gives every mockData.neighborhoods id
-  // a matching row) instead of trusting client-submitted text. The
-  // mockData lookup is kept only as a lat/lng centroid fallback for
-  // locations that predate real coordinates — see resolveLocation()'s doc
-  // comment.
-  const location = await resolveLocation(neighborhoodId);
-  if (!location) {
-    return NextResponse.json({ error: `Unknown location "${neighborhoodId}".` }, { status: 400 });
-  }
-  const neighborhood = neighborhoods.find((n) => n.id === neighborhoodId);
-  const fallbackCoords = location.lat != null && location.lng != null
-    ? { lat: location.lat, lng: location.lng }
-    : neighborhood?.coords;
-  if (!fallbackCoords) {
-    return NextResponse.json(
-      { error: `Location "${neighborhoodId}" has no coordinates to fall back to.` },
-      { status: 400 }
-    );
-  }
+  // "Unit location follows project location" — a listing attached to a
+  // Project always uses that project's own real location; there's nothing
+  // for a publisher/admin to separately pick, since an apartment inside a
+  // building can't have a different address than the building itself. Only
+  // a standalone listing (no project) resolves its own neighborhood/pin.
+  let neighborhoodIdForProperty: string;
+  let cityForProperty: string;
+  let locationIdForProperty: string | null;
+  let latForProperty: number;
+  let lngForProperty: number;
+  let confirmedForProperty: boolean;
 
   let slug = slugify(data.title);
   let suffix = 2;
@@ -215,11 +213,54 @@ export async function POST(request: Request) {
     suffix++;
   }
 
-  // Real, confirmed coordinates win; the neighborhood centroid is only a
-  // fallback (still needed either way — `city` always comes from it, and
-  // it keeps a draft listing at a sane default point on the map for the
-  // rare admin preview before a location's ever set).
-  const hasRealLocation = locationConfirmed && lat != null && lng != null;
+  if (project) {
+    neighborhoodIdForProperty = project.neighborhoodId;
+    cityForProperty = project.city;
+    locationIdForProperty = project.locationId;
+    latForProperty = project.lat;
+    lngForProperty = project.lng;
+    // A project's own location is always real, never a "no pin yet" draft
+    // state — the location-drop rule below has nothing to enforce here.
+    confirmedForProperty = true;
+  } else {
+    if (!neighborhoodId) {
+      return NextResponse.json(
+        { error: "A neighborhood is required for a listing that isn't attached to a project." },
+        { status: 400 }
+      );
+    }
+    // Canonical Location System — validates against the real `locations`
+    // table (scripts/seed-locations.ts gives every mockData.neighborhoods
+    // id a matching row) instead of trusting client-submitted text. The
+    // mockData lookup is kept only as a lat/lng centroid fallback for
+    // locations that predate real coordinates — see resolveLocation()'s
+    // doc comment.
+    const location = await resolveLocation(neighborhoodId);
+    if (!location) {
+      return NextResponse.json({ error: `Unknown location "${neighborhoodId}".` }, { status: 400 });
+    }
+    const neighborhood = neighborhoods.find((n) => n.id === neighborhoodId);
+    const fallbackCoords = location.lat != null && location.lng != null
+      ? { lat: location.lat, lng: location.lng }
+      : neighborhood?.coords;
+    if (!fallbackCoords) {
+      return NextResponse.json(
+        { error: `Location "${neighborhoodId}" has no coordinates to fall back to.` },
+        { status: 400 }
+      );
+    }
+    // Real, confirmed coordinates win; the neighborhood centroid is only a
+    // fallback (still needed either way — `city` always comes from it, and
+    // it keeps a draft listing at a sane default point on the map for the
+    // rare admin preview before a location's ever set).
+    const hasRealLocation = locationConfirmed && lat != null && lng != null;
+    neighborhoodIdForProperty = neighborhoodId;
+    cityForProperty = location.cityName;
+    locationIdForProperty = location.id;
+    latForProperty = hasRealLocation ? lat! : fallbackCoords.lat;
+    lngForProperty = hasRealLocation ? lng! : fallbackCoords.lng;
+    confirmedForProperty = hasRealLocation;
+  }
 
   // Falls into ListingStatus's own default ("pending") rather than forcing
   // "active" — this is the submit -> admin approve -> publish pipeline the
@@ -235,7 +276,7 @@ export async function POST(request: Request) {
   // a Super Admin has switched the `location_drop_required` flag off.
   const locationRuleActive = await isFeatureEnabled("location_drop_required");
   const status =
-    hasRealLocation || gate.user.role === "admin" || !locationRuleActive ? "pending" : "draft";
+    confirmedForProperty || gate.user.role === "admin" || !locationRuleActive ? "pending" : "draft";
 
   // Property/Listing split — the physical unit gets its own row first (see
   // MEMORY note "rozaris-controlled-taxonomy-spec"); the ad then points at
@@ -257,12 +298,12 @@ export async function POST(request: Request) {
         yearBuilt,
         condition,
         amenities,
-        neighborhoodId,
-        city: location.cityName,
-        locationId: location.id,
-        lat: hasRealLocation ? lat! : fallbackCoords.lat,
-        lng: hasRealLocation ? lng! : fallbackCoords.lng,
-        locationConfirmed: hasRealLocation,
+        neighborhoodId: neighborhoodIdForProperty,
+        city: cityForProperty,
+        locationId: locationIdForProperty,
+        lat: latForProperty,
+        lng: lngForProperty,
+        locationConfirmed: confirmedForProperty,
       },
     });
 

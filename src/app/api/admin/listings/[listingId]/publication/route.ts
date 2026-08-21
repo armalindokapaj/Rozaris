@@ -92,14 +92,16 @@ export async function PATCH(
     duplicateTargetId = target.id;
   }
 
-  let projectTarget: { id: string; name: string } | null = null;
+  let projectTarget:
+    | { id: string; name: string; neighborhoodId: string; city: string; locationId: string | null; lat: number; lng: number }
+    | null = null;
   let clearProject = false;
   if (parsed.data.projectId === null) {
     clearProject = true;
   } else if (parsed.data.projectId) {
     projectTarget = await prisma.project.findFirst({
       where: { id: parsed.data.projectId, deletedAt: null },
-      select: { id: true, name: true },
+      select: { id: true, name: true, neighborhoodId: true, city: true, locationId: true, lat: true, lng: true },
     });
     if (!projectTarget) {
       return NextResponse.json({ error: "Target project not found." }, { status: 400 });
@@ -183,6 +185,26 @@ export async function PATCH(
         },
       });
 
+      // "Unit location follows project location" — attaching (or moving)
+      // this listing to a Project always carries that project's own real
+      // location onto its Property row, the same as a brand-new listing
+      // created directly under a project (see POST /api/listings). An
+      // apartment inside a building can't have a different address than
+      // the building itself, so there's nothing to ask the admin for here.
+      if (projectTarget) {
+        await tx.property.update({
+          where: { id: row.propertyId },
+          data: {
+            neighborhoodId: projectTarget.neighborhoodId,
+            city: projectTarget.city,
+            locationId: projectTarget.locationId,
+            lat: projectTarget.lat,
+            lng: projectTarget.lng,
+            locationConfirmed: true,
+          },
+        });
+      }
+
       // Real Transaction event — see src/lib/transactions.ts's doc comment.
       await recordSaleOrRentalIfNewlyCompleted(tx, {
         listingId: row.id,
@@ -225,7 +247,10 @@ export async function PATCH(
     if (duplicateTargetId !== undefined) {
       actions.push(duplicateTargetId ? `Listing marked duplicate of ${duplicateTargetId}` : "Listing duplicate flag cleared");
     }
-    if (projectTarget) actions.push(`Listing attached to project "${projectTarget.name}"`);
+    if (projectTarget) {
+      actions.push(`Listing attached to project "${projectTarget.name}"`);
+      actions.push(`Listing location synced to project "${projectTarget.name}"`);
+    }
     if (clearProject) actions.push("Listing detached from project");
     if (unitTarget) actions.push(`Listing linked to unit "${unitTarget.code}"`);
     if (clearUnit) actions.push("Listing unlinked from unit");

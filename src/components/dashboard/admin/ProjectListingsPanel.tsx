@@ -88,6 +88,7 @@ export function ProjectListingsPanel({ project, publishers }: { project: Project
           <NewListingForm
             publisherId={project.developer.id}
             projectId={project.id}
+            projectName={project.name}
             unitOptions={units}
             onSaved={() => {
               setCreating(false);

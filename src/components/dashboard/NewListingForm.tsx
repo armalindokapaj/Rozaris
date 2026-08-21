@@ -118,6 +118,7 @@ function Pill({
 export function NewListingForm({
   publisherId,
   projectId,
+  projectName,
   unitOptions,
   onSaved,
   onCancel,
@@ -126,8 +127,17 @@ export function NewListingForm({
   /** Admin "Projects" console — when set, the created listing is attached
    * to this Project from the start (see `POST /api/listings`'s optional
    * `projectId`). Omitted everywhere else this form is already used, so
-   * those callers keep creating standalone listings exactly as before. */
+   * those callers keep creating standalone listings exactly as before.
+   * "Unit location follows project location" — when set, the neighborhood
+   * picker and map pin below are skipped entirely: the server always
+   * overrides a project-attached listing's location with the project's
+   * own real one anyway (an apartment inside a building can't have a
+   * different address than the building), so asking for one here would
+   * just be discarded. */
   projectId?: string;
+  /** Display-only, for the "follows {projectName}" note below — purely
+   * cosmetic, has no effect on what's actually submitted. */
+  projectName?: string;
   /** "Units & Listings, Untangled" — when supplied (only from inside a
    * project's own Listings section), offers a picker over that project's
    * real Units so the new listing can point at the specific inventory
@@ -177,7 +187,7 @@ export function NewListingForm({
   const canSave =
     title.trim() !== "" &&
     propertyType !== null &&
-    neighborhoodId !== "" &&
+    (projectId != null || neighborhoodId !== "") &&
     price !== "" &&
     price > 0 &&
     (!needsBedrooms || (bedrooms !== "" && bedrooms > 0)) &&
@@ -239,7 +249,7 @@ export function NewListingForm({
           yearBuilt: yearBuilt === "" ? undefined : yearBuilt,
           condition: condition ?? "good",
           amenities,
-          neighborhoodId,
+          neighborhoodId: neighborhoodId || undefined,
           descriptionEn: description,
           descriptionSq: description,
           publisherId,
@@ -308,37 +318,50 @@ export function NewListingForm({
         </div>
       </div>
 
-      <label className="block">
-        <RequiredLabel>{t("compareFields.neighborhood")}</RequiredLabel>
-        <select
-          value={neighborhoodId}
-          onChange={(e) => setNeighborhoodId(e.target.value)}
-          className="w-full rounded-control border border-neutral-200 bg-white px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
-        >
-          <option value="" disabled>
-            {t("dashboard.selectNeighborhood")}
-          </option>
-          {neighborhoods.map((n) => (
-            <option key={n.id} value={n.id}>
-              {n.officialName}
-            </option>
-          ))}
-        </select>
-      </label>
+      {/* "Unit location follows project location" — a listing attached to
+          a project always uses that project's own real location (see
+          POST /api/listings' doc comment), so there's nothing to ask for
+          here; showing a picker whose choice gets silently overridden
+          would just be confusing. */}
+      {projectId != null ? (
+        <p className="rounded-control bg-neutral-50 px-3.5 py-2.5 text-xs text-neutral-500">
+          {t("dashboard.listingLocationFollowsProject", { project: projectName ?? t("admin.projectLabel") })}
+        </p>
+      ) : (
+        <>
+          <label className="block">
+            <RequiredLabel>{t("compareFields.neighborhood")}</RequiredLabel>
+            <select
+              value={neighborhoodId}
+              onChange={(e) => setNeighborhoodId(e.target.value)}
+              className="w-full rounded-control border border-neutral-200 bg-white px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+            >
+              <option value="" disabled>
+                {t("dashboard.selectNeighborhood")}
+              </option>
+              {neighborhoods.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.officialName}
+                </option>
+              ))}
+            </select>
+          </label>
 
-      {/* The "location drop" requirement — a listing submitted without a
-          confirmed pin still saves, but stays in `draft` (invisible to
-          buyers) until either the publisher adds one or an admin
-          explicitly approves it without one. Not required for `canSave`
-          on purpose — the neighborhood alone is enough to submit; this is
-          what unlocks going live. */}
-      <div>
-        <span className="mb-1.5 block text-xs font-medium text-neutral-500">{t("dashboard.exactLocationLabel")}</span>
-        <LocationPicker value={location} onChange={setLocation} />
-        {!location && (
-          <p className="mt-1.5 text-xs text-warning">{t("dashboard.noLocationDraftWarning")}</p>
-        )}
-      </div>
+          {/* The "location drop" requirement — a listing submitted without
+              a confirmed pin still saves, but stays in `draft` (invisible
+              to buyers) until either the publisher adds one or an admin
+              explicitly approves it without one. Not required for
+              `canSave` on purpose — the neighborhood alone is enough to
+              submit; this is what unlocks going live. */}
+          <div>
+            <span className="mb-1.5 block text-xs font-medium text-neutral-500">{t("dashboard.exactLocationLabel")}</span>
+            <LocationPicker value={location} onChange={setLocation} />
+            {!location && (
+              <p className="mt-1.5 text-xs text-warning">{t("dashboard.noLocationDraftWarning")}</p>
+            )}
+          </div>
+        </>
+      )}
 
       {!propertyType ? (
         <p className="text-xs text-neutral-400">{t("dashboard.selectPropertyTypeFirst")}</p>

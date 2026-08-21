@@ -742,6 +742,7 @@ const en = {
     selectPropertyTypeFirst: "Select a property type to continue.",
     selectNeighborhood: "Select a neighborhood to continue.",
     exactLocationLabel: "Exact location",
+    listingLocationFollowsProject: "This listing's location follows {project}'s own location — no need to set one separately.",
     noLocationDraftWarning: "Without a confirmed location, this listing saves as a draft and won't be visible until an admin reviews it.",
     staleReminderOnCreate: "Heads up: listings need a quick confirmation every {days} days to stay visible — we'll remind you when it's due.",
     totalFloorsLabel: "Total floors",
