@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
-import { fetchAndValidateGlb } from "@/lib/glbValidate";
+import { fetchAndValidateGlb, type GlbValidationResult } from "@/lib/glbValidate";
 import { logAuditEvent } from "@/lib/audit";
 
 // One real building Admin picked to remove, with its footprint geometry
@@ -18,9 +18,12 @@ const hiddenBuildingSchema = z.object({
 });
 
 const createSchema = z.object({
-  glbUrl: z.string().url(),
-  fileName: z.string().min(1),
-  fileSize: z.number().int().positive(),
+  // Optional as of "save location before uploading a model" — omitting all
+  // three creates a pure-placement draft (see MapModelVersion's own doc
+  // comment); the model itself can be attached later via the PATCH route.
+  glbUrl: z.string().url().optional(),
+  fileName: z.string().min(1).optional(),
+  fileSize: z.number().int().positive().optional(),
   scale: z.number().positive().max(1000).default(1),
   rotationDeg: z.number().default(0),
   altitudeOffset: z.number().default(0),
@@ -75,7 +78,12 @@ export async function POST(
     );
   }
 
-  const validation = await fetchAndValidateGlb(parsed.data.glbUrl, "mapModel");
+  // No file yet (placement-only draft) — nothing to validate; "ready"
+  // matches what an already-valid version reads as, so the Publish button
+  // isn't blocked just for having no model.
+  const validation: GlbValidationResult = parsed.data.glbUrl
+    ? await fetchAndValidateGlb(parsed.data.glbUrl, "mapModel")
+    : { status: "ready", issues: [], triangleCount: null, meshCount: null, materialCount: null, textureCount: null, unitNodeNames: [], sceneManifest: [] };
   // Deliberately NOT filtering deletedAt here — the (projectId, version)
   // unique index still counts soft-deleted rows, so the next version
   // number must be computed from every version ever created or a restored

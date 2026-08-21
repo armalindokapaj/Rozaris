@@ -38,7 +38,11 @@ function tierForZoom(z: number): ZoomTier {
 
 interface MapModelRow {
   projectId: string;
-  glbUrl: string;
+  // Nullable as of "save location before uploading a model" — a published
+  // MapModelVersion can be placement-only. Already handled below (the
+  // `model.glbUrl` truthiness check a few lines down falls through to the
+  // procedural massing box), this just makes the type honest.
+  glbUrl: string | null;
   scale: number;
   rotationDeg: number;
   altitudeOffset: number;

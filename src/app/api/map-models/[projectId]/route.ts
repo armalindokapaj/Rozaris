@@ -13,12 +13,11 @@ import { prisma } from "@/lib/db";
  */
 function toLegacyShape(v: {
   projectId: string;
-  // Nullable since the "position before uploading a model" migration
-  // (`MapModelVersion.publicAssetUrl`/`fileName`/`fileSize` all went
-  // `String?`/`Int?`) — these annotations had drifted from the schema
-  // (stale non-null types), which broke the type check below against a
-  // real Prisma row. `glbUrl: null` (etc.) is exactly the "positioned, no
-  // 3D model yet" state that column's own doc comment describes.
+  // Nullable as of "save location before uploading a model" — a published
+  // version can have placement with no file yet (see MapModelVersion's own
+  // doc comment). `glbUrl: null` below is exactly what MapView.tsx already
+  // treats as "no admin-uploaded model for this project" (falls back to
+  // procedural massing), so this needed no downstream change.
   publicAssetUrl: string | null;
   fileName: string | null;
   fileSize: number | null;

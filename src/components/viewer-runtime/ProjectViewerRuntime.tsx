@@ -10,7 +10,9 @@ import { use3DAssetCache } from "@/hooks/use3DAssetCache";
 import { useT } from "@/lib/i18n/useT";
 import { ThreeProjectViewer, type ThreeProjectViewerHandle } from "@/components/project/ThreeProjectViewer";
 import { ViewerHUD } from "@/components/project/viewer-hud/ViewerHUD";
+import { MapViewEntryButton, MapModeBar } from "@/components/project/viewer-hud/MapViewToggle";
 import { getViewerLayoutState } from "@/components/project/viewer-hud/layoutState";
+import { ProjectMapView } from "@/components/map/ProjectMapView";
 import type { ActiveModule } from "@/components/project/viewer-hud/types";
 import { UnitsWorkspace } from "@/components/project/units-workspace/UnitsWorkspace";
 import { DEFAULT_UNIT_FILTERS, type UnitFilterState } from "@/components/project/units-workspace/unitFilters";
@@ -121,6 +123,20 @@ export function ProjectViewerRuntime({
     viewerRef.current?.setIdleDroneSuspended(activeModule !== "explore");
     if (activeModule === "explore") viewerRef.current?.resetIdleTimer();
   }, [activeModule]);
+
+  // Studio ⇄ Map (Experience Editor "Map" tab) — independent of
+  // `activeModule` above, which is "which Studio HUD dock panel is open,"
+  // a different concern from "which render engine is mounted." Only one of
+  // Studio/Map is ever mounted at a time (see the render below) — never
+  // both ("do not overlay"). Reset to Studio's own default nav state on
+  // entering Map mode so returning later doesn't land on a stale dock
+  // panel that has nothing to act on there.
+  const [viewMode, setViewMode] = useState<"studio" | "map">("studio");
+  const enterMapView = useCallback(() => {
+    setViewMode("map");
+    setActiveModule("explore");
+    setUnitsListOpen(false);
+  }, []);
   const handleToggleUnitsList = useCallback(() => setUnitsListOpen((prev) => !prev), []);
   // Panel's own × (2026-08-18 direct instruction: "after the dock is
   // restored, the dock is where it was before at 'units'") — used to call
@@ -159,6 +175,15 @@ export function ProjectViewerRuntime({
   const detailModelEntries = useMemo(
     () => detailModels.map((entry) => ({ ...entry, units, statusPreviewEnabled: true })),
     [detailModels, units]
+  );
+
+  // Map mode — the same "building"-role model Studio renders (v1 scope:
+  // only that one slot, see Project3DConfig's own doc comment), sourced
+  // from the same published-only `detailModels` Studio already has, so
+  // there's no separate fetch and Map mode can never show a draft.
+  const mapViewGlbUrl = useMemo(
+    () => detailModels.find((m) => m.slotRole === "building")?.model.glbUrl ?? null,
+    [detailModels]
   );
 
   // More / Settings Menu PRD — real project fields for MoreMenu's own
@@ -660,44 +685,68 @@ export function ProjectViewerRuntime({
           together as UnitsWorkspace opens, instead of staying pinned to
           the full browser width while only the canvas itself moves. */}
       <div className="relative h-full min-w-0 flex-1">
-        <ViewerHUD
-          viewerRef={viewerRef}
-          sceneReady={sceneReady}
-          activeModule={activeModule}
-          onActiveModuleChange={handleActiveModuleChange}
-          chromeDimmed={chromeDimmed}
-          project={moreMenuProject}
-          fullscreen={fullscreen}
-          onToggleFullscreen={toggleFullscreen}
-          onScreenshot={handleScreenshot}
-          screenshotEnabled={viewerConfig.viewerUI.screenshotEnabled !== false}
-          fullscreenEnabled={viewerConfig.viewerUI.fullscreenEnabled !== false}
-          northOffsetDeg={viewerConfig.northOffsetDeg}
-          viewerTimeHours={effectiveSunTimeHours}
-          sunTimeInteractive={sunTimeInteractive}
-          sunTimeBounds={sunTimeBounds}
-          sunTimeline={sunTimeline}
-          sunTimePresets={sunTimePresets}
-          activeSunPreset={activeSunPreset}
-          sunTimeCanReset={liveSunTimeHours != null || liveSunDate != null}
-          onSunTimeChange={handleSunTimeChange}
-          onSunPresetSelect={handleSunPresetSelect}
-          onSunTimeReset={handleSunTimeReset}
-          cameraPresets={viewerConfig.cameraPresets}
-          activeViewPresetId={activeViewPresetId}
-          onSelectViewPreset={handleSelectViewPreset}
-          units={units}
-          unitFilters={unitFilters}
-          onUnitFiltersChange={setUnitFilters}
-          unitsListOpen={unitsListOpen}
-          onToggleUnitsList={handleToggleUnitsList}
-        />
+        {viewMode === "map" ? (
+          <MapModeBar
+            projectName={moreMenuProject.name}
+            developerName={moreMenuProject.developerName}
+            city={moreMenuProject.city}
+            onExit={() => setViewMode("studio")}
+          />
+        ) : (
+          <>
+            <ViewerHUD
+              viewerRef={viewerRef}
+              sceneReady={sceneReady}
+              activeModule={activeModule}
+              onActiveModuleChange={handleActiveModuleChange}
+              chromeDimmed={chromeDimmed}
+              project={moreMenuProject}
+              fullscreen={fullscreen}
+              onToggleFullscreen={toggleFullscreen}
+              onScreenshot={handleScreenshot}
+              screenshotEnabled={viewerConfig.viewerUI.screenshotEnabled !== false}
+              fullscreenEnabled={viewerConfig.viewerUI.fullscreenEnabled !== false}
+              northOffsetDeg={viewerConfig.northOffsetDeg}
+              viewerTimeHours={effectiveSunTimeHours}
+              sunTimeInteractive={sunTimeInteractive}
+              sunTimeBounds={sunTimeBounds}
+              sunTimeline={sunTimeline}
+              sunTimePresets={sunTimePresets}
+              activeSunPreset={activeSunPreset}
+              sunTimeCanReset={liveSunTimeHours != null || liveSunDate != null}
+              onSunTimeChange={handleSunTimeChange}
+              onSunPresetSelect={handleSunPresetSelect}
+              onSunTimeReset={handleSunTimeReset}
+              cameraPresets={viewerConfig.cameraPresets}
+              activeViewPresetId={activeViewPresetId}
+              onSelectViewPreset={handleSelectViewPreset}
+              units={units}
+              unitFilters={unitFilters}
+              onUnitFiltersChange={setUnitFilters}
+              unitsListOpen={unitsListOpen}
+              onToggleUnitsList={handleToggleUnitsList}
+            />
+            {viewerConfig.mapViewEnabled && (
+              // Clears the compare-tray/construction-strip cluster below
+              // (`top-[60px]`/`top-[68px]`, conditionally shown) with real
+              // margin rather than sharing its row — that cluster's own
+              // visibility doesn't depend on `mapViewEnabled`, so the two
+              // can be on-screen at once.
+              <div className="pointer-events-none absolute right-3 top-[112px] z-20 flex justify-end pr-[env(safe-area-inset-right)] sm:right-4 sm:top-[124px]">
+                <MapViewEntryButton onClick={enterMapView} />
+              </div>
+            )}
+          </>
+        )}
 
         {/* Pre-dates the Front Page rebuild and isn't governed by its PRD
             (compare tray + construction progress) — kept exactly where it
             was, just no longer sharing a header row with project identity
-            now that ViewerHUD owns the top-left/top-right corners. */}
-        {(compareCount > 0 || (!unitPanelOpen && project.status === "under_construction")) && (
+            now that ViewerHUD owns the top-left/top-right corners. Studio-
+            only, same as ViewerHUD itself: nothing that opens either (the
+            Units workflow, ViewerHUD's own construction awareness) is
+            reachable while Map mode's own minimal bar is showing. */}
+        {viewMode === "studio" && (compareCount > 0 || (!unitPanelOpen && project.status === "under_construction")) && (
           <div className="absolute right-3 top-[60px] z-20 flex shrink-0 items-stretch gap-2 pr-[env(safe-area-inset-right)] sm:right-4 sm:top-[68px]">
             {compareCount > 0 && (
               <button
@@ -720,31 +769,56 @@ export function ProjectViewerRuntime({
           </div>
         )}
 
-        {screenshotFlash && (
+        {viewMode === "studio" && screenshotFlash && (
           <div className="glass-panel-dark pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-pill px-4 py-2 text-xs font-semibold text-white sm:top-20">
             {t(screenshotFlash === "success" ? "project.screenshotSaved" : "project.screenshotFailed")}
           </div>
         )}
 
-        {fullscreenUnsupported && (
+        {viewMode === "studio" && fullscreenUnsupported && (
           <div className="glass-panel-dark pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-pill px-4 py-2 text-xs font-semibold text-white sm:top-20">
             {t("project.fullscreenUnavailable")}
           </div>
         )}
 
-        <ThreeProjectViewer
-          ref={viewerRef}
-          detailModels={detailModelEntries}
-          cameraConfig={cameraConfig}
-          qualityConfig={qualityConfig}
-          environmentConfig={environmentConfig}
-          lightingConfig={lightingConfig}
-          renderingConfig={renderingConfig}
-          unitsConfig={unitsConfig}
-          onUnitClick={handleUnitClickIn3D}
-          onReady={handleReady}
-          className="relative h-full w-full"
-        />
+        {viewMode === "map" ? (
+          <ProjectMapView
+            project={{ id: project.id, coords: project.coords }}
+            glbUrl={mapViewGlbUrl}
+            editable={false}
+            placement={{
+              latitude: viewerConfig.mapViewLatitude,
+              longitude: viewerConfig.mapViewLongitude,
+              altitude: viewerConfig.mapViewAltitude,
+              headingDeg: viewerConfig.mapViewHeadingDeg,
+              scale: viewerConfig.mapViewScale,
+            }}
+            sun={{
+              azimuthDeg: viewerConfig.sunAzimuthDeg,
+              elevationDeg: viewerConfig.sunElevationDeg,
+              autoIntensityEnabled: viewerConfig.autoSunIntensityEnabled,
+              autoColorEnabled: viewerConfig.autoSunColorEnabled,
+              manualIntensity: viewerConfig.manualSunIntensity,
+              manualColorHex: viewerConfig.manualSunColorHex,
+              enabled: viewerConfig.sunLightEnabled,
+            }}
+            className="relative h-full w-full"
+          />
+        ) : (
+          <ThreeProjectViewer
+            ref={viewerRef}
+            detailModels={detailModelEntries}
+            cameraConfig={cameraConfig}
+            qualityConfig={qualityConfig}
+            environmentConfig={environmentConfig}
+            lightingConfig={lightingConfig}
+            renderingConfig={renderingConfig}
+            unitsConfig={unitsConfig}
+            onUnitClick={handleUnitClickIn3D}
+            onReady={handleReady}
+            className="relative h-full w-full"
+          />
+        )}
       </div>
 
       <UnitDiscoveryPanel

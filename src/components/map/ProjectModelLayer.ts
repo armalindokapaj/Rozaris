@@ -99,6 +99,12 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
   // Matrix4/Vector3 instances each time — see ROTATION_X's comment above.
   private scratchRotationY = new THREE.Matrix4();
   private scratchScale = new THREE.Vector3();
+  // Promoted from constructor-local consts (their original, still-default
+  // values below) so setSun() can update them later — see its own doc
+  // comment for the "Map" tab this now serves.
+  private ambientLight: THREE.AmbientLight;
+  private sunLight: THREE.DirectionalLight;
+  private ambientBaseIntensity = 1.5;
 
   constructor(opts: {
     onPick: (projectId: string) => void;
@@ -115,10 +121,49 @@ export class ProjectModelLayer implements mapboxgl.CustomLayerInterface {
     // files to vendor into `public/`.
     this.dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
     this.loader.setDRACOLoader(this.dracoLoader);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 1.5));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-    sun.position.set(0, -70, 100).normalize();
-    this.scene.add(sun);
+    this.ambientLight = new THREE.AmbientLight(0xffffff, this.ambientBaseIntensity);
+    this.scene.add(this.ambientLight);
+    this.sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    this.sunLight.position.set(0, -70, 100).normalize();
+    this.scene.add(this.sunLight);
+  }
+
+  /**
+   * Re-lights the layer's own sun/ambient pair to match a project's
+   * configured lighting (Experience Editor "Map" tab — see
+   * Project3DConfig's own doc comment) instead of the fixed default set in
+   * the constructor above. Callers pass `direction` in the SAME Y-up
+   * (X=east, Y=up, Z=south) convention `src/lib/sunPosition.ts`'s
+   * `sunDirectionVector()` already returns — this method itself owns the
+   * Y-up→this-layer's-own-frame conversion, the same responsibility
+   * `applyTransform()` above already has for model geometry. Unlike
+   * `applyTransform`'s Mercator translation (`.x`/`.y` horizontal, `.z`
+   * altitude — see `MercatorCoordinate`), a `DirectionalLight.position` is
+   * only ever a direction (never translated), so no ROTATION_X/handedness
+   * correction is needed here — just the matching axis permutation
+   * (Y-up's vertical Y → this scene's vertical Z; Y-up's south Z → this
+   * scene's south Y): `(x, y, z) → (x, z, y)`.
+   *
+   * `enabled: false` (Project3DConfig's `sunLightEnabled`) floors both
+   * lights' intensity at 0 rather than removing them from the scene —
+   * cheaper than add/remove churn and avoids ever leaving the layer with no
+   * light source, which would read as "broken" rather than "sun off"
+   * (ambient still gives a faint, real-looking fill either way).
+   */
+  setSun(opts: {
+    direction: { x: number; y: number; z: number };
+    color: number;
+    intensity: number;
+    ambientIntensity?: number;
+    enabled: boolean;
+  }) {
+    const { direction, color, intensity, ambientIntensity, enabled } = opts;
+    this.sunLight.position.set(direction.x, direction.z, direction.y).normalize();
+    this.sunLight.color.setHex(color);
+    this.sunLight.intensity = enabled ? intensity : 0;
+    this.ambientLight.color.setHex(color);
+    this.ambientLight.intensity = enabled ? (ambientIntensity ?? this.ambientBaseIntensity) : this.ambientBaseIntensity * 0.4;
+    this.map?.triggerRepaint();
   }
 
   onAdd(map: mapboxgl.Map, gl: WebGLRenderingContext) {

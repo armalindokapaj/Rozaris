@@ -19,8 +19,11 @@ const SAME_BUILDING_EPSILON_DEG = 0.00005;
 interface VersionRow {
   id: string;
   version: number;
-  fileName: string;
-  fileSize: number;
+  // Nullable as of "save location before uploading a model" — a version
+  // can exist as pure placement with no file at all yet (see
+  // MapModelVersion's own doc comment in prisma/schema.prisma).
+  fileName: string | null;
+  fileSize: number | null;
   scale: number;
   heading: number;
   altitude: number;
@@ -31,7 +34,7 @@ interface VersionRow {
   validationStatus: "ready" | "warning" | "blocked";
   validationIssues: string[] | null;
   publicationStatus: "draft" | "published" | "archived";
-  publicAssetUrl: string;
+  publicAssetUrl: string | null;
   createdAt: string;
   publishedAt: string | null;
 }
@@ -177,22 +180,36 @@ export function MapModelEditor({
         // failing 7MB uploads outright before this.
         multipart: true,
       });
-      const res = await fetch(`/api/map-models/${project.id}/versions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          glbUrl: blob.url,
-          fileName: file.name,
-          fileSize: file.size,
-          scale,
-          rotationDeg,
-          altitudeOffset,
-          longitude,
-          latitude,
-          hideBaseBuilding,
-          hiddenBuildings,
-        }),
-      });
+      // "Add the 3D model later" — an existing DRAFT version with no file
+      // yet (placement saved/published without one, see handleSaveDraft's
+      // own doc comment) attaches this upload via PATCH instead of POSTing
+      // a whole new version: it's still "the model for this position,"
+      // not a replacement of anything. Any other case (no draft at all, or
+      // the active draft already has its own file — "Replace") POSTs a new
+      // version, same as always.
+      const attachTarget = isDraftActive && activeVersion && !activeVersion.publicAssetUrl ? activeVersion : null;
+      const res = attachTarget
+        ? await fetch(`/api/map-models/${project.id}/versions/${attachTarget.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ glbUrl: blob.url, fileName: file.name, fileSize: file.size }),
+          })
+        : await fetch(`/api/map-models/${project.id}/versions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              glbUrl: blob.url,
+              fileName: file.name,
+              fileSize: file.size,
+              scale,
+              rotationDeg,
+              altitudeOffset,
+              longitude,
+              latitude,
+              hideBaseBuilding,
+              hiddenBuildings,
+            }),
+          });
       if (!res.ok) throw new Error(await res.text());
       await refresh();
     } catch (err) {
@@ -270,9 +287,16 @@ export function MapModelEditor({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          glbUrl: activeVersion.publicAssetUrl,
-          fileName: activeVersion.fileName,
-          fileSize: activeVersion.fileSize,
+          // A published version can itself be placement-only (no model
+          // uploaded yet) — omit these three entirely rather than send
+          // literal `null`s (the API only accepts a real URL string or the
+          // key being absent), so editing one just opens another
+          // placement-only draft, same as if it had never had a file.
+          ...(activeVersion.publicAssetUrl && {
+            glbUrl: activeVersion.publicAssetUrl,
+            fileName: activeVersion.fileName,
+            fileSize: activeVersion.fileSize,
+          }),
           scale,
           rotationDeg,
           altitudeOffset,
@@ -297,24 +321,33 @@ export function MapModelEditor({
     }
   }
 
+  /**
+   * "Save the location before uploading a model" — when there's no version
+   * at all yet, Save creates one as a pure placement draft (no glbUrl,
+   * see MapModelVersion's own doc comment) instead of requiring a file
+   * first; an already-active draft just gets its placement PATCHed, same
+   * as always. Either way this is the one path both handlePublish and the
+   * Save Draft button go through, so "positioned but no model yet" is
+   * never a special case anywhere else.
+   */
   async function handleSaveDraft() {
-    if (!isDraftActive || !activeVersion) return;
+    if (!canEdit) return;
+    if (activeVersion && !isDraftActive) return; // viewing a published version read-only
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/map-models/${project.id}/versions/${activeVersion.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scale,
-          rotationDeg,
-          altitudeOffset,
-          longitude,
-          latitude,
-          hideBaseBuilding,
-          hiddenBuildings,
-        }),
-      });
+      const body = JSON.stringify({ scale, rotationDeg, altitudeOffset, longitude, latitude, hideBaseBuilding, hiddenBuildings });
+      const res = activeVersion
+        ? await fetch(`/api/map-models/${project.id}/versions/${activeVersion.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body,
+          })
+        : await fetch(`/api/map-models/${project.id}/versions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
       if (!res.ok) throw new Error(await res.text());
       await refresh();
       setFlash(t("admin.mapModelSaved"));
@@ -327,12 +360,20 @@ export function MapModelEditor({
   }
 
   async function handlePublish() {
-    if (!isDraftActive || !activeVersion) return;
+    if (!canEdit) return;
+    if (activeVersion && !isDraftActive) return;
     setBusy(true);
     setError(null);
     try {
       await handleSaveDraft();
-      const res = await fetch(`/api/map-models/${project.id}/versions/${activeVersion.id}/publish`, {
+      // Re-read fresh from the server rather than trusting the closed-over
+      // `activeVersion` — when this is the very first save (no version
+      // existed when this call started), handleSaveDraft's own POST above
+      // just created one that this component doesn't have an id for yet.
+      const rows = await refresh();
+      const target = pickActiveVersion(rows);
+      if (!target) throw new Error("No draft to publish.");
+      const res = await fetch(`/api/map-models/${project.id}/versions/${target.id}/publish`, {
         method: "POST",
       });
       if (!res.ok) throw new Error(await res.text());
@@ -456,6 +497,13 @@ export function MapModelEditor({
   }
 
   const hasModel = !!activeVersion;
+  // Distinct from `hasModel` above ("is there a version row at all,"
+  // governing canEdit/publish gating below) — this is specifically "is
+  // there an uploaded file to show," for the render section further down
+  // that displays file name/size/validation. A version can exist (saved,
+  // even published) with no file yet — "save the location before
+  // uploading a model."
+  const hasFile = !!activeVersion?.publicAssetUrl;
   const previewUrl = localPreviewUrl ?? (activeVersion?.publicAssetUrl || null);
   // "Move location first, then add the 3D model" — before any version
   // exists at all, there's no published state to protect yet, so editing
@@ -591,11 +639,23 @@ export function MapModelEditor({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-neutral-800">
-                        {activeVersion!.fileName}{" "}
-                        <span className="font-normal text-neutral-400">v{activeVersion!.version}</span>
-                      </p>
-                      <p className="text-xs text-neutral-500">{formatBytes(activeVersion!.fileSize)}</p>
+                      {hasFile ? (
+                        <>
+                          <p className="truncate text-sm font-semibold text-neutral-800">
+                            {activeVersion!.fileName}{" "}
+                            <span className="font-normal text-neutral-400">v{activeVersion!.version}</span>
+                          </p>
+                          <p className="text-xs text-neutral-500">{formatBytes(activeVersion!.fileSize!)}</p>
+                        </>
+                      ) : (
+                        // "Save the location before uploading a model" — a
+                        // real, savable (even publishable) version exists,
+                        // it just has no file yet.
+                        <p className="truncate text-sm font-semibold text-neutral-800">
+                          {t("admin.mapModelNoFileYet")}{" "}
+                          <span className="font-normal text-neutral-400">v{activeVersion!.version}</span>
+                        </p>
+                      )}
                     </div>
                     <div className="flex shrink-0 gap-1.5">
                       {!canEdit && activeVersion!.publicationStatus === "published" && (
@@ -612,7 +672,7 @@ export function MapModelEditor({
                         disabled={busy}
                         className="rounded-control border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-white disabled:opacity-40"
                       >
-                        {t("admin.mapModelReplace")}
+                        {hasFile ? t("admin.mapModelReplace") : t("admin.mapModelUpload")}
                       </button>
                       {canEdit ? (
                         <button
@@ -651,7 +711,11 @@ export function MapModelEditor({
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <ValidationBadge status={activeVersion!.validationStatus} issues={activeVersion!.validationIssues} />
+                    {hasFile ? (
+                      <ValidationBadge status={activeVersion!.validationStatus} issues={activeVersion!.validationIssues} />
+                    ) : (
+                      <span className="text-[11px] text-neutral-400">{t("admin.mapModelNoFileYetHint")}</span>
+                    )}
                     <span
                       className={cn(
                         "text-[11px] font-semibold",

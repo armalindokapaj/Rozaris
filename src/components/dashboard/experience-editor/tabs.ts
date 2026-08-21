@@ -14,6 +14,7 @@ export const EDITOR_TABS = [
   "shots",
   "interaction",
   "performance",
+  "map",
   "publish",
 ] as const;
 
@@ -32,6 +33,7 @@ export const EDITOR_TAB_LABELS: Record<EditorTabId, string> = {
   shots: "Shots",
   interaction: "Interaction",
   performance: "Performance",
+  map: "Map",
   publish: "Publish",
 };
 
@@ -56,4 +58,5 @@ export const EDITOR_TAB_PHASE: Record<EditorTabId, number> = {
   interaction: 7,
   performance: 8,
   publish: 9,
+  map: 12,
 };

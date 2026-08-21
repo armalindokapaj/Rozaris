@@ -14,6 +14,7 @@ import { ShotsPanel } from "./panels/ShotsPanel";
 import { SectionsPanel } from "./panels/SectionsPanel";
 import { InteractionPanel } from "./panels/InteractionPanel";
 import { PerformancePanel } from "./panels/PerformancePanel";
+import { MapPanel } from "./panels/MapPanel";
 import { PublishPanel } from "./panels/PublishPanel";
 import { EDITOR_TAB_LABELS, EDITOR_TAB_PHASE, type EditorTabId } from "./tabs";
 import type { UseDetailModelSlotsReturn } from "@/hooks/useDetailModelSlots";
@@ -111,6 +112,8 @@ export function Inspector({
         <InteractionPanel configEditor={configEditor} />
       ) : activeTab === "performance" ? (
         <PerformancePanel configEditor={configEditor} />
+      ) : activeTab === "map" ? (
+        <MapPanel detail={detail} configEditor={configEditor} />
       ) : activeTab === "publish" ? (
         <PublishPanel project={project} detail={detail} configEditor={configEditor} modelEditor={modelEditor} units={units} locale={locale} />
       ) : (
