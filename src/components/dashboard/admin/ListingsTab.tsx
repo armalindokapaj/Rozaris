@@ -156,8 +156,15 @@ export function ListingsTab() {
   // transaction included, which that editor's own inline form leaves out).
   type UnitEditDraft = Pick<
     AdminUnitRow,
-    "code" | "type" | "buildingName" | "floor" | "bedrooms" | "bathrooms" | "area" | "price" | "currency" | "transaction" | "status"
-  >;
+    "code" | "type" | "buildingName" | "bedrooms" | "bathrooms" | "currency" | "transaction" | "status"
+  > & {
+    // "" while the field is mid-edit-and-cleared — see ClearableNumber's
+    // own doc comment for why floor/area/price need this and
+    // bedrooms/bathrooms (a fixed dropdown, always has a real value) don't.
+    floor: number | "";
+    area: number | "";
+    price: number | "";
+  };
   const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
   const [unitDraft, setUnitDraft] = useState<UnitEditDraft | null>(null);
   const [unitSaving, setUnitSaving] = useState(false);
@@ -188,14 +195,26 @@ export function ListingsTab() {
   }
 
   async function saveEditUnit(u: AdminUnitRow) {
-    if (!unitDraft || !unitDraft.code.trim() || unitDraft.area <= 0 || unitDraft.price <= 0) return;
+    if (
+      !unitDraft ||
+      !unitDraft.code.trim() ||
+      unitDraft.area === "" ||
+      unitDraft.area <= 0 ||
+      unitDraft.price === "" ||
+      unitDraft.price <= 0
+    )
+      return;
     setUnitSaving(true);
     setUnitEditError(null);
     try {
       const res = await fetch(`/api/projects/${u.projectId}/units/${u.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...unitDraft, code: unitDraft.code.trim() }),
+        body: JSON.stringify({
+          ...unitDraft,
+          code: unitDraft.code.trim(),
+          floor: unitDraft.floor === "" ? 0 : unitDraft.floor,
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
@@ -244,24 +263,31 @@ export function ListingsTab() {
               </button>
             ))}
           </div>
-          {view === "listings" && (
-            <div className="flex gap-1.5">
-              {(["all", "unassigned"] as const).map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => setProjectFilter(f)}
-                  className={`rounded-pill border px-3 py-1.5 text-xs font-semibold ${
-                    projectFilter === f
-                      ? "border-neutral-900 bg-neutral-900 text-white"
-                      : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300"
-                  }`}
-                >
-                  {f === "all" ? t("admin.allListingsFilter") : t("admin.unassignedListingsFilter")}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Kept mounted (just hidden) rather than conditionally removed
+              when view !== "listings" — this group sits inside a
+              `justify-between` row that's otherwise anchored to the far
+              right, so unmounting it used to shrink the whole button
+              cluster's width and visibly shift the Listings/Units toggle
+              rightward every time "Units" was clicked. `invisible` keeps
+              its reserved width so nothing else in the row moves. */}
+          <div className={`flex gap-1.5 ${view === "listings" ? "" : "invisible"}`} aria-hidden={view !== "listings"}>
+            {(["all", "unassigned"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                disabled={view !== "listings"}
+                tabIndex={view === "listings" ? 0 : -1}
+                onClick={() => setProjectFilter(f)}
+                className={`rounded-pill border px-3 py-1.5 text-xs font-semibold ${
+                  projectFilter === f
+                    ? "border-neutral-900 bg-neutral-900 text-white"
+                    : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300"
+                }`}
+              >
+                {f === "all" ? t("admin.allListingsFilter") : t("admin.unassignedListingsFilter")}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={() => setCreating((v) => !v)}
@@ -455,48 +481,36 @@ export function ListingsTab() {
                             />
                           </Field>
                           <Field label={t("listing.floor")}>
-                            <input
-                              type="number"
+                            <ClearableNumber
                               value={unitDraft.floor}
-                              onChange={(e) => setUnitDraft({ ...unitDraft, floor: Number(e.target.value) })}
-                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                              onChange={(v) => setUnitDraft({ ...unitDraft, floor: v })}
                             />
                           </Field>
                           <Field label={t("unit.beds")}>
-                            <input
-                              type="number"
-                              min={0}
+                            <CountSelect
                               value={unitDraft.bedrooms}
-                              onChange={(e) => setUnitDraft({ ...unitDraft, bedrooms: Number(e.target.value) })}
-                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                              onChange={(v) => setUnitDraft({ ...unitDraft, bedrooms: v })}
                             />
                           </Field>
                           <Field label={t("unit.baths")}>
-                            <input
-                              type="number"
-                              min={0}
+                            <CountSelect
                               value={unitDraft.bathrooms}
-                              onChange={(e) => setUnitDraft({ ...unitDraft, bathrooms: Number(e.target.value) })}
-                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                              onChange={(v) => setUnitDraft({ ...unitDraft, bathrooms: v })}
                             />
                           </Field>
                           <Field label={t("filters.areaM2")}>
-                            <input
-                              type="number"
-                              min={1}
+                            <ClearableNumber
                               value={unitDraft.area}
-                              onChange={(e) => setUnitDraft({ ...unitDraft, area: Number(e.target.value) })}
-                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                              min={1}
+                              onChange={(v) => setUnitDraft({ ...unitDraft, area: v })}
                             />
                           </Field>
                           <Field label={t("dashboard.priceLabel")}>
-                            <input
-                              type="number"
+                            <ClearableNumber
+                              value={unitDraft.price}
                               min={1}
                               step={1000}
-                              value={unitDraft.price}
-                              onChange={(e) => setUnitDraft({ ...unitDraft, price: Number(e.target.value) })}
-                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                              onChange={(v) => setUnitDraft({ ...unitDraft, price: v })}
                             />
                           </Field>
                           <Field label={t("admin.currencyLabel")}>
@@ -548,7 +562,14 @@ export function ListingsTab() {
                           <button
                             type="button"
                             onClick={() => saveEditUnit(u)}
-                            disabled={unitSaving || !unitDraft.code.trim() || unitDraft.area <= 0 || unitDraft.price <= 0}
+                            disabled={
+                              unitSaving ||
+                              !unitDraft.code.trim() ||
+                              unitDraft.area === "" ||
+                              unitDraft.area <= 0 ||
+                              unitDraft.price === "" ||
+                              unitDraft.price <= 0
+                            }
                             className="flex items-center gap-1.5 rounded-control bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
                           >
                             <Check className="h-3.5 w-3.5" />
@@ -687,11 +708,11 @@ function NewUnitForm({
   const [projectId, setProjectId] = useState("");
   const [code, setCode] = useState("");
   const [buildingName, setBuildingName] = useState("");
-  const [floor, setFloor] = useState(1);
+  const [floor, setFloor] = useState<number | "">(1);
   const [bedrooms, setBedrooms] = useState(1);
   const [bathrooms, setBathrooms] = useState(1);
-  const [area, setArea] = useState(60);
-  const [price, setPrice] = useState(80000);
+  const [area, setArea] = useState<number | "">(60);
+  const [price, setPrice] = useState<number | "">(80000);
   const [status, setStatus] = useState<Unit["status"]>("available");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -706,7 +727,8 @@ function NewUnitForm({
     setBuildingName(buildings[0] ?? "");
   }
 
-  const canSave = projectId !== "" && code.trim() !== "" && buildingName !== "" && area > 0 && price > 0;
+  const canSave =
+    projectId !== "" && code.trim() !== "" && buildingName !== "" && area !== "" && area > 0 && price !== "" && price > 0;
 
   async function handleSave() {
     if (!canSave) return;
@@ -721,7 +743,7 @@ function NewUnitForm({
           code: code.trim(),
           type: "residential",
           buildingName,
-          floor,
+          floor: floor === "" ? 0 : floor,
           area,
           bedrooms,
           bathrooms,
@@ -800,50 +822,19 @@ function NewUnitForm({
               )}
             </Field>
             <Field label={t("listing.floor")}>
-              <input
-                type="number"
-                value={floor}
-                min={0}
-                onChange={(e) => setFloor(Number(e.target.value))}
-                className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
-              />
+              <ClearableNumber value={floor} min={0} onChange={setFloor} />
             </Field>
             <Field label={t("unit.beds")}>
-              <input
-                type="number"
-                value={bedrooms}
-                min={0}
-                onChange={(e) => setBedrooms(Number(e.target.value))}
-                className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
-              />
+              <CountSelect value={bedrooms} onChange={setBedrooms} />
             </Field>
             <Field label={t("unit.baths")}>
-              <input
-                type="number"
-                value={bathrooms}
-                min={0}
-                onChange={(e) => setBathrooms(Number(e.target.value))}
-                className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
-              />
+              <CountSelect value={bathrooms} onChange={setBathrooms} />
             </Field>
             <Field label={t("filters.areaM2")}>
-              <input
-                type="number"
-                value={area}
-                min={1}
-                onChange={(e) => setArea(Number(e.target.value))}
-                className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
-              />
+              <ClearableNumber value={area} min={1} onChange={setArea} />
             </Field>
             <Field label={t("dashboard.priceLabel")}>
-              <input
-                type="number"
-                value={price}
-                min={1}
-                step={1000}
-                onChange={(e) => setPrice(Number(e.target.value))}
-                className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
-              />
+              <ClearableNumber value={price} min={1} step={1000} onChange={setPrice} />
             </Field>
             <Field label={t("unit.viewerAvailability")}>
               <select
@@ -888,5 +879,61 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       </span>
       {children}
     </label>
+  );
+}
+
+/** A number input that starts with a sensible non-zero default (floor 1,
+ * price 80000, …) but doesn't fight you when you want to replace it: value
+ * is `number | ""` so backspacing all the way actually empties the field
+ * instead of snapping back to "0" and leaving a digit for the next
+ * keystroke to collide with (typing "6" over a stuck "0" landing as "06")
+ * — and focusing the field selects its current text, so a single
+ * keystroke replaces the whole default instead of inserting into it. */
+function ClearableNumber({
+  value,
+  onChange,
+  min,
+  step = 1,
+}: {
+  value: number | "";
+  onChange: (v: number | "") => void;
+  min?: number;
+  step?: number;
+}) {
+  return (
+    <input
+      type="number"
+      value={value}
+      min={min}
+      step={step}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
+      className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+    />
+  );
+}
+
+/** Bedrooms/bathrooms as a real dropdown (0/1/2/3/4) rather than a free-
+ * typed number field — nothing about "how many bathrooms" benefits from
+ * the same clear/retype friction as price or floor. If the current value
+ * is already outside 0-4 (an existing unit edited from elsewhere), it's
+ * added as its own option rather than silently dropped, so opening the
+ * edit panel on a real 5+ bedroom unit never looks like data went missing. */
+function CountSelect({ value, onChange, max = 4 }: { value: number; onChange: (v: number) => void; max?: number }) {
+  const options = Array.from({ length: max + 1 }, (_, i) => i);
+  if (!options.includes(value)) options.push(value);
+  options.sort((a, b) => a - b);
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+    >
+      {options.map((n) => (
+        <option key={n} value={n}>
+          {n}
+        </option>
+      ))}
+    </select>
   );
 }
