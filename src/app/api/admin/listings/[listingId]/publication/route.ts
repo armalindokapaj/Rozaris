@@ -133,6 +133,24 @@ export async function PATCH(
     }
   }
 
+  // The reverse case: the project is moving (or clearing) in THIS request,
+  // but the request doesn't otherwise touch `unitId` — a plain "Move to
+  // project" click, not a "Link unit" one. If this listing already has a
+  // linked unit, that unit now silently belongs to a different project
+  // than the listing does — an inconsistent pair the admin UI's own unit
+  // picker (scoped to the listing's project) could never even produce.
+  // Auto-clear it rather than leave that mismatch sitting in the DB.
+  if ((projectTarget || clearProject) && parsed.data.unitId === undefined && existing.unitId) {
+    const linkedUnit = await prisma.unit.findUnique({
+      where: { id: existing.unitId },
+      select: { projectId: true },
+    });
+    const newProjectId = projectTarget ? projectTarget.id : null;
+    if (!linkedUnit || linkedUnit.projectId !== newProjectId) {
+      clearUnit = true;
+    }
+  }
+
   try {
     const idleUpdate =
       parsed.data.idleDays == null

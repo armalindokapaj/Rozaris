@@ -315,7 +315,27 @@ export function ListingManagePanel({
           <button
             type="button"
             disabled={busy || unitOptions.length === 0 || unitSelection === (listing.unitId ?? "")}
-            onClick={() => patch({ unitId: unitSelection || null })}
+            onClick={() => {
+              // Bug fix: the unit picker's options are scoped to whichever
+              // project is CURRENTLY SELECTED above (`projectSelection`),
+              // not necessarily the listing's already-saved `projectId` —
+              // picking a project to browse its units, then a unit, then
+              // clicking Link without first clicking Move used to send
+              // `unitId` alone. The server then validated the unit against
+              // the listing's *old* project (see the publication route's
+              // `effectiveProjectId`), which either 400'd with a confusing
+              // "doesn't belong to this listing's project" error, or —
+              // if the listing had no project yet — silently linked a unit
+              // while leaving the listing itself unassigned. Send both
+              // fields together whenever the project selection has moved,
+              // so the move and the link land in the one request the
+              // server already validates as a pair.
+              const body: Record<string, unknown> = { unitId: unitSelection || null };
+              if (projectSelection !== (listing.projectId ?? "")) {
+                body.projectId = projectSelection || null;
+              }
+              patch(body);
+            }}
             className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
           >
             <Link2 className="h-3.5 w-3.5" /> {t("admin.moveToUnitAction")}

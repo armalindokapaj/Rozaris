@@ -1,16 +1,22 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import { Gem } from "lucide-react";
+import { Gem, Plus } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useAdminPublishers } from "@/hooks/useAdminPublishers";
 import { isListingIdle, isListingStale } from "@/lib/moderation";
+import { NewListingForm } from "@/components/dashboard/NewListingForm";
 import { ListingManagePanel, LISTING_STATUS_STYLE, type AdminListingRow } from "@/components/dashboard/admin/ListingManagePanel";
+import type { Unit } from "@/lib/types";
 
 interface ProjectOption {
   id: string;
   name: string;
+  /** Needed only by the "New unit" form's building picker below — the
+   * admin projects list already returns this (`normalizeProject`), so no
+   * separate fetch. */
+  buildings: string[];
 }
 
 /** `GET /api/admin/units`'s shape — every real Unit, whichever project it's
@@ -65,6 +71,49 @@ export function ListingsTab() {
   const [managing, setManaging] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState<"all" | "unassigned">("all");
   const [view, setView] = useState<"listings" | "units">("listings");
+  const [creating, setCreating] = useState(false);
+
+  // "New listing" from this global tab has no single project to inherit a
+  // publisher/unit scope from (unlike ProjectListingsPanel, which always
+  // has `project.developer.id` and that project's own units on hand) — so
+  // creation here starts with its own small publisher + project picker,
+  // then reuses the same `NewListingForm` every other creation surface
+  // does. Publisher is required (`NewListingForm.publisherId` isn't
+  // optional); project is not.
+  const [newListingPublisherId, setNewListingPublisherId] = useState("");
+  const [newListingProjectId, setNewListingProjectId] = useState("");
+  const [newListingUnitOptions, setNewListingUnitOptions] = useState<{ id: string; code: string }[]>([]);
+  // Publisher and project are picked together on one small screen before
+  // `NewListingForm` itself appears — a separate `ready` flag (rather than
+  // switching the moment a publisher is chosen) so picking publisher first
+  // doesn't yank the project picker away before it's had a chance to be
+  // used, whichever order the admin fills them in.
+  const [newListingReady, setNewListingReady] = useState(false);
+  // Same "adjusting state during render" pattern ListingManagePanel's own
+  // unit picker uses (see its `syncedProjectSelection`) — clears stale
+  // options synchronously the moment the project selection itself changes,
+  // so the effect below only ever needs to run when there's a project to
+  // actually query.
+  const [syncedNewListingProjectId, setSyncedNewListingProjectId] = useState(newListingProjectId);
+  if (newListingProjectId !== syncedNewListingProjectId) {
+    setSyncedNewListingProjectId(newListingProjectId);
+    setNewListingUnitOptions([]);
+  }
+  useEffect(() => {
+    if (!newListingProjectId) return;
+    let cancelled = false;
+    fetch(`/api/projects/${newListingProjectId}/units`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: { id: string; code: string }[]) => {
+        if (!cancelled) setNewListingUnitOptions(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setNewListingUnitOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [newListingProjectId]);
 
   function refresh() {
     fetch("/api/admin/listings?status=all")
@@ -113,7 +162,10 @@ export function ListingsTab() {
               <button
                 key={v}
                 type="button"
-                onClick={() => setView(v)}
+                onClick={() => {
+                  setView(v);
+                  setCreating(false);
+                }}
                 className={`rounded-pill border px-3 py-1.5 text-xs font-semibold ${
                   view === v
                     ? "border-neutral-900 bg-neutral-900 text-white"
@@ -142,8 +194,101 @@ export function ListingsTab() {
               ))}
             </div>
           )}
+          <button
+            type="button"
+            onClick={() => setCreating((v) => !v)}
+            className="flex items-center gap-1.5 rounded-control bg-neutral-900 px-2.5 py-1.5 text-xs font-semibold text-white"
+          >
+            <Plus className="h-3.5 w-3.5" /> {view === "units" ? t("admin.newUnit") : t("admin.newListing")}
+          </button>
         </div>
       </div>
+
+      {creating && view === "listings" && (
+        <div className="rounded-panel border border-neutral-200 bg-neutral-50 p-3">
+          {!newListingReady ? (
+            <div className="space-y-3">
+              <label className="block max-w-xs">
+                <span className="mb-1.5 block text-xs font-medium text-neutral-500">{t("admin.postingOnBehalfOf")}</span>
+                <select
+                  value={newListingPublisherId}
+                  onChange={(e) => setNewListingPublisherId(e.target.value)}
+                  className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-sm"
+                >
+                  <option value="">{t("admin.selectPublisher")}</option>
+                  {publishers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block max-w-xs">
+                <span className="mb-1.5 block text-xs font-medium text-neutral-500">{t("admin.projectLabel")}</span>
+                <select
+                  value={newListingProjectId}
+                  onChange={(e) => setNewListingProjectId(e.target.value)}
+                  className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-sm"
+                >
+                  <option value="">{t("admin.unassignedOption")}</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={!newListingPublisherId}
+                  onClick={() => setNewListingReady(true)}
+                  className="rounded-control bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+                >
+                  {t("common.continue")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreating(false)}
+                  className="rounded-control border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-50"
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <NewListingForm
+              publisherId={newListingPublisherId}
+              projectId={newListingProjectId || undefined}
+              unitOptions={newListingUnitOptions}
+              onSaved={() => {
+                setCreating(false);
+                setNewListingReady(false);
+                setNewListingPublisherId("");
+                setNewListingProjectId("");
+                refresh();
+              }}
+              onCancel={() => {
+                setCreating(false);
+                setNewListingReady(false);
+                setNewListingPublisherId("");
+                setNewListingProjectId("");
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      {creating && view === "units" && (
+        <NewUnitForm
+          projects={projects}
+          onSaved={() => {
+            setCreating(false);
+            refresh();
+          }}
+          onCancel={() => setCreating(false)}
+        />
+      )}
 
       {view === "units" ? (
         <div className="overflow-hidden rounded-panel border border-neutral-200 bg-white">
@@ -291,5 +436,232 @@ export function ListingsTab() {
       </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Global-Listings-tab counterpart to `ProjectUnitsEditor.tsx`'s own inline
+ * "add unit" form — same fields, same `POST /api/projects/[projectId]/units`
+ * shape, but this one starts with no project of its own to write into, so
+ * it needs its own project picker up front (`Unit.projectId` is required)
+ * before the rest of the fields make sense. Not reachable from anywhere
+ * project-scoped (project detail's own Units panel stays the normal way
+ * to add a unit while working inside one project); this exists so a unit
+ * can be created without leaving the platform-wide audit view.
+ */
+function NewUnitForm({
+  projects,
+  onSaved,
+  onCancel,
+}: {
+  projects: { id: string; name: string; buildings: string[] }[];
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const { t } = useT();
+  const [projectId, setProjectId] = useState("");
+  const [code, setCode] = useState("");
+  const [buildingName, setBuildingName] = useState("");
+  const [floor, setFloor] = useState(1);
+  const [bedrooms, setBedrooms] = useState(1);
+  const [bathrooms, setBathrooms] = useState(1);
+  const [area, setArea] = useState(60);
+  const [price, setPrice] = useState(80000);
+  const [status, setStatus] = useState<Unit["status"]>("available");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const buildings = projects.find((p) => p.id === projectId)?.buildings ?? [];
+  // The building select needs a real option to sit on — reset to this
+  // project's first building whenever the project changes (including away
+  // from one with no buildings at all, where it clears back to "").
+  const [syncedProjectId, setSyncedProjectId] = useState(projectId);
+  if (projectId !== syncedProjectId) {
+    setSyncedProjectId(projectId);
+    setBuildingName(buildings[0] ?? "");
+  }
+
+  const canSave = projectId !== "" && code.trim() !== "" && buildingName !== "" && area > 0 && price > 0;
+
+  async function handleSave() {
+    if (!canSave) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/units`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: `${projectId}-unit-${Date.now()}`,
+          code: code.trim(),
+          type: "residential",
+          buildingName,
+          floor,
+          area,
+          bedrooms,
+          bathrooms,
+          price,
+          currency: "EUR",
+          transaction: "sale",
+          status,
+          images: [],
+          floorPlanImage: "",
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ? JSON.stringify(body.error) : "Could not create the unit — try again.");
+      }
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create the unit — try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
+      {error && <p className="rounded-control bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{error}</p>}
+      <label className="block max-w-xs">
+        <span className="mb-1.5 block text-xs font-medium text-neutral-500">{t("admin.projectLabel")}</span>
+        <select
+          value={projectId}
+          onChange={(e) => setProjectId(e.target.value)}
+          className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-sm"
+        >
+          <option value="">{t("admin.selectProjectPlaceholder")}</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {projectId === "" ? (
+        <p className="text-xs text-neutral-400">{t("admin.selectProjectFirst")}</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <Field label={t("admin.unitCode")}>
+              <input
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="A-101"
+                className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+              />
+            </Field>
+            <Field label={t("unit.viewerBuilding")}>
+              {buildings.length > 0 ? (
+                <select
+                  value={buildingName}
+                  onChange={(e) => setBuildingName(e.target.value)}
+                  className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                >
+                  {buildings.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={buildingName}
+                  onChange={(e) => setBuildingName(e.target.value)}
+                  placeholder="A"
+                  className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                />
+              )}
+            </Field>
+            <Field label={t("listing.floor")}>
+              <input
+                type="number"
+                value={floor}
+                min={0}
+                onChange={(e) => setFloor(Number(e.target.value))}
+                className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+              />
+            </Field>
+            <Field label={t("unit.beds")}>
+              <input
+                type="number"
+                value={bedrooms}
+                min={0}
+                onChange={(e) => setBedrooms(Number(e.target.value))}
+                className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+              />
+            </Field>
+            <Field label={t("unit.baths")}>
+              <input
+                type="number"
+                value={bathrooms}
+                min={0}
+                onChange={(e) => setBathrooms(Number(e.target.value))}
+                className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+              />
+            </Field>
+            <Field label={t("filters.areaM2")}>
+              <input
+                type="number"
+                value={area}
+                min={1}
+                onChange={(e) => setArea(Number(e.target.value))}
+                className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+              />
+            </Field>
+            <Field label={t("dashboard.priceLabel")}>
+              <input
+                type="number"
+                value={price}
+                min={1}
+                step={1000}
+                onChange={(e) => setPrice(Number(e.target.value))}
+                className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+              />
+            </Field>
+            <Field label={t("unit.viewerAvailability")}>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as Unit["status"])}
+                className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+              >
+                <option value="available">{t("unit.statusAvailable")}</option>
+                <option value="reserved">{t("unit.statusReserved")}</option>
+                <option value="sold">{t("unit.statusSold")}</option>
+              </select>
+            </Field>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!canSave || saving}
+              className="rounded-control bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
+            >
+              {saving ? t("dashboard.saving") : t("admin.addUnit")}
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-control border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-50"
+            >
+              {t("common.cancel")}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+        {label}
+      </span>
+      {children}
+    </label>
   );
 }
