@@ -32,6 +32,7 @@ export async function GET() {
     rows.map((u) => ({
       id: u.id,
       code: u.code,
+      type: u.type,
       buildingName: u.buildingName,
       floor: u.floor,
       status: u.status,

@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import { Gem, Plus } from "lucide-react";
+import { Check, Gem, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useAdminPublishers } from "@/hooks/useAdminPublishers";
@@ -28,6 +28,7 @@ interface ProjectOption {
 interface AdminUnitRow {
   id: string;
   code: string;
+  type: Unit["type"];
   buildingName: string;
   floor: number;
   status: string;
@@ -145,6 +146,73 @@ export function ListingsTab() {
     setView("listings");
     setProjectFilter("all");
     setManaging(listingId);
+  }
+
+  // Full unit edit, from this platform-wide view — the only Unit edit
+  // surface before this was `ProjectUnitsEditor.tsx`, reachable only from
+  // inside a project's own edit modal. Same `PATCH
+  // /api/projects/[projectId]/units/[unitId]` write path (real audit log +
+  // inventory-revision bump), just a wider field set (type/currency/
+  // transaction included, which that editor's own inline form leaves out).
+  type UnitEditDraft = Pick<
+    AdminUnitRow,
+    "code" | "type" | "buildingName" | "floor" | "bedrooms" | "bathrooms" | "area" | "price" | "currency" | "transaction" | "status"
+  >;
+  const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
+  const [unitDraft, setUnitDraft] = useState<UnitEditDraft | null>(null);
+  const [unitSaving, setUnitSaving] = useState(false);
+  const [unitEditError, setUnitEditError] = useState<string | null>(null);
+
+  function startEditUnit(u: AdminUnitRow) {
+    setEditingUnitId(u.id);
+    setUnitEditError(null);
+    setUnitDraft({
+      code: u.code,
+      type: u.type,
+      buildingName: u.buildingName,
+      floor: u.floor,
+      bedrooms: u.bedrooms,
+      bathrooms: u.bathrooms,
+      area: u.area,
+      price: u.price,
+      currency: u.currency,
+      transaction: u.transaction,
+      status: u.status,
+    });
+  }
+
+  function cancelEditUnit() {
+    setEditingUnitId(null);
+    setUnitDraft(null);
+    setUnitEditError(null);
+  }
+
+  async function saveEditUnit(u: AdminUnitRow) {
+    if (!unitDraft || !unitDraft.code.trim() || unitDraft.area <= 0 || unitDraft.price <= 0) return;
+    setUnitSaving(true);
+    setUnitEditError(null);
+    try {
+      const res = await fetch(`/api/projects/${u.projectId}/units/${u.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...unitDraft, code: unitDraft.code.trim() }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ? JSON.stringify(body.error) : "Could not save the unit — try again.");
+      }
+      cancelEditUnit();
+      refresh();
+    } catch (err) {
+      setUnitEditError(err instanceof Error ? err.message : "Could not save the unit — try again.");
+    } finally {
+      setUnitSaving(false);
+    }
+  }
+
+  async function deleteUnitRow(u: AdminUnitRow) {
+    const res = await fetch(`/api/projects/${u.projectId}/units/${u.id}`, { method: "DELETE" });
+    if (res.ok) refresh();
   }
 
   return (
@@ -301,50 +369,207 @@ export function ListingsTab() {
                 <th className="px-4 py-2.5 font-medium">{t("dashboard.priceLabel")}</th>
                 <th className="px-4 py-2.5 font-medium">{t("admin.colStatus")}</th>
                 <th className="px-4 py-2.5 font-medium">{t("admin.colLinkedListings")}</th>
+                <th className="px-4 py-2.5 font-medium" />
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {units.map((u) => (
-                <tr key={u.id}>
-                  <td className="px-4 py-3 text-neutral-600">{u.projectName}</td>
-                  <td className="px-4 py-3 text-neutral-600">
-                    {u.buildingName} · {u.floor}
-                  </td>
-                  <td className="px-4 py-3 font-medium text-neutral-800">{u.code}</td>
-                  <td className="px-4 py-3 tabular-nums text-neutral-600">{priceFmt(u.price)}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                        UNIT_STATUS_STYLE[u.status] ?? "bg-neutral-100 text-neutral-500"
-                      }`}
-                    >
-                      {u.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {u.listings.length === 0 ? (
-                      <span className="text-neutral-400">{t("admin.noLinkedListings")}</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {u.listings.map((l) => (
-                          <button
-                            key={l.id}
-                            type="button"
-                            onClick={() => openListingFromUnit(l.id)}
-                            className={`rounded-full px-2 py-1 text-xs font-semibold hover:opacity-80 ${LISTING_STATUS_STYLE[l.status]}`}
-                            title={l.title}
-                          >
-                            {l.title}
-                          </button>
-                        ))}
+                <Fragment key={u.id}>
+                  <tr>
+                    <td className="px-4 py-3 text-neutral-600">{u.projectName}</td>
+                    <td className="px-4 py-3 text-neutral-600">
+                      {u.buildingName} · {u.floor}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-neutral-800">{u.code}</td>
+                    <td className="px-4 py-3 tabular-nums text-neutral-600">{priceFmt(u.price)}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                          UNIT_STATUS_STYLE[u.status] ?? "bg-neutral-100 text-neutral-500"
+                        }`}
+                      >
+                        {u.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {u.listings.length === 0 ? (
+                        <span className="text-neutral-400">{t("admin.noLinkedListings")}</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {u.listings.map((l) => (
+                            <button
+                              key={l.id}
+                              type="button"
+                              onClick={() => openListingFromUnit(l.id)}
+                              className={`rounded-full px-2 py-1 text-xs font-semibold hover:opacity-80 ${LISTING_STATUS_STYLE[l.status]}`}
+                              title={l.title}
+                            >
+                              {l.title}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => (editingUnitId === u.id ? cancelEditUnit() : startEditUnit(u))}
+                          aria-label={t("common.edit")}
+                          className="rounded-full p-1.5 text-neutral-400 hover:bg-brand-50 hover:text-brand-600"
+                        >
+                          {editingUnitId === u.id ? <X className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void deleteUnitRow(u)}
+                          aria-label={t("common.close")}
+                          className="rounded-full p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-500"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                    )}
-                  </td>
-                </tr>
+                    </td>
+                  </tr>
+                  {editingUnitId === u.id && unitDraft && (
+                    <tr>
+                      <td colSpan={7} className="bg-neutral-50 px-4 py-4">
+                        {unitEditError && (
+                          <p className="mb-2.5 rounded-control bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                            {unitEditError}
+                          </p>
+                        )}
+                        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+                          <Field label={t("admin.unitCode")}>
+                            <input
+                              value={unitDraft.code}
+                              onChange={(e) => setUnitDraft({ ...unitDraft, code: e.target.value })}
+                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                            />
+                          </Field>
+                          <Field label={t("unit.viewerBuilding")}>
+                            <input
+                              value={unitDraft.buildingName}
+                              onChange={(e) => setUnitDraft({ ...unitDraft, buildingName: e.target.value })}
+                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                            />
+                          </Field>
+                          <Field label={t("listing.floor")}>
+                            <input
+                              type="number"
+                              value={unitDraft.floor}
+                              onChange={(e) => setUnitDraft({ ...unitDraft, floor: Number(e.target.value) })}
+                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                            />
+                          </Field>
+                          <Field label={t("unit.beds")}>
+                            <input
+                              type="number"
+                              min={0}
+                              value={unitDraft.bedrooms}
+                              onChange={(e) => setUnitDraft({ ...unitDraft, bedrooms: Number(e.target.value) })}
+                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                            />
+                          </Field>
+                          <Field label={t("unit.baths")}>
+                            <input
+                              type="number"
+                              min={0}
+                              value={unitDraft.bathrooms}
+                              onChange={(e) => setUnitDraft({ ...unitDraft, bathrooms: Number(e.target.value) })}
+                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                            />
+                          </Field>
+                          <Field label={t("filters.areaM2")}>
+                            <input
+                              type="number"
+                              min={1}
+                              value={unitDraft.area}
+                              onChange={(e) => setUnitDraft({ ...unitDraft, area: Number(e.target.value) })}
+                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                            />
+                          </Field>
+                          <Field label={t("dashboard.priceLabel")}>
+                            <input
+                              type="number"
+                              min={1}
+                              step={1000}
+                              value={unitDraft.price}
+                              onChange={(e) => setUnitDraft({ ...unitDraft, price: Number(e.target.value) })}
+                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                            />
+                          </Field>
+                          <Field label={t("admin.currencyLabel")}>
+                            <select
+                              value={unitDraft.currency}
+                              onChange={(e) => setUnitDraft({ ...unitDraft, currency: e.target.value })}
+                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                            >
+                              <option value="EUR">EUR</option>
+                              <option value="ALL">ALL</option>
+                            </select>
+                          </Field>
+                          <Field label={t("admin.unitTypeLabel")}>
+                            <select
+                              value={unitDraft.type}
+                              onChange={(e) => setUnitDraft({ ...unitDraft, type: e.target.value as Unit["type"] })}
+                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                            >
+                              <option value="residential">{t("admin.unitTypeResidential")}</option>
+                              <option value="commercial">{t("admin.unitTypeCommercial")}</option>
+                              <option value="parking">{t("admin.unitTypeParking")}</option>
+                              <option value="storage">{t("admin.unitTypeStorage")}</option>
+                            </select>
+                          </Field>
+                          <Field label={t("admin.transactionLabel")}>
+                            <select
+                              value={unitDraft.transaction}
+                              onChange={(e) => setUnitDraft({ ...unitDraft, transaction: e.target.value })}
+                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                            >
+                              <option value="sale">{t("admin.transactionSale")}</option>
+                              <option value="rent">{t("admin.transactionRent")}</option>
+                              <option value="coming_soon">{t("admin.transactionComingSoon")}</option>
+                            </select>
+                          </Field>
+                          <Field label={t("unit.viewerAvailability")}>
+                            <select
+                              value={unitDraft.status}
+                              onChange={(e) => setUnitDraft({ ...unitDraft, status: e.target.value })}
+                              className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+                            >
+                              <option value="available">{t("unit.statusAvailable")}</option>
+                              <option value="reserved">{t("unit.statusReserved")}</option>
+                              <option value="sold">{t("unit.statusSold")}</option>
+                            </select>
+                          </Field>
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => saveEditUnit(u)}
+                            disabled={unitSaving || !unitDraft.code.trim() || unitDraft.area <= 0 || unitDraft.price <= 0}
+                            className="flex items-center gap-1.5 rounded-control bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            {unitSaving ? t("dashboard.saving") : t("common.save")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditUnit}
+                            className="rounded-control border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-50"
+                          >
+                            {t("common.cancel")}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
               {units.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-neutral-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-neutral-400">
                     {t("admin.noUnitsYet")}
                   </td>
                 </tr>
