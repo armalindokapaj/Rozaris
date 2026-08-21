@@ -129,6 +129,12 @@ export async function POST(
         access: "public",
         addRandomSuffix: true,
         contentType: "model/gltf-binary",
+        // Every version gets its own random-suffixed URL (never
+        // overwritten in place), so this is genuinely immutable — safe
+        // to cache far past Blob's 1-month default. Read by
+        // sw-3d-cache.js's cache-first Service Worker on repeat project
+        // visits, and by any browser's own HTTP disk cache in between.
+        cacheControlMaxAge: 31536000,
       });
       publicAssetUrl = delivery.url;
     } catch (err) {

@@ -6,6 +6,7 @@ import { useAppStore } from "@/lib/store";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { useIdleFade } from "@/hooks/useIdleFade";
 import { useViewerPreferences } from "@/hooks/useViewerPreferences";
+import { use3DAssetCache } from "@/hooks/use3DAssetCache";
 import { useT } from "@/lib/i18n/useT";
 import { ThreeProjectViewer, type ThreeProjectViewerHandle } from "@/components/project/ThreeProjectViewer";
 import { ViewerHUD } from "@/components/project/viewer-hud/ViewerHUD";
@@ -61,6 +62,11 @@ export function ProjectViewerRuntime({
   channel: ViewerChannel;
 }) {
   const { project, construction, detailModels, viewerConfig, units } = bootstrap;
+
+  // Persistent revisit cache (see use3DAssetCache.ts) — scoped per
+  // channel so a marketplace visit never registers a Service Worker
+  // under /embed/ or vice versa.
+  use3DAssetCache(channel === "marketplace" ? "/project/" : "/embed/");
 
   const mainRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<ThreeProjectViewerHandle>(null);

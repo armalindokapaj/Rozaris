@@ -46,6 +46,11 @@ export async function POST(request: Request): Promise<NextResponse> {
           // SunSkySubtab's own client-side checks
           maximumSizeInBytes: isAdPhoto ? 8 * 1024 * 1024 : isBackdropPhoto ? 45 * 1024 * 1024 : 60 * 1024 * 1024,
           addRandomSuffix: true,
+          // Same reasoning as the detail-model versions route: every
+          // upload here (GLBs, ad photos, backdrop panoramas) already
+          // gets a random-suffixed, never-overwritten URL, so it's safe
+          // to cache far past Blob's 1-month default.
+          cacheControlMaxAge: 31536000,
           tokenPayload: JSON.stringify({ pathname }),
         };
       },
