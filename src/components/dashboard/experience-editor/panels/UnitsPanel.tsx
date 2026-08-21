@@ -337,11 +337,46 @@ export function UnitsPanel({
               const link = modelEditor.links.find((l) => l.unitId === unit.id);
               return (
                 <GroupCard key={unit.id}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-neutral-200">{unit.code}</span>
-                    <span className={cn("text-[11px]", mappedUnitIds.has(unit.id) ? "text-green-400" : "text-neutral-500")}>
-                      {mappedUnitIds.has(unit.id) ? "✓ mapped" : "unmapped"}
-                    </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="shrink-0 text-[11px] font-semibold text-neutral-200">{unit.code}</span>
+                    {/* Which mesh THIS unit is linked to, right on its own
+                        row — not just "✓ mapped"/"unmapped" — plus a picker
+                        to link/relink it directly, the reverse direction of
+                        the per-mesh dropdown in the Mapping section above.
+                        Only meaningful once meshes have actually been
+                        detected; falls back to the plain status text until
+                        then (no GLB yet, or Auto Detect hasn't run). */}
+                    {detectedNodes ? (
+                      <select
+                        value={link?.meshName ?? ""}
+                        disabled={!canEdit}
+                        onChange={(e) => {
+                          const newMeshName = e.target.value || null;
+                          // Clear the OLD mesh's link first — setLink()
+                          // only ever touches one mesh at a time, so
+                          // re-pointing a unit at a different mesh without
+                          // this would leave both the old and new mesh
+                          // pointing at the same unit.id, a stale
+                          // double-mapping neither list would show.
+                          if (link && link.meshName !== newMeshName) {
+                            modelEditor.setLink(link.meshName, null);
+                          }
+                          if (newMeshName) modelEditor.setLink(newMeshName, unit.id);
+                        }}
+                        className="max-w-[140px] shrink-0 rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[11px] text-neutral-200 disabled:opacity-50"
+                      >
+                        <option value="">— unmapped —</option>
+                        {detectedNodes.map((meshName) => (
+                          <option key={meshName} value={meshName}>
+                            {meshName}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className={cn("shrink-0 text-[11px]", mappedUnitIds.has(unit.id) ? "text-green-400" : "text-neutral-500")}>
+                        {mappedUnitIds.has(unit.id) ? "✓ mapped" : "unmapped"}
+                      </span>
+                    )}
                   </div>
                   <p className="text-[10px] capitalize text-neutral-500">{unit.status}</p>
                   {link && (
