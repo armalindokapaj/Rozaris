@@ -239,8 +239,20 @@ export function ListingsTab() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="font-serif text-xl text-neutral-900">{t("admin.listingsMgmtTitle")}</h1>
-          <p className="text-sm text-neutral-500">
-            {view === "units" ? t("admin.unitsAuditSubtitle") : t("admin.listingsMgmtSubtitle")}
+          {/* Both subtitles are stacked in the same grid cell (one hidden
+              via `invisible`) instead of swapped in and out, so the
+              paragraph's box always reserves room for whichever text is
+              longer. Otherwise the two subtitles' different lengths could
+              reflow to a different number of lines and change this row's
+              height, nudging the button cluster on the right (it's
+              vertically centered via `items-center`) up or down. */}
+          <p className="grid text-sm text-neutral-500">
+            <span className={`col-start-1 row-start-1 ${view === "units" ? "" : "invisible"}`}>
+              {t("admin.unitsAuditSubtitle")}
+            </span>
+            <span className={`col-start-1 row-start-1 ${view === "units" ? "invisible" : ""}`}>
+              {t("admin.listingsMgmtSubtitle")}
+            </span>
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -293,7 +305,21 @@ export function ListingsTab() {
             onClick={() => setCreating((v) => !v)}
             className="flex items-center gap-1.5 rounded-control bg-neutral-900 px-2.5 py-1.5 text-xs font-semibold text-white"
           >
-            <Plus className="h-3.5 w-3.5" /> {view === "units" ? t("admin.newUnit") : t("admin.newListing")}
+            <Plus className="h-3.5 w-3.5 shrink-0" />
+            {/* "New unit" is shorter than "New listing" — swapping the text
+                directly changed this button's own width, which (since this
+                whole cluster hugs the row's right edge) dragged the
+                Listings/Units toggle sideways every time you clicked
+                between them. Stacking both labels in one grid cell reserves
+                width for the longer one so the button itself never resizes. */}
+            <span className="grid">
+              <span className={`col-start-1 row-start-1 whitespace-nowrap ${view === "units" ? "" : "invisible"}`}>
+                {t("admin.newUnit")}
+              </span>
+              <span className={`col-start-1 row-start-1 whitespace-nowrap ${view === "units" ? "invisible" : ""}`}>
+                {t("admin.newListing")}
+              </span>
+            </span>
           </button>
         </div>
       </div>
