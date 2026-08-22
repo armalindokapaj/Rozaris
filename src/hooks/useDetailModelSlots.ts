@@ -222,9 +222,16 @@ export function useDetailModelSlots(projectId: string) {
 
   async function ensureActiveSlotId(): Promise<string> {
     if (activeSlotId) return activeSlotId;
+    // Real bug fixed 2026-08-21: this used to POST without a `role`,
+    // which the API/DB default to "custom" — so a brand-new project's
+    // very first slot was named "Building" but never actually satisfied
+    // `role === "building"`, silently breaking every feature that filters
+    // on that (Map tab, Units transform-parent auto-link). Projects
+    // created before this line changed still carry the wrong role and
+    // need a one-off data fix.
     const res = await fetchWithSessionRetry(
       `/api/detail-models/${projectId}/slots`,
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Building" }) },
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Building", role: "building" }) },
       establishAdminSession
     );
     if (!res.ok) throw new Error(await res.text());

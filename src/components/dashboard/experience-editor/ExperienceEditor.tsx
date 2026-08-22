@@ -427,6 +427,27 @@ export function ExperienceEditor({
     viewerRef.current?.setUnitsMode(activeTab === "units");
   }, [activeTab]);
 
+  // Real gap found live (Tower Vlora): the editor loads with whichever
+  // slot the API returns first as "active" — almost always Building,
+  // never Units — and UnitsPanel's own Mapping/link UI (Auto Detect,
+  // per-mesh/per-unit pickers) only renders for the CURRENTLY ACTIVE
+  // slot. An admin opening the Units tab landed on Building's mapping
+  // state with no cue to switch, so Auto Detect never ran and no
+  // mesh<->Unit link ever got saved — the unit blocks then had no status
+  // color, no click target, no POI camera, i.e. "Units doesn't show".
+  // Auto-selects the project's Units slot the moment this tab opens
+  // (only when it isn't already active, so it never fights a deliberate
+  // slot switch made while the tab stays open) — closes that gap without
+  // touching UnitsPanel's own picker for projects with multiple slots.
+  useEffect(() => {
+    if (activeTab !== "units") return;
+    const unitsSlot = detail.slots.find((s) => s.role === "units");
+    if (unitsSlot && detail.activeSlotId !== unitsSlot.id) {
+      detail.handleSelectSlot(unitsSlot.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, detail.slots, detail.activeSlotId]);
+
   if (!project) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 bg-neutral-950 p-6 text-center">
