@@ -194,6 +194,39 @@ export function useDetailModelSlots(projectId: string) {
     }
   }
 
+  /** Sets (or clears) a slot's Building anchor — the transform parent it
+   * inherits placement from. The PATCH route has accepted this since the
+   * Units Blocks & POI Layer pass, whose own comment called it something
+   * "the (future) Units tab" would drive, but no UI was ever built for
+   * it. That left a dead end an admin could not get out of: publishing a
+   * role=units slot is HARD-GATED on having an anchor
+   * (versions/[versionId]/publish/route.ts:78), and both the Publish and
+   * Units panels told the admin to "set it on the Scene tab" — where no
+   * such control existed. Slots created today auto-anchor when the
+   * project has exactly one building slot (slots/route.ts:65-72); this is
+   * what fixes the ones that predate that, or that had 0/2+ building
+   * slots at creation time. */
+  async function handleSetTransformParent(slotId: string, parentSlotId: string | null) {
+    try {
+      const res = await fetchWithSessionRetry(
+        `/api/detail-models/${projectId}/slots/${slotId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transformParentSlotId: parentSlotId }),
+        },
+        establishAdminSession
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const updated: DetailModelSlot = await res.json();
+      setSlots((prev) => prev.map((s) => (s.id === slotId ? updated : s)));
+      setDetailFlash(parentSlotId ? "Building anchor set." : "Building anchor cleared.");
+    } catch (err) {
+      console.error("Experience Editor: set transform parent failed", err);
+      setDetailError("Couldn't set the Building anchor.");
+    }
+  }
+
   async function handleDeleteSlot(slotId: string) {
     if (slots.length <= 1) return; // matches the server-side "keep at least one" rule
     const slot = slots.find((s) => s.id === slotId);
@@ -456,6 +489,7 @@ export function useDetailModelSlots(projectId: string) {
     handleSelectSlot,
     handleAddSlot,
     handleRenameSlot,
+    handleSetTransformParent,
     handleDeleteSlot,
     handleDiscardDraft,
     handleRemoveDetailModel,

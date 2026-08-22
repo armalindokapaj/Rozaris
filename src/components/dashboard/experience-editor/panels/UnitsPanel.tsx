@@ -67,7 +67,6 @@ export function UnitsPanel({
   const activeVersion = detail.activeVersion;
   const activeSlot = detail.slots.find((s) => s.id === detail.activeSlotId) ?? null;
   const unitsSlots = detail.slots.filter((s) => s.role === "units");
-  const buildingSlot = detail.slots.find((s) => s.role === "building") ?? null;
   const draft = configEditor.draft;
 
   const [autoDetect, setAutoDetect] = useState(true);
@@ -228,6 +227,39 @@ export function UnitsPanel({
               ))}
             </div>
           )}
+          {/* The Building anchor is what a Units slot inherits its
+            * placement from, and publishing a role=units slot is
+            * hard-gated on having one (publish/route.ts:78). The PATCH
+            * route has accepted `transformParentSlotId` since the Units
+            * Blocks & POI Layer pass, but nothing ever rendered a control
+            * for it — this panel and the Publish panel both just pointed
+            * at "the Scene tab", which has no such control either. An
+            * admin whose slot predates the auto-anchor-on-create rule
+            * (slots/route.ts:65-72) was simply stuck, blocked by a gate
+            * with no reachable remedy. This is that control. */}
+          {activeSlot?.role === "units" && (
+            <label className="mt-1.5 flex items-center justify-between gap-2 px-0.5 text-[11px] text-neutral-400">
+              <span>Building Anchor</span>
+              <select
+                value={activeSlot.transformParentSlotId ?? ""}
+                onChange={(e) => void detail.handleSetTransformParent(activeSlot.id, e.target.value || null)}
+                className={cn(
+                  "max-w-[160px] rounded border bg-neutral-900 px-1.5 py-0.5 text-[11px] text-neutral-200",
+                  activeSlot.transformParentSlotId ? "border-neutral-700" : "border-amber-500/60"
+                )}
+              >
+                <option value="">— none (blocks publishing) —</option>
+                {detail.slots
+                  .filter((s) => s.id !== activeSlot.id)
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                      {s.role === "building" ? " (building)" : ""}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
         </GroupCard>
         {activeSlot?.role === "units" && (
           <p className="mt-1.5 px-0.5 text-[11px] text-neutral-500">
@@ -239,13 +271,13 @@ export function UnitsPanel({
                 auto-match landed correctly but this summary line still
                 showed the stale pre-save count. */}
             {activeVersion ? `${modelEditor.links.length} block${modelEditor.links.length === 1 ? "" : "s"} mapped` : "No GLB uploaded yet — use the Scene tab to upload one."}
-            {" · "}
-            Building Anchor: {buildingSlot?.name ?? "none"}
             {" · Alignment: "}
             {activeSlot.transformParentSlotId ? (
-              <span className="text-green-400">✓ Inherited from Building</span>
+              <span className="text-green-400">
+                ✓ Inherited from {detail.slots.find((s) => s.id === activeSlot.transformParentSlotId)?.name ?? "anchor"}
+              </span>
             ) : (
-              <span className="text-amber-400">— Not linked (set on the Scene tab)</span>
+              <span className="text-amber-400">— set a Building Anchor above to publish</span>
             )}
           </p>
         )}

@@ -120,7 +120,7 @@ export function PublishPanel({
             <CheckRow
               ok={!!activeSlot?.transformParentSlotId}
               label={activeSlot?.transformParentSlotId ? "Building anchor set" : "No Building anchor set"}
-              detail={activeSlot?.transformParentSlotId ? undefined : "Set on the Scene tab — required to publish a Units slot"}
+              detail={activeSlot?.transformParentSlotId ? undefined : "Set the Building Anchor on the Units tab — required to publish a Units slot"}
             />
             <CheckRow
               ok={unmappedBlocks.length === 0}
