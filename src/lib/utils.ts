@@ -119,3 +119,21 @@ export function slugify(text: string): string {
     .replace(/^-+|-+$/g, "");
   return base || "item";
 }
+
+/**
+ * Human file size for admin/upload UI. Extracted here because three
+ * byte-identical private copies already existed (the New Project page,
+ * MapModelEditor, DetailModelUpload) and the 3D Health "Project 3D files"
+ * panel would have been a fourth. Behaviour is deliberately unchanged
+ * from those copies — MB to one decimal above 1 MB, whole KB below, and
+ * never "0 KB" for a file that does have bytes.
+ *
+ * The three existing copies are intentionally left in place: swapping
+ * them is a pure refactor with no behavioural payoff, and those files are
+ * edited concurrently elsewhere.
+ */
+export function formatBytes(bytes: number) {
+  if (bytes <= 0) return "0 KB";
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}

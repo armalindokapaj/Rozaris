@@ -5,6 +5,7 @@ import { AlertOctagon, Boxes, Map as MapIcon, Clock } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { cn, formatRelativeDate } from "@/lib/utils";
 import { useSection, DashboardCard } from "./dashboardKit";
+import { Admin3DFilesPanel } from "./Admin3DFilesPanel";
 
 interface ThreeDHealthSummary {
   mapGlbsLive: number;
@@ -105,6 +106,8 @@ export function Admin3DHealthTab() {
           </div>
         )}
       </DashboardCard>
+
+      <Admin3DFilesPanel />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <DashboardCard title={t("admin.health3d.blockedTitle")} loading={health.loading} error={health.error} onRetry={health.reload}>
