@@ -114,6 +114,23 @@ export function EditorTopBar({
           >
             {detail.activeVersion?.publicationStatus === "published" ? "Live" : "Draft"}
           </span>
+          {/* Silent-failure guard: when the active slot's version is
+            * published, `handleSave` below drops the model half of the
+            * edit (unit links, transform, material overrides) on the
+            * floor and only writes the always-editable config half. The
+            * Save button's own `title` explains that — but ONLY while
+            * configEditor is clean; the moment any config field is also
+            * dirty the button goes fully enabled and a click looks like a
+            * successful save while the unit mapping quietly never
+            * persists. This says so on screen, in both cases. */}
+          {modelSaveBlocked && (
+            <span
+              title="Unit links, transform and material overrides belong to the model version, and a published version is read-only. Switch to a draft version of this slot (or upload a replacement) to save them."
+              className="max-w-[190px] truncate rounded-md bg-amber-500/15 px-2 py-1 text-[10px] font-semibold text-amber-400"
+            >
+              Model edits won’t save on a published version
+            </span>
+          )}
           <button
             onClick={() => void handleSave()}
             disabled={!anyDirty || anySaving || (modelSaveBlocked && !configEditor.dirty)}

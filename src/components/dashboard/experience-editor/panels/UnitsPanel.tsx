@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 import { ScanSearch, Plus, Wand2 } from "lucide-react";
 import { extractUnitNodeNames } from "@/lib/glbUnitNodes";
+import { cleanGlbNodeName } from "@/lib/glbNodeName";
 import { cn } from "@/lib/utils";
 import { ColorRow, GroupCard, SectionHeading, SliderRow, ToggleRow } from "../fields";
 import type { UseModelEditorReturn } from "@/hooks/useModelEditor";
@@ -10,6 +11,16 @@ import type { UseDetailModelSlotsReturn } from "@/hooks/useDetailModelSlots";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import type { Project, Unit } from "@/lib/types";
+
+/** Unions two node-name lists into the sorted, de-duplicated order the
+ * Mapping list renders in — same numeric-aware collation
+ * `extractUnitNodeNames` already sorts its own result with, so a merged
+ * list doesn't reshuffle relative to an unmerged one. */
+function mergeNodeNames(a: string[], b: string[]): string[] {
+  return Array.from(new Set([...a, ...b])).sort((x, y) =>
+    x.localeCompare(y, undefined, { numeric: true, sensitivity: "base" })
+  );
+}
 
 const COMPASS_DIRECTIONS: { label: string; deg: number }[] = [
   { label: "N", deg: 0 },
@@ -63,23 +74,54 @@ export function UnitsPanel({
   const [manualMapping, setManualMapping] = useState(true);
   const [detectedNodes, setDetectedNodes] = useState<string[] | null>(null);
   const [detecting, setDetecting] = useState(false);
+  const [detectError, setDetectError] = useState<string | null>(null);
   const [creatingUnits, setCreatingUnits] = useState(false);
+
+  /** The upload-time `sceneManifest` is the AUTHORITATIVE list of this
+   * GLB's node names: glbValidate.ts builds it server-side straight from
+   * the file's own JSON chunk, so it sees exactly what the 3D artist
+   * authored. The client-side walk in `detect()` re-derives the same list
+   * from a GLTFLoader-parsed scene, and the two can legitimately
+   * disagree — the loader rewrites node names it considers unsafe (see
+   * glbNodeName.ts), and the blob fetch can simply fail. Treating the
+   * client walk as the only source is what left an admin staring at an
+   * empty Mapping list on a model whose manifest listed all three unit
+   * blocks, with no way to link a mesh to a listing at all. */
+  const manifestUnitNodes = useMemo(
+    () =>
+      (activeVersion?.sceneManifest ?? [])
+        .map((n) => cleanGlbNodeName(n.name))
+        .filter((n) => /^Unit_/i.test(n)),
+    [activeVersion?.sceneManifest]
+  );
 
   const [syncedGlbUrl, setSyncedGlbUrl] = useState(activeVersion?.publicAssetUrl ?? null);
   if ((activeVersion?.publicAssetUrl ?? null) !== syncedGlbUrl) {
     setSyncedGlbUrl(activeVersion?.publicAssetUrl ?? null);
     setDetectedNodes(null);
+    setDetectError(null);
   }
 
   async function detect() {
-    if (!activeVersion?.publicAssetUrl) return;
+    if (!activeVersion) return;
     setDetecting(true);
+    setDetectError(null);
     try {
-      const names = await extractUnitNodeNames(activeVersion.publicAssetUrl);
+      const fromGlb = activeVersion.publicAssetUrl
+        ? await extractUnitNodeNames(activeVersion.publicAssetUrl)
+        : [];
+      const names = mergeNodeNames(manifestUnitNodes, fromGlb);
       setDetectedNodes(names);
       if (units) modelEditor.autoDetectLinks(names, units);
-    } catch {
-      setDetectedNodes(null);
+    } catch (err) {
+      // Blanking to `null` here used to wipe the whole Mapping section
+      // with no explanation — indistinguishable from "this GLB genuinely
+      // has no unit blocks". Keep whatever the manifest already knows so
+      // mapping stays possible, and say what actually went wrong.
+      const fallback = mergeNodeNames(manifestUnitNodes, []);
+      setDetectedNodes(fallback.length > 0 ? fallback : null);
+      setDetectError(err instanceof Error ? err.message : "Could not read this GLB.");
+      if (fallback.length > 0 && units) modelEditor.autoDetectLinks(fallback, units);
     } finally {
       setDetecting(false);
     }
@@ -243,12 +285,34 @@ export function UnitsPanel({
             </button>
           )}
 
-          {detectedNodes && (
+          {detectedNodes && detectedNodes.length > 0 && (
             <p className="mt-1.5 text-[11px] text-neutral-500">
               {detectedNodes.length} Unit_ node{detectedNodes.length === 1 ? "" : "s"} found ·{" "}
               <span className={cn(needsReview > 0 ? "text-amber-400" : "text-green-400")}>
                 {matched} mapped, {needsReview} need review
               </span>
+            </p>
+          )}
+
+          {detectError && (
+            <p className="mt-1.5 rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-300">
+              Couldn’t read the GLB directly: {detectError}
+              {manifestUnitNodes.length > 0
+                ? " — falling back to the node list recorded when this model was uploaded."
+                : ""}
+            </p>
+          )}
+
+          {/* Real dead end an admin can otherwise hit with no explanation:
+            * detection completed, found nothing, and the Mapping list
+            * below renders as empty space. Say why, and name the naming
+            * convention the platform is actually looking for. */}
+          {!detecting && detectedNodes !== null && detectedNodes.length === 0 && (
+            <p className="mt-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-300">
+              No <span className="font-mono">Unit_</span> nodes found in this GLB. Each unit block must be
+              named <span className="font-mono">Unit_&lt;code&gt;</span> (e.g. <span className="font-mono">Unit_A-001</span>)
+              in the 3D file. A collection prefix like <span className="font-mono">Layer:</span> is fine — it’s
+              stripped automatically.
             </p>
           )}
 
