@@ -1,4 +1,7 @@
 import * as THREE from "three/webgpu";
+import mapboxgl from "mapbox-gl";
+import { StudioBasemapLayer } from "./StudioBasemapLayer";
+import type { BasemapAnchor } from "./basemapCameraSync";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -424,6 +427,15 @@ export interface DetailModelEntry {
 export interface MountParams {
   showPerfStats?: boolean;
   qualityConfig?: QualityConfig;
+  /** "Mapbox merged into the Studio Scene" (approved plan, Phase 2) — when
+   * set, this mount binds Studio's renderer to a live Mapbox basemap
+   * sharing the same canvas instead of Three.js owning its own (see
+   * `createBasemapRenderer`'s own doc comment). Mount-time only, like
+   * `qualityConfig.renderingMode` — changing it needs a real remount. Not
+   * yet threaded through from the editor UI (that's the plan's Phase 5);
+   * this param exists so the engine itself is independently exercisable
+   * (and was headed-verified) ahead of that wiring. */
+  basemapAnchor?: BasemapAnchor | null;
 }
 
 function normalizeMaterials(m: THREE.Material | THREE.Material[]): THREE.Material[] {
@@ -551,6 +563,13 @@ export class RenderEngine {
   private scene: THREE.Scene | null = null;
   private camera: THREE.PerspectiveCamera | null = null;
   private controls: OrbitControls | null = null;
+  // "Real-world basemap" mount path (approved plan, Phase 2) — null on the
+  // default (standard) mount. `map` non-null is this engine's own signal
+  // for "basemap mode is active", read by performResize()/dispose() so
+  // they don't fight Mapbox's ownership of the shared canvas.
+  private map: mapboxgl.Map | null = null;
+  private basemapLayer: StudioBasemapLayer | null = null;
+  private basemapRafId: number | null = null;
   private ambient: THREE.AmbientLight | null = null;
   private sun: THREE.DirectionalLight | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -773,50 +792,8 @@ export class RenderEngine {
     this.effectiveRenderScale = target.renderScale;
     this.downgradeStep = 0;
 
-    // renderingMode -> forceWebGL and antialiasEnabled -> antialias are
-    // both renderer-CONSTRUCTION-time flags — "auto"/"webgpu" both let
-    // Three.js probe for WebGPU and fall back to WebGL2 on its own; only
-    // "webgl2" forces the WebGL2 backend outright. `antialias: false`
-    // whenever Rendering → Anti-Aliasing (TRAA) is on, per TRAANode's own
-    // doc note ("MSAA must be disabled when TRAA is in use") — real MSAA
-    // otherwise, matching this engine's pre-Phase-4 always-on behavior.
-    // Changing either after mount needs a real remount (see
-    // setQualityConfig's/setRenderingConfig's own doc comments).
-    const renderer = new THREE.WebGPURenderer({
-      antialias: !this.renderingConfig.antialiasEnabled,
-      forceWebGL: this.qualityConfig.renderingMode === "webgl2",
-    });
-    try {
-      await renderer.init();
-    } catch {
-      if (token === this.mountToken) this.callbacks.onWebglFail();
-      return;
-    }
-    if (token !== this.mountToken) {
-      renderer.dispose();
-      return;
-    }
-
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, target.dprCap));
-    renderer.setSize(container.clientWidth * this.effectiveRenderScale, container.clientHeight * this.effectiveRenderScale, false);
-    renderer.domElement.style.width = "100%";
-    renderer.domElement.style.height = "100%";
-    // Real bug fix (Phase 2) — the Environment tab's physically-based
-    // Sky/Water/Ground shaders all produce genuine HDR output (a physical
-    // sky's luminance routinely exceeds 1.0), and WebGPURenderer's own
-    // default is NoToneMapping (hard-clip above 1.0) — without a real
-    // curve set before the first PMREM sky capture below, the sky dome
-    // renders solid blown-out white instead of a blue gradient. Reads
-    // from `this.renderingConfig` (real Rendering → Color tab fields,
-    // Phase 4) rather than a hardcoded ACES/1 — by the time this runs,
-    // React's setRenderingConfig has already updated the field (same
-    // effect-ordering guarantee applyCameraConfig/applyEnvironmentConfig
-    // already rely on), so this picks up the real per-project value on
-    // first paint, not a default flash.
-    renderer.toneMapping = TONE_MAPPING_MAP[this.renderingConfig.toneMapping];
-    renderer.toneMappingExposure = this.renderingConfig.exposure;
-    container.appendChild(renderer.domElement);
-    this.renderer = renderer;
+    const renderer = await this.createRenderer(container, target, token, params.basemapAnchor ?? null);
+    if (!renderer) return;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1a20);
@@ -960,6 +937,7 @@ export class RenderEngine {
     scene.fogNode = fogSystem.node;
     this.fogSystem = fogSystem;
 
+
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 0, 0);
     this.controls = controls;
@@ -1100,56 +1078,255 @@ export class RenderEngine {
     resizeObserver.observe(container);
     this.resizeObserver = resizeObserver;
 
-    const samplePerfStats = () => {
-      if (!this.showPerfStats) return;
-      this.perfSampleCounter += 1;
-      if (this.perfSampleCounter % 20 !== 0) return;
-      const frames = this.frameTimes;
-      const avgFrameMs = frames.length ? frames.reduce((a, b) => a + b, 0) / frames.length : 0;
-      this.callbacks.onPerfStats({
-        fps: avgFrameMs > 0 ? Math.round(1000 / avgFrameMs) : 0,
-        frameTimeMs: Math.round(avgFrameMs * 10) / 10,
-        drawCalls: renderer.info.render.calls,
-        triangles: renderer.info.render.triangles,
-        textures: renderer.info.memory.textures,
-        dpr: renderer.getPixelRatio(),
-      });
-    };
+    // Real per-frame update+draw lives in renderFrame() (below) so it can
+    // be driven from either this standalone loop (default mount,
+    // unchanged behavior) or Mapbox's own custom-layer render callback
+    // (basemap mount, via startBasemapRepaintLoop() instead — see
+    // createBasemapRenderer's own doc comment for why Three.js must not
+    // also own the frame loop there).
+    if (!this.map) {
+      renderer.setAnimationLoop(() => this.renderFrame());
+    }
+  }
 
-    renderer.setAnimationLoop(() => {
-      const now = performance.now();
-      const last = this.lastFrameAt;
-      this.lastFrameAt = now;
-      const dtSeconds = last != null ? Math.min(0.25, (now - last) / 1000) : 0;
-      if (last != null) {
-        this.frameTimes.push(now - last);
-        if (this.frameTimes.length > 60) this.frameTimes.shift();
-      }
-      controls.update();
-      this.stepCameraTransition(now);
-      this.idleDrone.step(now, dtSeconds, camera, controls, {
-        transitionInFlight: this.cameraTransition != null,
-        prefersReducedMotion: this.prefersReducedMotion,
-        tabHidden: document.hidden,
-      });
-      if (this.showDronePath) this.updateDronePathHelper();
-      this.sampleAdaptiveQuality();
-      this.stepEnvironmentAnimation(dtSeconds);
-      // CSM's cascades track the live camera frustum — must be recomputed
-      // every frame the camera can move (free orbit), per CSMShadowNode's
-      // own doc comment ("call every time you change camera or settings").
-      this.csmSystem?.updateFrustums();
-      // Depth of Field real auto-focus (PRD §26) — the live camera-to-
-      // orbit-target distance, recomputed every frame rather than a
-      // manual distance that would drift out of sync as a visitor orbits.
-      if (this.scenePostPipeline?.dofFocusDistance && this.renderingConfig.cameraAutoFocusEnabled) {
-        this.scenePostPipeline.dofFocusDistance.value = camera.position.distanceTo(controls.target);
-      }
-      if (this.scenePostPipeline) this.scenePostPipeline.pipeline.render();
-      else renderer.render(scene, camera);
-      this.cameraHelper?.update();
-      samplePerfStats();
+  /**
+   * The engine's real per-frame update+draw step (approved plan, Phase 2)
+   * — extracted from what used to be `renderer.setAnimationLoop()`'s own
+   * inline callback so it can be driven from either that same standalone
+   * loop (default mount) or Mapbox's own custom-layer render callback (the
+   * "real-world basemap" mount path). Identical logic either way — Studio's
+   * OrbitControls camera stays authoritative in both, per the plan's
+   * design decision.
+   */
+  private renderFrame() {
+    const { renderer, camera, controls, scene } = this;
+    if (!renderer || !camera || !controls || !scene) return;
+    const now = performance.now();
+    const last = this.lastFrameAt;
+    this.lastFrameAt = now;
+    const dtSeconds = last != null ? Math.min(0.25, (now - last) / 1000) : 0;
+    if (last != null) {
+      this.frameTimes.push(now - last);
+      if (this.frameTimes.length > 60) this.frameTimes.shift();
+    }
+    controls.update();
+    this.stepCameraTransition(now);
+    this.idleDrone.step(now, dtSeconds, camera, controls, {
+      transitionInFlight: this.cameraTransition != null,
+      prefersReducedMotion: this.prefersReducedMotion,
+      tabHidden: document.hidden,
     });
+    if (this.showDronePath) this.updateDronePathHelper();
+    this.sampleAdaptiveQuality();
+    this.stepEnvironmentAnimation(dtSeconds);
+    // CSM's cascades track the live camera frustum — must be recomputed
+    // every frame the camera can move (free orbit), per CSMShadowNode's
+    // own doc comment ("call every time you change camera or settings").
+    this.csmSystem?.updateFrustums();
+    // Depth of Field real auto-focus (PRD §26) — the live camera-to-
+    // orbit-target distance, recomputed every frame rather than a
+    // manual distance that would drift out of sync as a visitor orbits.
+    if (this.scenePostPipeline?.dofFocusDistance && this.renderingConfig.cameraAutoFocusEnabled) {
+      this.scenePostPipeline.dofFocusDistance.value = camera.position.distanceTo(controls.target);
+    }
+    if (this.scenePostPipeline) this.scenePostPipeline.pipeline.render();
+    else renderer.render(scene, camera);
+    this.cameraHelper?.update();
+    this.samplePerfStats();
+  }
+
+  /** See renderFrame()'s own call site — promoted from a mount()-local
+   * closure to a method for the same reason renderFrame() itself was. */
+  private samplePerfStats() {
+    const renderer = this.renderer;
+    if (!this.showPerfStats || !renderer) return;
+    this.perfSampleCounter += 1;
+    if (this.perfSampleCounter % 20 !== 0) return;
+    const frames = this.frameTimes;
+    const avgFrameMs = frames.length ? frames.reduce((a, b) => a + b, 0) / frames.length : 0;
+    this.callbacks.onPerfStats({
+      fps: avgFrameMs > 0 ? Math.round(1000 / avgFrameMs) : 0,
+      frameTimeMs: Math.round(avgFrameMs * 10) / 10,
+      drawCalls: renderer.info.render.calls,
+      triangles: renderer.info.render.triangles,
+      textures: renderer.info.memory.textures,
+      dpr: renderer.getPixelRatio(),
+    });
+  }
+
+  /**
+   * Constructs and initializes this mount's `WebGPURenderer` — branches
+   * between the default path (Three.js owns its own canvas, byte-for-byte
+   * the same construction this engine always did) and the "real-world
+   * basemap" path (Mapbox owns the canvas/WebGL2 context instead; see
+   * `createBasemapRenderer`'s own doc comment). Both branches already
+   * report failure (`onWebglFail`) or handle a mount-token race
+   * themselves — callers just bail on a `null` return.
+   */
+  private async createRenderer(
+    container: HTMLDivElement,
+    target: { renderScale: number; dprCap: number },
+    mountToken: number,
+    basemapAnchor: BasemapAnchor | null
+  ): Promise<THREE.WebGPURenderer | null> {
+    const renderer = basemapAnchor
+      ? await this.createBasemapRenderer(container, mountToken)
+      : await this.createStandardRenderer(mountToken);
+    if (!renderer) return null;
+
+    // Shared post-construction setup. Color grading applies identically
+    // either way. Canvas *ownership* (DOM insertion, CSS style) does not —
+    // Mapbox owns the canvas element itself in basemap mode. But BOTH
+    // branches still need a real setPixelRatio()/setSize() call: verified
+    // empirically (Phase 2 root-cause) that without it, Three's internal
+    // render-target sizing — used by the post-processing pipeline's
+    // offscreen scene-pass, active by default via TRAA — falls back to
+    // some un-set internal default disconnected from the canvas's real
+    // dimensions. Draw calls still get submitted (confirmed via
+    // renderer.info), but nothing lands where it's visible: Studio's
+    // scene silently fails to composite over Mapbox's basemap even though
+    // the render loop runs error-free. So basemap mode still calls
+    // setPixelRatio()/setSize() — just without touching DOM/CSS, and
+    // without effectiveRenderScale's quality-tier downscale (unlike the
+    // standard branch below): Mapbox and Three share the literal same
+    // canvas/backing-buffer here, so shrinking it for Three's own
+    // adaptive-quality would also blur Mapbox's own crisp basemap
+    // rendering — reconciling basemap mode with the render-scale quality
+    // tiers is a known follow-up, not solved by this Phase.
+    const pixelRatio = Math.min(window.devicePixelRatio, target.dprCap);
+    renderer.setPixelRatio(pixelRatio);
+    if (basemapAnchor) {
+      renderer.setSize(container.clientWidth, container.clientHeight, false);
+    } else {
+      renderer.setSize(container.clientWidth * this.effectiveRenderScale, container.clientHeight * this.effectiveRenderScale, false);
+      renderer.domElement.style.width = "100%";
+      renderer.domElement.style.height = "100%";
+      container.appendChild(renderer.domElement);
+    }
+    // Real bug fix (pre-existing, Phase 2 of the original engine rebuild)
+    // — the Environment tab's physically-based Sky/Water/Ground shaders
+    // all produce genuine HDR output (a physical sky's luminance routinely
+    // exceeds 1.0), and WebGPURenderer's own default is NoToneMapping
+    // (hard-clip above 1.0) — without a real curve set before the first
+    // PMREM sky capture below, the sky dome renders solid blown-out white
+    // instead of a blue gradient. Reads from `this.renderingConfig` (real
+    // Rendering → Color tab fields) rather than a hardcoded ACES/1 — by
+    // the time this runs, React's setRenderingConfig has already updated
+    // the field (same effect-ordering guarantee applyCameraConfig/
+    // applyEnvironmentConfig already rely on), so this picks up the real
+    // per-project value on first paint, not a default flash.
+    renderer.toneMapping = TONE_MAPPING_MAP[this.renderingConfig.toneMapping];
+    renderer.toneMappingExposure = this.renderingConfig.exposure;
+    this.renderer = renderer;
+    return renderer;
+  }
+
+  /** The default mount path — unchanged from before this method existed,
+   * just extracted so createRenderer() can share its shared tail (above)
+   * with createBasemapRenderer() below instead of duplicating it. */
+  private async createStandardRenderer(mountToken: number): Promise<THREE.WebGPURenderer | null> {
+    // renderingMode -> forceWebGL and antialiasEnabled -> antialias are
+    // both renderer-CONSTRUCTION-time flags — "auto"/"webgpu" both let
+    // Three.js probe for WebGPU and fall back to WebGL2 on its own; only
+    // "webgl2" forces the WebGL2 backend outright. `antialias: false`
+    // whenever Rendering → Anti-Aliasing (TRAA) is on, per TRAANode's own
+    // doc note ("MSAA must be disabled when TRAA is in use") — real MSAA
+    // otherwise, matching this engine's pre-Phase-4 always-on behavior.
+    // Changing either after mount needs a real remount (see
+    // setQualityConfig's/setRenderingConfig's own doc comments).
+    const renderer = new THREE.WebGPURenderer({
+      antialias: !this.renderingConfig.antialiasEnabled,
+      forceWebGL: this.qualityConfig.renderingMode === "webgl2",
+    });
+    try {
+      await renderer.init();
+    } catch {
+      if (mountToken === this.mountToken) this.callbacks.onWebglFail();
+      return null;
+    }
+    if (mountToken !== this.mountToken) {
+      renderer.dispose();
+      return null;
+    }
+    return renderer;
+  }
+
+  /**
+   * "Real-world basemap" mount path (approved plan, Phase 2) — creates a
+   * non-interactive `mapboxgl.Map` in `container` (Studio's own
+   * OrbitControls stays the sole navigation input, per the plan's design
+   * decision: Mapbox never receives its own drag/scroll/rotate gestures
+   * here) and binds a `THREE.WebGPURenderer`'s WebGL2 backend to that
+   * map's own canvas+context via `StudioBasemapLayer`, exactly the
+   * technique headed-verified by the plan's Phase 0 spike. Unlike the
+   * standard path, this renderer's canvas is never appended/sized by
+   * Three.js — Mapbox owns that canvas completely (dimensions,
+   * devicePixelRatio, DOM lifecycle) — see performResize()'s and
+   * dispose()'s own basemap branches for the other two places that
+   * ownership split matters.
+   *
+   * Deliberately duplicates the Map tab's own style URL (`ProjectMapView.
+   * tsx`) as a local literal rather than importing it — the plan's own
+   * scope decision keeps this build fully independent of that untouched,
+   * separately-owned feature.
+   */
+  private async createBasemapRenderer(container: HTMLDivElement, mountToken: number): Promise<THREE.WebGPURenderer | null> {
+    const accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    if (!accessToken) {
+      if (mountToken === this.mountToken) this.callbacks.onWebglFail();
+      return null;
+    }
+    mapboxgl.accessToken = accessToken;
+
+    const map = new mapboxgl.Map({
+      container,
+      style: "mapbox://styles/armalindokapaj/cmsqj4p0101ao01sd6911ckb4",
+      center: [0, 0],
+      zoom: 2,
+      interactive: false,
+      attributionControl: false,
+    });
+
+    const renderer = await new Promise<THREE.WebGPURenderer | null>((resolve) => {
+      const layer = new StudioBasemapLayer({
+        onRendererReady: (r) => resolve(r),
+        onRendererFailed: () => resolve(null),
+        onFrame: () => this.renderFrame(),
+      });
+      this.basemapLayer = layer;
+      map.on("load", () => map.addLayer(layer));
+    });
+
+    if (!renderer || mountToken !== this.mountToken) {
+      map.remove();
+      this.basemapLayer = null;
+      renderer?.dispose();
+      if (mountToken === this.mountToken && !renderer) this.callbacks.onWebglFail();
+      return null;
+    }
+
+    this.map = map;
+    this.startBasemapRepaintLoop();
+    return renderer;
+  }
+
+  /**
+   * Mapbox only calls a custom layer's `render()` when IT decides a
+   * repaint is needed (camera move, style change) — Studio's own scene has
+   * continuous animation (water, clouds, idle drone, in-flight camera
+   * transitions, TRAA accumulation) that needs a steady repaint regardless.
+   * Calling `triggerRepaint()` from an INDEPENDENT rAF loop — never from
+   * inside `render()` itself, which would infinitely self-schedule, the
+   * exact anti-pattern `ProjectModelLayer.render()`'s own doc comment
+   * already warns against — is Mapbox's own supported pattern for an
+   * animated custom layer.
+   */
+  private startBasemapRepaintLoop() {
+    const tick = () => {
+      this.map?.triggerRepaint();
+      this.basemapRafId = requestAnimationFrame(tick);
+    };
+    this.basemapRafId = requestAnimationFrame(tick);
   }
 
   /** Environment tab (PRD §7-13) — cheap, every-frame CPU-side uniform
@@ -1759,7 +1936,16 @@ export class RenderEngine {
     this.isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(container.clientWidth * this.effectiveRenderScale, container.clientHeight * this.effectiveRenderScale, false);
+    // Both branches still need a real setSize() call on resize — see
+    // createRenderer()'s own doc comment for why (Three's internal
+    // render-target sizing must track the real canvas, even one Mapbox
+    // owns/resizes itself). Basemap mode skips effectiveRenderScale for
+    // the same reason it does at mount time.
+    if (this.map) {
+      renderer.setSize(container.clientWidth, container.clientHeight, false);
+    } else {
+      renderer.setSize(container.clientWidth * this.effectiveRenderScale, container.clientHeight * this.effectiveRenderScale, false);
+    }
   }
 
   /** Real current renderScale (post any adaptive/interaction reduction) —
@@ -2482,6 +2668,13 @@ export class RenderEngine {
     this.syncToken++;
     const renderer = this.renderer;
     if (renderer) renderer.setAnimationLoop(null);
+    // "Real-world basemap" mount path — this engine's own repaint-request
+    // loop (startBasemapRepaintLoop's own doc comment) has no counterpart
+    // in setAnimationLoop(null) above, so it needs its own explicit stop.
+    if (this.basemapRafId != null) {
+      cancelAnimationFrame(this.basemapRafId);
+      this.basemapRafId = null;
+    }
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     if (this.resizeTimer != null) clearTimeout(this.resizeTimer);
@@ -2496,8 +2689,15 @@ export class RenderEngine {
     this.loadedGlbUrlBySlot.clear();
     if (renderer) {
       renderer.dispose();
-      renderer.domElement.remove();
+      // Mapbox owns this canvas in basemap mode (see createBasemapRenderer's
+      // own doc comment) — map.remove() below tears it down along with
+      // every listener Mapbox itself attached; Three must not also remove
+      // a DOM node it doesn't own.
+      if (!this.map) renderer.domElement.remove();
     }
+    this.map?.remove();
+    this.map = null;
+    this.basemapLayer = null;
     this.renderer = null;
     this.scene = null;
     this.camera = null;
