@@ -56,6 +56,12 @@ export const DockShell = forwardRef<HTMLDivElement, { children: ReactNode; class
   return (
     <div
       ref={ref}
+      // Stable hook for anything that has to keep clear of the dock without
+      // guessing its height — below `lg` that height is content-driven and
+      // mode-dependent (Units is explicitly allowed to grow taller than the
+      // others), so a constant can't describe it. `UnitPreviewCard` measures
+      // this to bound how far its expanded state may grow.
+      data-viewer-dock=""
       className={cn("viewer-glass relative flex h-auto items-stretch rounded-[16px] lg:h-[62px]", className)}
       style={{ background: "rgba(12, 14, 18, 0.96)" }}
     >

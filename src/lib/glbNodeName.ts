@@ -69,3 +69,34 @@ export function cleanGlbNodeName(rawName: string): string {
   }
   return name;
 }
+
+/**
+ * GLTFLoader-equivalent sanitization, replicated here so SERVER-side code
+ * can compare a name it read straight from the GLB's JSON chunk against a
+ * name that was authored/stored through a client that only ever saw the
+ * loader-parsed scene graph. Mirrors three.js's
+ * `PropertyBinding.sanitizeNodeName()` exactly: whitespace becomes `_`,
+ * and the animation-binding reserved characters `[ ] . : /` are DELETED.
+ */
+export function sanitizeGlbNodeName(rawName: string): string {
+  return rawName.replace(/\s/g, "_").replace(/[[\].:/]/g, "");
+}
+
+/**
+ * A single normalized key for "these two strings name the same GLB node,"
+ * used ONLY for matching — never for storage or display.
+ *
+ * Why it exists: a stored `UnitMeshLinkV2.meshName` is whichever spelling
+ * the admin's editor happened to show when they linked it, and that is not
+ * always the spelling the server reads back out of the next GLB. The
+ * upload path reads the raw glTF JSON (`Unit.001`), while everything that
+ * walks a loaded scene sees the sanitized form (`Unit001`). Matching those
+ * with `===` — which is what the carry-forward on GLB replacement used to
+ * do — silently drops the link and hands the admin an unmapped model to
+ * redo by hand, which is exactly the work carry-forward exists to save.
+ * Case is folded too, since node names are authored by hand in a DCC tool
+ * and a re-export that flips `unit_001`/`Unit_001` is not a rename.
+ */
+export function glbNodeNameKey(rawName: string): string {
+  return sanitizeGlbNodeName(cleanGlbNodeName(rawName)).toLowerCase();
+}

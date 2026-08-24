@@ -136,16 +136,16 @@ export function SectionsPanel({
             <ToggleRow label="Bottom Plane" checked={active.bottomEnabled} disabled={!canEdit} onChange={(v) => set({ bottomEnabled: v })} />
           </GroupCard>
 
-          <SliderRow label="Height (Slab)" value={active.heightM} min={-50} max={500} step={0.1} suffix="m" disabled={!canEdit} onChange={(v) => set({ heightM: v })} />
+          <SliderRow label="Height (Slab)" value={active.heightM} min={-50} max={500} step={0.1} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ heightM: v })} />
 
           {!active.heightOnly && (
             <>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-600">Footprint</p>
-              <SliderRow label="Center X" value={active.centerX} min={-SECTION_MAX_DIMENSION_M / 2} max={SECTION_MAX_DIMENSION_M / 2} step={0.5} suffix="m" disabled={!canEdit} onChange={(v) => set({ centerX: v })} />
-              <SliderRow label="Center Z" value={active.centerZ} min={-SECTION_MAX_DIMENSION_M / 2} max={SECTION_MAX_DIMENSION_M / 2} step={0.5} suffix="m" disabled={!canEdit} onChange={(v) => set({ centerZ: v })} />
-              <SliderRow label="Width" value={active.widthM} min={1} max={SECTION_MAX_DIMENSION_M} step={0.5} suffix="m" disabled={!canEdit} onChange={(v) => set({ widthM: v })} />
-              <SliderRow label="Depth" value={active.depthM} min={1} max={SECTION_MAX_DIMENSION_M} step={0.5} suffix="m" disabled={!canEdit} onChange={(v) => set({ depthM: v })} />
-              <SliderRow label="Rotation" value={active.rotationDeg} min={-180} max={180} step={1} suffix="°" disabled={!canEdit} onChange={(v) => set({ rotationDeg: v })} />
+              <SliderRow label="Center X" value={active.centerX} min={-SECTION_MAX_DIMENSION_M / 2} max={SECTION_MAX_DIMENSION_M / 2} step={0.5} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ centerX: v })} />
+              <SliderRow label="Center Z" value={active.centerZ} min={-SECTION_MAX_DIMENSION_M / 2} max={SECTION_MAX_DIMENSION_M / 2} step={0.5} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ centerZ: v })} />
+              <SliderRow label="Width" value={active.widthM} min={1} max={SECTION_MAX_DIMENSION_M} step={0.5} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ widthM: v })} />
+              <SliderRow label="Depth" value={active.depthM} min={1} max={SECTION_MAX_DIMENSION_M} step={0.5} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ depthM: v })} />
+              <SliderRow label="Rotation" value={active.rotationDeg} min={-180} max={180} step={1} suffix="°" editable disabled={!canEdit} onChange={(v) => set({ rotationDeg: v })} />
             </>
           )}
 

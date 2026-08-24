@@ -29,3 +29,21 @@ export function formatUnitArea(areaSqm: number, unit: "m2" | "ft2"): string {
   if (unit === "ft2") return `${Math.round(areaSqm * SQM_TO_SQFT)} ft²`;
   return `${areaSqm} m²`;
 }
+
+/** The same conversion as a raw number rather than a formatted string —
+ * for a *typed* surface bound (UnitSearchView's own Surface min/max
+ * fields), where the visitor enters a number in whatever unit every row
+ * around it is displayed in, and `UnitFilterState.minArea`/`maxArea` still
+ * have to end up in real stored m² (see `unitFilters.ts`'s own note on
+ * that field). Round-trips through `areaFromDisplay` below. */
+export function areaToDisplay(areaSqm: number, unit: "m2" | "ft2"): number {
+  return unit === "ft2" ? Math.round(areaSqm * SQM_TO_SQFT) : areaSqm;
+}
+
+/** Inverse of `areaToDisplay` — a visitor-entered bound back into stored
+ * m². Rounded, not left at full float precision: the value is compared
+ * against whole-m² `Unit.area` rows, and an un-rounded 92.90304 reads as
+ * noise the moment it's echoed back into the field. */
+export function areaFromDisplay(value: number, unit: "m2" | "ft2"): number {
+  return unit === "ft2" ? Math.round(value / SQM_TO_SQFT) : value;
+}

@@ -124,6 +124,11 @@ export function useProjectConfigEditor(projectId: string, canEdit: boolean) {
     widthM?: number;
     depthM?: number;
     heightOnly?: boolean;
+    /** The `${buildingName}::${floor}` composite identity from
+     * src/lib/units.ts's `makeFloorId`, when this section is being
+     * created AS a specific floor's cut (UnitsPanel's Floor Sections
+     * group). Left unset for a plain hand-authored section. */
+    floorId?: string;
   }) {
     const section: Section = {
       id: `section-${Date.now()}`,
@@ -141,6 +146,15 @@ export function useProjectConfigEditor(projectId: string, canEdit: boolean) {
       widthM: opts.widthM ?? 20,
       depthM: opts.depthM ?? 20,
       heightOnly: opts.heightOnly,
+      // Set here, on the record itself, NOT via a follow-up
+      // updateSection() call: that call would map over the `draft.sections`
+      // captured in THIS closure, i.e. the array from BEFORE the update()
+      // two lines below lands, so it would write a `sections` array that
+      // doesn't contain the new section at all. That exact sequence
+      // already caused a real bug once with `heightOnly` (silently never
+      // applied to a new Floor Section) — see SectionsPanel.tsx's
+      // `create()` doc comment.
+      floorId: opts.floorId,
       rotationDeg: 0,
       heightM: opts.heightM,
       bottomEnabled: false,

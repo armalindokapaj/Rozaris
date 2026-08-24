@@ -32,18 +32,29 @@ import type { ActiveModule } from "./types";
 export interface ViewerLayoutState {
   /** UnitsWorkspace open/closed — the only thing that currently changes viewport width. */
   leftPanelOpen: boolean;
+  /** MobileUnitsSheet open/closed — the same "the visitor asked for the
+   * list" intent as `leftPanelOpen`, resolved for the other breakpoint.
+   * Deliberately a second field rather than one shared boolean plus an
+   * `isDesktop` check at each call site: the two surfaces are structurally
+   * different (a flex-sibling column that reflows the viewport vs. an
+   * overlay above the dock), so every consumer needs to know which one it
+   * is getting, not merely that "the list is open". */
+  unitsSheetOpen: boolean;
 }
 
 /**
- * `isDesktop` gates Units specifically: Units Search Mode PRD §4's
- * 360-420px left panel is a desktop layout by design (the PRD's own §32
- * gives mobile a completely different bottom-sheet pattern, explicitly
- * out of scope for now — "Unit Search PRD is for desktop only"). Real bug
- * found live-testing on a 390px viewport: without this gate, the fixed-
- * width panel opened anyway and ate almost the entire screen. Units
- * degrades to the same placeholder ViewerModuleLayer Views/Sun&Time
- * already use on any device until real mobile support lands, rather than
- * either opening a broken oversized panel or silently doing nothing.
+ * `isDesktop` no longer decides *whether* the visitor gets a unit list —
+ * only *which shape* of one. Units Search Mode PRD §4's 360-420px left
+ * panel is still a desktop layout by design (a real bug found live-testing
+ * on a 390px viewport: without a gate, the fixed-width panel opened anyway
+ * and ate almost the entire screen), but §32's own mobile bottom-sheet
+ * pattern is now built (`MobileUnitsSheet.tsx`), so below `lg` the same
+ * "Filter List" click resolves to that instead of to nothing.
+ *
+ * That "instead of to nothing" was the real defect this closes: the dock's
+ * mobile Units row has shipped a fully-styled "Filter List" trigger with a
+ * live result count for months, and tapping it flipped a boolean no mobile
+ * surface read.
  *
  * `unitsListOpen` gates it a second time on top of that (see the module
  * doc comment above) — the real panel now only opens once both "Units is
@@ -51,10 +62,11 @@ export interface ViewerLayoutState {
  * are true.
  */
 export function getViewerLayoutState(activeModule: ActiveModule, isDesktop: boolean, unitsListOpen: boolean): ViewerLayoutState {
-  if (activeModule === "units" && isDesktop && unitsListOpen) {
-    return { leftPanelOpen: true };
-  }
-  return { leftPanelOpen: false };
+  const listRequested = activeModule === "units" && unitsListOpen;
+  return {
+    leftPanelOpen: listRequested && isDesktop,
+    unitsSheetOpen: listRequested && !isDesktop,
+  };
 }
 
 /**
@@ -63,40 +75,46 @@ export function getViewerLayoutState(activeModule: ActiveModule, isDesktop: bool
  * this file's own doc comment above ("meant to grow more fields as more
  * modules gain layout effects") rather than a parallel constants file.
  *
- * Phase 2 (2026-08-18) adds `units` — Units' old floating `UnitsBar` moves
- * onto the dock too, redesigned into single-line triggers (Surface and a
- * combined Bedrooms+Bathrooms "Rooms" trigger each become a popover, PRD
- * §31's own predicted reuse of `DockPopover`) specifically so it can fit
- * the shared 62px row instead of the old bar's own `min-h-[104px]`.
- * `views` gets no entry, same
- * reasoning as `nav` below — its content (a horizontal Shots row) is
- * already naturally one line, so it tweens toward `"auto"` too rather than
- * a guessed constant.
+ * Only `sunTime` has a stored width, and it is deliberately *not* a
+ * content measurement: Time's row is one flexible timeline track between
+ * two fixed sunrise/sunset readouts, so its own natural width is far
+ * narrower than it should render at (measured 336.9px in English /
+ * 366.9px in Albanian at 1440×900) — 660 is the room the track is *given*,
+ * which the track then fills. Nothing overflows and nothing is left blank
+ * either way, so language can't break it; the 30px the two locales differ
+ * by is simply absorbed by the track.
  *
- * `units`' own `widthDesktop` is a real measured value, not a guess and
- * not derived from GSAP's `"auto"` the way `nav`/`views` are —
- * `ProjectViewerDock.tsx`'s own `targetWidth === "auto"` fix (see that
- * file's doc comment) only measures reliably for a mode it's actually
- * *entering* live, and Units still has enough zones (list/Surface/
- * Rooms/Availability/×) that a naive per-child intrinsic-width sum isn't
- * trustworthy either (the exact same concern `UnitsBar.tsx`'s own doc
- * comment raised for Chromium's `fit-content` pass on a row this size).
- * First draft measured ~1125px (icon+"Filter List"+the full "N units
- * found" sentence, plus separate Bedrooms *and* Bathrooms triggers) —
- * wider than this codebase's own smallest supported desktop viewport
- * (`useIsDesktop`'s 1024px floor, ~992px usable). Condensing the count to
- * a bare numeric badge and merging Bedrooms+Bathrooms into one "Rooms"
- * trigger (`UnitsContent.tsx`'s own doc comment) brought the real measured
- * width down to ~869px, then a real back button (later removed) held it at
- * 872px. Removing that back button (2026-08-18: "remove back sign and text
- * units") shrank real content back down — but a 4th Availability pill
- * ("All", added the same day: "'Units' filtering system must include: a)
- * All...") grew it again, landing the real measured width at ~863px, not a
- * simple reversion to the old ~869px. Re-measured after both changes
- * landed (same direct instruction that flagged the resulting gap: "there
- * is too much empty blank space after the button X") rather than assumed —
- * same manual DOM probe (`el.style.width = "auto"`,
- * read `getBoundingClientRect().width`, restore), not a visual guess.
+ * Every other mode — `nav`, `views`, and (2026-08-24) `units` — has no
+ * entry at all and tweens to its own real measured width instead (see
+ * `ProjectViewerDock.tsx`'s `targetWidth === "auto"` branch, which
+ * measures the incoming content *after* it has actually mounted, then
+ * hands sizing back to CSS `width: auto` once the tween lands).
+ *
+ * `units` used to carry a hardcoded `widthDesktop` here, re-measured by
+ * hand every time its content changed (1125 → 869 → 872 → 863). That was
+ * a real bug generator, and the direct instruction that retired it
+ * (2026-08-24: "there is empty space after X (close button) when 'units'
+ * is clicked" / "In english and in Albanian there are 2 different width
+ * for the Menu") named both halves of it at once: every one of those
+ * numbers was measured in **English**, and Units' row is the one dock
+ * mode whose children are all `shrink-0` text, so its real width is
+ * language-dependent. Measured at 1440×900 on `tower-vlora`:
+ *
+ *   Units row natural width   EN 829.6px   SQ 981.7px   (Δ +152.1px)
+ *     ├ "Filter List"/"Lista e Filtrave" trigger   117.6 → 150.7  (+33.1)
+ *     ├ "Surface"/"Sipërfaqja" trigger             188.4 → 204.8  (+16.4)
+ *     ├ "Rooms Any"/"Dhoma Të gjitha" trigger      111.2 → 141.8  (+30.6)
+ *     └ Availability pills (4)                     282.5 → 354.4  (+71.9)
+ *
+ * So the one 863px constant was 33.4px too *wide* in English (the blank
+ * strip after the × the instruction flagged) and 118.7px too *narrow* in
+ * Albanian (the × and half the "Sold" pill rendered outside the shell's
+ * own rounded edge entirely). No single number can be right for both;
+ * measuring is the only fix, which is why there is no constant any more.
+ * `nav` (430px) and `views` (547px) happen to measure identically in both
+ * locales — Navigation's items are fixed `lg:w-24` and Views' are fixed-
+ * width shot cards — but they already measure rather than assume, so they
+ * were never at risk to begin with.
  *
  * One shared `height` for every mode, not a per-mode height — PRD §6 is
  * explicit ("Avoid dramatically changing height... a horizontal morph
@@ -111,19 +129,9 @@ export function getViewerLayoutState(activeModule: ActiveModule, isDesktop: bool
  * (PRD §8/§31) specifically so every mode's content fits one row, matching
  * Navigation's own height exactly and letting the morph animate width (or,
  * on mobile, height — see `DOCK_MORPH_SHADOW`'s own doc comment) alone.
- *
- * `nav`/`views` modes deliberately have no stored width here — they tween
- * toward GSAP's own `"auto"` target (a real built-in GSAP feature, not a
- * plugin) rather than a hardcoded pixel guess. Both are a handful of
- * fixed-width buttons in a row (Navigation's 4 items; Views' Shot count
- * varies per project, which a constant couldn't account for at all), so
- * `"auto"` always matches the DOM's own real intrinsic width, the same way
- * these bars sized themselves before the dock existed (`ViewerNavigation
- * .tsx`'s own `lg:w-fit`, `ViewsWorkspace.tsx`'s own desktop `w-fit`).
  */
 export const DOCK_DIMENSIONS = {
   sunTime: { widthDesktop: 660 },
-  units: { widthDesktop: 863 },
 } as const;
 
 export const DOCK_HEIGHT_DESKTOP = 62;

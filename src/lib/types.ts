@@ -154,6 +154,14 @@ export interface ConstructionStage {
   dateLabel: string;
 }
 
+/** The four compass points a unit's frontage can face. Stored as a plain
+ * nullable string in Postgres (`units.orientation`) — same convention as
+ * `type`/`status`/`transaction`, which are also closed unions here and
+ * bare `String` columns there. */
+export type UnitOrientation = "N" | "E" | "S" | "W";
+
+export const UNIT_ORIENTATIONS: readonly UnitOrientation[] = ["N", "E", "S", "W"];
+
 export interface Unit {
   id: string;
   code: string;
@@ -171,6 +179,13 @@ export interface Unit {
   floorPlanImage: string;
   facadeImage?: string;
   videoUrl?: string;
+  /** Which way this unit faces. `undefined` means "not authored yet" — a
+   * real state for every unit that predates the field, kept distinct from
+   * any of the four values rather than defaulted to north. Not the POI
+   * camera's yaw (`UnitMeshLink.poiYawDeg`), which also renders as
+   * N/E/S/W in the 3D editor but frames a shot rather than describing the
+   * unit. */
+  orientation?: UnitOrientation;
 }
 
 /** Broad setting a new-development project sits in — used by the New Projects
@@ -685,6 +700,20 @@ export interface Project3DConfig {
   unitBlocksHoverOpacity: number;
   unitBlocksSelectedOpacity: number;
   unitBlocksSelectedOutlineEnabled: boolean;
+  /** Outline thickness in SCREEN PIXELS — see the schema comment. `1`
+   * is the old hairline look. */
+  unitBlocksSelectedOutlineWidth: number;
+  /** Selection "pop" — scales the selected unit's block up about its own
+   * bounding-box center (see the schema comment). Off by default. */
+  unitBlocksSelectedScaleEnabled: boolean;
+  unitBlocksSelectedScale: number;
+  /** Opt-in selection FILL color — replaces the status color on the
+   * selected unit only (the outline keeps `unitColorSelected`). Off by
+   * default; see the schema comment. */
+  unitBlocksSelectedFillEnabled: boolean;
+  unitColorSelectedFill: string;
+  /** X-ray for the selected unit alone — see the schema comment. */
+  unitBlocksSelectedXrayEnabled: boolean;
 
   /** Units Blocks & POI Layer PRD §14-17 — one master POI-camera config
    * per project; the only per-unit knob lives on UnitMeshLink.poiYawDeg
@@ -937,6 +966,12 @@ export type UnitsConfig = Pick<
   | "unitBlocksHoverOpacity"
   | "unitBlocksSelectedOpacity"
   | "unitBlocksSelectedOutlineEnabled"
+  | "unitBlocksSelectedOutlineWidth"
+  | "unitBlocksSelectedScaleEnabled"
+  | "unitBlocksSelectedScale"
+  | "unitBlocksSelectedFillEnabled"
+  | "unitColorSelectedFill"
+  | "unitBlocksSelectedXrayEnabled"
   | "unitPoiCameraEnabled"
   | "unitPoiCameraFov"
   | "unitPoiCameraDistanceMultiplier"

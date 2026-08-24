@@ -71,6 +71,8 @@ export function ProjectViewerDock({
   onUnitFiltersChange,
   unitsListOpen,
   onToggleUnitsList,
+  unitFiltersExpanded,
+  onToggleUnitFilters,
   cameraPresets,
   activeViewPresetId,
   onSelectViewPreset,
@@ -93,6 +95,13 @@ export function ProjectViewerDock({
   onUnitFiltersChange: Dispatch<SetStateAction<UnitFilterState>>;
   unitsListOpen: boolean;
   onToggleUnitsList: () => void;
+  /** Mobile-only — whether Units' filter stack is unfolded below its own
+   * always-visible bar (2026-08-24). Owned by `ProjectViewerRuntime` like
+   * every other cross-cutting piece of dock state, because the thing that
+   * *collapses* it is a pointer-down on the 3D canvas, which is that
+   * component's own sibling, not anything reachable from inside here. */
+  unitFiltersExpanded: boolean;
+  onToggleUnitFilters: () => void;
   cameraPresets: CameraPreset[];
   activeViewPresetId: string | null;
   onSelectViewPreset: (preset: CameraPreset) => void;
@@ -160,18 +169,19 @@ export function ProjectViewerDock({
       // timeline is what finishes first, well under the lock's own window.
       unlockTimeoutRef.current = setTimeout(() => setTransitioning(false), lockSeconds * 1000);
 
-      // `"nav"`/`"views"` have no stored width (see `DOCK_DIMENSIONS`'s own
-      // doc comment) — `"auto"` here is just this function's own marker for
-      // "measure the real incoming content and tween to that", handled
-      // further down; it's deliberately *not* handed straight to GSAP's
-      // own built-in `width: "auto"` resolution any more (see that branch's
-      // own doc comment for the real bug that taught this).
+      // Every mode except `sunTime` has no stored width (see
+      // `DOCK_DIMENSIONS`'s own doc comment) — `"auto"` here is just this
+      // function's own marker for "measure the real incoming content and
+      // tween to that", handled further down; it's deliberately *not*
+      // handed straight to GSAP's own built-in `width: "auto"` resolution
+      // any more (see that branch's own doc comment for the real bug that
+      // taught this). `units` joined `nav`/`views` here on 2026-08-24,
+      // retiring the last hand-measured constant — see `DOCK_DIMENSIONS`
+      // for the EN-vs-SQ measurements that made a constant unfixable.
       const targetWidth: number | "auto" | null = isDesktop
         ? nextMode === "sunTime"
           ? DOCK_DIMENSIONS.sunTime.widthDesktop
-          : nextMode === "units"
-            ? DOCK_DIMENSIONS.units.widthDesktop
-            : "auto"
+          : "auto"
         : null;
 
       if (!shell || !content) {
@@ -323,6 +333,19 @@ export function ProjectViewerDock({
               width: measuredWidth,
               duration: DOCK_MORPH_TIMING.containerMorph,
               ease: DOCK_MORPH_EASE,
+              // Hand sizing back to plain CSS the instant the tween lands
+              // — same `clearProps`-style handoff the mobile height tween
+              // just above already does, and load-bearing now that Units
+              // rides this branch (2026-08-24): its row's real width moves
+              // *while the dock is open* — the Filter List count badge
+              // ("3" → "12"), the Surface readout ("70 m² – 120 m²" →
+              // "104 m² – 120 m²"), the Rooms summary ("Any" → "2+1 · 2
+              // bathrooms") — and a locale switch (the More menu's own
+              // Settings) re-renders this content in place without ever
+              // re-running the morph at all, which a frozen inline pixel
+              // width from *this* moment could not follow. `auto` tracks
+              // all of it for free.
+              onComplete: () => gsap.set(shellEl, { width: "auto" }),
             });
           }
         },
@@ -411,6 +434,8 @@ export function ProjectViewerDock({
         onUnitFiltersChange={onUnitFiltersChange}
         unitsListOpen={unitsListOpen}
         onToggleUnitsList={onToggleUnitsList}
+        unitFiltersExpanded={unitFiltersExpanded}
+        onToggleUnitFilters={onToggleUnitFilters}
         cameraPresets={cameraPresets}
         activeViewPresetId={activeViewPresetId}
         onSelectViewPreset={onSelectViewPreset}

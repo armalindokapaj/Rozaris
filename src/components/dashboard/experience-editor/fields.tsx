@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 /** Shared dark-theme Inspector field primitives — the "own dedicated
@@ -14,6 +15,7 @@ export function SliderRow({
   step,
   suffix = "",
   disabled,
+  editable = false,
   onChange,
 }: {
   label: string;
@@ -23,16 +25,35 @@ export function SliderRow({
   step: number;
   suffix?: string;
   disabled?: boolean;
+  /** Turns the right-hand readout into a real typed number field — for
+   * values an admin knows exactly (a slab height in metres, a rotation in
+   * degrees) and shouldn't have to hunt for by dragging a slider whose
+   * whole range is 550m wide. Opt-in so every other panel's readout stays
+   * the plain, non-focusable label it has always been. */
+  editable?: boolean;
   onChange: (v: number) => void;
 }) {
+  const formatted = Number.isInteger(step) ? String(value) : value.toFixed(2);
   return (
     <label className={cn("block", disabled && "opacity-40")}>
       <div className="mb-1 flex items-center justify-between text-[11px]">
         <span className="text-neutral-400">{label}</span>
-        <span className="font-mono text-neutral-300">
-          {Number.isInteger(step) ? value : value.toFixed(2)}
-          {suffix}
-        </span>
+        {editable ? (
+          <NumberReadout
+            value={value}
+            formatted={formatted}
+            min={min}
+            max={max}
+            suffix={suffix}
+            disabled={disabled}
+            onChange={onChange}
+          />
+        ) : (
+          <span className="font-mono text-neutral-300">
+            {formatted}
+            {suffix}
+          </span>
+        )}
       </div>
       <input
         type="range"
@@ -45,6 +66,77 @@ export function SliderRow({
         className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-neutral-800 accent-indigo-500 disabled:cursor-not-allowed"
       />
     </label>
+  );
+}
+
+/** The typed half of an `editable` SliderRow. Keeps the in-progress text
+ * in local state while focused — committing on every keystroke would make
+ * "-" or "1." (both legitimate mid-typing states, both `NaN` to
+ * `Number()`) either snap the slider to the min or write NaN into the
+ * draft. Commits on blur and on Enter, clamped to the slider's own
+ * min/max so a typed value can never put the scene somewhere the slider
+ * itself can't express; Escape abandons the edit. */
+function NumberReadout({
+  value,
+  formatted,
+  min,
+  max,
+  suffix,
+  disabled,
+  onChange,
+}: {
+  value: number;
+  formatted: string;
+  min: number;
+  max: number;
+  suffix: string;
+  disabled?: boolean;
+  onChange: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  function commit(raw: string) {
+    setDraft(null);
+    // Comma decimals are what an Albanian-locale keyboard/keypad produces
+    // ("42,5"), and this editor's own readouts render in that locale too —
+    // so accept them rather than silently ignoring the edit.
+    const parsed = Number(raw.trim().replace(",", "."));
+    if (raw.trim() === "" || !Number.isFinite(parsed)) return; // keep the current value
+    const clamped = Math.min(max, Math.max(min, parsed));
+    if (clamped !== value) onChange(clamped);
+  }
+
+  return (
+    <span className="flex items-center gap-0.5 font-mono text-neutral-300">
+      <input
+        // Deliberately `text`, not `number`: a native number input renders
+        // (and validates) its value in the BROWSER's locale, so on a
+        // comma-decimal machine it shows "42,50" and reports an empty
+        // string for anything it considers malformed — the edit vanishes
+        // with no feedback. Text + an explicit parse keeps the readout
+        // canonical ("42.50") and accepts either separator.
+        type="text"
+        inputMode="decimal"
+        value={draft ?? formatted}
+        disabled={disabled}
+        // The row is a <label> wrapping the range input — without this a
+        // click meant for the text field would be forwarded to the slider.
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit((e.target as HTMLInputElement).value);
+          } else if (e.key === "Escape") {
+            setDraft(null);
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        className="w-14 rounded border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-right text-[11px] text-neutral-200 focus:border-indigo-500 focus:outline-none disabled:cursor-not-allowed"
+      />
+      {suffix && <span className="text-neutral-500">{suffix}</span>}
+    </span>
   );
 }
 

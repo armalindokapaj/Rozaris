@@ -49,6 +49,11 @@ export interface ThreeProjectViewerHandle {
   setUnitsMode: (enabled: boolean) => void;
   /** §18/§13 — per-status show/hide within Units mode. */
   setUnitStatusFilters: (filters: { available: boolean; reserved: boolean; sold: boolean }) => void;
+  /** The non-status half of the Units workspace's filter state (Surface/
+   * Rooms/Price/Floor/Building/search), as the ids that currently match;
+   * `null` when none of those fields is narrowing anything. See
+   * `RenderEngine.setUnitIdFilter`'s own doc comment. */
+  setUnitIdFilter: (unitIds: string[] | null) => void;
   /** §18 — hides every unit block except the given one; null clears it. */
   isolateUnit: (unitId: string | null) => void;
   /** §18 — hover highlight, independent of selection. */
@@ -57,6 +62,15 @@ export interface ThreeProjectViewerHandle {
    * false (no-op) if the unit isn't loaded/mapped or has its own POI
    * camera disabled. */
   focusUnit: (unitId: string) => boolean;
+  /** Where a unit currently sits in the camera's frame — used to decide
+   * whether a list selection needs to move the camera at all. Null when
+   * the unit has no block in the loaded model. See
+   * RenderEngine.getUnitViewportState. */
+  getUnitViewportState: (unitId: string) => { onScreen: boolean; coverage: number; poiAuthored: boolean } | null;
+  /** Centres and dollies onto a unit along the CURRENT viewing direction,
+   * without using its authored POI camera — the safe framing for a unit
+   * nobody has aimed. See RenderEngine.revealUnit. */
+  revealUnit: (unitId: string, screenBiasY?: number) => boolean;
   /** §18 — clears selection/isolation and reframes on the whole scene. */
   resetUnitCamera: () => void;
   /** Read-only — every unit currently resolved in the live registry

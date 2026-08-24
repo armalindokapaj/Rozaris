@@ -15,6 +15,14 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const entityType = url.searchParams.get("entityType");
+  const entityId = url.searchParams.get("entityId");
+  /** Everything that happened to one project — its own rows PLUS the rows
+   * written against its children (units, inventory connectors, publish
+   * targets), which carry a different `entityId` but stamp `projectId`
+   * into `metadata`. The Project Manager's Activity tab is the caller;
+   * without this it could only ever show project-level edits and would
+   * silently omit "who repriced A-044". */
+  const projectId = url.searchParams.get("projectId");
   const actor = url.searchParams.get("actor");
   const action = url.searchParams.get("action");
   const from = url.searchParams.get("from");
@@ -24,6 +32,13 @@ export async function GET(request: Request) {
 
   const where: Record<string, unknown> = {};
   if (entityType) where.entityType = entityType;
+  if (entityId) where.entityId = entityId;
+  if (projectId) {
+    where.OR = [
+      { entityType: "Project", entityId: projectId },
+      { metadata: { path: ["projectId"], equals: projectId } },
+    ];
+  }
   if (actor) where.actor = { contains: actor, mode: "insensitive" };
   if (action) where.action = { contains: action, mode: "insensitive" };
   if (from || to) {

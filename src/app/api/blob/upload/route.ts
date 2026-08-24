@@ -36,15 +36,28 @@ export async function POST(request: Request): Promise<NextResponse> {
         if (session?.user?.role !== "admin") throw new Error("Not authorized");
         const isAdPhoto = pathname.startsWith("ads/");
         const isBackdropPhoto = pathname.startsWith("panoramas/");
+        // Project hero/gallery photography, uploaded from the Project
+        // Manager's Media section. Same content types as an ad photo but a
+        // larger cap — a render or a drone shot of a tower is a much
+        // bigger file than a banner, and downscaling it before upload
+        // would throw away the resolution the project page wants.
+        const isProjectPhoto = pathname.startsWith("projects/");
         return {
-          allowedContentTypes: isAdPhoto
-            ? ["image/jpeg", "image/png", "image/webp", "image/gif"]
-            : isBackdropPhoto
-              ? ["image/png"]
-              : ["model/gltf-binary", "application/octet-stream"],
+          allowedContentTypes:
+            isAdPhoto || isProjectPhoto
+              ? ["image/jpeg", "image/png", "image/webp", "image/gif"]
+              : isBackdropPhoto
+                ? ["image/png"]
+                : ["model/gltf-binary", "application/octet-stream"],
           // keep in sync with MapModelEditor's/AdvertisingTab's/
-          // SunSkySubtab's own client-side checks
-          maximumSizeInBytes: isAdPhoto ? 8 * 1024 * 1024 : isBackdropPhoto ? 45 * 1024 * 1024 : 60 * 1024 * 1024,
+          // SunSkySubtab's/ProjectMediaSection's own client-side checks
+          maximumSizeInBytes: isAdPhoto
+            ? 8 * 1024 * 1024
+            : isProjectPhoto
+              ? 20 * 1024 * 1024
+              : isBackdropPhoto
+                ? 45 * 1024 * 1024
+                : 60 * 1024 * 1024,
           addRandomSuffix: true,
           // Same reasoning as the detail-model versions route: every
           // upload here (GLBs, ad photos, backdrop panoramas) already

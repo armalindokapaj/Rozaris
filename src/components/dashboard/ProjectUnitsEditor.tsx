@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Box, Check, Link2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Box, Check, Compass, Link2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useProjectUnits } from "@/hooks/useProjectUnits";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
-import type { Project, Unit } from "@/lib/types";
+import { UNIT_ORIENTATIONS, type Project, type Unit, type UnitOrientation } from "@/lib/types";
 
 /**
  * PRD_3D_Project_Viewer §11/§13/§18 — a project's "Units" and "3D Model"
@@ -66,6 +66,7 @@ export function ProjectUnitsEditor({
   const [area, setArea] = useState(60);
   const [price, setPrice] = useState(80000);
   const [status, setStatus] = useState<Unit["status"]>("available");
+  const [orientation, setOrientation] = useState<UnitOrientation | "">("");
 
   const canAdd = code.trim().length > 0 && area > 0 && price > 0;
 
@@ -86,6 +87,10 @@ export function ProjectUnitsEditor({
       status,
       images: [],
       floorPlanImage: "",
+      // "" is the picker's real "not set" choice, and stays undefined on
+      // the wire rather than becoming an empty-string orientation the
+      // normalizer would then have to reject on the way back out.
+      orientation: orientation || undefined,
     };
     // Only clear the form on confirmed success — unlike the old
     // fire-and-forget dual-write, which cleared it unconditionally even
@@ -103,7 +108,12 @@ export function ProjectUnitsEditor({
   type EditDraft = Pick<
     Unit,
     "code" | "buildingName" | "floor" | "bedrooms" | "bathrooms" | "area" | "price" | "status"
-  >;
+  > & {
+    /** `""` is the picker's "not set" row, which `saveEdit` sends as an
+     * explicit `null` — a unit whose orientation was authored by mistake
+     * has to be clearable, and PATCH treats an omitted key as "leave it". */
+    orientation: UnitOrientation | "";
+  };
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
 
@@ -118,6 +128,7 @@ export function ProjectUnitsEditor({
       area: u.area,
       price: u.price,
       status: u.status,
+      orientation: u.orientation ?? "",
     });
   }
 
@@ -129,7 +140,11 @@ export function ProjectUnitsEditor({
   async function saveEdit() {
     if (!editingId || !editDraft) return;
     if (!editDraft.code.trim() || editDraft.area <= 0 || editDraft.price <= 0) return;
-    const patch = { ...editDraft, code: editDraft.code.trim() };
+    const patch = {
+      ...editDraft,
+      code: editDraft.code.trim(),
+      orientation: editDraft.orientation || null,
+    };
     // Only leave edit-mode on confirmed success — same reasoning as
     // handleAddUnit above; a failed write now leaves the row exactly as
     // the admin left it instead of silently closing over a lost edit.
@@ -268,6 +283,12 @@ export function ProjectUnitsEditor({
                             <option value="sold">{t("unit.statusSold")}</option>
                           </select>
                         </Field>
+                        <Field label={t("unit.orientation")}>
+                          <OrientationSelect
+                            value={editDraft.orientation}
+                            onChange={(v) => setEditDraft({ ...editDraft, orientation: v })}
+                          />
+                        </Field>
                       </div>
                       <div className="flex gap-2">
                         <button
@@ -297,6 +318,14 @@ export function ProjectUnitsEditor({
                         <span className="font-normal text-neutral-500">
                           {t(`unit.status${u.status[0].toUpperCase()}${u.status.slice(1)}`)}
                         </span>
+                        {u.orientation && (
+                          <span
+                            title={t(`unit.orientation${u.orientation}`)}
+                            className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-600"
+                          >
+                            <Compass className="h-2.5 w-2.5" /> {u.orientation}
+                          </span>
+                        )}
                         {linkedUnitIds.has(u.id) && (
                           <span
                             title={t("admin.hasLinkedListing")}
@@ -378,6 +407,9 @@ export function ProjectUnitsEditor({
                     <option value="sold">{t("unit.statusSold")}</option>
                   </select>
                 </Field>
+                <Field label={t("unit.orientation")}>
+                  <OrientationSelect value={orientation} onChange={setOrientation} />
+                </Field>
               </div>
               <button
                 onClick={handleAddUnit}
@@ -403,6 +435,38 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       </span>
       {children}
     </label>
+  );
+}
+
+/** The N/E/S/W picker. Lives here, on the unit itself, rather than in the
+ * 3D Experience Editor's Units panel: which way a unit faces is a listing
+ * fact a buyer asks about, authored once and true across every GLB
+ * re-upload — unrelated to that panel's own N/E/S/W buttons, which aim the
+ * POI camera for a particular model version (`UnitMeshLink.poiYawDeg`).
+ *
+ * The letter is the stored value and stays the same in every locale; only
+ * the spelled-out name beside it translates. */
+function OrientationSelect({
+  value,
+  onChange,
+}: {
+  value: UnitOrientation | "";
+  onChange: (v: UnitOrientation | "") => void;
+}) {
+  const { t } = useT();
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as UnitOrientation | "")}
+      className="w-full rounded-control border border-neutral-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none"
+    >
+      <option value="">{t("unit.orientationUnset")}</option>
+      {UNIT_ORIENTATIONS.map((o) => (
+        <option key={o} value={o}>
+          {t(`unit.orientation${o}`)}
+        </option>
+      ))}
+    </select>
   );
 }
 

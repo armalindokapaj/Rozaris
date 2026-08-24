@@ -84,7 +84,7 @@ export function manifestToProject3DConfig(manifest: ViewerReleaseManifest): Proj
 }
 
 /** A public inventory row → the app's full `Unit` shape —
- * `ProjectViewerRuntime`'s tree (`UnitDetailPanel`/`UnitDiscoveryPanel`/
+ * `ProjectViewerRuntime`'s tree (`UnitPreviewCard`/`UnitDiscoveryPanel`/
  * `units-workspace/*`) is written against `Unit`, not `PublicUnitDto`,
  * same seam `src/lib/units.ts`'s `normalizeUnit` already bridges for the
  * live-Postgres path — this is that same bridge for the public-DTO path.
@@ -110,7 +110,7 @@ export function publicUnitDtoToUnit(dto: PublicUnitDto): Unit {
     // channel's PublishTargetUnitOverride sets showPrice:false) but
     // `Unit.price` is a required number everywhere else in this app —
     // every consumer in ProjectViewerRuntime's tree (UnitPreviewCard/
-    // UnitDetailPanel/units-workspace/*) formats it as a plain number
+    // units-workspace/*) formats it as a plain number
     // and has no "Price on Request" display path today. Coalescing to 0
     // rather than crashing on `.toLocaleString()` — a real, flagged
     // limitation (a white-label channel that hides a price shows "0"

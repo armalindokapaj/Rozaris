@@ -1,8 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { Unit } from "@/lib/types";
+import type { Unit, UnitOrientation } from "@/lib/types";
 import { normalizeUnit, type RawUnitRow } from "@/lib/units";
+
+/** A unit PATCH body. `Partial<Unit>` on its own can't express "clear
+ * this unit's orientation": the route reads an absent key as "leave it
+ * alone", so the only way to unset one is to send an explicit `null`,
+ * which `Unit["orientation"]` (optional, never null) has no room for. */
+export type UnitPatch = Partial<Omit<Unit, "orientation">> & {
+  orientation?: UnitOrientation | null;
+};
 
 export interface UseProjectUnitsResult {
   /** Live Postgres units for this project — `null` while the initial GET
@@ -16,8 +24,13 @@ export interface UseProjectUnitsResult {
   /** Last mutation's failure, if any — raw/untranslated; callers decide
    * how to surface it. */
   error: string | null;
+  /** Force a re-read — the poll below covers ambient drift, but a bulk
+   * write (the Project Manager's inventory table patches up to 500 units
+   * in ONE request) lands outside this hook entirely and needs the list
+   * refreshed the moment it returns, not up to 30s later. */
+  refresh: () => void;
   createUnit: (unit: Unit) => Promise<boolean>;
-  updateUnit: (unitId: string, patch: Partial<Unit>) => Promise<boolean>;
+  updateUnit: (unitId: string, patch: UnitPatch) => Promise<boolean>;
   deleteUnit: (unitId: string) => Promise<boolean>;
 }
 
@@ -56,6 +69,7 @@ const UNIT_STATUS_POLL_MS = 30_000;
 export function useProjectUnits(projectId: string): UseProjectUnitsResult {
   const [units, setUnits] = useState<Unit[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +108,7 @@ export function useProjectUnits(projectId: string): UseProjectUnitsResult {
       document.removeEventListener("visibilitychange", onVisibility);
       clearInterval(interval);
     };
-  }, [projectId]);
+  }, [projectId, refreshKey]);
 
   const createUnit = useCallback(
     async (unit: Unit) => {
@@ -119,7 +133,7 @@ export function useProjectUnits(projectId: string): UseProjectUnitsResult {
   );
 
   const updateUnit = useCallback(
-    async (unitId: string, patch: Partial<Unit>) => {
+    async (unitId: string, patch: UnitPatch) => {
       try {
         const res = await fetch(`/api/projects/${projectId}/units/${unitId}`, {
           method: "PATCH",
@@ -157,5 +171,7 @@ export function useProjectUnits(projectId: string): UseProjectUnitsResult {
     [projectId]
   );
 
-  return { units, error, createUnit, updateUnit, deleteUnit };
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  return { units, error, refresh, createUnit, updateUnit, deleteUnit };
 }

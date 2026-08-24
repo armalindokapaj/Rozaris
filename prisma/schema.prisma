@@ -781,6 +781,21 @@ model Unit {
   facadeImage    String?
   videoUrl       String?
 
+  /// Compass orientation the unit itself faces — a real-estate listing
+  /// attribute ("which way do the windows point"), authored per unit in
+  /// ProjectUnitsEditor alongside floor/area/price. Deliberately NOT the
+  /// same thing as `UnitMeshLinkV2.poiYawDeg`, which also renders as
+  /// N/E/S/W but is a per-model-version 3D authoring knob for framing the
+  /// POI camera's focus shot: the two are independent (a south-facing
+  /// unit can still be best framed from the east) and live on rows with
+  /// different lifetimes — poiYawDeg is re-authored per GLB version,
+  /// this survives every model re-upload.
+  ///
+  /// Nullable, and left null on every pre-existing unit: "unknown" is a
+  /// legitimate state, and defaulting the live units to North would be
+  /// inventing data the editor then shows back as authored.
+  orientation    String?
+
   /// Multi-Channel Publishing PRD Phase 2 — additive-only hardening. The
   /// PRD's own §7 also proposed converting `status` above (bare String) to
   /// a real `UnitAvailability` enum; deliberately NOT done here — 12 files
@@ -1690,6 +1705,36 @@ model Project3DConfig {
   /// outline, instead of the old full-purple-fill SELECTED_COLOR
   /// replacement.
   unitBlocksSelectedOutlineEnabled Boolean @default(true)
+  /// Outline thickness in SCREEN PIXELS (not world units), so a selected
+  /// unit reads equally strongly whether the camera is orbiting the whole
+  /// masterplan or pushed into a single floor. `1` reproduces the old
+  /// hairline `THREE.LineSegments` look exactly, so existing projects are
+  /// unchanged by this field's arrival.
+  unitBlocksSelectedOutlineWidth   Float   @default(1)
+  /// Selection "pop" — the selected unit's block is scaled up about its
+  /// own bounding-box center (NOT its local origin, which for a GLB with
+  /// baked transforms usually sits far away at the scene origin), so a
+  /// click reads instantly even on a small unit inside a dense facade.
+  /// Off by default: an existing project's selection look is unchanged
+  /// until an admin turns it on. `1.05` is the subtle default the
+  /// feature was asked for; the slider goes to 1.5 for masterplan-scale
+  /// projects where 5% is invisible.
+  unitBlocksSelectedScaleEnabled   Boolean @default(false)
+  unitBlocksSelectedScale          Float   @default(1.05)
+  /// Selection FILL color, the counterpart to the selection outline. §12
+  /// deliberately keeps a selected unit's status color (a sold unit stays
+  /// red while selected) — this is the opt-in override for projects that
+  /// would rather a click repaint the block outright. Off by default, so
+  /// §12's behavior is still what an unconfigured project gets. The
+  /// outline keeps its own `unitColorSelected` color independently.
+  unitBlocksSelectedFillEnabled    Boolean @default(false)
+  unitColorSelectedFill            String  @default("#6b55f5")
+  /// Per-selection X-ray: draws the SELECTED unit's block (and its
+  /// outline) with depth testing off, so it stays visible through the
+  /// facade from any orbit angle, while every other block still obeys the
+  /// project-wide `unitBlocksXrayEnabled`. Independent of that switch —
+  /// either one being on makes the selected block see-through-walls.
+  unitBlocksSelectedXrayEnabled    Boolean @default(false)
 
   /// Units Blocks & POI Layer PRD §14 — "One Master POI Camera," one
   /// config per project (not per unit — see UnitMeshLinkV2.poiYawDeg for

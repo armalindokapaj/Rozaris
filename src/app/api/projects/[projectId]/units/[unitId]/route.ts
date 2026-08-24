@@ -21,6 +21,8 @@ const unitPatchSchema = z.object({
   floorPlanImage: z.string().optional(),
   facadeImage: z.string().optional(),
   videoUrl: z.string().optional(),
+  // See the POST route's schema — `null` clears it, omitting leaves it.
+  orientation: z.enum(["N", "E", "S", "W"]).nullish(),
 });
 
 /** Phase 3 — see `../route.ts`'s doc comment for the full write-path

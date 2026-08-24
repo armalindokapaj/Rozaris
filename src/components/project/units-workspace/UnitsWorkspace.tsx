@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { gsap } from "gsap";
 import { ArrowLeft, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
@@ -70,14 +70,25 @@ export function UnitsWorkspace({
   open,
   onClose,
   units,
-  onSelectUnitIn3D,
+  selectedUnitId,
+  onSelectUnit,
+  unmappedUnitId,
   filters,
   onFiltersChange,
 }: {
   open: boolean;
   onClose: () => void;
   units: Unit[];
-  onSelectUnitIn3D: (unitId: string | null) => void;
+  /** Controlled, shared with the 3D scene and the UnitPreviewCard — see
+   * ProjectViewerRuntime's own `handleSelectUnit`. Was local state here,
+   * which is precisely why a 3D click never marked a row and a row click
+   * never opened the card. */
+  selectedUnitId: string | null;
+  onSelectUnit: (unitId: string | null) => void;
+  /** The selected unit has no resolvable block in the loaded GLB, so the
+   * camera could not frame it — surfaced as one honest line rather than a
+   * silently motionless viewport. */
+  unmappedUnitId: string | null;
   filters: UnitFilterState;
   onFiltersChange: Dispatch<SetStateAction<UnitFilterState>>;
 }) {
@@ -85,7 +96,14 @@ export function UnitsWorkspace({
   const reducedMotion = useEffectiveReducedMotion();
   const outerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
-  const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
+  // `detailOpen` is a *view* flag, not a second selection: which unit the
+  // detail view shows is always the shared `selectedUnitId` below. Keeping
+  // the two apart is what lets a 3D block click mark the matching row in
+  // place — the visitor keeps their scroll position and sees which row it
+  // was — instead of yanking the whole panel over to a detail view they
+  // didn't ask for.
+  const [detailOpen, setDetailOpen] = useState(false);
+  const selectedUnit = useMemo(() => units.find((u) => u.id === selectedUnitId) ?? null, [units, selectedUnitId]);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   // Search/sort/view state — stays local (survives UnitSearchView
   // unmounting when a unit is selected, see UnitSearchView's own doc
@@ -137,18 +155,22 @@ export function UnitsWorkspace({
   }
 
   function handleSelectUnit(unit: Unit) {
-    setSelectedUnit(unit);
-    onSelectUnitIn3D(unit.id);
+    onSelectUnit(unit.id);
+    setDetailOpen(true);
   }
 
+  // Deliberately does NOT clear the selection any more. Going back to the
+  // list used to drop the 3D highlight and the camera framing along with
+  // the detail view, so a visitor who wanted to keep looking at the unit
+  // while scanning its neighbours lost it. Now the block stays lit, the
+  // row stays marked, and only the view changes.
   function handleBackToSearch() {
-    setSelectedUnit(null);
-    onSelectUnitIn3D(null);
+    setDetailOpen(false);
   }
 
   function handleClose() {
-    setSelectedUnit(null);
-    onSelectUnitIn3D(null);
+    setDetailOpen(false);
+    onSelectUnit(null);
     onClose();
   }
 
@@ -183,7 +205,7 @@ export function UnitsWorkspace({
             second panel. `×` always fully closes Units mode (§31: same as
             clicking the Units nav icon again). */}
         <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3.5">
-          {selectedUnit ? (
+          {detailOpen && selectedUnit ? (
             <button
               type="button"
               onClick={handleBackToSearch}
@@ -206,7 +228,7 @@ export function UnitsWorkspace({
           </button>
         </div>
 
-        {selectedUnit ? (
+        {detailOpen && selectedUnit ? (
           <UnitDetailView
             unit={selectedUnit}
             isFavorite={favorites.has(selectedUnit.id)}
@@ -218,6 +240,8 @@ export function UnitsWorkspace({
         ) : (
           <UnitSearchView
             units={units}
+            selectedUnitId={selectedUnitId}
+            unmappedUnitId={unmappedUnitId}
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
             onSelectUnit={handleSelectUnit}

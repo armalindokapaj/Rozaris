@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState, type RefObject } from "react";
-import { ScanSearch, Plus, Wand2 } from "lucide-react";
+import { ScanSearch, Plus, Scissors, Wand2 } from "lucide-react";
 import { extractUnitNodeNames } from "@/lib/glbUnitNodes";
 import { cleanGlbNodeName } from "@/lib/glbNodeName";
+import { groupUnitsByFloor, makeFloorId, type BuildingGroup } from "@/lib/units";
 import { cn } from "@/lib/utils";
 import { ColorRow, GroupCard, SectionHeading, SliderRow, ToggleRow } from "../fields";
 import type { UseModelEditorReturn } from "@/hooks/useModelEditor";
 import type { UseDetailModelSlotsReturn } from "@/hooks/useDetailModelSlots";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
-import type { Project, Unit } from "@/lib/types";
+import type { Project, Section, Unit } from "@/lib/types";
 
 /** Unions two node-name lists into the sorted, de-duplicated order the
  * Mapping list renders in — same numeric-aware collation
@@ -22,7 +23,13 @@ function mergeNodeNames(a: string[], b: string[]): string[] {
   );
 }
 
-const COMPASS_DIRECTIONS: { label: string; deg: number }[] = [
+/** The POI camera's yaw presets — where the focus shot is taken FROM, in
+ * Building-local degrees. Not the unit's own compass orientation, which is
+ * a listing attribute (`Unit.orientation`) authored in ProjectUnitsEditor
+ * and unchanged by any GLB re-upload; these two both read as N/E/S/W and
+ * were genuinely being confused for each other, hence the explicit "Camera
+ * from" label on the row below. */
+const POI_CAMERA_YAW_PRESETS: { label: string; deg: number }[] = [
   { label: "N", deg: 0 },
   { label: "E", deg: 90 },
   { label: "S", deg: 180 },
@@ -405,12 +412,29 @@ export function UnitsPanel({
           <SliderRow label="Hover Opacity" value={draft.unitBlocksHoverOpacity} min={0} max={1} step={0.01} onChange={(v) => configEditor.update({ unitBlocksHoverOpacity: v })} />
           <SliderRow label="Selected Opacity" value={draft.unitBlocksSelectedOpacity} min={0} max={1} step={0.01} onChange={(v) => configEditor.update({ unitBlocksSelectedOpacity: v })} />
           <ToggleRow label="Selected Outline" checked={draft.unitBlocksSelectedOutlineEnabled} onChange={(v) => configEditor.update({ unitBlocksSelectedOutlineEnabled: v })} />
+          {draft.unitBlocksSelectedOutlineEnabled && (
+            <SliderRow label="Outline Width" value={draft.unitBlocksSelectedOutlineWidth} min={0.5} max={20} step={0.5} suffix="px" onChange={(v) => configEditor.update({ unitBlocksSelectedOutlineWidth: v })} />
+          )}
+          {/* Selection "pop" — enlarges the clicked unit about its own
+              center so it reads as picked even at masterplan distance. */}
+          <ToggleRow label="Selected Enlarge" checked={draft.unitBlocksSelectedScaleEnabled} onChange={(v) => configEditor.update({ unitBlocksSelectedScaleEnabled: v })} />
+          {draft.unitBlocksSelectedScaleEnabled && (
+            <SliderRow label="Enlarge Scale" value={draft.unitBlocksSelectedScale} min={1} max={1.5} step={0.01} suffix="x" onChange={(v) => configEditor.update({ unitBlocksSelectedScale: v })} />
+          )}
+          {/* Off = the selected unit keeps its status color and is marked
+              by the outline alone (the platform default). On = the block
+              is repainted with the Selected Fill color below. */}
+          <ToggleRow label="Selected Fill" checked={draft.unitBlocksSelectedFillEnabled} onChange={(v) => configEditor.update({ unitBlocksSelectedFillEnabled: v })} />
+          {/* X-ray for the selected unit only — visible through the facade
+              from any angle, while the rest of the blocks stay occluded. */}
+          <ToggleRow label="Selected X-Ray" checked={draft.unitBlocksSelectedXrayEnabled} onChange={(v) => configEditor.update({ unitBlocksSelectedXrayEnabled: v })} />
         </GroupCard>
         <GroupCard>
           <ColorRow label="Available" value={draft.unitColorAvailable} onChange={(v) => configEditor.update({ unitColorAvailable: v })} />
           <ColorRow label="Reserved" value={draft.unitColorReserved} onChange={(v) => configEditor.update({ unitColorReserved: v })} />
           <ColorRow label="Sold" value={draft.unitColorSold} onChange={(v) => configEditor.update({ unitColorSold: v })} />
           <ColorRow label="Selected Outline" value={draft.unitColorSelected} onChange={(v) => configEditor.update({ unitColorSelected: v })} />
+          <ColorRow label="Selected Fill" value={draft.unitColorSelectedFill} onChange={(v) => configEditor.update({ unitColorSelectedFill: v })} />
         </GroupCard>
       </div>
 
@@ -474,11 +498,22 @@ export function UnitsPanel({
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] capitalize text-neutral-500">{unit.status}</p>
+                  <p className="text-[10px] capitalize text-neutral-500">
+                    {unit.status}
+                    {unit.orientation && (
+                      <>
+                        {" · "}
+                        <span title="Unit orientation — edit it in the project's Units editor">
+                          faces {unit.orientation}
+                        </span>
+                      </>
+                    )}
+                  </p>
                   {link && (
                     <div className="mt-1.5 flex items-center justify-between gap-2">
-                      <div className="flex gap-1">
-                        {COMPASS_DIRECTIONS.map((d) => (
+                      <div className="flex items-center gap-1">
+                        <span className="mr-0.5 text-[10px] text-neutral-500">Camera from</span>
+                        {POI_CAMERA_YAW_PRESETS.map((d) => (
                           <button
                             key={d.label}
                             disabled={!canEdit}

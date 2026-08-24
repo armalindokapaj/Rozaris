@@ -279,6 +279,12 @@ const patchSchema = z.object({
   unitBlocksHoverOpacity: z.number().min(0).max(1).optional(),
   unitBlocksSelectedOpacity: z.number().min(0).max(1).optional(),
   unitBlocksSelectedOutlineEnabled: z.boolean().optional(),
+  unitBlocksSelectedOutlineWidth: z.number().min(0.5).max(20).optional(),
+  unitBlocksSelectedScaleEnabled: z.boolean().optional(),
+  unitBlocksSelectedScale: z.number().min(1).max(1.5).optional(),
+  unitBlocksSelectedFillEnabled: z.boolean().optional(),
+  unitColorSelectedFill: hexColorSchema.optional(),
+  unitBlocksSelectedXrayEnabled: z.boolean().optional(),
   // Units Blocks & POI Layer PRD §14 — master POI camera.
   unitPoiCameraEnabled: z.boolean().optional(),
   unitPoiCameraFov: z.number().min(10).max(120).optional(),

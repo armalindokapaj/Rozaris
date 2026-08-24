@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
 import { requireAdmin } from "@/lib/adminAuth";
 import { fetchAndValidateGlb } from "@/lib/glbValidate";
+import { glbNodeNameKey } from "@/lib/glbNodeName";
 // `optimizeGlbForDelivery` (below, inside the try block) is intentionally
 // a dynamic import, not a static one here — see its call site's own
 // comment for why: a static import of `@gltf-transform/core` was crashing
@@ -22,6 +23,16 @@ const createSchema = z.object({
   scale: z.number().positive().max(1000).default(1),
   rotationDeg: z.number().default(0),
   altitudeOffset: z.number().default(0),
+  /** Replacing a GLB keeps the slot's existing unit mappings and scene
+   * overrides by default — see `carrySource` below. Sent as `false` by an
+   * admin who deliberately wants a clean slate (a genuinely different
+   * model in the same slot, where every old mapping is meaningless). */
+  carryLinks: z.boolean().default(true),
+  /** Optional explicit carry source. Omitted, the newest version that
+   * actually has mappings wins; sent, that exact version's mappings are
+   * used (the editor's "carry from v<n>" escape hatch for a lineage where
+   * the newest mapped version is not the one the admin wants). */
+  carryLinksFromVersionId: z.string().optional(),
 });
 
 /**
@@ -33,9 +44,11 @@ const createSchema = z.object({
  * of versions" now selects "this slot's one lineage" instead. GET is
  * public (Project3DConfigEditor's version-history list); POST creates a
  * draft from an already-uploaded Blob URL, runs server-side validation,
- * and carries forward unit mesh mappings from the current published
- * version *of this same slot* for any mesh name the new GLB still has —
- * PRD §19 "Mapping Version Behavior".
+ * and carries forward unit mesh mappings + scene node overrides from the
+ * most recently authored version *of this same slot* for any node the new
+ * GLB still has — PRD §19 "Mapping Version Behavior". See the carry-source
+ * comment in POST for why "most recently authored" rather than the
+ * published version specifically.
  */
 export async function GET(
   _request: Request,
@@ -142,10 +155,46 @@ export async function POST(
     }
   }
 
-  const publishedVersion = await prisma.detailModelVersion.findFirst({
-    where: { slotId, publicationStatus: "published", deletedAt: null },
-    include: { unitLinks: true },
-  });
+  // WHICH version's authoring work a replacement GLB inherits.
+  //
+  // This used to be, unconditionally, "the currently PUBLISHED version" —
+  // which quietly threw away the common case. An admin uploads a GLB,
+  // spends real time linking every unit block to a listing, spots a
+  // problem in the model, and re-uploads a corrected export before ever
+  // publishing. The slot has no published version, so nothing carried and
+  // they started from an empty mapping list every single time. Same loss
+  // one step later: publish v1, upload v2, map it, re-upload v3 — v3
+  // inherited published v1's mappings and silently discarded everything
+  // authored on v2.
+  //
+  // The rule now is "the most recent version that actually has authoring
+  // work on it", published or draft, which reduces to the old behavior
+  // whenever the published version is genuinely the newest mapped one.
+  // Links and overrides are resolved independently because they're
+  // authored in different tabs and a version can easily have one without
+  // the other. `carryLinksFromVersionId` pins the source explicitly;
+  // `carryLinks: false` opts out of the whole thing.
+  const priorVersions = parsed.data.carryLinks
+    ? await prisma.detailModelVersion.findMany({
+        where: { slotId, deletedAt: null },
+        orderBy: { version: "desc" },
+        include: { unitLinks: true },
+      })
+    : [];
+  const pinnedSource = parsed.data.carryLinksFromVersionId
+    ? priorVersions.find((v) => v.id === parsed.data.carryLinksFromVersionId)
+    : undefined;
+  if (parsed.data.carryLinksFromVersionId && !pinnedSource) {
+    return NextResponse.json(
+      { error: "Carry-forward source version not found in this slot." },
+      { status: 400 }
+    );
+  }
+  const linkSource = pinnedSource ?? priorVersions.find((v) => v.unitLinks.length > 0) ?? null;
+  const overrideSource =
+    pinnedSource ??
+    priorVersions.find((v) => ((v.nodeOverrides as NodeOverride[] | null) ?? []).length > 0) ??
+    null;
 
   // Carry forward scene overrides (classification/material) whose node
   // NAME still exists in the new GLB's manifest — same "identical stable
@@ -154,13 +203,15 @@ export async function POST(
   // own mappingStatus column. rzNodeId is remapped to the *new* manifest's
   // id for that name, since the index component of the id can differ
   // between versions even when the name is unchanged.
-  const nameToNewRzNodeId = new Map(validation.sceneManifest.map((n) => [n.name, n.rzNodeId]));
-  const previousOverrides = (publishedVersion?.nodeOverrides as NodeOverride[] | null) ?? [];
-  const previousManifest = (publishedVersion?.sceneManifest as SceneManifestNode[] | null) ?? [];
+  const nameToNewRzNodeId = new Map(
+    validation.sceneManifest.map((n) => [glbNodeNameKey(n.name), n.rzNodeId])
+  );
+  const previousOverrides = (overrideSource?.nodeOverrides as NodeOverride[] | null) ?? [];
+  const previousManifest = (overrideSource?.sceneManifest as SceneManifestNode[] | null) ?? [];
   const rzNodeIdToName = new Map(previousManifest.map((n) => [n.rzNodeId, n.name]));
   const carriedOverrides: NodeOverride[] = previousOverrides.flatMap((o) => {
     const name = rzNodeIdToName.get(o.rzNodeId);
-    const newRzNodeId = name ? nameToNewRzNodeId.get(name) : undefined;
+    const newRzNodeId = name ? nameToNewRzNodeId.get(glbNodeNameKey(name)) : undefined;
     if (!newRzNodeId) return [];
     return [{ ...o, rzNodeId: newRzNodeId, carried: true }];
   });
@@ -172,9 +223,67 @@ export async function POST(
   // list will show it unlinked, same as a first upload. Lifted above the
   // transaction (doesn't depend on the new version's id) so it can also
   // feed the ExperienceDocument snapshot below.
-  const carryable = (publishedVersion?.unitLinks ?? []).filter((l) =>
-    validation.unitNodeNames.includes(l.meshName)
+  //
+  // Matching is by normalized key, not `===` on the raw string. The old
+  // exact-match dropped a link whenever the stored spelling and the newly
+  // parsed one differed in ways that are not a rename — most importantly
+  // the GLTFLoader sanitization gap (`Unit.001` on the server vs the
+  // `Unit001` a client-side link was stored under). See `glbNodeNameKey`.
+  // Matched links are rewritten to the NEW file's own spelling so every
+  // downstream consumer keyed off this version's manifest still resolves.
+  //
+  // Candidate names come from the manifest as well as `unitNodeNames`, so
+  // a link an admin made to a block that doesn't follow the `Unit_*`
+  // convention (which `unitNodeNames` filters out) survives too.
+  const newNameByKey = new Map<string, string>();
+  for (const name of [...validation.unitNodeNames, ...validation.sceneManifest.map((n) => n.name)]) {
+    const key = glbNodeNameKey(name);
+    if (!newNameByKey.has(key)) newNameByKey.set(key, name);
+  }
+
+  const sourceLinks = linkSource?.unitLinks ?? [];
+  // A link pointing at a unit that has since been soft-deleted is dead
+  // weight — the picker never offers it and the viewer can't render it —
+  // so it's dropped rather than resurrected onto every future version.
+  const liveUnitIds = new Set(
+    sourceLinks.length > 0
+      ? (
+          await prisma.unit.findMany({
+            where: { id: { in: [...new Set(sourceLinks.map((l) => l.unitId))] }, projectId, deletedAt: null },
+            select: { id: true },
+          })
+        ).map((u) => u.id)
+      : []
   );
+
+  // Both of UnitMeshLinkV2's unique constraints are per-version, so two
+  // source links collapsing onto one new name (or a duplicated unitId)
+  // would make createMany throw. First writer wins — deterministic,
+  // because `sourceLinks` comes back ordered from one version's rows.
+  const takenMeshNames = new Set<string>();
+  const takenUnitIds = new Set<string>();
+  const carryable: { meshName: string; link: (typeof sourceLinks)[number] }[] = [];
+  const droppedLinks: string[] = [];
+  for (const link of sourceLinks) {
+    const newName = newNameByKey.get(glbNodeNameKey(link.meshName));
+    if (!newName || !liveUnitIds.has(link.unitId) || takenMeshNames.has(newName) || takenUnitIds.has(link.unitId)) {
+      droppedLinks.push(link.meshName);
+      continue;
+    }
+    takenMeshNames.add(newName);
+    takenUnitIds.add(link.unitId);
+    carryable.push({ meshName: newName, link });
+  }
+
+  // What the editor tells the admin after a replace, so "kept 12, 3 new
+  // blocks to map" is visible instead of being something they have to
+  // infer by scrolling the mapping list.
+  const carryReport = {
+    carriedFromVersion: linkSource?.version ?? null,
+    carriedCount: carryable.length,
+    droppedMeshNames: droppedLinks,
+    unmappedUnitNodeNames: validation.unitNodeNames.filter((n) => !takenMeshNames.has(n)),
+  };
 
   // ExperienceDocument snapshot (rewrite Track B, Phase 1) — additive,
   // only built when the project already has a Project3DConfig row (it's
@@ -198,7 +307,11 @@ export async function POST(
           rotationDeg: parsed.data.rotationDeg,
           altitudeOffset: parsed.data.altitudeOffset,
           nodeOverrides: carriedOverrides,
-          unitLinks: carryable.map((l) => ({ meshName: l.meshName, unitId: l.unitId, poiYawDeg: l.poiYawDeg })),
+          unitLinks: carryable.map((c) => ({
+            meshName: c.meshName,
+            unitId: c.link.unitId,
+            poiYawDeg: c.link.poiYawDeg,
+          })),
           publicationStatus: "draft",
           validationStatus: validation.status,
         }
@@ -243,9 +356,9 @@ export async function POST(
 
     if (carryable.length > 0) {
       await tx.unitMeshLinkV2.createMany({
-        data: carryable.map((l) => ({
+        data: carryable.map(({ meshName, link: l }) => ({
           detailModelVersionId: version.id,
-          meshName: l.meshName,
+          meshName,
           unitId: l.unitId,
           mappingStatus: "carried",
           // Units Blocks & POI Layer PRD §7 — carry the POI fields
@@ -276,5 +389,7 @@ export async function POST(
     entityLabel: `${project.name} · ${slot.name} v${created.version}`,
   });
 
-  return NextResponse.json(created);
+  // `carryReport` is response-only (nothing persists it) — the editor
+  // reads it once to flash "kept N of M mappings" right after a replace.
+  return NextResponse.json({ ...created, carryReport });
 }

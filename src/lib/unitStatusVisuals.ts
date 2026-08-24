@@ -86,3 +86,13 @@ export function unitStatusColorNumber(
 export function unitSelectedOutlineColorNumber(config?: Partial<Pick<UnitsConfig, "unitColorSelected">>): number {
   return hexToNumber(config?.unitColorSelected ?? DEFAULT_UNIT_STATUS_VISUAL_CONFIG.unitColorSelected);
 }
+
+/** The optional selection FILL color — the counterpart an admin can turn
+ * on when §12's "keep the status color while selected" is not enough
+ * contrast for their project. Independent of the outline color above, so
+ * a project can have a purple outline over a white fill (or vice versa)
+ * rather than being forced into one selection color for both. Falls back
+ * to the same platform default as the outline. */
+export function unitSelectedFillColorNumber(config?: Partial<Pick<UnitsConfig, "unitColorSelectedFill">>): number {
+  return hexToNumber(config?.unitColorSelectedFill ?? DEFAULT_UNIT_STATUS_VISUAL_CONFIG.unitColorSelected);
+}

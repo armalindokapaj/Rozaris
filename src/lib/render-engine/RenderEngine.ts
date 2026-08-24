@@ -30,7 +30,17 @@ import {
   WATER_PLANE_SIZE,
 } from "@/lib/viewerPresets";
 import { buildSectionCapGeometry, buildSectionPlanes, NO_ACTIVE_SECTION_PLANES, SECTION_INDICATOR_COLOR } from "./sections";
-import { applyUnitBoxAppearance, buildUnitRegistry, disposeUnitBoxAppearanceCaches, findUnitRootObjects, type UnitRuntimeEntry } from "./unitRegistry";
+import {
+  applyUnitBoxAppearance,
+  applyUnitSelectionScale,
+  buildUnitRegistry,
+  clearUnitSelectionScale,
+  disposeUnitBoxAppearanceCaches,
+  findUnitRootObjects,
+  type UnitRuntimeEntry,
+  type UnitSelectionScaleOriginals,
+} from "./unitRegistry";
+import type { LineSegments2 } from "three/examples/jsm/lines/webgpu/LineSegments2.js";
 import { IdleDroneController } from "./idleDroneCamera";
 import type {
   CameraPreset,
@@ -238,6 +248,12 @@ export const DEFAULT_UNITS_CONFIG: UnitsConfig = {
   unitBlocksHoverOpacity: 0.25,
   unitBlocksSelectedOpacity: 0.32,
   unitBlocksSelectedOutlineEnabled: true,
+  unitBlocksSelectedOutlineWidth: 1,
+  unitBlocksSelectedScaleEnabled: false,
+  unitBlocksSelectedScale: 1.05,
+  unitBlocksSelectedFillEnabled: false,
+  unitColorSelectedFill: "#6b55f5",
+  unitBlocksSelectedXrayEnabled: false,
   unitPoiCameraEnabled: true,
   unitPoiCameraFov: 38,
   unitPoiCameraDistanceMultiplier: 3,
@@ -623,7 +639,11 @@ export class RenderEngine {
   // calls, same reasoning as originalMaterials above).
   private unitsConfig: UnitsConfig = DEFAULT_UNITS_CONFIG;
   private unitMaterialCache = new Map<string, THREE.MeshBasicMaterial>();
-  private unitOutlineByMesh = new Map<THREE.Mesh, THREE.LineSegments>();
+  private unitOutlineByMesh = new Map<THREE.Mesh, LineSegments2>();
+  /** Authored transform of whichever unit root is currently scaled up by
+   * the selection "pop" — restored, then re-applied, on every appearance
+   * refresh (see refreshUnitRegistryAndAppearance). */
+  private unitSelectionScaleOriginals: UnitSelectionScaleOriginals = new Map();
   /** unitId -> live runtime entry (bounds/meshes/root) — rebuilt after
    * every syncModels() and every refreshUnitStatuses() call, never on
    * every frame. */
@@ -636,6 +656,12 @@ export class RenderEngine {
     reserved: true,
     sold: true,
   };
+  /** Ids of the units that still pass the *non-status* half of the public
+   * Units workspace's filter state (Surface/Rooms/Price/Floor/Building/
+   * search) — `null` means "no such filter is active", which is not the
+   * same as an empty set ("a filter is active and nothing matches", where
+   * every block correctly hides). See `setUnitIdFilter`. */
+  private unitIdFilter: Set<string> | null = null;
   private unitsModeEnabled = false;
 
   private showPerfStats = false;
@@ -985,8 +1011,24 @@ export class RenderEngine {
       unitPointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       unitPointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       unitRaycaster.setFromCamera(unitPointerNdc, camera);
-      const hit = unitRaycaster.intersectObjects(this.unitRaycastTargets, false)[0];
-      return (hit?.object.userData.unitId as string | undefined) ?? null;
+      // Walks the hit list instead of taking `[0]`, and skips any unit
+      // whose root is currently hidden. Both halves are load-bearing:
+      // three.js' Raycaster filters on layers only, never on `.visible`
+      // (r185, Raycaster.intersect), and `unitRaycastTargets` is rebuilt
+      // only by refreshUnitRegistryAndAppearance() — the filter setters
+      // (setUnitStatusFilters/setUnitIdFilter/isolateUnit) call
+      // applyUnitVisibility() alone and leave the target list untouched.
+      // Without this, a unit hidden by an Availability/Surface/Rooms
+      // filter stayed clickable and opened a card for a block the visitor
+      // could not see, and a hidden block in front swallowed the click
+      // from a visible one behind it.
+      for (const hit of unitRaycaster.intersectObjects(this.unitRaycastTargets, false)) {
+        const hitUnitId = hit.object.userData.unitId as string | undefined;
+        if (!hitUnitId) continue;
+        if (this.unitRegistry.get(hitUnitId)?.rootObject.visible === false) continue;
+        return hitUnitId;
+      }
+      return null;
     };
     renderer.domElement.addEventListener("pointermove", (event) => {
       const unitId = unitIdAtPointer(event);
@@ -1479,6 +1521,9 @@ export class RenderEngine {
    * no allocation on the hot hover-in/hover-out path once the cache is
    * warm). */
   private refreshUnitRegistryAndAppearance() {
+    // Un-pop the previously selected unit first, so every bounding box
+    // measured below is the authored one.
+    clearUnitSelectionScale(this.unitSelectionScaleOriginals);
     const rootObjectsByName = new Map<string, THREE.Object3D>();
     const allLinks: UnitMeshLink[] = [];
     const unitsById = new Map<string, Unit>();
@@ -1518,6 +1563,19 @@ export class RenderEngine {
       this.unitOutlineByMesh
     );
     this.unitRegistry = buildUnitRegistry(rootObjectsByName, allLinks, unitsById, poiByUnitId);
+
+    // Selection "pop" — last, on top of a registry built from un-scaled
+    // bounds, so focusUnit()'s framing keeps using the unit's real size.
+    if (this.unitsConfig.unitBlocksEnabled && this.unitsConfig.unitBlocksSelectedScaleEnabled && this.selectedUnitId) {
+      const selected = this.unitRegistry.get(this.selectedUnitId);
+      if (selected) {
+        applyUnitSelectionScale(
+          selected.rootObject,
+          this.unitsConfig.unitBlocksSelectedScale,
+          this.unitSelectionScaleOriginals
+        );
+      }
+    }
     this.applyUnitVisibility();
   }
 
@@ -1528,8 +1586,9 @@ export class RenderEngine {
   private applyUnitVisibility() {
     for (const entry of this.unitRegistry.values()) {
       const passesFilter = this.unitStatusFilters[entry.status];
+      const passesIdFilter = this.unitIdFilter == null || this.unitIdFilter.has(entry.unitId);
       const passesIsolate = this.isolatedUnitId == null || this.isolatedUnitId === entry.unitId;
-      entry.rootObject.visible = this.unitsModeEnabled && passesFilter && passesIsolate;
+      entry.rootObject.visible = this.unitsModeEnabled && passesFilter && passesIdFilter && passesIsolate;
     }
   }
 
@@ -1543,6 +1602,32 @@ export class RenderEngine {
   /** §18/§13 — per-status show/hide within Units mode. */
   setUnitStatusFilters(filters: { available: boolean; reserved: boolean; sold: boolean }) {
     this.unitStatusFilters = filters;
+    this.applyUnitVisibility();
+  }
+
+  /** The rest of the public Units workspace's filter state (Surface,
+   * Rooms, Price, Floor, Building, the search box) projected onto the same
+   * one visibility pass `setUnitStatusFilters` already drives — pass the
+   * ids that currently match, or `null` when none of those fields is
+   * narrowing anything.
+   *
+   * Added 2026-08-24 (direct instruction: "the Surface Filtering its not
+   * working"). Status was the only filter field wired to the 3D scene, so
+   * changing Availability visibly hid blocks while dragging Surface — or
+   * picking a bedroom count, or a price range — changed nothing on screen
+   * at all unless the Filter List side panel happened to be open to show
+   * its own count dropping. The filtering itself was real the whole time
+   * (`filterUnits` genuinely narrowed the list); what was missing was this
+   * half of it ever reaching the model. Deliberately id-based rather than
+   * a second copy of the filter predicate down here: `filterUnits` in
+   * `unitFilters.ts` stays the single definition of what "matches", the
+   * same one the list and the dock's own count badge read.
+   *
+   * Kept separate from `setUnitStatusFilters` rather than folded into it
+   * — that one is PRD §18's own tri-state toggle API, also used by the
+   * admin editor, and it has no notion of a project's live unit rows. */
+  setUnitIdFilter(unitIds: string[] | null) {
+    this.unitIdFilter = unitIds == null ? null : new Set(unitIds);
     this.applyUnitVisibility();
   }
 
@@ -1695,6 +1780,125 @@ export class RenderEngine {
       endTarget,
       startFov: camera.fov,
       endFov: this.unitsConfig.unitPoiCameraFov,
+      startTime: performance.now(),
+      durationMs: Math.max(1, this.unitsConfig.unitPoiTransitionMs),
+    };
+    return true;
+  }
+
+  /** Where the given unit currently sits in the camera's own frame.
+   * `onScreen` is true only when its centre is in front of the camera and
+   * inside the frustum; `coverage` is its bounding sphere's angular radius
+   * as a fraction of the vertical half-FOV, so ~1 means it fills the frame
+   * top to bottom and ~0.05 means it is a speck. Null when the unit isn't
+   * in the registry at all (not loaded, or genuinely unmapped) — callers
+   * use that to tell "no block for this unit" apart from "there is a block
+   * and it happens to be off screen", which are two very different things
+   * to tell a visitor.
+   *
+   * Exists so a list selection can decide whether it needs to move the
+   * camera at all. Flying on EVERY row tap is its own kind of broken: on a
+   * project whose units are all one tower already filling the frame, every
+   * tap became a teleport that re-framed roughly the same picture, and the
+   * visitor loses the orientation they had built up. Angular size rather
+   * than a second projected silhouette point — cheaper, and it stays
+   * stable when the camera is very close to the block.
+   *
+   * Deliberately says nothing about occlusion: `unitBlocksXrayEnabled`
+   * defaults to true, which makes unit blocks draw through the facade, so
+   * "behind geometry" is not normally a reason a selected block can't be
+   * seen. */
+  getUnitViewportState(unitId: string): { onScreen: boolean; coverage: number; poiAuthored: boolean } | null {
+    const entry = this.unitRegistry.get(unitId);
+    const camera = this.camera;
+    if (!entry || !camera) return null;
+    const centre = entry.worldCenter.clone();
+    const distance = camera.position.distanceTo(centre);
+    const ndc = centre.project(camera);
+    const onScreen = ndc.z > -1 && ndc.z < 1 && Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1;
+    const halfFovRad = (camera.fov * Math.PI) / 360;
+    const coverage =
+      distance > 1e-6 && halfFovRad > 0 ? Math.atan(entry.worldBoundingSphere.radius / distance) / halfFovRad : 1;
+    // "Did a human actually aim this unit's camera, or is it sitting on
+    // schema defaults?" — the three POI fields are all
+    // admin-authored and all default to a neutral value, so anything
+    // non-neutral means someone chose it. Callers use this to decide
+    // between honouring an authored framing and falling back to
+    // revealUnit()'s generic one.
+    const poiAuthored =
+      entry.poiYawDeg !== 0 || entry.poiDistanceOverride != null || entry.poiHeightOverride != null;
+    return { onScreen, coverage, poiAuthored };
+  }
+
+  /** Brings a unit into a readable frame WITHOUT using its authored POI —
+   * keeps the camera's current viewing direction and only re-targets and
+   * dollies along it, so the unit ends up centred and a known fraction of
+   * the frame tall.
+   *
+   * This exists because focusUnit() is only as good as the data behind it,
+   * and that data is very often absent. focusUnit() places the camera at a
+   * flat offset rotated by the unit's own `poiYawDeg`; on a unit nobody has
+   * aimed (yaw 0, no distance/height override) that is an arbitrary
+   * compass direction at a distance derived purely from the block's own
+   * radius, which on a real project put the camera INSIDE the tower
+   * looking at the back of a floor slab — verified on tower-vlora, whose
+   * three units all sit on defaults. A visitor who taps a unit and is
+   * teleported inside a wall is worse off than one who was left alone.
+   *
+   * Preserving the incoming direction also preserves the visitor's
+   * orientation, which is the whole objection to framing on every tap: the
+   * building does not spin, it just comes closer and centres on what was
+   * asked for. FOV is deliberately left alone for the same reason — a FOV
+   * change on top of a move reads as a lens swap, not as approaching. */
+  revealUnit(unitId: string, screenBiasY = 0, frameFraction = 0.35): boolean {
+    const entry = this.unitRegistry.get(unitId);
+    const camera = this.camera;
+    const controls = this.controls;
+    if (!entry || !camera || !controls) return false;
+    this.idleDrone.notifyInteraction(performance.now());
+
+    const endTarget = entry.worldCenter.clone();
+    // Current viewing direction, target -> camera. Falls back to a plain
+    // offset in the degenerate case where the camera sits exactly on its
+    // own target (never happens with OrbitControls, but a zero-length
+    // vector would silently produce NaNs downstream).
+    const direction = camera.position.clone().sub(controls.target);
+    if (direction.lengthSq() < 1e-8) direction.set(0, 0.35, 1);
+    direction.normalize();
+
+    const halfFovRad = (camera.fov * Math.PI) / 360;
+    const radius = Math.max(entry.worldBoundingSphere.radius, 1e-3);
+    // Solve tan(theta) = radius / distance for the theta that makes the
+    // unit's angular radius `frameFraction` of the vertical half-FOV.
+    const targetAngle = Math.max(0.01, halfFovRad * frameFraction);
+    const distance = Math.max(radius * 2, radius / Math.tan(targetAngle));
+
+    // `screenBiasY` places the unit somewhere other than dead centre, in
+    // NDC (+1 top, -1 bottom). It exists because "centred in the canvas"
+    // and "where the visitor can see it" are not the same place once a UI
+    // surface covers part of that canvas — on a phone the units sheet owns
+    // the bottom half, so a perfectly centred reveal lands the unit
+    // squarely behind it. Shifting the whole view down (target AND camera
+    // together, so the viewing direction is untouched) raises the unit in
+    // frame. To land at NDC y = b the view moves by D·b·tan(halfFov)
+    // along the camera's own up axis, derived from the actual viewing
+    // direction rather than world up so it stays correct for a tilted
+    // camera.
+    if (screenBiasY !== 0) {
+      const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), direction);
+      if (right.lengthSq() > 1e-8) {
+        const up = new THREE.Vector3().crossVectors(direction, right.normalize()).normalize();
+        endTarget.addScaledVector(up, -screenBiasY * Math.tan(halfFovRad) * distance);
+      }
+    }
+
+    this.cameraTransition = {
+      startPos: camera.position.clone(),
+      endPos: endTarget.clone().add(direction.multiplyScalar(distance)),
+      startTarget: controls.target.clone(),
+      endTarget,
+      startFov: camera.fov,
+      endFov: camera.fov,
       startTime: performance.now(),
       durationMs: Math.max(1, this.unitsConfig.unitPoiTransitionMs),
     };
@@ -2737,11 +2941,13 @@ export class RenderEngine {
 
     // Units Blocks & POI Layer PRD cleanup.
     disposeUnitBoxAppearanceCaches(this.unitMaterialCache, this.unitOutlineByMesh);
+    this.unitSelectionScaleOriginals.clear();
     this.unitRegistry.clear();
     this.unitRaycastTargets = [];
     this.selectedUnitId = null;
     this.hoveredUnitId = null;
     this.isolatedUnitId = null;
+    this.unitIdFilter = null;
 
     // Environment tab (PRD §7-13) cleanup.
     if (this.environmentRebuildTimer != null) clearTimeout(this.environmentRebuildTimer);

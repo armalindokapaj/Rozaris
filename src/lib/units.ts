@@ -1,4 +1,4 @@
-import type { Unit } from "./types";
+import { UNIT_ORIENTATIONS, type Unit, type UnitOrientation } from "./types";
 
 /** Raw shape `GET /api/projects/[projectId]/units` returns — the Prisma
  * `Unit` row's JSON shape, not the app's `Unit` type. `type`/`currency`/
@@ -25,6 +25,7 @@ export interface RawUnitRow {
   floorPlanImage: string | null;
   facadeImage: string | null;
   videoUrl: string | null;
+  orientation: string | null;
 }
 
 /** Normalizes one Postgres `units` row into the app's `Unit` type — the
@@ -58,7 +59,18 @@ export function normalizeUnit(row: RawUnitRow): Unit {
     floorPlanImage: row.floorPlanImage ?? "",
     facadeImage: row.facadeImage ?? undefined,
     videoUrl: row.videoUrl ?? undefined,
+    orientation: parseUnitOrientation(row.orientation),
   };
+}
+
+/** Unlike the sibling fields above, this one is genuinely checked rather
+ * than cast: `orientation` arrived after ~70 units already existed, so
+ * `null` is the common case and has to become `undefined`, and the column
+ * is a bare nullable TEXT that a future importer/CRM sync could put
+ * anything into. Anything outside the four compass points reads as "not
+ * authored" rather than leaking a bad value into the editor's picker. */
+export function parseUnitOrientation(value: string | null | undefined): UnitOrientation | undefined {
+  return UNIT_ORIENTATIONS.includes(value as UnitOrientation) ? (value as UnitOrientation) : undefined;
 }
 
 /** One building/floor's real identity, derived from `Unit.buildingName`/

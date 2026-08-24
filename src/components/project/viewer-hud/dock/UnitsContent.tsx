@@ -1,13 +1,24 @@
 "use client";
 
-import { forwardRef, useMemo, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
-import { Building2, Check, ChevronDown, X } from "lucide-react";
+import { forwardRef, useEffect, useMemo, useRef, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
+import { gsap } from "gsap";
+import { Building2, Check, ChevronDown, SlidersHorizontal, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
+import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
 import { useViewerPreferences } from "@/hooks/useViewerPreferences";
 import { clamp, cn } from "@/lib/utils";
 import { formatUnitArea } from "../../units-workspace/unitDisplay";
-import { BEDROOM_OPTIONS, bedroomLabel, filterUnits, STATUS_DOT, type StatusFilter, type UnitFilterState } from "../../units-workspace/unitFilters";
+import {
+  activeFilterCount,
+  BEDROOM_OPTIONS,
+  bedroomLabel,
+  filterUnits,
+  STATUS_DOT,
+  type StatusFilter,
+  type UnitFilterState,
+} from "../../units-workspace/unitFilters";
 import type { Unit } from "@/lib/types";
+import { DOCK_MORPH_EASE, DOCK_MORPH_TIMING } from "../layoutState";
 import { DockPopover } from "./DockPopover";
 import type { DockPopoverId } from "./DockContent";
 
@@ -73,16 +84,37 @@ export const UnitsContent = forwardRef<
      * `TimeContent.tsx`'s own doc comment on its own `onBack`). */
     onBack: () => void;
     onClose: () => void;
+    /** Mobile-only collapsible filter sheet (2026-08-24) — see the
+     * `collapsibleRef` effect and the mobile branch's own doc comments
+     * below. Desktop's single-row layout has nothing to collapse (its
+     * whole point is fitting the shared 62px height), so both of these are
+     * simply unread there. */
+    filtersExpanded: boolean;
+    onToggleFilters: () => void;
     openPopover: DockPopoverId | null;
     onTogglePopover: (id: DockPopoverId) => void;
     onClosePopover: () => void;
   }
 >(function UnitsContent(
-  { isDesktop, units, filters, onFiltersChange, listOpen, onToggleList, onClose, openPopover, onTogglePopover, onClosePopover },
+  {
+    isDesktop,
+    units,
+    filters,
+    onFiltersChange,
+    listOpen,
+    onToggleList,
+    onClose,
+    filtersExpanded,
+    onToggleFilters,
+    openPopover,
+    onTogglePopover,
+    onClosePopover,
+  },
   ref
 ) {
   const { t } = useT();
   const { areaUnit } = useViewerPreferences();
+  const reducedMotion = useEffectiveReducedMotion();
 
   const filteredCount = useMemo(() => filterUnits(units, filters).length, [units, filters]);
 
@@ -98,6 +130,93 @@ export const UnitsContent = forwardRef<
   }, [units]);
 
   const bathroomOptions = useMemo(() => Array.from(new Set(units.map((u) => u.bathrooms))).sort((a, b) => a - b), [units]);
+
+  // How many filters are actually narrowing the list right now — shown as a
+  // badge on the mobile collapse toggle so the *collapsed* bar still says
+  // whether anything is filtered, instead of hiding that behind a tap.
+  // `activeFilterCount` deliberately excludes Availability (see its own doc
+  // comment in `unitFilters.ts` — "all" vs "available" is a default flip,
+  // not an "active filter" for the Clear-filters badge it was written for),
+  // but the availability pills are one of the four controls this toggle
+  // hides, so a non-default status is counted here on top of it.
+  const hiddenFilterCount = activeFilterCount(filters) + (filters.status !== "all" ? 1 : 0);
+
+  // Mobile filter sheet's own expand/collapse animation (2026-08-24, direct
+  // instruction: "i dont want to let the 'filtering tab' to be visible
+  // while rotating the building. it takes too much space while
+  // navigating"). Deliberately animated here on the section itself rather
+  // than through `ProjectViewerDock`'s own `morphTo` — that timeline only
+  // ever runs on a *mode* change (nav ↔ units ↔ time ↔ views) and hands the
+  // shell back to CSS `height: auto` when it lands, so a section tweening
+  // its own height inside the shell is what the shell then follows, frame
+  // by frame, for free.
+  //
+  // `autoAlpha` (not a bare opacity) is the load-bearing half: it resolves
+  // to `visibility: hidden` at 0, which is what actually takes the
+  // collapsed filters out of hit-testing *and* out of the tab order. A
+  // height-0 + `overflow: hidden` box alone still leaves its children
+  // focusable, which is the exact "hidden but still interactive" failure
+  // the instruction above opens with.
+  const collapsibleRef = useRef<HTMLDivElement>(null);
+  const mountedRef = useRef(false);
+  const prevExpandedRef = useRef(filtersExpanded);
+  useEffect(() => {
+    const el = collapsibleRef.current;
+    // Desktop renders a different tree with no collapsible section at all
+    // — nothing to animate, and clearing `mountedRef` here is what makes a
+    // later resize back down into the mobile layout re-run the first-mount
+    // branch below (which is the only thing that applies the collapsed
+    // state without an animation).
+    if (!el) {
+      mountedRef.current = false;
+      return;
+    }
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      prevExpandedRef.current = filtersExpanded;
+      // First paint of the mobile layout: land on the right state
+      // instantly. The dock's own mount morph measures this content's real
+      // `scrollHeight` right after, so an animation running here would be
+      // measured mid-flight.
+      if (!filtersExpanded) gsap.set(el, { height: 0, overflow: "hidden", autoAlpha: 0 });
+      return;
+    }
+    if (prevExpandedRef.current === filtersExpanded) return;
+    prevExpandedRef.current = filtersExpanded;
+
+    gsap.killTweensOf(el);
+    const duration = reducedMotion ? 0.001 : DOCK_MORPH_TIMING.containerMorph;
+    if (filtersExpanded) {
+      gsap.set(el, { overflow: "hidden" });
+      // Measured while the element is still collapsed — `scrollHeight`
+      // reports the real content height regardless of the box's own
+      // clamped `height`, so this needs no reflow dance to read.
+      const target = el.scrollHeight;
+      gsap.fromTo(
+        el,
+        { height: 0, autoAlpha: 0 },
+        {
+          height: target,
+          autoAlpha: 1,
+          duration,
+          ease: DOCK_MORPH_EASE,
+          // Hands sizing back to plain CSS the instant the tween lands, so
+          // a later in-place reflow (a longer translated string, the
+          // Rooms summary changing) isn't fighting a frozen pixel height —
+          // same handoff `ProjectViewerDock.tsx`'s own width/height tweens
+          // already make.
+          onComplete: () => gsap.set(el, { clearProps: "height,overflow,visibility,opacity" }),
+        }
+      );
+    } else {
+      gsap.set(el, { overflow: "hidden", height: el.getBoundingClientRect().height });
+      gsap.to(el, { height: 0, autoAlpha: 0, duration, ease: DOCK_MORPH_EASE });
+    }
+    // `isDesktop` isn't read in the body but *is* what decides whether
+    // `collapsibleRef` points at anything at all — without it here, a
+    // resize across the 1024px split while collapsed would remount the
+    // mobile section fully expanded, since neither other dep changed.
+  }, [filtersExpanded, reducedMotion, isDesktop]);
 
   const effMin = areaBounds ? clamp(filters.minArea ?? areaBounds.min, areaBounds.min, areaBounds.max) : 0;
   const effMax = areaBounds ? clamp(filters.maxArea ?? areaBounds.max, areaBounds.min, areaBounds.max) : 0;
@@ -391,6 +510,64 @@ export const UnitsContent = forwardRef<
   // trigger button itself is `flex-1` to keep spanning most of the row,
   // with × as a real sibling (not nested — a button-in-a-button isn't
   // valid markup) at the true end of the row.
+  // Mobile-only (2026-08-24, direct instruction: "i dont want to let the
+  // 'filtering tab' to be visible while rotating the building. it takes too
+  // much space while navigating") — Units' full mobile filter stack is
+  // 249px tall on a 390×844 phone, over a third of the viewport, and it sat
+  // permanently open for as long as Units was the active module, covering
+  // the lower third of the building the visitor was trying to orbit. This
+  // folds it away without leaving Units: the filters stay applied, the 3D
+  // unit blocks stay live, only the controls' own footprint goes. Any
+  // pointer-down on the 3D canvas collapses it automatically (see
+  // `ProjectViewerRuntime.tsx`'s own `handleScenePointerDown`), so
+  // rotating never has to be preceded by dismissing anything.
+  //
+  // Deliberately *not* the outside-click-closes-the-module handler this
+  // HUD already tried and removed once (see `ViewerHUD.tsx`'s own note on
+  // it): that one read a drag's `mousedown` as "outside" and dropped the
+  // visitor all the way back to Navigation mid-orbit. Collapsing on the
+  // same gesture is the opposite trade — nothing is lost, and re-opening
+  // is this one tap rather than re-entering the module from the nav.
+  const filtersToggleMobile = (
+    <button
+      type="button"
+      onClick={onToggleFilters}
+      aria-expanded={filtersExpanded}
+      aria-controls="viewer-units-filters"
+      aria-label={t("units.filtersToggle")}
+      className={cn(
+        "flex h-11 shrink-0 items-center gap-1.5 rounded-control border px-3 text-sm font-medium transition-colors",
+        filtersExpanded ? "border-brand-400/50 bg-brand-500/10 text-brand-400" : "border-white/15 text-white hover:border-white/25"
+      )}
+    >
+      <SlidersHorizontal className="h-4 w-4 shrink-0" aria-hidden="true" />
+      {hiddenFilterCount > 0 && (
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-semibold leading-none",
+            filtersExpanded ? "bg-brand-500/20 text-brand-300" : "bg-white/10 text-white/70"
+          )}
+          aria-hidden="true"
+        >
+          {hiddenFilterCount}
+        </span>
+      )}
+      <ChevronDown
+        className={cn("h-3.5 w-3.5 shrink-0 transition-transform", filtersExpanded && "rotate-180")}
+        aria-hidden="true"
+      />
+    </button>
+  );
+
+  // The one row that is *always* on screen in Units mode on mobile — the
+  // collapse toggle added to it (2026-08-24) is what lets everything below
+  // it fold away, so it can never itself live inside the collapsible
+  // section. `min-w-0` + `truncate` on the label (was `shrink-0`) because
+  // this row now carries a third control: "Filter List" is the longest
+  // string here and the one locale-sensitive one ("Lista e Filtrave" is
+  // ~33px wider than the English — see `layoutState.ts`'s own EN-vs-SQ
+  // measurement table), so it is the piece that gives, rather than letting
+  // a long translation push × off the row.
   const listTriggerMobile = (
     <div className="flex h-11 w-full items-center gap-2">
       <button
@@ -399,14 +576,15 @@ export const UnitsContent = forwardRef<
         aria-pressed={listOpen}
         aria-label={`${t("units.listUnits")} — ${t("units.foundCount", { count: filteredCount })}`}
         className={cn(
-          "flex h-11 flex-1 items-center gap-2 rounded-control border px-3 text-sm font-medium transition-colors",
+          "flex h-11 min-w-0 flex-1 items-center gap-2 rounded-control border px-3 text-sm font-medium transition-colors",
           listOpen ? "border-brand-400/50 bg-brand-500/10 text-brand-400" : "border-white/15 text-white hover:border-white/25"
         )}
       >
         <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-        <span className="shrink-0 text-left">{t("units.filterListLabel")}</span>
+        <span className="truncate text-left">{t("units.filterListLabel")}</span>
         <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-xs font-semibold text-white/70">{filteredCount}</span>
       </button>
+      {filtersToggleMobile}
       {closeButton}
     </div>
   );
@@ -503,18 +681,32 @@ export const UnitsContent = forwardRef<
   // `overflow-hidden` bug had earlier this session. Every row here is a
   // plain full-width block instead (no scrolling, no wrapping needed),
   // which sidesteps the whole bug class rather than working around it.
+  // `min-h-[70px]` matches `DOCK_HEIGHT_MOBILE_STANDARD` (the same floor
+  // Nav/Views already apply, +`DockShell`'s own 2px border = the shared
+  // 72px shell) so the *collapsed* Units dock is exactly the same size as
+  // every other mode's, rather than a fourth slightly-different height —
+  // it's a floor, so the expanded state still grows past it freely.
+  //
+  // The gap that used to sit on this column (`gap-3`) moved *inside* the
+  // collapsible section below: a parent gap is still applied to a
+  // zero-height child, so it would have left a 12px strip of empty dock
+  // under the bar while collapsed.
   return (
-    <div ref={ref} className="flex w-full flex-col gap-3 px-4 py-3">
+    <div ref={ref} className="flex min-h-[70px] w-full flex-col px-4 py-3">
       {listTriggerMobile}
-      <div className="flex flex-col gap-1.5 rounded-control border border-white/15 px-3 py-2">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="text-[11px] uppercase tracking-wide text-white/50">{t("units.filterSurface")}</span>
-          <span className="text-xs font-semibold tabular-nums text-white">{surfaceLabel}</span>
+      <div ref={collapsibleRef} id="viewer-units-filters">
+        <div className="flex flex-col gap-3 pt-3">
+          <div className="flex flex-col gap-1.5 rounded-control border border-white/15 px-3 py-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[11px] uppercase tracking-wide text-white/50">{t("units.filterSurface")}</span>
+              <span className="text-xs font-semibold tabular-nums text-white">{surfaceLabel}</span>
+            </div>
+            {surfaceSlider}
+          </div>
+          {roomsTriggerMobile}
+          {renderAvailabilityPills("flex items-stretch gap-2 [&>button]:flex-1 [&>button]:justify-center [&>button]:py-2.5")}
         </div>
-        {surfaceSlider}
       </div>
-      {roomsTriggerMobile}
-      {renderAvailabilityPills("flex items-stretch gap-2 [&>button]:flex-1 [&>button]:justify-center [&>button]:py-2.5")}
     </div>
   );
 });

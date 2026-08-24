@@ -28,5 +28,13 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json(rows.map(normalizeProject));
+  // `approvalStatus`/`createdAt` are admin-only columns `normalizeProject`
+  // deliberately drops (the public `Project` shape has no concept of
+  // "pending review"). The console's project index renders a status
+  // column and filters on it, and doing that previously meant one extra
+  // `/publication` request PER CARD — see `Project3DGrid`'s per-card
+  // fetch, which this makes unnecessary for the list view.
+  return NextResponse.json(
+    rows.map((row) => ({ ...normalizeProject(row), approvalStatus: row.approvalStatus, createdAt: row.createdAt }))
+  );
 }

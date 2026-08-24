@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { ChevronDown, Heart, LayoutGrid, Rows3, Search, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { cn, formatPrice } from "@/lib/utils";
 import type { Currency, Unit } from "@/lib/types";
 import type { AreaUnit } from "@/hooks/useViewerPreferences";
-import { convertUnitPrice, formatUnitArea } from "./unitDisplay";
+import { areaFromDisplay, areaToDisplay, convertUnitPrice, formatUnitArea } from "./unitDisplay";
 import {
   activeFilterCount,
   BEDROOM_OPTIONS,
@@ -103,12 +103,16 @@ function NumberField({ placeholder, value, onChange }: { placeholder: string; va
  * ViewerHUD's parent), not its child, and needs to read/write the exact
  * same state so its Bedrooms/Bathrooms/Surface/Availability controls
  * genuinely narrow this same list rather than a disconnected copy.
- * Bathrooms/Surface have no control of their own in *this* panel yet
- * (still true of "Advanced filters" below), but the state itself is real
- * and shared, so filtering set from UnitsBar is reflected here too.
+ * Surface gained a real control of its own here on 2026-08-24 (see the
+ * `units.filterSurface` dropdown below for why the dock alone wasn't
+ * enough); Bathrooms still has none in *this* panel (still true of
+ * "Advanced filters" below), but the state itself is real and shared, so
+ * a bathroom count set from the dock is reflected here too.
  */
 export function UnitSearchView({
   units,
+  selectedUnitId,
+  unmappedUnitId,
   favorites,
   onToggleFavorite,
   onSelectUnit,
@@ -123,6 +127,13 @@ export function UnitSearchView({
   areaUnit,
 }: {
   units: Unit[];
+  /** Shared selection (ProjectViewerRuntime). Marks the row and scrolls it
+   * into view — the visible half of "clicking a block in 3D tells me which
+   * row that was", which had no representation here at all before. */
+  selectedUnitId: string | null;
+  /** Selected but with no resolvable block in the loaded GLB — labelled on
+   * the row rather than left as a camera that mysteriously didn't move. */
+  unmappedUnitId: string | null;
   favorites: Set<string>;
   onToggleFavorite: (id: string) => void;
   onSelectUnit: (unit: Unit) => void;
@@ -139,7 +150,24 @@ export function UnitSearchView({
   const { t } = useT();
 
   const filtered = useMemo(() => sortUnits(filterUnits(units, filters), filters.sort), [units, filters]);
-  const visible = filtered.slice(0, visibleCount);
+  // A selection can arrive from the 3D scene for a unit that sits past the
+  // current page boundary — scrolling to a row that was never rendered is
+  // a no-op, so the page is *derived* wide enough to include it instead.
+  // Derived, not a `setVisibleCount` in an effect: this codebase's
+  // react-hooks/set-state-in-effect rule rejects that shape (see
+  // useViewerPreferences.ts), and a pure computation can't fall out of
+  // sync with the selection the way a mirrored counter could.
+  const selectedIndex = selectedUnitId ? filtered.findIndex((u) => u.id === selectedUnitId) : -1;
+  const effectiveVisibleCount =
+    selectedIndex >= visibleCount ? Math.ceil((selectedIndex + 1) / UNITS_PAGE_SIZE) * UNITS_PAGE_SIZE : visibleCount;
+  const visible = filtered.slice(0, effectiveVisibleCount);
+  const selectedRowRef = useRef<HTMLButtonElement>(null);
+  // `block: "nearest"` so an already-visible row never jerks the list; the
+  // scroll container is this view's own `overflow-y-auto` body below.
+  useEffect(() => {
+    if (!selectedUnitId) return;
+    selectedRowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selectedUnitId]);
   const filterCount = activeFilterCount(filters);
   const buildings = useMemo(() => Array.from(new Set(units.map((u) => u.buildingName))).sort(), [units]);
 
@@ -206,6 +234,39 @@ export function UnitSearchView({
             <div className="flex items-center gap-2">
               <NumberField placeholder={t("units.min")} value={filters.minFloor} onChange={(v) => update({ minFloor: v })} />
               <NumberField placeholder={t("units.max")} value={filters.maxFloor} onChange={(v) => update({ maxFloor: v })} />
+            </div>
+          </FilterDropdown>
+          {/* Surface (2026-08-24, direct instruction: "the Surface
+              Filtering its not working") — the same `minArea`/`maxArea`
+              the dock's own dual-thumb Surface slider writes, given a
+              control *in this panel* too. Until now Surface existed only
+              on the dock, and the dock deliberately folds away the moment
+              this panel opens (`ViewerHUD.tsx`'s own `leftPanelOpen`
+              fold), so the one place a visitor actually reads filtered
+              results was also the one place they could not set or unset a
+              surface range — including no way to clear one already set,
+              since `activeFilterCount` counted it toward "Clear filters
+              (N)" while nothing on screen said what it was.
+              Min/max number fields rather than a second copy of the dock's
+              slider: that is the established shape for a range in this
+              row (Price and Floor are both already this), and it takes no
+              horizontal room this 380px panel doesn't have.
+              Values are shown and typed in the visitor's own display unit
+              (`areaUnit`, m²/ft²) to match every unit row beside them,
+              and converted back to real stored m² on the way into
+              `UnitFilterState` — see `unitDisplay.ts`. */}
+          <FilterDropdown label={t("units.filterSurface")} active={filters.minArea != null || filters.maxArea != null}>
+            <div className="flex items-center gap-2">
+              <NumberField
+                placeholder={t("units.min")}
+                value={filters.minArea == null ? null : areaToDisplay(filters.minArea, areaUnit)}
+                onChange={(v) => update({ minArea: v == null ? null : areaFromDisplay(v, areaUnit) })}
+              />
+              <NumberField
+                placeholder={t("units.max")}
+                value={filters.maxArea == null ? null : areaToDisplay(filters.maxArea, areaUnit)}
+                onChange={(v) => update({ maxArea: v == null ? null : areaFromDisplay(v, areaUnit) })}
+              />
             </div>
           </FilterDropdown>
           <FilterDropdown label={t("units.filterBuilding")} active={filters.building != null}>
@@ -275,12 +336,21 @@ export function UnitSearchView({
           <p className="px-2 py-8 text-center text-sm text-white/40">{t("units.noResults")}</p>
         ) : (
           <div className={viewMode === "grid" ? "grid grid-cols-2 gap-2" : "space-y-1.5"}>
-            {visible.map((unit) => (
+            {visible.map((unit) => {
+              const isSelected = unit.id === selectedUnitId;
+              return (
               <button
                 key={unit.id}
+                ref={isSelected ? selectedRowRef : undefined}
                 type="button"
                 onClick={() => onSelectUnit(unit)}
-                className="w-full rounded-control border border-white/5 bg-white/[0.03] p-2.5 text-left transition-colors hover:border-white/15 hover:bg-white/[0.06]"
+                aria-current={isSelected ? "true" : undefined}
+                className={cn(
+                  "w-full rounded-control border p-2.5 text-left transition-colors",
+                  isSelected
+                    ? "border-brand-400/60 bg-brand-500/15"
+                    : "border-white/5 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.06]"
+                )}
               >
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-sm font-semibold text-white">{unit.code}</span>
@@ -319,8 +389,12 @@ export function UnitSearchView({
                     {t(`units.status.${unit.status}`)}
                   </span>
                 </div>
+                {unmappedUnitId === unit.id && (
+                  <p className="mt-1.5 text-[11px] leading-tight text-amber-300/80">{t("units.notInModel")}</p>
+                )}
               </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

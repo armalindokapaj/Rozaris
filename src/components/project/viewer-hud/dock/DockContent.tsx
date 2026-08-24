@@ -65,6 +65,10 @@ export const DockContent = forwardRef<
     onUnitFiltersChange: Dispatch<SetStateAction<UnitFilterState>>;
     unitsListOpen: boolean;
     onToggleUnitsList: () => void;
+    /** Mobile-only collapse state for Units' filter stack — see
+     * `UnitsContent.tsx`'s own `filtersToggleMobile` doc comment. */
+    unitFiltersExpanded: boolean;
+    onToggleUnitFilters: () => void;
     // Views
     cameraPresets: CameraPreset[];
     activeViewPresetId: string | null;
@@ -97,6 +101,8 @@ export const DockContent = forwardRef<
     onUnitFiltersChange,
     unitsListOpen,
     onToggleUnitsList,
+    unitFiltersExpanded,
+    onToggleUnitFilters,
     cameraPresets,
     activeViewPresetId,
     onSelectViewPreset,
@@ -141,6 +147,8 @@ export const DockContent = forwardRef<
         onFiltersChange={onUnitFiltersChange}
         listOpen={unitsListOpen}
         onToggleList={onToggleUnitsList}
+        filtersExpanded={unitFiltersExpanded}
+        onToggleFilters={onToggleUnitFilters}
         onBack={onBack}
         onClose={onClose}
         openPopover={openPopover}

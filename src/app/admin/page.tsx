@@ -37,13 +37,11 @@ import {
 import { useAppStore } from "@/lib/store";
 import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
 import { useAdminProjects } from "@/hooks/useAdminProjects";
-import { useAdminPublishers } from "@/hooks/useAdminPublishers";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { NewProjectModal } from "@/components/dashboard/NewProjectModal";
-import { EditProjectModal } from "@/components/dashboard/admin/EditProjectModal";
 import { ProjectUnitsEditor } from "@/components/dashboard/ProjectUnitsEditor";
 import { AdminTopBar } from "@/components/dashboard/admin/AdminTopBar";
 import { AdminDashboardTab } from "@/components/dashboard/admin/AdminDashboardTab";
@@ -75,8 +73,9 @@ const TABS = [
   { id: "dashboard", labelKey: "admin.tabDashboard", icon: LayoutDashboard, group: "overview" },
   // "Projects" (content) then "Listings" directly below it — the flat,
   // platform-wide catch-all for whatever isn't (yet) attached to a
-  // project; day-to-day listing management happens nested inside a
-  // project's own edit view instead (see EditProjectModal's doc comment).
+  // project; day-to-day listing management happens inside that project's
+  // own record instead (Project Manager -> Listings,
+  // /admin/projects/[projectId]).
   // "Timeline" was here too until construction-timeline requests moved
   // into that same per-project view (ProjectTimelinePanel) — no longer a
   // separate top-level tab.
@@ -1028,58 +1027,169 @@ function ProjectVisibilityMenu({
   );
 }
 
+/** One row of `GET /api/admin/projects` — the public `Project` shape plus
+ * the two admin-only columns that route now adds (see its doc comment). */
+type AdminProjectRow = Project & { approvalStatus: "pending" | "active" | "archived"; createdAt: string };
+
+/**
+ * Admin → "Projects": the index into the Project Manager
+ * (`/admin/projects/[projectId]`), which is where a project is actually
+ * managed now. Was a two-line card grid whose only action opened
+ * `EditProjectModal`; it's a real, searchable, sortable register with the
+ * numbers a portfolio is judged on (inventory, availability, entry price,
+ * publication state) visible without opening anything.
+ */
 function ContentTab() {
   const { t } = useT();
+  const router = useRouter();
   const priceFmt = usePriceFormat();
-  const [liveProjects, setLiveProjects] = useState<Project[]>([]);
-  const [editing, setEditing] = useState<Project | null>(null);
-  const { publishers } = useAdminPublishers("");
+  const [liveProjects, setLiveProjects] = useState<AdminProjectRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sortKey, setSortKey] = useState<"name" | "units" | "available" | "price">("name");
 
   function refreshProjects() {
     fetch("/api/admin/projects")
       .then((r) => (r.ok ? r.json() : []))
-      .then(setLiveProjects)
-      .catch(() => {});
+      .then((rows: AdminProjectRow[]) => {
+        setLiveProjects(rows);
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
   }
   useEffect(refreshProjects, []);
 
+  const visible = (() => {
+    const q = query.trim().toLowerCase();
+    const rows = liveProjects.filter(
+      (p) =>
+        (!q || p.name.toLowerCase().includes(q) || p.developer.name.toLowerCase().includes(q) || p.city.toLowerCase().includes(q)) &&
+        (!statusFilter || p.approvalStatus === statusFilter)
+    );
+    const entryPrice = (p: AdminProjectRow) =>
+      p.units.length > 0 ? Math.min(...p.units.map((u) => u.price)) : Number.POSITIVE_INFINITY;
+    return [...rows].sort((a, b) => {
+      if (sortKey === "units") return b.units.length - a.units.length;
+      if (sortKey === "available")
+        return b.units.filter((u) => u.status === "available").length - a.units.filter((u) => u.status === "available").length;
+      if (sortKey === "price") return entryPrice(a) - entryPrice(b);
+      return a.name.localeCompare(b.name);
+    });
+  })();
+
+  const totalUnits = liveProjects.reduce((sum, p) => sum + p.units.length, 0);
+  const th = "px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-400";
+  const td = "px-3 py-2.5 text-sm text-neutral-700";
+
   return (
     <div className="space-y-4">
-      <h1 className="font-serif text-xl text-neutral-900">{t("admin.contentTitle")}</h1>
-      <p className="text-sm text-neutral-500">
-        {t("admin.contentSubtitle", { projects: liveProjects.length })}
-      </p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {liveProjects.map((p) => (
-          <div key={p.id} className="flex items-start justify-between gap-2 rounded-card border border-neutral-200 bg-white p-3.5">
-            <div>
-              <p className="text-sm font-semibold text-neutral-900">{p.name}</p>
-              <p className="text-xs text-neutral-500">
-                {p.developer.name} ·{" "}
-                {p.units.length > 0 ? `${priceFmt(Math.min(...p.units.map((u) => u.price)), { compact: true })}+` : t("admin.noUnitsYet")}
-              </p>
-            </div>
-            <button
-              onClick={() => setEditing(p)}
-              className="shrink-0 text-xs font-semibold text-brand-600 hover:underline"
-            >
-              {t("admin.manage")}
-            </button>
-          </div>
-        ))}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-serif text-xl text-neutral-900">{t("admin.contentTitle")}</h1>
+          <p className="text-sm text-neutral-500">
+            {t("admin.contentSubtitle", { projects: liveProjects.length })} · {t("projectManager.indexTotalUnits", { count: totalUnits })}
+          </p>
+        </div>
+        <button
+          onClick={() => router.push("/admin/projects/new")}
+          className="flex items-center gap-1.5 rounded-control bg-neutral-900 px-3 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {t("projectManager.newProject")}
+        </button>
       </div>
 
-      {editing && (
-        <EditProjectModal
-          project={editing}
-          publishers={publishers}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            refreshProjects();
-          }}
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("projectManager.searchProjects")}
+          className="min-w-[200px] flex-1 rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
         />
-      )}
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+        >
+          <option value="">{t("projectManager.allApprovalStates")}</option>
+          <option value="active">{t("projectManager.approval.active")}</option>
+          <option value="pending">{t("projectManager.approval.pending")}</option>
+          <option value="archived">{t("projectManager.approval.archived")}</option>
+        </select>
+        <select
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
+          className="rounded-control border border-neutral-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+        >
+          <option value="name">{t("projectManager.sortByName")}</option>
+          <option value="units">{t("projectManager.sortByUnits")}</option>
+          <option value="available">{t("projectManager.sortByAvailable")}</option>
+          <option value="price">{t("projectManager.sortByEntryPrice")}</option>
+        </select>
+      </div>
+
+      <div className="overflow-x-auto rounded-panel border border-neutral-200 bg-white scroll-thin">
+        <table className="w-full min-w-[820px]">
+          <thead className="border-b border-neutral-100 bg-neutral-50">
+            <tr>
+              <th className={th}>{t("projectManager.colProject")}</th>
+              <th className={th}>{t("admin.newProjectDeveloper")}</th>
+              <th className={`${th} text-right`}>{t("projectManager.colUnits")}</th>
+              <th className={`${th} text-right`}>{t("projectManager.status.available")}</th>
+              <th className={`${th} text-right`}>{t("projectManager.colEntryPrice")}</th>
+              <th className={th}>{t("projectManager.colState")}</th>
+              <th className={`${th} text-right`}>{t("projectManager.colActions")}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-100">
+            {visible.map((p) => {
+              const available = p.units.filter((u) => u.status === "available").length;
+              return (
+                <tr
+                  key={p.id}
+                  onClick={() => router.push(`/admin/projects/${p.id}`)}
+                  className="cursor-pointer hover:bg-neutral-50"
+                >
+                  <td className={td}>
+                    <p className="font-semibold text-neutral-900">{p.name}</p>
+                    <p className="text-xs text-neutral-500">{p.city}</p>
+                  </td>
+                  <td className={`${td} text-neutral-600`}>{p.developer.name}</td>
+                  <td className={`${td} text-right tabular-nums`}>{p.units.length}</td>
+                  <td className={`${td} text-right tabular-nums`}>
+                    <span className={available === 0 ? "text-neutral-400" : "font-semibold text-emerald-600"}>{available}</span>
+                  </td>
+                  <td className={`${td} text-right tabular-nums`}>
+                    {p.units.length > 0 ? priceFmt(Math.min(...p.units.map((u) => u.price)), { compact: true }) : "—"}
+                  </td>
+                  <td className={td}>
+                    <span
+                      className={cn(
+                        "inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                        p.approvalStatus === "active" && "bg-emerald-50 text-emerald-700",
+                        p.approvalStatus === "pending" && "bg-amber-50 text-amber-700",
+                        p.approvalStatus === "archived" && "bg-neutral-100 text-neutral-600"
+                      )}
+                    >
+                      {t(`projectManager.approval.${p.approvalStatus}`)}
+                    </span>
+                  </td>
+                  <td className={`${td} text-right`}>
+                    <span className="text-xs font-semibold text-brand-600">{t("admin.manage")} →</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {loaded && visible.length === 0 && (
+          <p className="px-3 py-10 text-center text-xs text-neutral-400">
+            {liveProjects.length === 0 ? t("projectManager.indexEmpty") : t("projectManager.indexNoMatch")}
+          </p>
+        )}
+        {!loaded && <p className="px-3 py-10 text-center text-xs text-neutral-400">{t("admin.loading")}</p>}
+      </div>
     </div>
   );
 }

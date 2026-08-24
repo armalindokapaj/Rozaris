@@ -22,6 +22,43 @@ export interface UnitLinkRow {
   poiHeightOverride?: number | null;
 }
 
+/** Response-only companion to a freshly created version — the slot-versions
+ * POST route's account of what a GLB replacement inherited. Never stored. */
+export interface CarryReport {
+  carriedFromVersion: number | null;
+  carriedCount: number;
+  droppedMeshNames: string[];
+  unmappedUnitNodeNames: string[];
+}
+
+/** The one line the admin sees after a replace. Spells out BOTH halves of
+ * what they asked for — what was kept, and what still needs mapping —
+ * because silence after an upload is indistinguishable from "it started
+ * over again", which is the exact complaint this carry-forward exists to
+ * answer. */
+function describeCarryReport(report: CarryReport | undefined, requested: boolean): string {
+  if (!requested) return "Uploaded. Unit mappings were not carried over — map the blocks in the Units tab.";
+  if (!report) return "Uploaded.";
+  const { carriedCount, droppedMeshNames, unmappedUnitNodeNames, carriedFromVersion } = report;
+  if (carriedCount === 0 && droppedMeshNames.length === 0) {
+    return unmappedUnitNodeNames.length > 0
+      ? `Uploaded — ${unmappedUnitNodeNames.length} unit block${unmappedUnitNodeNames.length === 1 ? "" : "s"} to map in the Units tab.`
+      : "Uploaded.";
+  }
+  const parts = [
+    `Kept ${carriedCount} unit mapping${carriedCount === 1 ? "" : "s"}${
+      carriedFromVersion !== null ? ` from v${carriedFromVersion}` : ""
+    }`,
+  ];
+  if (unmappedUnitNodeNames.length > 0) {
+    parts.push(`${unmappedUnitNodeNames.length} new block${unmappedUnitNodeNames.length === 1 ? "" : "s"} to map`);
+  }
+  if (droppedMeshNames.length > 0) {
+    parts.push(`${droppedMeshNames.length} no longer in this file (${droppedMeshNames.slice(0, 3).join(", ")}${droppedMeshNames.length > 3 ? "…" : ""})`);
+  }
+  return `${parts.join(" · ")}.`;
+}
+
 export interface DetailVersionRow {
   id: string;
   slotId: string;
@@ -105,6 +142,11 @@ export function useDetailModelSlots(projectId: string) {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailFlash, setDetailFlash] = useState<string | null>(null);
+  /** "Replacing this GLB keeps the unit mappings already authored on this
+   * slot." On by default because a replace is overwhelmingly a corrected
+   * re-export of the same building, not a different one — see the
+   * carry-source comment in the slot-versions POST route. */
+  const [keepUnitLinks, setKeepUnitLinks] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const versions = activeSlotId ? versionsBySlot[activeSlotId] ?? [] : [];
@@ -277,6 +319,7 @@ export function useDetailModelSlots(projectId: string) {
 
   async function onFile(file: File) {
     setDetailError(null);
+    setDetailFlash(null);
     if (!file.name.toLowerCase().endsWith(".glb")) {
       setDetailError("Only .glb files are accepted.");
       return;
@@ -300,11 +343,18 @@ export function useDetailModelSlots(projectId: string) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ glbUrl: blob.url, fileName: file.name, fileSize: file.size }),
+          body: JSON.stringify({
+            glbUrl: blob.url,
+            fileName: file.name,
+            fileSize: file.size,
+            carryLinks: keepUnitLinks,
+          }),
         },
         establishAdminSession
       );
       if (!res.ok) throw new Error(await res.text());
+      const created: DetailVersionRow & { carryReport?: CarryReport } = await res.json();
+      setDetailFlash(describeCarryReport(created.carryReport, keepUnitLinks));
       await refreshSlotVersions(slotId);
     } catch (err) {
       const message = err instanceof Error ? err.message : "";
@@ -484,6 +534,8 @@ export function useDetailModelSlots(projectId: string) {
     uploadProgress,
     detailError,
     detailFlash,
+    keepUnitLinks,
+    setKeepUnitLinks,
     fileInputRef,
     onFile,
     handleSelectSlot,

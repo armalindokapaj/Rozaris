@@ -31,7 +31,7 @@ export interface PublicUnitDto {
  * reasoning they were "genuinely unused by the runtime today." That was
  * true only because no real consumer existed yet — now that
  * `ProjectViewerRuntime`'s white-label path actually renders from this
- * DTO, grepping the real components it feeds (`UnitDetailPanel.tsx`,
+ * DTO, grepping the real components it feeds (`UnitPreviewCard.tsx`,
  * `UnitDiscoveryPanel.tsx`, `units-workspace/UnitDetailView.tsx`) shows
  * every one of those fields genuinely read — a white-label visitor
  * clicking a unit would have gotten a gallery-less, floor-plan-less,

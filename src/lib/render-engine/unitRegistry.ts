@@ -1,6 +1,17 @@
 import * as THREE from "three/webgpu";
+// Fat-line (screen-space width) outline. `THREE.LineBasicMaterial`'s own
+// `linewidth` is a documented no-op on every WebGL/WebGPU backend — it
+// always draws a 1px hairline — so an admin-controllable outline width
+// has to go through the instanced-quad line addon. The `lines/webgpu/`
+// variant is the one built on `Line2NodeMaterial`, which is what this
+// app's WebGPURenderer pipeline needs (the plain `lines/LineSegments2`
+// is the WebGL-only `LineMaterial` build). It derives its pixel-width
+// scaling from the built-in viewport node, so unlike the WebGL variant
+// there is no `material.resolution` to keep in sync on resize.
+import { LineSegments2 } from "three/examples/jsm/lines/webgpu/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import type { Unit, UnitMeshLink, UnitsConfig } from "@/lib/types";
-import { unitSelectedOutlineColorNumber, unitStatusColorNumber } from "@/lib/unitStatusVisuals";
+import { unitSelectedFillColorNumber, unitSelectedOutlineColorNumber, unitStatusColorNumber } from "@/lib/unitStatusVisuals";
 import { cleanGlbNodeName } from "@/lib/glbNodeName";
 
 const UNIT_NODE_PATTERN = /^Unit_/i;
@@ -62,9 +73,21 @@ export function findUnitRootObjects(root: THREE.Object3D): Map<string, THREE.Obj
 
 function collectMeshes(node: THREE.Object3D): THREE.Mesh[] {
   const meshes: THREE.Mesh[] = [];
-  node.traverse((child) => {
-    if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
-  });
+  // The selection outline is parented to the mesh it traces, and
+  // LineSegments2 extends Mesh — so a plain `.isMesh` traversal picks the
+  // outline itself back up as if it were part of the unit's own volume:
+  // it gets handed the translucent unit-box material (destroying the
+  // fat-line material, which is why it stops responding to width changes)
+  // and then gains an outline of its own, one level deeper on every
+  // subsequent pass. The pre-fat-line THREE.LineSegments never hit this —
+  // it isn't a Mesh — so outlines are tagged on creation and skipped
+  // here, subtree and all.
+  function walk(current: THREE.Object3D) {
+    if (current.userData.isUnitOutline) return;
+    if ((current as THREE.Mesh).isMesh) meshes.push(current as THREE.Mesh);
+    for (const child of current.children) walk(child);
+  }
+  walk(node);
   return meshes;
 }
 
@@ -117,6 +140,12 @@ export type UnitBoxAppearanceConfig = Pick<
   | "unitBlocksHoverOpacity"
   | "unitBlocksSelectedOpacity"
   | "unitBlocksSelectedOutlineEnabled"
+  | "unitBlocksSelectedOutlineWidth"
+  | "unitBlocksSelectedScaleEnabled"
+  | "unitBlocksSelectedScale"
+  | "unitBlocksSelectedFillEnabled"
+  | "unitColorSelectedFill"
+  | "unitBlocksSelectedXrayEnabled"
   | "unitColorAvailable"
   | "unitColorReserved"
   | "unitColorSold"
@@ -125,6 +154,15 @@ export type UnitBoxAppearanceConfig = Pick<
 
 function materialCacheKey(color: number, opacity: number, depthTest: boolean): string {
   return `${color}|${opacity}|${depthTest}`;
+}
+
+/** Clamped to the same 0.5-20px range the config PATCH route validates,
+ * so a hand-written API payload (or a row predating this field) can't
+ * produce a zero-width/invisible or absurdly wide outline. */
+function outlineWidthPx(config: Pick<UnitBoxAppearanceConfig, "unitBlocksSelectedOutlineWidth">): number {
+  const width = config.unitBlocksSelectedOutlineWidth;
+  if (!Number.isFinite(width)) return 1;
+  return Math.min(20, Math.max(0.5, width));
 }
 
 /** Units Blocks & POI Layer PRD §11-12 — the real X-ray overlay material,
@@ -160,7 +198,7 @@ export function applyUnitBoxAppearance(
   config: UnitBoxAppearanceConfig,
   originalMaterials: WeakMap<THREE.Mesh, THREE.Material[]>,
   materialCache: Map<string, THREE.MeshBasicMaterial>,
-  outlineByMesh: Map<THREE.Mesh, THREE.LineSegments>
+  outlineByMesh: Map<THREE.Mesh, LineSegments2>
 ): THREE.Mesh[] {
   const linkByMesh = new Map(unitLinks.map((l) => [l.meshName, l.unitId]));
   const raycastTargets: THREE.Mesh[] = [];
@@ -224,13 +262,27 @@ export function applyUnitBoxAppearance(
         continue;
       }
 
-      const color = unitStatusColorNumber(unit!.status, config);
+      // §12's default is that selection does NOT repaint the block — a
+      // sold unit stays red while selected, and only the outline marks it.
+      // `unitBlocksSelectedFillEnabled` is the per-project opt-out of that
+      // rule, for projects where the outline alone doesn't read.
+      const color =
+        isSelected && config.unitBlocksSelectedFillEnabled
+          ? unitSelectedFillColorNumber(config)
+          : unitStatusColorNumber(unit!.status, config);
       const opacity = isSelected
         ? config.unitBlocksSelectedOpacity
         : isHovered
           ? config.unitBlocksHoverOpacity
           : config.unitBlocksDefaultOpacity;
-      const depthTest = !config.unitBlocksXrayEnabled;
+      // X-ray = draw the block through whatever is in front of it, i.e.
+      // depth testing off. Project-wide via `unitBlocksXrayEnabled`, or
+      // for the selected unit alone via `unitBlocksSelectedXrayEnabled`
+      // — so a click can make one unit readable from any orbit angle
+      // without turning the whole facade into a glass box. The outline
+      // below reuses this same value, otherwise a see-through block
+      // would keep an occluded outline.
+      const depthTest = !(config.unitBlocksXrayEnabled || (isSelected && config.unitBlocksSelectedXrayEnabled));
       const key = materialCacheKey(color, opacity, depthTest);
       let material = materialCache.get(key);
       if (!material) {
@@ -245,18 +297,46 @@ export function applyUnitBoxAppearance(
       mesh.material = material;
 
       // §12 — selection keeps the status-color fill and gains a purple
-      // edge outline instead of replacing the fill outright.
+      // edge outline instead of replacing the fill outright. The outline
+      // is a fat line whose width is a real per-project setting
+      // (`unitBlocksSelectedOutlineWidth`, in screen pixels), so a
+      // selected unit stays legible at masterplan distance instead of
+      // thinning to the 1px hairline a plain LineSegments is stuck at.
       if (isSelected && config.unitBlocksSelectedOutlineEnabled) {
         let outline = outlineByMesh.get(mesh);
         const outlineColor = unitSelectedOutlineColorNumber(config);
+        const linewidth = outlineWidthPx(config);
         if (!outline) {
+          // EdgesGeometry is only the source of the segment endpoints —
+          // LineSegmentsGeometry copies them into its own instanced
+          // attributes, so the intermediate is disposed immediately
+          // rather than kept alive by the outline.
           const edges = new THREE.EdgesGeometry(mesh.geometry);
-          outline = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: outlineColor, depthTest }));
+          const geometry = new LineSegmentsGeometry().fromEdgesGeometry(edges);
+          edges.dispose();
+          const material = new THREE.Line2NodeMaterial({ color: outlineColor });
+          material.linewidth = linewidth;
+          material.depthTest = depthTest;
+          // The fat-line quads are camera-facing strips, not the mesh's
+          // own triangles — without this they z-fight with the very
+          // surface whose edge they trace.
+          material.polygonOffset = true;
+          material.polygonOffsetFactor = -2;
+          material.polygonOffsetUnits = -2;
+          outline = new LineSegments2(geometry, material);
+          // See collectMeshes — this tag is what keeps the outline out of
+          // its own parent unit's mesh list.
+          outline.userData.isUnitOutline = true;
+          // Unit boxes are transparent overlays drawn after the opaque
+          // scene; the outline has to follow its own mesh rather than be
+          // sorted independently by distance.
+          outline.renderOrder = mesh.renderOrder + 1;
           mesh.add(outline);
           outlineByMesh.set(mesh, outline);
         } else {
-          (outline.material as THREE.LineBasicMaterial).color.setHex(outlineColor);
-          (outline.material as THREE.LineBasicMaterial).depthTest = depthTest;
+          outline.material.color.setHex(outlineColor);
+          outline.material.linewidth = linewidth;
+          outline.material.depthTest = depthTest;
         }
       } else {
         clearOutline(mesh);
@@ -267,11 +347,76 @@ export function applyUnitBoxAppearance(
   return raycastTargets;
 }
 
+/** The original local `position`/`scale` of every unit root currently
+ * scaled up by `applyUnitSelectionScale`. Owned by RenderEngine and
+ * passed in, same as `originalMaterials`/`outlineByMesh` above — a plain
+ * Map rather than a WeakMap because it is fully cleared on every
+ * appearance refresh, so it never outlives one selection. */
+export type UnitSelectionScaleOriginals = Map<
+  THREE.Object3D,
+  { position: THREE.Vector3; scale: THREE.Vector3 }
+>;
+
+/** Restores every unit root that `applyUnitSelectionScale` last scaled
+ * back to its authored transform. Always called BEFORE the appearance /
+ * registry pass so `buildUnitRegistry` measures real, un-popped bounds —
+ * otherwise the POI camera would frame the selected unit 5% too loosely
+ * and the inflation would compound across selections. */
+export function clearUnitSelectionScale(originals: UnitSelectionScaleOriginals) {
+  for (const [object, transform] of originals) {
+    object.position.copy(transform.position);
+    object.scale.copy(transform.scale);
+    object.updateMatrix();
+  }
+  originals.clear();
+}
+
+/** Selection "pop" (direct request, 2026-08-24: "ability to add a x1.05
+ * enlargement of the unit selected to make it more obvious what is
+ * clicked"). Scales the selected unit's whole root — mesh or Group of
+ * meshes, outline children included, since they're parented to the
+ * meshes they trace — about its own bounding-box CENTER.
+ *
+ * Scaling about the center is the whole difficulty: `object.scale` scales
+ * about the object's local origin, and a GLB exported with baked world
+ * transforms typically puts that origin at the scene origin, hundreds of
+ * metres away — a naive `scale.multiplyScalar(1.05)` would launch the
+ * block across the masterplan instead of enlarging it in place. So the
+ * position is compensated in the parent's space: a point p scales about
+ * `position`, giving center' = position + s·(center − position); solving
+ * center' = center for the new position yields
+ * position' = position + (1 − s)·(center − position), i.e. the `lerp`
+ * below (t is negative for s > 1 — the origin moves away from the
+ * center, which is exactly what holds the center still). Uniform scale
+ * commutes with the object's rotation, so this stays correct for rotated
+ * units too. */
+export function applyUnitSelectionScale(
+  rootObject: THREE.Object3D,
+  scale: number,
+  originals: UnitSelectionScaleOriginals
+) {
+  if (!Number.isFinite(scale)) return;
+  const clamped = Math.min(1.5, Math.max(1, scale));
+  if (clamped === 1) return; // nothing to do — keep the authored transform untouched
+  if (originals.has(rootObject)) return; // already popped this refresh
+
+  rootObject.updateWorldMatrix(true, true);
+  const box = new THREE.Box3().setFromObject(rootObject);
+  if (box.isEmpty()) return;
+  const center = box.getCenter(new THREE.Vector3());
+  if (rootObject.parent) rootObject.parent.worldToLocal(center);
+
+  originals.set(rootObject, { position: rootObject.position.clone(), scale: rootObject.scale.clone() });
+  rootObject.scale.multiplyScalar(clamped);
+  rootObject.position.lerp(center, 1 - clamped);
+  rootObject.updateMatrix();
+}
+
 /** Disposes every cached unit-box material/outline — called from
  * RenderEngine.dispose() alongside its other cache teardown. */
 export function disposeUnitBoxAppearanceCaches(
   materialCache: Map<string, THREE.MeshBasicMaterial>,
-  outlineByMesh: Map<THREE.Mesh, THREE.LineSegments>
+  outlineByMesh: Map<THREE.Mesh, LineSegments2>
 ) {
   for (const material of materialCache.values()) material.dispose();
   materialCache.clear();

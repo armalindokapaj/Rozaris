@@ -1,9 +1,35 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { getAllProjectSlugs, getProjectBySlug } from "@/lib/projects.server";
 import { SITE_URL } from "@/lib/constants";
 import { MarketplaceViewer } from "./MarketplaceViewer";
 import { CustomProjectPreview } from "./CustomProjectPreview";
+
+/**
+ * Turns on `viewport-fit=cover`, which is what makes every
+ * `env(safe-area-inset-*)` in the viewer actually resolve to a real
+ * number on a notched device. Next injects
+ * `width=device-width, initial-scale=1` by default and nothing in this
+ * app overrode it, so on iOS every one of those insets evaluated to
+ * `0px`: the HUD header's `pt-[max(0.75rem,env(safe-area-inset-top))]`
+ * (ViewerHUD.tsx), the dock's own
+ * `bottom-[max(0.75rem,env(safe-area-inset-bottom))]`, the unit card's
+ * offsets and MapViewToggle's insets were all silently pinned to their
+ * 12px floors — i.e. the dock sat under the home indicator and the
+ * identity plate under the status bar, on exactly the devices the
+ * expressions were written for.
+ *
+ * Scoped to this route (and the `/embed` one) rather than the root
+ * layout on purpose: `viewport-fit=cover` changes how the whole document
+ * meets the screen edge, and the marketing/search pages have not been
+ * audited for it. The viewer is the one surface here that is already
+ * written edge-to-edge with real safe-area expressions throughout.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export async function generateStaticParams() {
   const slugs = await getAllProjectSlugs();

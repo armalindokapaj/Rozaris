@@ -39,6 +39,8 @@ export function DetailModelUpload({ slots: detail, locale }: { slots: UseDetailM
     uploadProgress,
     detailError,
     detailFlash,
+    keepUnitLinks,
+    setKeepUnitLinks,
     fileInputRef,
     onFile,
     handleSelectSlot,
@@ -133,6 +135,22 @@ export function DetailModelUpload({ slots: detail, locale }: { slots: UseDetailM
               </button>
             </div>
           </div>
+          <label className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600">
+            <input
+              type="checkbox"
+              checked={keepUnitLinks}
+              onChange={(e) => setKeepUnitLinks(e.target.checked)}
+              disabled={detailBusy}
+              className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-neutral-900"
+            />
+            <span>
+              <span className="font-semibold text-neutral-800">Keep unit mappings when replacing</span>
+              <span className="block text-neutral-500">
+                Blocks with the same name keep the unit they&apos;re linked to; anything new in the file is added
+                unmapped. Uncheck to start the mapping over.
+              </span>
+            </span>
+          </label>
           <div className="flex items-center justify-between">
             <ValidationBadge status={activeVersion.validationStatus} issues={activeVersion.validationIssues} />
             <span

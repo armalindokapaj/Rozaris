@@ -96,6 +96,8 @@ export function ViewerHUD({
   onUnitFiltersChange,
   unitsListOpen,
   onToggleUnitsList,
+  unitFiltersExpanded,
+  onToggleUnitFilters,
 }: {
   viewerRef: React.RefObject<ThreeProjectViewerHandle | null>;
   sceneReady: boolean;
@@ -152,6 +154,12 @@ export function ViewerHUD({
    * Units" trigger below. */
   unitsListOpen?: boolean;
   onToggleUnitsList?: () => void;
+  /** Mobile-only (2026-08-24) — whether Units' filter stack is unfolded
+   * below its own always-visible bar on the dock. Owned by
+   * ProjectViewerRuntime because a pointer-down on the 3D canvas collapses
+   * it; see ProjectViewerDock's own doc comment on the same pair. */
+  unitFiltersExpanded?: boolean;
+  onToggleUnitFilters?: () => void;
 }) {
   const reducedMotion = useEffectiveReducedMotion();
   const isDesktop = useIsDesktop();
@@ -370,6 +378,8 @@ export function ViewerHUD({
             onUnitFiltersChange={onUnitFiltersChange ?? (() => {})}
             unitsListOpen={!!unitsListOpen}
             onToggleUnitsList={() => onToggleUnitsList?.()}
+            unitFiltersExpanded={unitFiltersExpanded !== false}
+            onToggleUnitFilters={() => onToggleUnitFilters?.()}
             cameraPresets={cameraPresets ?? []}
             activeViewPresetId={activeViewPresetId ?? null}
             onSelectViewPreset={(p) => onSelectViewPreset?.(p)}
