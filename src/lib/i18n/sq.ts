@@ -682,6 +682,10 @@ const sq: Dictionary = {
     typeParking: "Parkim",
     typeStorage: "Depo",
     collapseUnitDetail: "Shfaq më pak",
+    viewInFloor: "Shiko në Kat",
+    exitFloorView: "Dil nga Kati",
+    viewInFloorTitle: "Prit ndërtesën te kati {n}",
+    exitFloorViewTitle: "Mbyll prerjen e katit {n}",
   },
   dashboard: {
     tabOverview: "Përmbledhje",

@@ -7,6 +7,7 @@ import { ColorRow, GroupCard, SectionHeading, SliderRow, ToggleRow } from "../fi
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import { SECTION_MAX_DIMENSION_M } from "@/lib/render-engine/sections";
+import { parseSectionFloorNumber } from "@/lib/floorSections";
 
 /**
  * Sections tab (PRD §34-36) — real clip + cap via THREE.ClippingGroup
@@ -94,15 +95,37 @@ export function SectionsPanel({
         <Plus className="h-3.5 w-3.5" /> New {mode === "floor" ? "Floor Section" : "Section"}
       </button>
 
+      {mode === "floor" && (
+        // The naming convention is load-bearing, not decorative — it is the
+        // entire linkage between a section and the units it cuts open, so
+        // the panel says so where the admin is about to type a name rather
+        // than leaving it to be discovered. Each row below then shows what
+        // its own name actually resolved to.
+        <p className="rounded-md border border-neutral-800 bg-neutral-900/60 p-2 text-[10px] leading-relaxed text-neutral-400">
+          Name a section after its floor — <span className="text-neutral-200">Floor 7</span> or{" "}
+          <span className="text-neutral-200">Kati 7</span> — and every unit on floor 7 gets a
+          &ldquo;View in Floor&rdquo; button in the public viewer that activates it. The default
+          &ldquo;Floor Section 1&rdquo; name does <span className="text-neutral-200">not</span> link
+          (its number is a counter, not a storey).
+        </p>
+      )}
+
       <SectionHeading>Presets</SectionHeading>
       {sections.length === 0 && <p className="p-2 text-center text-xs text-neutral-600">No sections saved yet.</p>}
       <div className="space-y-1">
         {sections.map((s) => (
           <div key={s.id} className={cn("flex items-center gap-1.5 rounded-md border px-2 py-1.5", s.id === activeSectionId ? "border-indigo-500 bg-indigo-500/10" : "border-neutral-800")}>
-            <button onClick={() => activate(s.id === activeSectionId ? null : s.id)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-xs font-semibold text-neutral-200">
-              <Scissors className="h-3 w-3 shrink-0 text-neutral-500" />
-              <span className="truncate">{s.name}</span>
-              {s.heightOnly && <span className="shrink-0 rounded bg-neutral-800 px-1 text-[9px] text-neutral-400">FLOOR</span>}
+            <button onClick={() => activate(s.id === activeSectionId ? null : s.id)} className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left">
+              <span className="flex w-full min-w-0 items-center gap-1.5 text-xs font-semibold text-neutral-200">
+                <Scissors className="h-3 w-3 shrink-0 text-neutral-500" />
+                <span className="truncate">{s.name}</span>
+                {s.heightOnly && <span className="shrink-0 rounded bg-neutral-800 px-1 text-[9px] text-neutral-400">FLOOR</span>}
+              </span>
+              {parseSectionFloorNumber(s.name) !== null && (
+                <span className="pl-[18px] text-[10px] font-medium text-indigo-300">
+                  Linked to units on floor {parseSectionFloorNumber(s.name)}
+                </span>
+              )}
             </button>
             <button onClick={() => duplicateSection(s.id)} disabled={!canEdit} title="Duplicate" className="shrink-0 rounded p-1 text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-40">
               <Copy className="h-3 w-3" />

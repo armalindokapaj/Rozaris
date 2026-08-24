@@ -30,8 +30,11 @@ export interface ThreeProjectViewerHandle {
   /** Shots (PRD §38) — wireframe frustum preview for a saved Shot; null
    * clears it. */
   showCameraHelperFor: (preset: CameraPreset | null) => void;
-  /** Sections (PRD §34-36) — real clip + cap, or null to clear. */
-  activateSection: (section: Section | null) => void;
+  /** Sections (PRD §34-36) — real clip + cap, or null to clear.
+   * `showIndicator: false` (the public viewer) drops the translucent
+   * editing-aid rectangle a `fillGapsEnabled: false` section otherwise
+   * draws — see RenderEngine.activateSection's own doc comment. */
+  activateSection: (section: Section | null, options?: { showIndicator?: boolean }) => void;
   /** Real world-space bounds of the currently loaded content — used to
    * place a new Section sensibly instead of defaulting to world origin. */
   getContentBounds: () => { centerX: number; centerZ: number; minY: number; maxY: number; sizeX: number; sizeZ: number } | null;

@@ -680,6 +680,10 @@ const en = {
     typeParking: "Parking",
     typeStorage: "Storage",
     collapseUnitDetail: "Show less",
+    viewInFloor: "View in Floor",
+    exitFloorView: "Exit Floor",
+    viewInFloorTitle: "Cut the building open at floor {n}",
+    exitFloorViewTitle: "Close the floor {n} cut",
   },
   dashboard: {
     tabOverview: "Overview",

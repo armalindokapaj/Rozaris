@@ -23,7 +23,8 @@ import {
   type UnitFilterState,
 } from "@/components/project/units-workspace/unitFilters";
 import { computeSunTimeline, geographicSunPosition, sunPositionForAnchors, sunTimelinePresets, type SunTimePreset } from "@/lib/sunPosition";
-import type { CameraPreset } from "@/lib/types";
+import { resolveFloorSection } from "@/lib/floorSections";
+import type { CameraPreset, Section } from "@/lib/types";
 import { ConstructionTimelineStrip } from "@/components/project/ConstructionTimelineStrip";
 import { UnitDiscoveryPanel } from "@/components/project/UnitDiscoveryPanel";
 import { UnitPreviewCard } from "@/components/project/UnitPreviewCard";
@@ -271,6 +272,80 @@ export function ProjectViewerRuntime({
   // Close the list and the card comes straight back, still on that unit.
   const unitListSurfaceOpen = leftPanelOpen || unitsSheetOpen;
   const unitCardOpen = !!selectedUnit && viewerConfig.viewerUI.showUnitInfo !== false && !unitListSurfaceOpen;
+
+  // --- Floor sections ("View in Floor") ------------------------------------
+  //
+  // The Sections module has been authorable in the Experience Editor since
+  // the v2 rebuild and, until now, entirely invisible to visitors — the
+  // admin's own "Sections" interaction toggle carried the hint "No public
+  // Sections activation UI built yet". This is that UI, in the one place a
+  // cutaway actually answers a question someone is asking: the card for a
+  // unit, with a button that opens up the floor that unit is on.
+  //
+  // No new stored linkage — an admin names a section after the floor it
+  // cuts and every unit on that floor picks it up (2026-08-25 direct
+  // instruction; see `src/lib/floorSections.ts` for the parse and the
+  // precedence rules). `sectionsEnabled` is the same per-project admin
+  // toggle that already exists, and an empty `sections` array means there
+  // is nothing to offer.
+  const floorSectionsAvailable =
+    viewerConfig.viewerUI.sectionsEnabled !== false && viewerConfig.sections.length > 0;
+  const floorSectionForSelectedUnit = useMemo(
+    () =>
+      floorSectionsAvailable && selectedUnit
+        ? resolveFloorSection(viewerConfig.sections, selectedUnit)
+        : null,
+    [floorSectionsAvailable, viewerConfig.sections, selectedUnit]
+  );
+  const [activeFloorSectionId, setActiveFloorSectionId] = useState<string | null>(null);
+
+  const applyFloorSection = useCallback((section: Section | null) => {
+    // `showIndicator: false` — a `fillGapsEnabled: false` section's grey
+    // rectangle is an authoring aid for the plane an admin is dragging
+    // numbers against, and every section saved on this platform so far is
+    // one. See RenderEngine.activateSection's own doc comment.
+    viewerRef.current?.activateSection(section, { showIndicator: false });
+    setActiveFloorSectionId(section?.id ?? null);
+    // An admin can save a viewpoint onto a section ("activating this
+    // section clips without moving the camera" is the documented default
+    // when they haven't). Honour it when it's there; otherwise leave the
+    // camera exactly where the visitor put it — the unit they picked is
+    // already framed, and yanking the view on top of a cut is two changes
+    // at once.
+    if (section?.cameraPreset) {
+      viewerRef.current?.flyToPreset({
+        id: section.id,
+        label: section.name,
+        durationMs: 900,
+        ...section.cameraPreset,
+      });
+    }
+    viewerRef.current?.resetIdleTimer();
+  }, []);
+
+  const handleToggleFloorSection = useCallback(() => {
+    const section = floorSectionForSelectedUnit;
+    if (!section) return;
+    applyFloorSection(section.id === activeFloorSectionId ? null : section);
+  }, [floorSectionForSelectedUnit, activeFloorSectionId, applyFloorSection]);
+
+  // A cut belongs to the unit that opened it. The button is the only way
+  // to close one, and it only exists on the card, so leaving a cut applied
+  // after the visitor moves to a unit on another floor (or dismisses the
+  // card) would strand them with a sliced building and no control to undo
+  // it. Selecting another unit on the *same* floor keeps it — that is the
+  // same cut, still answering the same question.
+  const clearFloorSectionUnless = useCallback(
+    (nextUnitId: string | null) => {
+      if (!activeFloorSectionId) return;
+      const nextUnit = nextUnitId ? units.find((u) => u.id === nextUnitId) ?? null : null;
+      const next = nextUnit ? resolveFloorSection(viewerConfig.sections, nextUnit) : null;
+      if (next?.id === activeFloorSectionId) return;
+      viewerRef.current?.activateSection(null, { showIndicator: false });
+      setActiveFloorSectionId(null);
+    },
+    [activeFloorSectionId, units, viewerConfig.sections]
+  );
   // Same `units` handed to every slot — `applyUnitBoxes` only actually
   // matches entries against that slot's own `unitLinks` map, so a unit
   // with no link for a given slot's meshes is simply never touched;
@@ -819,6 +894,7 @@ export function ProjectViewerRuntime({
   // honest one-line note on the surface the visitor is looking at, rather
   // than a camera that silently refuses to move.
   const handleSelectUnit = useCallback((unitId: string | null) => {
+    clearFloorSectionUnless(unitId);
     setSelectedUnitId(unitId);
     setFullDetailOpen(false);
     const viewer = viewerRef.current;
@@ -870,7 +946,7 @@ export function ProjectViewerRuntime({
     if (!(view.poiAuthored && viewer?.focusUnit(unitId))) {
       viewer?.revealUnit(unitId, isDesktop ? 0 : MOBILE_REVEAL_SCREEN_BIAS);
     }
-  }, [isDesktop]);
+  }, [isDesktop, clearFloorSectionUnless]);
 
   // Units Blocks & POI Layer PRD §19-20 — the real "3D → List/Panel" half:
   // a genuine click on a unit block (RenderEngine already distinguishes
@@ -888,10 +964,11 @@ export function ProjectViewerRuntime({
   // the instant visual feedback), so re-issuing `setSelectedUnit` here
   // would only force a redundant registry rebuild.
   const handleUnitClickIn3D = useCallback((unitId: string | null) => {
+    clearFloorSectionUnless(unitId);
     setSelectedUnitId(unitId);
     setFullDetailOpen(false);
     setUnmappedUnitId(null);
-  }, []);
+  }, [clearFloorSectionUnless]);
 
   return (
     <div
@@ -1095,6 +1172,11 @@ export function ProjectViewerRuntime({
           project={project}
           unit={selectedUnit}
           expanded={fullDetailOpen}
+          floorSectionName={floorSectionForSelectedUnit?.name ?? null}
+          floorSectionActive={
+            !!floorSectionForSelectedUnit && floorSectionForSelectedUnit.id === activeFloorSectionId
+          }
+          onViewInFloor={handleToggleFloorSection}
           // `handleSelectUnit(null)`, not a bare `setSelectedUnitId(null)`:
           // the latter cleared React's selection but left the engine's, so
           // dismissing the card left the block outlined and at selected

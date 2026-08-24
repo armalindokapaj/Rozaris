@@ -2016,7 +2016,7 @@ export class RenderEngine {
    * fill. `fillGapsEnabled: false` shows a plain translucent unclipped
    * indicator rectangle instead (editing aid only, matches the drawn
    * footprint). */
-  private rebuildSectionCap(section: Section | null) {
+  private rebuildSectionCap(section: Section | null, showIndicator: boolean) {
     const helpers = this.sectionHelperGroup;
     if (!helpers) return;
     if (this.sectionIndicatorMesh) {
@@ -2051,7 +2051,7 @@ export class RenderEngine {
         this.sectionFillClippingGroup.add(fillMesh);
         this.sectionFillMeshes.push(fillMesh);
       }
-    } else {
+    } else if (showIndicator) {
       const geometry = buildSectionCapGeometry(section);
       if (!this.sectionIndicatorMaterial) {
         this.sectionIndicatorMaterial = new THREE.MeshBasicMaterial({
@@ -2074,13 +2074,24 @@ export class RenderEngine {
   /** Activates a section by real clip + cap, or clears it (null). Does
    * not itself attach/detach an editing gizmo (no viewport drag-authoring
    * yet — Sections tab uses numeric fields this pass, see the panel's own
-   * doc comment). */
-  activateSection(section: Section | null) {
+   * doc comment).
+   *
+   * `showIndicator: false` honours what `Section.fillGapsEnabled`'s own
+   * doc comment has always promised and this method never actually
+   * delivered: the translucent grey rectangle a `fillGapsEnabled: false`
+   * section draws is an *editing aid* — it marks the plane the admin is
+   * dragging numbers against — and it was specified as "100% transparent,
+   * i.e. not rendered at all, in the public viewer, since visitors
+   * shouldn't see an abstract reference plane". Until the unit card's
+   * "View in Floor" button (2026-08-25) nothing public called this at
+   * all, so the gap never showed. Defaults to true so the editor keeps
+   * the aid without asking. */
+  activateSection(section: Section | null, options?: { showIndicator?: boolean }) {
     this.activeSectionId = section?.id ?? null;
     if (this.clippingGroup) {
       this.clippingGroup.clippingPlanes = section ? buildSectionPlanes(section) : NO_ACTIVE_SECTION_PLANES;
     }
-    this.rebuildSectionCap(section);
+    this.rebuildSectionCap(section, options?.showIndicator !== false);
   }
 
   getActiveSectionId(): string | null {

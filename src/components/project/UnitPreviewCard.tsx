@@ -101,6 +101,9 @@ export function UnitPreviewCard({
   project,
   unit,
   expanded,
+  floorSectionName,
+  floorSectionActive,
+  onViewInFloor,
   onClose,
   onExpand,
   onCollapse,
@@ -109,6 +112,17 @@ export function UnitPreviewCard({
   unit: Unit;
   /** Detail state — driven by ProjectViewerRuntime's `fullDetailOpen`. */
   expanded: boolean;
+  /** The name of the Section that cuts this unit's floor open, or null if
+   * this project has none for it — see `src/lib/floorSections.ts`. Null
+   * hides the "View in Floor" button entirely rather than showing a dead
+   * control: on a project where only some floors have been sectioned (the
+   * normal state while an admin works through them), a disabled button on
+   * every other unit would read as broken. */
+  floorSectionName: string | null;
+  /** Whether that cut is currently applied — the button is a toggle, and
+   * the state it toggles lives in the runtime, not here. */
+  floorSectionActive: boolean;
+  onViewInFloor: () => void;
   onClose: () => void;
   onExpand: () => void;
   onCollapse: () => void;
@@ -371,8 +385,9 @@ export function UnitPreviewCard({
     </button>
   );
 
-  const iconButtonClass =
-    "flex h-8 w-8 shrink-0 items-center justify-center rounded-control border border-neutral-200 text-neutral-600 transition-colors hover:bg-neutral-50 disabled:opacity-40 sm:h-9 sm:w-9";
+  // Only the detail state's footer renders Save/Compare now, and it renders
+  // them as full-width labelled buttons — the compact 32px icon variant they
+  // used in the preview row has no remaining call site.
   const wideButtonClass =
     "flex flex-1 items-center justify-center gap-1.5 rounded-control border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-40";
 
@@ -432,23 +447,42 @@ export function UnitPreviewCard({
 
         <div className="mt-2 sm:mt-2.5">{specRow}</div>
 
+        {/* Two actions, both about *seeing* this unit — Save and Compare
+            moved out (2026-08-25 direct instruction) and now live only in
+            the detail state's own footer, which is where a decision about
+            a unit is actually being made. What replaces them is the one
+            thing the preview couldn't do before: cut the building open at
+            this unit's own floor.
+
+            Both share the row evenly (`flex-1 min-w-0`) rather than the
+            old "two 32px squares + everything else". The compact card is
+            256px wide on a phone, and Albanian labels run wide (see the
+            "rozaris-viewer-locale-width-deltas" note) — so each label
+            truncates rather than forcing the row to overflow, and each
+            button carries the full sentence in its `title`/`aria-label`. */}
         <div className="mt-3 flex items-center gap-1.5 border-t border-neutral-100 pt-3 sm:mt-3.5 sm:gap-2 sm:pt-3.5">
-          {saveButton(iconButtonClass, false)}
-          {compareButton(
-            cn(
-              "flex h-8 w-8 shrink-0 items-center justify-center rounded-control transition-colors disabled:opacity-40 sm:h-9 sm:w-9",
-              inCompare
-                ? "bg-brand-500 text-white"
-                : "border border-neutral-200 text-neutral-600 hover:bg-neutral-50"
-            ),
-            false
+          {floorSectionName && (
+            <button
+              onClick={onViewInFloor}
+              aria-pressed={floorSectionActive}
+              title={t(floorSectionActive ? "unit.exitFloorViewTitle" : "unit.viewInFloorTitle", { n: unit.floor })}
+              className={cn(
+                "flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-control border text-[12px] font-semibold transition-colors sm:h-9 sm:gap-1.5 sm:text-[13px]",
+                floorSectionActive
+                  ? "border-brand-500 bg-brand-500 text-white hover:bg-brand-600"
+                  : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+              )}
+            >
+              <Layers className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+              <span className="truncate">{t(floorSectionActive ? "unit.exitFloorView" : "unit.viewInFloor")}</span>
+            </button>
           )}
           <button
             onClick={onExpand}
-            className="flex h-8 flex-1 items-center justify-center gap-1 rounded-control bg-neutral-900 text-[13px] font-semibold text-white transition-colors hover:bg-neutral-800 sm:h-9 sm:gap-1.5 sm:text-sm"
+            className="flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-control bg-neutral-900 text-[12px] font-semibold text-white transition-colors hover:bg-neutral-800 sm:h-9 sm:gap-1.5 sm:text-[13px]"
           >
-            {t("results.viewUnit")}
-            <ChevronRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="truncate">{t("results.viewUnit")}</span>
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
           </button>
         </div>
       </div>

@@ -56,7 +56,7 @@ export function InteractionPanel({ configEditor }: { configEditor: UseProjectCon
         <ToggleRow label="Reset" checked={ui.resetEnabled !== false} onChange={(v) => set({ resetEnabled: v })} hint={notBuilt} />
         <ToggleRow label="Fullscreen" checked={ui.fullscreenEnabled !== false} onChange={(v) => set({ fullscreenEnabled: v })} />
         <ToggleRow label="Shots" checked={ui.shotsMenuEnabled !== false} onChange={(v) => set({ shotsMenuEnabled: v })} hint="No public Shots menu built yet" />
-        <ToggleRow label="Sections" checked={ui.sectionsEnabled !== false} onChange={(v) => set({ sectionsEnabled: v })} hint="No public Sections activation UI built yet" />
+        <ToggleRow label="Sections" checked={ui.sectionsEnabled !== false} onChange={(v) => set({ sectionsEnabled: v })} hint={'Shows "View in Floor" on the unit card, for units whose floor has a section named after it'} />
         <ToggleRow label="Filters" checked={ui.filtersEnabled !== false} disabled onChange={() => {}} hint="Same switch as Filters above" />
         <ToggleRow label="Screenshot" checked={ui.screenshotEnabled !== false} onChange={(v) => set({ screenshotEnabled: v })} />
         <ToggleRow label="Share" checked={ui.shareEnabled !== false} onChange={(v) => set({ shareEnabled: v })} hint="No public share affordance built yet" />
