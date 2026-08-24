@@ -248,10 +248,10 @@ export const DEFAULT_UNITS_CONFIG: UnitsConfig = {
   unitBlocksHoverOpacity: 0.25,
   unitBlocksSelectedOpacity: 0.32,
   unitBlocksSelectedOutlineEnabled: true,
-  unitBlocksSelectedOutlineWidth: 1,
+  unitBlocksSelectedOutlineWidth: 2.5,
   unitBlocksSelectedScaleEnabled: false,
   unitBlocksSelectedScale: 1.05,
-  unitBlocksSelectedFillEnabled: false,
+  unitBlocksSelectedFillEnabled: true,
   unitColorSelectedFill: "#6b55f5",
   unitBlocksSelectedXrayEnabled: false,
   unitPoiCameraEnabled: true,
@@ -1529,7 +1529,7 @@ export class RenderEngine {
     const unitsById = new Map<string, Unit>();
     const poiByUnitId = new Map<
       string,
-      { poiYawDeg: number; poiEnabled: boolean; poiDistanceOverride: number | null; poiHeightOverride: number | null }
+      { poiYawDeg: number | null; poiEnabled: boolean; poiDistanceOverride: number | null; poiHeightOverride: number | null }
     >();
     let anyStatusPreviewEnabled = false;
 
@@ -1540,7 +1540,12 @@ export class RenderEngine {
       for (const link of model.unitLinks) {
         allLinks.push(link);
         poiByUnitId.set(link.unitId, {
-          poiYawDeg: link.poiYawDeg ?? 0,
+          // `?? null`, deliberately NOT `?? 0`: an unset yaw and an admin
+          // who deliberately picked "N" both used to collapse to the same
+          // 0, so there was no way to tell "nobody aimed this" from "aimed
+          // it north" — and buildUnitRegistry needs exactly that
+          // distinction to know when it may derive one instead.
+          poiYawDeg: link.poiYawDeg ?? null,
           poiEnabled: link.poiEnabled ?? true,
           poiDistanceOverride: link.poiDistanceOverride ?? null,
           poiHeightOverride: link.poiHeightOverride ?? null,
@@ -1562,7 +1567,19 @@ export class RenderEngine {
       this.unitMaterialCache,
       this.unitOutlineByMesh
     );
-    this.unitRegistry = buildUnitRegistry(rootObjectsByName, allLinks, unitsById, poiByUnitId);
+    // Centre of everything currently loaded — what an unaimed unit's POI
+    // yaw is derived outward from (see unitRegistry's own `derivedYawDeg`).
+    // Computed from the loaded roots rather than from the unit blocks
+    // themselves: on a project where only a few units are mapped, their
+    // own centroid is not the building's, and aiming outward from a
+    // three-unit cluster would point the camera nowhere useful.
+    let sceneCenter: THREE.Vector3 | null = null;
+    if (this.loadedRoots.length > 0) {
+      const bounds = new THREE.Box3();
+      for (const root of this.loadedRoots) bounds.expandByObject(root);
+      if (!bounds.isEmpty()) sceneCenter = bounds.getCenter(new THREE.Vector3());
+    }
+    this.unitRegistry = buildUnitRegistry(rootObjectsByName, allLinks, unitsById, poiByUnitId, sceneCenter);
 
     // Selection "pop" — last, on top of a registry built from un-scaled
     // bounds, so focusUnit()'s framing keeps using the unit's real size.
@@ -1763,7 +1780,21 @@ export class RenderEngine {
     if (!entry || !camera || !controls || !entry.poiEnabled || !this.unitsConfig.unitPoiCameraEnabled) return false;
     this.idleDrone.notifyInteraction(performance.now()); // Idle Drone Camera PRD §18/§42 — POI focus always preempts the drone
 
-    const distance = entry.poiDistanceOverride ?? entry.worldBoundingSphere.radius * this.unitsConfig.unitPoiCameraDistanceMultiplier;
+    // `radius * multiplier` alone puts the camera far too close for a unit
+    // of any real size: at the shipped defaults (multiplier 3, POI fov 38)
+    // the block's angular radius works out at ~18.4 deg against a ~19 deg
+    // half-FOV, so the unit fills ~97% of the frame height and the shot is
+    // a flat wall of facade with no context. Floored here at the distance
+    // that has it fill ~60% of the half-frame instead, which is close
+    // enough to read as "this unit" and far enough to show what it is
+    // attached to. A floor, not a replacement: an admin who sets a larger
+    // multiplier still gets exactly what they asked for, and an explicit
+    // `poiDistanceOverride` bypasses both.
+    const poiHalfFovRad = Math.max(0.01, (this.unitsConfig.unitPoiCameraFov * Math.PI) / 360);
+    const framedDistance = entry.worldBoundingSphere.radius / Math.tan(poiHalfFovRad * 0.6);
+    const distance =
+      entry.poiDistanceOverride ??
+      Math.max(entry.worldBoundingSphere.radius * this.unitsConfig.unitPoiCameraDistanceMultiplier, framedDistance);
     const height = entry.poiHeightOverride ?? this.unitsConfig.unitPoiCameraHeightOffset;
     const yawRad = (entry.poiYawDeg * Math.PI) / 180;
     // Offset rotated by the unit's own authored yaw, matching §16's
@@ -1826,7 +1857,7 @@ export class RenderEngine {
     // between honouring an authored framing and falling back to
     // revealUnit()'s generic one.
     const poiAuthored =
-      entry.poiYawDeg !== 0 || entry.poiDistanceOverride != null || entry.poiHeightOverride != null;
+      entry.poiYawAuthored || entry.poiDistanceOverride != null || entry.poiHeightOverride != null;
     return { onScreen, coverage, poiAuthored };
   }
 

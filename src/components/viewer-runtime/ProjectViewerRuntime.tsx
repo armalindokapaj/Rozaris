@@ -640,27 +640,21 @@ export function ProjectViewerRuntime({
       unitBlocksHoverOpacity: viewerConfig.unitBlocksHoverOpacity,
       unitBlocksSelectedOpacity: viewerConfig.unitBlocksSelectedOpacity,
       unitBlocksSelectedOutlineEnabled: viewerConfig.unitBlocksSelectedOutlineEnabled,
-      // Mobile legibility floor — a FLOOR, never a cap: an admin who
-      // authored a wider outline or already turned the selected fill on
-      // keeps exactly what they authored, on every device.
-      //
-      // At the shipped defaults, "selected" is +0.14 opacity in the unit's
-      // OWN status hue plus a 1px outline. On a 1440px desktop, next to a
-      // 380px list, that is a legible nudge. On a 390px phone held at
-      // arm's length, against a whole building, it is not a highlight in
-      // any useful sense of the word — and "highlight it in the 3D
-      // building unit" is the literal request this work exists to answer.
-      // A hue change is perceptible at any size; an alpha change of 0.14
-      // in the same hue is not. `unitBlocksSelectedFillEnabled` is
-      // described in unitRegistry.ts's own comment as the escape hatch
-      // "for projects where the outline alone doesn't read" — a phone is
-      // that case for every project.
-      unitBlocksSelectedOutlineWidth: isDesktop
-        ? viewerConfig.unitBlocksSelectedOutlineWidth
-        : Math.max(viewerConfig.unitBlocksSelectedOutlineWidth, 3),
+      // No mobile-only override here any more. This briefly carried one —
+      // forcing the selected fill on and the outline wider below `lg` —
+      // because at the then-shipped defaults "selected" was a +0.14 opacity
+      // bump in the unit's own status hue plus a 1px outline, which is not
+      // a highlight on a phone. That was treating the symptom on one
+      // breakpoint: the defaults themselves were wrong, and an override
+      // here also meant the admin's own preview could never match what a
+      // visitor saw. The defaults now carry it (migration
+      // 20260825000000_unit_selection_legibility_defaults), so every device
+      // and the editor all render the same thing, and a project that wants
+      // something different genuinely gets what it configured.
+      unitBlocksSelectedOutlineWidth: viewerConfig.unitBlocksSelectedOutlineWidth,
       unitBlocksSelectedScaleEnabled: viewerConfig.unitBlocksSelectedScaleEnabled,
       unitBlocksSelectedScale: viewerConfig.unitBlocksSelectedScale,
-      unitBlocksSelectedFillEnabled: isDesktop ? viewerConfig.unitBlocksSelectedFillEnabled : true,
+      unitBlocksSelectedFillEnabled: viewerConfig.unitBlocksSelectedFillEnabled,
       unitColorSelectedFill: viewerConfig.unitColorSelectedFill,
       unitBlocksSelectedXrayEnabled: viewerConfig.unitBlocksSelectedXrayEnabled,
       unitPoiCameraEnabled: viewerConfig.unitPoiCameraEnabled,
@@ -670,7 +664,7 @@ export function ProjectViewerRuntime({
       unitPoiTransitionMs: viewerConfig.unitPoiTransitionMs,
       unitPoiAutoOcclusionCorrection: viewerConfig.unitPoiAutoOcclusionCorrection,
     }),
-    [viewerConfig, isDesktop]
+    [viewerConfig]
   );
 
   // Fullscreen targets this whole page wrapper — not ThreeProjectViewer's

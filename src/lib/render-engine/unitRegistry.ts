@@ -34,7 +34,15 @@ export interface UnitRuntimeEntry {
   worldBounds: THREE.Box3;
   worldCenter: THREE.Vector3;
   worldBoundingSphere: THREE.Sphere;
+  /** Resolved yaw the POI camera actually uses — either the admin's own
+   * authored value or, when they never set one, a direction derived from
+   * the building's geometry. See `poiYawAuthored`. */
   poiYawDeg: number;
+  /** Whether a human actually chose `poiYawDeg` (the Units tab's own
+   * N/E/S/W "Camera from" buttons) rather than it being derived. Kept
+   * separate because `0` is a legitimate authored value — it is due
+   * North — so the number alone cannot answer this. */
+  poiYawAuthored: boolean;
   poiEnabled: boolean;
   poiDistanceOverride: number | null;
   poiHeightOverride: number | null;
@@ -91,6 +99,35 @@ function collectMeshes(node: THREE.Object3D): THREE.Mesh[] {
   return meshes;
 }
 
+/** Camera yaw for a unit nobody has aimed: the compass direction pointing
+ * from the building's centre OUT through the unit, so the camera ends up
+ * outside the mass looking back in.
+ *
+ * The alternative — and what shipped until now — is a flat `0`, i.e. due
+ * North for every unit on every face of every building. That is not a
+ * neutral default, it is an arbitrary one, and combined with
+ * `focusUnit()`'s own `distance = boundingRadius * unitPoiCameraDistanceMultiplier`
+ * it reliably put the camera INSIDE the building for any unit not on the
+ * north face. Verified on tower-vlora, whose three units all sit on
+ * defaults: "Test Camera" framed the back of a floor slab from inside the
+ * tower.
+ *
+ * `atan2(x, z)`, not the usual `atan2(y, x)`, because `focusUnit` builds
+ * its offset as `(sin(yaw) * d, height, cos(yaw) * d)` — yaw is measured
+ * from +Z toward +X, so this has to match that convention exactly.
+ *
+ * A unit sitting essentially on the centre axis (a core, a lift shaft) has
+ * no meaningful outward direction; those fall back to 0 rather than
+ * amplifying floating-point noise into a random heading.
+ */
+function derivedYawDeg(worldCenter: THREE.Vector3, sceneCenter: THREE.Vector3 | null): number {
+  if (!sceneCenter) return 0;
+  const dx = worldCenter.x - sceneCenter.x;
+  const dz = worldCenter.z - sceneCenter.z;
+  if (dx * dx + dz * dz < 1e-6) return 0;
+  return (Math.atan2(dx, dz) * 180) / Math.PI;
+}
+
 /** Builds/refreshes the unit registry from every currently-loaded root's
  * detected Unit_* roots + this version's confirmed mesh→unit links + the
  * live Postgres units list. Pure aggregation — doesn't touch materials or
@@ -102,7 +139,14 @@ export function buildUnitRegistry(
   rootObjectsByName: Map<string, THREE.Object3D>,
   unitLinks: UnitMeshLink[],
   unitsById: Map<string, Unit>,
-  poiByUnitId: Map<string, { poiYawDeg: number; poiEnabled: boolean; poiDistanceOverride: number | null; poiHeightOverride: number | null }>
+  poiByUnitId: Map<
+    string,
+    { poiYawDeg: number | null; poiEnabled: boolean; poiDistanceOverride: number | null; poiHeightOverride: number | null }
+  >,
+  /** Centre of everything currently loaded, used to derive a camera yaw
+   * for units nobody has aimed — see `derivedYawDeg`. Null when nothing is
+   * loaded yet, in which case unaimed units fall back to 0. */
+  sceneCenter: THREE.Vector3 | null = null
 ): Map<string, UnitRuntimeEntry> {
   const registry = new Map<string, UnitRuntimeEntry>();
   for (const link of unitLinks) {
@@ -113,6 +157,24 @@ export function buildUnitRegistry(
     const worldCenter = worldBounds.getCenter(new THREE.Vector3());
     const worldBoundingSphere = worldBounds.getBoundingSphere(new THREE.Sphere());
     const poi = poiByUnitId.get(unit.id);
+    // `0` counts as UNAIMED, not as "aimed due North". That looks like a
+    // heuristic and is really a property of the data model: `poiYawDeg` is
+    // a non-nullable `Float @default(0)` (schema.prisma, UnitMeshLinkV2),
+    // the links API writes `link.poiYawDeg ?? 0` on every save, and the
+    // Units tab highlights its own "N" preset whenever the value is 0 — so
+    // there is no representation of "unset" anywhere in the stack, and
+    // every link in the database sits at 0 without a human ever having
+    // chosen it. Treating 0 as an aim would mean deriving nothing, ever.
+    //
+    // The cost is that an admin cannot currently express a deliberate due-
+    // North aim; they get the derived outward direction instead. That is a
+    // near-invisible loss and often an improvement — a unit on the south
+    // face aimed "North" puts the camera on the far side looking back
+    // through the building, which is not what anyone picking a compass
+    // point means. Making the column nullable is the real fix if an
+    // explicit North ever matters; 90/180/270 are unambiguous today.
+    const authoredYaw = poi?.poiYawDeg ?? null;
+    const yawAimed = authoredYaw != null && authoredYaw !== 0;
     registry.set(unit.id, {
       unitId: unit.id,
       unitCode: unit.code,
@@ -122,7 +184,8 @@ export function buildUnitRegistry(
       worldBounds,
       worldCenter,
       worldBoundingSphere,
-      poiYawDeg: poi?.poiYawDeg ?? 0,
+      poiYawDeg: yawAimed ? authoredYaw : derivedYawDeg(worldCenter, sceneCenter),
+      poiYawAuthored: yawAimed,
       poiEnabled: poi?.poiEnabled ?? true,
       poiDistanceOverride: poi?.poiDistanceOverride ?? null,
       poiHeightOverride: poi?.poiHeightOverride ?? null,

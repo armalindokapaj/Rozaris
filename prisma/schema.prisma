@@ -1710,7 +1710,7 @@ model Project3DConfig {
   /// masterplan or pushed into a single floor. `1` reproduces the old
   /// hairline `THREE.LineSegments` look exactly, so existing projects are
   /// unchanged by this field's arrival.
-  unitBlocksSelectedOutlineWidth   Float   @default(1)
+  unitBlocksSelectedOutlineWidth   Float   @default(2.5)
   /// Selection "pop" — the selected unit's block is scaled up about its
   /// own bounding-box center (NOT its local origin, which for a GLB with
   /// baked transforms usually sits far away at the scene origin), so a
@@ -1727,7 +1727,7 @@ model Project3DConfig {
   /// would rather a click repaint the block outright. Off by default, so
   /// §12's behavior is still what an unconfigured project gets. The
   /// outline keeps its own `unitColorSelected` color independently.
-  unitBlocksSelectedFillEnabled    Boolean @default(false)
+  unitBlocksSelectedFillEnabled    Boolean @default(true)
   unitColorSelectedFill            String  @default("#6b55f5")
   /// Per-selection X-ray: draws the SELECTED unit's block (and its
   /// outline) with depth testing off, so it stays visible through the
