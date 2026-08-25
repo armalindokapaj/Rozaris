@@ -113,6 +113,25 @@ export function ProjectViewerRuntime({
   // this only flips true when that card's own "View Unit" button asks for
   // the full gallery/publisher-contact panel.
   const [fullDetailOpen, setFullDetailOpen] = useState(false);
+  /** Only a real dismissal returns the card to its compact state.
+   *
+   * Every selection used to reset this, so clicking one unit after another
+   * with the detail pane open collapsed the card each time and made the
+   * visitor press "View Unit" again for every single unit — the opposite
+   * of browsing (2026-08-25 direct instruction: "clicking other units
+   * shows the large popup... quick interaction"). Switching units now
+   * swaps the open pane's content in place, which is what the card was
+   * built for in the first place ("clicking a *different* unit just swaps
+   * this card's content in place" — UnitPreviewCard's own doc comment);
+   * only the shell's height tweens, since `expanded` itself is unchanged
+   * and the morph's `modeChanged` branch never fires.
+   *
+   * `null` — the card's ×, a click on empty space, the engine reporting no
+   * hit — still resets, so the next unit opens small the way a first
+   * selection should. */
+  const resetDetailOnDismiss = useCallback((unitId: string | null) => {
+    if (!unitId) setFullDetailOpen(false);
+  }, []);
   const [fullscreen, setFullscreen] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
   const [screenshotFlash, setScreenshotFlash] = useState<"success" | "error" | null>(null);
@@ -896,7 +915,7 @@ export function ProjectViewerRuntime({
   const handleSelectUnit = useCallback((unitId: string | null) => {
     clearFloorSectionUnless(unitId);
     setSelectedUnitId(unitId);
-    setFullDetailOpen(false);
+    resetDetailOnDismiss(unitId);
     const viewer = viewerRef.current;
     viewer?.setSelectedUnit(unitId);
     if (!unitId) {
@@ -946,7 +965,7 @@ export function ProjectViewerRuntime({
     if (!(view.poiAuthored && viewer?.focusUnit(unitId))) {
       viewer?.revealUnit(unitId, isDesktop ? 0 : MOBILE_REVEAL_SCREEN_BIAS);
     }
-  }, [isDesktop, clearFloorSectionUnless]);
+  }, [isDesktop, clearFloorSectionUnless, resetDetailOnDismiss]);
 
   // Units Blocks & POI Layer PRD §19-20 — the real "3D → List/Panel" half:
   // a genuine click on a unit block (RenderEngine already distinguishes
@@ -966,9 +985,9 @@ export function ProjectViewerRuntime({
   const handleUnitClickIn3D = useCallback((unitId: string | null) => {
     clearFloorSectionUnless(unitId);
     setSelectedUnitId(unitId);
-    setFullDetailOpen(false);
+    resetDetailOnDismiss(unitId);
     setUnmappedUnitId(null);
-  }, [clearFloorSectionUnless]);
+  }, [clearFloorSectionUnless, resetDetailOnDismiss]);
 
   return (
     <div

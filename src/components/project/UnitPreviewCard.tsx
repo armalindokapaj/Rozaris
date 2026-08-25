@@ -310,9 +310,9 @@ export function UnitPreviewCard({
     <span
       className={cn(
         "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize",
-        unit.status === "available" && "bg-green-100 text-green-700",
-        unit.status === "reserved" && "bg-amber-100 text-amber-700",
-        unit.status === "sold" && "bg-neutral-100 text-neutral-500"
+        unit.status === "available" && "bg-emerald-400/15 text-emerald-300",
+        unit.status === "reserved" && "bg-amber-400/15 text-amber-300",
+        unit.status === "sold" && "bg-white/10 text-white/55"
       )}
     >
       {t(STATUS_LABEL_KEY[unit.status])}
@@ -320,7 +320,7 @@ export function UnitPreviewCard({
   );
 
   const specRow = (
-    <div className="flex items-center gap-2.5 text-[11px] text-neutral-500 sm:gap-3 sm:text-xs">
+    <div className="flex items-center gap-2.5 text-[11px] text-white/55 sm:gap-3 sm:text-xs">
       <span className="flex items-center gap-1">
         <BedDouble className="h-3.5 w-3.5" /> {unit.bedrooms}
       </span>
@@ -338,7 +338,7 @@ export function UnitPreviewCard({
     <button
       onClick={onClose}
       aria-label={t("common.close")}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"
     >
       <X className="h-4 w-4" />
     </button>
@@ -389,7 +389,7 @@ export function UnitPreviewCard({
   // them as full-width labelled buttons — the compact 32px icon variant they
   // used in the preview row has no remaining call site.
   const wideButtonClass =
-    "flex flex-1 items-center justify-center gap-1.5 rounded-control border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-40";
+    "flex flex-1 items-center justify-center gap-1.5 rounded-control border border-white/15 px-2.5 py-1.5 text-[11px] font-semibold text-white/85 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40";
 
   return (
     <div
@@ -420,7 +420,7 @@ export function UnitPreviewCard({
       // `--shadow-2` ("drawer / popover"), not `--shadow-3` ("modal only") —
       // this is a popover over a live scene, and the lighter lift reads as the
       // more premium of the two at this size.
-      className="absolute right-[max(0.75rem,env(safe-area-inset-right))] top-[calc(max(0.75rem,env(safe-area-inset-top))+3.75rem)] z-30 origin-top-right overflow-hidden rounded-panel border border-neutral-200 bg-white shadow-[var(--shadow-2)] sm:right-4 sm:top-20"
+      className="viewer-glass absolute right-[max(0.75rem,env(safe-area-inset-right))] top-[calc(max(0.75rem,env(safe-area-inset-top))+3.75rem)] z-30 origin-top-right overflow-hidden rounded-panel shadow-[var(--shadow-2)] sm:right-4 sm:top-20"
       style={{ width: compactWidth }}
     >
       {/* Both panes are pinned to the shell's top-right corner at their own
@@ -433,10 +433,10 @@ export function UnitPreviewCard({
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-400 sm:text-[11px] sm:tracking-wide">
+            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45 sm:text-[11px] sm:tracking-wide">
               {t("unit.floorLabel", { n: unit.floor })} · {unit.code}
             </p>
-            <p className="font-numeric mt-0.5 text-[17px] font-semibold leading-tight text-neutral-900 sm:text-xl sm:leading-normal">
+            <p className="font-numeric mt-0.5 text-[17px] font-semibold leading-tight text-white sm:text-xl sm:leading-normal">
               {priceFmt(unit.price)}
             </p>
           </div>
@@ -460,7 +460,7 @@ export function UnitPreviewCard({
             "rozaris-viewer-locale-width-deltas" note) — so each label
             truncates rather than forcing the row to overflow, and each
             button carries the full sentence in its `title`/`aria-label`. */}
-        <div className="mt-3 flex items-center gap-1.5 border-t border-neutral-100 pt-3 sm:mt-3.5 sm:gap-2 sm:pt-3.5">
+        <div className="mt-3 flex items-center gap-1.5 border-t border-white/10 pt-3 sm:mt-3.5 sm:gap-2 sm:pt-3.5">
           {floorSectionName && (
             <button
               onClick={onViewInFloor}
@@ -469,8 +469,8 @@ export function UnitPreviewCard({
               className={cn(
                 "flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-control border text-[12px] font-semibold transition-colors sm:h-9 sm:gap-1.5 sm:text-[13px]",
                 floorSectionActive
-                  ? "border-brand-500 bg-brand-500 text-white hover:bg-brand-600"
-                  : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+                  ? "border-brand-400/60 bg-brand-500/25 text-white"
+                  : "border-white/15 bg-white/5 text-white/85 hover:bg-white/10 hover:text-white"
               )}
             >
               <Layers className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
@@ -479,7 +479,7 @@ export function UnitPreviewCard({
           )}
           <button
             onClick={onExpand}
-            className="flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-control bg-neutral-900 text-[12px] font-semibold text-white transition-colors hover:bg-neutral-800 sm:h-9 sm:gap-1.5 sm:text-[13px]"
+            className="flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-control bg-brand-500 text-[12px] font-semibold text-white transition-colors hover:bg-brand-600 sm:h-9 sm:gap-1.5 sm:text-[13px]"
           >
             <span className="truncate">{t("results.viewUnit")}</span>
             <ChevronRight className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
@@ -491,70 +491,73 @@ export function UnitPreviewCard({
         <div className="flex flex-col" style={{ maxHeight: limits.maxHeight }}>
           {/* Header intentionally repeats the preview's own eyebrow/price/spec
               geometry — it's the anchor that makes the morph read as growth. */}
-          <div className="shrink-0 border-b border-neutral-100 px-4 pb-3 pt-4">
+          <div className="shrink-0 border-b border-white/10 px-3.5 pb-2.5 pt-3">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+                <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-white/45">
                   {t("unit.floorLabel", { n: unit.floor })} · {unit.code}
                 </p>
-                <p className="font-numeric mt-0.5 text-xl font-semibold text-neutral-900">
+                <p className="font-numeric mt-0.5 text-lg font-semibold leading-tight text-white">
                   {priceFmt(unit.price)}
                 </p>
-                <p className="mt-0.5 truncate text-xs text-neutral-500">{project.name}</p>
+                <p className="mt-0.5 truncate text-[11px] text-white/45">{project.name}</p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <button
                   onClick={onCollapse}
                   aria-label={t("unit.collapseUnitDetail")}
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"
                 >
                   <Minimize2 className="h-3.5 w-3.5" />
                 </button>
                 {closeButton}
               </div>
             </div>
-            <div className="mt-2.5">{specRow}</div>
+            <div className="mt-2">{specRow}</div>
           </div>
 
-          <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3.5">
+          <div className="scroll-none min-h-0 flex-1 overflow-y-auto px-3.5 pb-3 pt-3">
             <UnitMedia key={unit.id} unit={unit} />
 
-            <div className="mt-3.5 grid grid-cols-2 gap-2">
-              <Fact icon={Layers} label={t("listing.floor")} value={unit.floor} />
+            {/* Three facts, not the five this used to carry: Floor and Area
+                were already stated verbatim in the header two rows above
+                (the eyebrow's "FLOOR 8 · A-003" and the spec row's "70 m²"),
+                so two of four cards were restating what the eye had just
+                read, and Type sat below them as a lone orphan line. What is
+                left is only what the header does not say. */}
+            <div className="mt-3 grid grid-cols-3 gap-1.5">
               <Fact icon={Home} label={t("unit.viewerBuilding")} value={unit.buildingName} />
-              <Fact icon={Ruler} label={t("listing.area")} value={`${unit.area} m²`} />
               <Fact
                 icon={Compass}
                 label={t("unit.orientation")}
                 value={
                   unit.orientation
-                    ? t(ORIENTATION_LABEL_KEY[unit.orientation])
-                    : t("unit.orientationUnset")
+                    ? t(ORIENTATION_LABEL_KEY[unit.orientation]).split(" ")[0]
+                    : "—"
                 }
               />
+              <Fact icon={SquareStack} label={t("unit.typeLabel")} value={t(TYPE_LABEL_KEY[unit.type])} />
             </div>
-
-            <p className="mt-3 text-[11px] text-neutral-400">
-              {t("unit.typeLabel")}: {t(TYPE_LABEL_KEY[unit.type])}
-            </p>
 
             {eligibleForDesign && (
               <button
                 onClick={() => setDesignLeadSent(true)}
                 disabled={designLeadSent}
-                className="mt-3.5 flex w-full items-center justify-center gap-1.5 rounded-control bg-listing-new-dev px-3.5 py-2.5 text-sm font-semibold text-white transition-[filter] hover:brightness-95 disabled:opacity-60"
+                className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-control bg-listing-new-dev px-3 py-2 text-xs font-semibold text-white transition-[filter] hover:brightness-95 disabled:opacity-60"
               >
-                <Palette className="h-4 w-4" />
+                <Palette className="h-3.5 w-3.5" />
                 {designLeadSent ? t("unit.requestSent") : t("unit.designThisApartment")}
               </button>
             )}
 
-            <div className="mt-4 border-t border-neutral-100 pt-3.5">
-              <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+            <div className="mt-3 border-t border-white/10 pt-3">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-white/45">
                 {t("listing.contactPublisher")}
               </p>
               <PublisherCard
                 bare
+                tone="dark"
+                compact
                 publisher={project.developer}
                 whatsappMessage={`Hi, I'm interested in unit ${unit.code} at ${project.name}`}
                 contentTitle={`${project.name} — ${unit.code}`}
@@ -564,12 +567,12 @@ export function UnitPreviewCard({
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2 border-t border-neutral-100 px-4 py-3">
+          <div className="flex shrink-0 items-center gap-2 border-t border-white/10 px-3.5 py-2.5">
             {saveButton(wideButtonClass, true)}
             {compareButton(
               cn(
                 wideButtonClass,
-                inCompare && "border-brand-500 bg-brand-500 text-white hover:bg-brand-500"
+                inCompare && "border-brand-400/60 bg-brand-500/25 text-white hover:bg-brand-500/25"
               ),
               true
             )}
@@ -590,12 +593,12 @@ function Fact({
   value: string | number;
 }) {
   return (
-    <div className="rounded-card border border-neutral-200 px-2.5 py-2">
-      <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-neutral-400">
-        <Icon className="h-3 w-3 shrink-0" />
+    <div className="rounded-card border border-white/10 bg-white/[0.03] px-2 py-1.5">
+      <p className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-white/40">
+        <Icon className="h-2.5 w-2.5 shrink-0" />
         <span className="truncate">{label}</span>
       </p>
-      <p className="mt-0.5 truncate text-sm font-semibold text-neutral-900">{value}</p>
+      <p className="mt-0.5 truncate text-[13px] font-semibold text-white">{value}</p>
     </div>
   );
 }
@@ -626,8 +629,11 @@ function UnitMedia({ unit }: { unit: Unit }) {
   const seeds = Array.from({ length: PHOTO_COUNT }, (_, i) => `${unit.id}-photo-${i}`);
 
   return (
-    <div className="overflow-hidden rounded-card border border-neutral-200">
-      <div className="relative aspect-[16/10] w-full bg-neutral-100">
+    <div className="overflow-hidden rounded-card border border-white/10">
+      {/* 16/9, not the 16/10 this shipped with: at the detail pane's 384px
+          the taller ratio spent ~240px on a placeholder before a single
+          fact was visible, which is most of what read as empty space. */}
+      <div className="relative aspect-[16/9] w-full bg-white/5">
         {tab === "photos" && (
           <>
             <PlaceholderImage
@@ -640,14 +646,14 @@ function UnitMedia({ unit }: { unit: Unit }) {
             <button
               onClick={() => setIndex((i) => (i - 1 + PHOTO_COUNT) % PHOTO_COUNT)}
               aria-label={t("gallery.prevPhoto")}
-              className="absolute left-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-neutral-700 shadow transition-colors hover:bg-white"
+              className="absolute left-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition-colors hover:bg-black/65"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
             <button
               onClick={() => setIndex((i) => (i + 1) % PHOTO_COUNT)}
               aria-label={t("gallery.nextPhoto")}
-              className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-neutral-700 shadow transition-colors hover:bg-white"
+              className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition-colors hover:bg-black/65"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -698,15 +704,15 @@ function UnitMedia({ unit }: { unit: Unit }) {
           </button>
         )}
       </div>
-      <div className="flex gap-1 border-t border-neutral-100 p-1.5">
+      <div className="flex gap-1 border-t border-white/10 p-1">
         {tabs.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
             aria-pressed={tab === key}
             className={cn(
-              "truncate rounded-control px-2.5 py-1.5 text-[11px] font-semibold transition-colors",
-              tab === key ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-100"
+              "truncate rounded-control px-2 py-1 text-[10px] font-semibold transition-colors",
+              tab === key ? "bg-white/15 text-white" : "text-white/50 hover:bg-white/10 hover:text-white"
             )}
           >
             {label}

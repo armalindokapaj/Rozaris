@@ -263,7 +263,22 @@ export function ViewerHUD({
   // `navGroupRef` above had no other reader and was removed with this.
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-20">
+    // `z-40`, above `UnitPreviewCard`'s `z-30` (2026-08-25 bug report:
+    // "clicking settings shows it in background, not in front"). A
+    // positioned element with a z-index creates a stacking context, so
+    // every descendant of this root — the More/Settings dropdown, the
+    // dock's own upward popovers — was capped at 20 no matter what
+    // z-index it set for itself, and the unit card covered all of it.
+    // Raising this root rather than the dropdown is what actually fixes
+    // it, and it is the correct order anyway: the HUD is the control
+    // layer, and a menu the visitor just opened belongs over a card that
+    // was already sitting there. Geometry is unaffected — the card's own
+    // top offset clears the header pills and its max height reserves the
+    // dock, so the two only ever overlap when a HUD menu is deliberately
+    // opened across it. The compare/construction cluster and Map View
+    // button keep their `z-20`: they live outside this root, still below
+    // the card, and the runtime already hides them while it is open.
+    <div className="pointer-events-none absolute inset-0 z-40">
       <div
         ref={overlayRef}
         className={

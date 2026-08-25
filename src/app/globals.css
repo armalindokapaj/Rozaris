@@ -366,6 +366,22 @@ body {
   background: transparent;
 }
 
+/* No visible scrollbar at all — the element still scrolls, it just has no
+   bar. For surfaces where the bar reads as chrome rather than as an
+   affordance: the 3D viewer's unit card is `.viewer-glass` (#0c0e12), and
+   `.scroll-thin`'s thumb is `--color-neutral-300`, so on that dark ground
+   the bar became the brightest thing on the card (direct instruction,
+   2026-08-25). Deliberately a separate class rather than a change to
+   `.scroll-thin`, which a dozen light-themed admin/dashboard surfaces rely
+   on and where a visible thumb is correct. */
+.scroll-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scroll-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Mapbox popup reset so we can fully restyle */
 .mapboxgl-popup-content {
   padding: 0 !important;

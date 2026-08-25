@@ -1983,15 +1983,63 @@ export class RenderEngine {
     return { centerX: b.center.x, centerZ: b.center.z, minY: b.min.y, maxY: b.max.y, sizeX: b.size.x, sizeZ: b.size.z };
   }
 
-  /** Every real THREE.Mesh currently in clippingGroup — the actual
-   * clippable content the section-fill cap borrows geometry from (back
-   * faces only, see rebuildSectionCap's own doc comment). */
+  /** Every real THREE.Mesh currently in clippingGroup that the section
+   * fill should borrow geometry from (back faces only, see
+   * rebuildSectionCap's own doc comment) — architecture, i.e. the
+   * Building/Floors/Surroundings GLBs and the ground.
+   *
+   * Three exclusions, all of them real bugs found 2026-08-25 rather than
+   * defensive guesses:
+   *
+   * 1. UNIT BLOCKS. Direct instruction: "Fill the gaps shouldn't work
+   *    with Units GLB. only with the building and floors glb." A unit
+   *    block is a translucent overlay (`transparent: true`, opacity ~0.45,
+   *    `depthWrite: false` — unitRegistry.ts), so giving it an opaque
+   *    back-face twin in the admin's fill colour reads as that block being
+   *    blacked out and hollowed. On tower-vlora, whose fillColor is
+   *    #000000, that happened to the floor-6 and floor-7 blocks even
+   *    though the "Floor 8" plane (y=62) sits 3.2m and 6.5m ABOVE them and
+   *    removes no geometry from either — which is exactly the reported
+   *    "it looks like it tries to cut other units below". Units are an
+   *    information layer over the building, not building material; there
+   *    is no gap in them for a cap to fill.
+   *
+   *    Two signals, because units can live in either place: the whole
+   *    subtree of any `units`-role slot root, and — for the case
+   *    syncModels explicitly supports, a unit whose mesh sits inside the
+   *    Building GLB — anything the registry tagged `isUnitBlock`.
+   *
+   * 2. UNIT SELECTION OUTLINES. `LineSegments2` extends `Mesh` (the same
+   *    trap unitRegistry.ts's own `collectMeshes` already documents and
+   *    filters for), so `.isMesh` accepts it and the copy re-wraps its
+   *    instanced line geometry in a plain Mesh — drawing the fat-line
+   *    template quads as loose triangles floating in the fill colour.
+   *
+   * 3. HIDDEN MESHES. `Object3D.traverse` visits descendants regardless of
+   *    `.visible`, so anything an admin hid through a Materials node
+   *    override still produced a fully visible opaque twin. A mesh that
+   *    isn't drawn cannot be leaving a gap to fill, so the walk below
+   *    prunes invisible subtrees instead of recursing into them. */
   private collectClippableMeshes(): THREE.Mesh[] {
+    const unitSlotRoots = new Set<THREE.Object3D>();
+    for (const entry of this.lastSyncEntries) {
+      if (entry.slotRole !== "units") continue;
+      const root = this.modelRootsBySlot.get(entry.slotId);
+      if (root) unitSlotRoots.add(root);
+    }
+
     const meshes: THREE.Mesh[] = [];
-    this.clippingGroup?.traverse((obj) => {
+    // A hand-rolled walk rather than `traverse`, because every exclusion
+    // above has to prune the whole subtree, and `traverse` has no early-out.
+    const walk = (obj: THREE.Object3D) => {
+      if (obj.visible === false) return;
+      if (unitSlotRoots.has(obj)) return;
+      if (obj.userData.isUnitBlock || obj.userData.isUnitOutline) return;
       const mesh = obj as THREE.Mesh;
       if (mesh.isMesh) meshes.push(mesh);
-    });
+      for (const child of obj.children) walk(child);
+    };
+    if (this.clippingGroup) walk(this.clippingGroup);
     return meshes;
   }
 
