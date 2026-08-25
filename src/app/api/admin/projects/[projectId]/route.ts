@@ -46,7 +46,18 @@ export async function GET(
       prisma.projectMembership.count({ where: { projectId } }),
       prisma.projectPublishTarget.count({ where: { projectId } }),
       prisma.projectInventoryState.findUnique({ where: { projectId } }),
-      prisma.projectMapModel.findUnique({ where: { projectId } }),
+      // The VERSIONED table, not the legacy single-row `ProjectMapModel`
+      // this used to read. That table has had no writer since the
+      // versioned pipeline replaced it (confirmed against the live DB:
+      // zero rows platform-wide), so `hasMapModel` below was hard-false
+      // for every project — the 3D section's "no map model" state and the
+      // Overview's own readiness check were reporting on a table nobody
+      // writes. Newest non-archived version, same `pickActiveVersion` rule
+      // MapModelEditor uses.
+      prisma.mapModelVersion.findFirst({
+        where: { projectId, deletedAt: null, publicationStatus: { not: "archived" } },
+        orderBy: { version: "desc" },
+      }),
       prisma.detailModelSlot.findMany({
         where: { projectId },
         orderBy: { order: "asc" },
@@ -82,7 +93,15 @@ export async function GET(
     inventoryRevision: inventoryState ? inventoryState.revision.toString() : null,
     threeD: {
       hasMapModel: Boolean(mapModel),
-      mapModelEnabled: mapModel?.enabled ?? false,
+      mapModelEnabled: mapModel?.publicationStatus === "published",
+      /** Where that version is currently anchored. The Project Manager
+       * compares it against the project's own coordinates to surface a
+       * pre-existing split — a model deliberately dragged onto the real
+       * building while the record still holds a neighbourhood-centroid
+       * default — and let an admin resolve it explicitly instead of
+       * whichever one happens to be saved last winning. See
+       * src/lib/projectLocation.ts. */
+      mapModelPosition: mapModel ? { lat: mapModel.latitude, lng: mapModel.longitude } : null,
       hasConfig: Boolean(config),
       slots: slots.map((slot) => ({
         id: slot.id,

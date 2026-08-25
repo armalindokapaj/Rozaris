@@ -2,6 +2,8 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
+import type { ViewerQualityLevel } from "@/lib/viewerQuality";
+
 /**
  * More / Settings Menu PRD (2026-08-16) §25 "viewerPreferences" — a small,
  * self-contained localStorage store, deliberately NOT added to the
@@ -33,12 +35,18 @@ export interface ViewerPreferences {
   reducedMotionOverride: boolean | null;
   /** PRD §14 — default ON. */
   interfaceAutoHide: boolean;
+  /** Settings → Quality (2026-08-25). "auto" = defer to the project's own
+   * published `qualityPreset`, i.e. exactly the behaviour that existed
+   * before this preference did; the four manual levels override it. See
+   * lib/viewerQuality.ts for what each one actually changes. */
+  quality: ViewerQualityLevel;
 }
 
 export const DEFAULT_VIEWER_PREFERENCES: ViewerPreferences = {
   areaUnit: "m2",
   reducedMotionOverride: null,
   interfaceAutoHide: true,
+  quality: "auto",
 };
 
 let cached: ViewerPreferences = DEFAULT_VIEWER_PREFERENCES;
@@ -84,9 +92,10 @@ export function useViewerPreferences() {
     []
   );
   const setInterfaceAutoHide = useCallback((interfaceAutoHide: boolean) => write({ ...read(), interfaceAutoHide }), []);
+  const setQuality = useCallback((quality: ViewerQualityLevel) => write({ ...read(), quality }), []);
   const reset = useCallback(() => write(DEFAULT_VIEWER_PREFERENCES), []);
 
-  return { ...prefs, setAreaUnit, setReducedMotionOverride, setInterfaceAutoHide, reset };
+  return { ...prefs, setAreaUnit, setReducedMotionOverride, setInterfaceAutoHide, setQuality, reset };
 }
 
 /** One-time sync read on module init so the very first render (before any

@@ -112,6 +112,9 @@ export const TimeContent = forwardRef<
   const { t } = useT();
   const reducedMotion = useEffectiveReducedMotion();
   const tweenRef = useRef<gsap.core.Tween | null>(null);
+  // So `mousedown` on the preset trigger is not read as a click outside
+  // its own popover — see `DockPopover`'s own note.
+  const presetTriggerRef = useRef<HTMLButtonElement>(null);
 
   function handleSliderInput(e: ChangeEvent<HTMLInputElement>) {
     tweenRef.current?.kill();
@@ -226,6 +229,7 @@ export const TimeContent = forwardRef<
   const presetTrigger = (
     <div className="relative flex shrink-0 items-center gap-3">
       <button
+        ref={presetTriggerRef}
         type="button"
         onClick={onTogglePopover}
         aria-haspopup="menu"
@@ -237,7 +241,7 @@ export const TimeContent = forwardRef<
         <ChevronDown className={cn("h-3.5 w-3.5 text-white/50 transition-transform", popoverOpen && "rotate-180")} aria-hidden="true" />
       </button>
       {isDesktop && <span className="h-6 w-px shrink-0 bg-white/10" aria-hidden="true" />}
-      <DockPopover open={popoverOpen} onClose={onClosePopover} anchorClassName="right-0">
+      <DockPopover open={popoverOpen} onClose={onClosePopover} triggerRef={presetTriggerRef} anchorClassName="right-0">
         {presetPopoverList}
       </DockPopover>
     </div>

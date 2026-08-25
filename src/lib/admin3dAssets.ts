@@ -156,10 +156,18 @@ function toAssetFile(row: RawVersion, kind: AssetKind): AdminAssetFile {
  * route in the app — a discarded draft is invisible to the 3D editor, so
  * it stays invisible here too. Their Blob objects do still exist; the
  * Super Admin Recycle Bin remains the one place that deals with them.
+ *
+ * `projectId` narrows the same query to a single record for the Project
+ * Manager's 3D Assets section, which needs exactly this shape for one
+ * project. It is a filter, not a lookup: a project with no 3D rows (or a
+ * soft-deleted one) simply drops out of the result the same way it does
+ * platform-wide, so the caller gets an empty list rather than having to
+ * distinguish "no models" from "no such project".
  */
-export async function getAdminAssetProjects(): Promise<AdminAssetProject[]> {
+export async function getAdminAssetProjects(projectId?: string): Promise<AdminAssetProject[]> {
   const projects = await prisma.project.findMany({
     where: {
+      ...(projectId ? { id: projectId } : {}),
       deletedAt: null,
       OR: [
         { detailModelSlots: { some: { versions: { some: { deletedAt: null } } } } },

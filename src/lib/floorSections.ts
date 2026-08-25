@@ -86,12 +86,26 @@ export function parseSectionFloorNumber(name: string): number | null {
  * "keep the record, keep it out of the viewer".
  */
 export function resolveFloorSection(sections: Section[], unit: Unit): Section | null {
+  return resolveSectionForFloor(sections, unit.buildingName, unit.floor);
+}
+
+/**
+ * Same resolution, addressed by the floor itself rather than by a unit
+ * standing on it — what the viewer's floor rail needs, since a rail entry
+ * exists for a floor whether or not any unit on it is currently selected.
+ *
+ * `resolveFloorSection` above is now a thin wrapper over this: a unit is
+ * only ever a `(buildingName, floor)` pair as far as this lookup is
+ * concerned, and having two copies of the precedence rules would be two
+ * places to get them wrong.
+ */
+export function resolveSectionForFloor(sections: Section[], buildingName: string, floor: number): Section | null {
   const visible = sections.filter((s) => !s.hidden);
-  const floorId = makeFloorId(unit.buildingName, unit.floor);
+  const floorId = makeFloorId(buildingName, floor);
   const explicit = visible.find((s) => s.floorId === floorId);
   if (explicit) return explicit;
 
-  const named = visible.filter((s) => parseSectionFloorNumber(s.name) === unit.floor);
+  const named = visible.filter((s) => parseSectionFloorNumber(s.name) === floor);
   if (named.length === 0) return null;
-  return named.find((s) => s.scope === "building" && s.buildingName === unit.buildingName) ?? named[0];
+  return named.find((s) => s.scope === "building" && s.buildingName === buildingName) ?? named[0];
 }

@@ -16,6 +16,11 @@ const patchSchema = z.object({
   scale: z.number().positive().max(1000).optional(),
   rotationDeg: z.number().optional(),
   altitudeOffset: z.number().optional(),
+  // ONE LOCATION — accepted but ignored, same as the POST route's
+  // `createSchema`. A version's anchor is the project's coordinates; the
+  // 3D Map Control's pin writes them through
+  // `PATCH /api/admin/projects/[projectId]/location`, which then re-anchors
+  // every version (src/lib/projectLocation.ts).
   longitude: z.number().optional(),
   latitude: z.number().optional(),
   hideBaseBuilding: z.boolean().optional(),
@@ -73,8 +78,6 @@ export async function PATCH(
       scale: parsed.data.scale,
       heading: parsed.data.rotationDeg,
       altitude: parsed.data.altitudeOffset,
-      longitude: parsed.data.longitude,
-      latitude: parsed.data.latitude,
       hideBaseBuilding: parsed.data.hideBaseBuilding,
       hiddenBuildings: parsed.data.hiddenBuildings,
       ...(attachingModel && {

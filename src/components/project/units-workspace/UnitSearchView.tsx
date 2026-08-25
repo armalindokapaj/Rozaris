@@ -10,7 +10,7 @@ import type { AreaUnit } from "@/hooks/useViewerPreferences";
 import { areaFromDisplay, areaToDisplay, convertUnitPrice, formatUnitArea } from "./unitDisplay";
 import {
   activeFilterCount,
-  BEDROOM_OPTIONS,
+  unitFacets,
   bedroomLabel,
   DEFAULT_UNIT_FILTERS,
   filterUnits,
@@ -21,11 +21,14 @@ import {
   type UnitFilterState,
 } from "./unitFilters";
 
-const STATUS_PILLS: { id: StatusFilter; dotClass?: string }[] = [
+/** This surface's own pill order — "All" last, unlike the dock's, which
+ * leads with it. Only the statuses a project actually has are rendered
+ * (see `unitFacets`), so this is the ordering template rather than the
+ * list itself; "All" is appended unconditionally as the reset. */
+const STATUS_PILL_ORDER: { id: Exclude<StatusFilter, "all">; dotClass?: string }[] = [
   { id: "available" },
   { id: "reserved", dotClass: STATUS_DOT.reserved },
   { id: "sold", dotClass: STATUS_DOT.sold },
-  { id: "all" },
 ];
 export const UNITS_PAGE_SIZE = 30;
 
@@ -169,7 +172,19 @@ export function UnitSearchView({
     selectedRowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [selectedUnitId]);
   const filterCount = activeFilterCount(filters);
-  const buildings = useMemo(() => Array.from(new Set(units.map((u) => u.buildingName))).sort(), [units]);
+  // Only the options this project's units actually justify — see
+  // `unitFacets` for the two rules. Buildings used to be derived inline
+  // here (distinct names, sorted) and is now folded into that one shared
+  // derivation alongside Bedrooms and Availability, which were both still
+  // fixed lists.
+  const facets = useMemo(() => unitFacets(units, filters), [units, filters]);
+  const statusPills = useMemo<{ id: StatusFilter; dotClass?: string }[]>(
+    () =>
+      facets.statuses.length === 0
+        ? []
+        : [...STATUS_PILL_ORDER.filter((p) => facets.statuses.includes(p.id)), { id: "all" as const }],
+    [facets.statuses]
+  );
 
   function update(patch: Partial<UnitFilterState>) {
     onFiltersChange((prev) => ({ ...prev, ...patch }));
@@ -190,8 +205,9 @@ export function UnitSearchView({
           />
         </div>
 
+        {statusPills.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {STATUS_PILLS.map(({ id, dotClass }) => (
+          {statusPills.map(({ id, dotClass }) => (
             <button
               key={id}
               type="button"
@@ -206,9 +222,11 @@ export function UnitSearchView({
             </button>
           ))}
         </div>
+        )}
 
+        {facets.bedrooms.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {BEDROOM_OPTIONS.map((b) => (
+          {facets.bedrooms.map((b) => (
             <button
               key={b}
               type="button"
@@ -222,6 +240,7 @@ export function UnitSearchView({
             </button>
           ))}
         </div>
+        )}
 
         <div className="flex flex-wrap gap-1.5">
           <FilterDropdown label={t("units.filterPrice")} active={filters.minPrice != null || filters.maxPrice != null}>
@@ -269,9 +288,10 @@ export function UnitSearchView({
               />
             </div>
           </FilterDropdown>
+          {facets.buildings.length > 0 && (
           <FilterDropdown label={t("units.filterBuilding")} active={filters.building != null}>
             <div className="space-y-0.5">
-              {buildings.map((b) => (
+              {facets.buildings.map((b) => (
                 <button
                   key={b}
                   type="button"
@@ -286,6 +306,7 @@ export function UnitSearchView({
               ))}
             </div>
           </FilterDropdown>
+          )}
         </div>
 
         <div className="flex items-center justify-between pt-0.5 text-xs">

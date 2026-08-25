@@ -105,8 +105,12 @@ const sectionSchema = z.object({
   // site footprint with headroom; still a real, finite sanity bound, not
   // `Infinity` (a > 5km "section" is certainly a mis-drag, not an
   // intentional cut).
-  widthM: z.number().positive().max(5000),
-  depthM: z.number().positive().max(5000),
+  // `.min(0)`, not `.positive()`: the panel's Width/Depth sliders bottom
+  // out at 0 (a fully-collapsed footprint — degenerate to look at, but
+  // recoverable by dragging back, and NOT something that should silently
+  // 400 mid-drag the way `.positive()` made it).
+  widthM: z.number().min(0).max(5000),
+  depthM: z.number().min(0).max(5000),
   rotationDeg: z.number().min(-360).max(360),
   heightM: z.number().min(-50).max(500),
   bottomEnabled: z.boolean(),

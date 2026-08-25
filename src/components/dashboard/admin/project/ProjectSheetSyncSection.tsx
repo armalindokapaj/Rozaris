@@ -16,10 +16,11 @@ import {
 import { useInventoryConnector, type SyncOutcome } from "@/hooks/useInventoryConnector";
 import { useProjectUnits } from "@/hooks/useProjectUnits";
 import { useT } from "@/lib/i18n/useT";
-import { buildSheetTemplateCsv, sheetEditUrl } from "@/lib/integrations/googleSheets";
+import { sheetEditUrl } from "@/lib/integrations/googleSheets";
 import { FIELD_HEADER_ALIASES, FIELD_LABELS, SYNCABLE_FIELDS, type SyncableField } from "@/lib/integrations/normalization";
-import type { Project } from "@/lib/types";
+import type { Project, Unit } from "@/lib/types";
 import { Badge, Btn, EmptyState, ErrorNote, Panel, SectionHeader, inputClass } from "./kit";
+import { ProjectUnitGrid } from "./ProjectUnitGrid";
 
 /**
  * Project Manager → "Sheet Sync". The developer keeps their inventory in
@@ -43,8 +44,25 @@ import { Badge, Btn, EmptyState, ErrorNote, Panel, SectionHeader, inputClass } f
 export function ProjectSheetSyncSection({ project }: { project: Project }) {
   const { t } = useT();
   const { connector, runs, loading, busy, connect, update, disconnect, sync } = useInventoryConnector(project.id);
+  // Exactly ONE useProjectUnits instance for the whole section — a second
+  // one would mean a second 30s poll, a second focus listener, and two
+  // divergent `units` arrays, so a real sync's `refreshUnits()` would
+  // refresh the copy the grid isn't reading.
   const { units: liveUnits, refresh: refreshUnits } = useProjectUnits(project.id);
-  const units = liveUnits ?? project.units;
+  /* The hook nulls `units` on ANY failed poll, not just the first load.
+   * Falling back to `project.units` (mockData/Zustand — DIFFERENT ids)
+   * mid-edit would make every dirty grid row look deleted and prune it,
+   * so hold the last known good rows instead. */
+  const [lastGoodUnits, setLastGoodUnits] = useState<Unit[] | null>(null);
+  // Adjusted DURING render against the previous value (React's own
+  // "adjusting state when a prop changes" pattern — the same one
+  // `admin/projects/[projectId]/page.tsx` uses to seed its draft) rather
+  // than in an effect, which would render once with the stale array first.
+  if (liveUnits && liveUnits !== lastGoodUnits) setLastGoodUnits(liveUnits);
+  const units = liveUnits ?? lastGoodUnits ?? project.units;
+  /** Unsaved cells in the grid below. A real sync rewrites these same seven
+   * fields on these same units, so it must not run over them. */
+  const [gridDirty, setGridDirty] = useState(0);
 
   const [linkInput, setLinkInput] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -57,26 +75,6 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
 
   const gid = connector?.configuration?.gid ?? "0";
   const sheetUrl = connector?.externalResourceId ? sheetEditUrl(connector.externalResourceId, gid) : null;
-
-  function downloadTemplate() {
-    const csv = buildSheetTemplateCsv(
-      units.map((u) => ({
-        code: u.code,
-        area: u.area,
-        price: u.price,
-        bedrooms: u.bedrooms,
-        bathrooms: u.bathrooms,
-        floor: u.floor,
-        status: u.status,
-      }))
-    );
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${project.slug}-inventory-sheet.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
 
   async function handleConnect(e: React.FormEvent) {
     e.preventDefault();
@@ -120,14 +118,33 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
         title={t("projectManager.sheetSyncTitle")}
         description={t("projectManager.sheetSyncDescription")}
         actions={
-          <Btn onClick={downloadTemplate} disabled={units.length === 0}>
+          /* A real link, not a fetch+objectURL: the browser downloads it
+             with the filename and content type the route sets, and the
+             route reads the units fresh from Postgres rather than from this
+             page's copy. Not disabled on an empty inventory — the header
+             row alone is the point when a sheet is being set up first. */
+          <a
+            href={`/api/admin/projects/${project.id}/inventory-template`}
+            className="inline-flex items-center justify-center gap-1.5 rounded-control border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-50"
+          >
             <Download className="h-3.5 w-3.5" />
             {t("projectManager.downloadStarterSheet")}
-          </Btn>
+          </a>
         }
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
+
+      {/* Outside the connector ternary on purpose: "edit the seven sheet
+          columns here" is MORE true when no sheet is connected, and putting
+          it inside would move it to a different scroll position depending
+          on connector state. */}
+      <ProjectUnitGrid
+        projectId={project.id}
+        units={units}
+        onServerChanged={refreshUnits}
+        onDirtyChange={setGridDirty}
+      />
 
       {loading ? (
         <Panel>
@@ -229,16 +246,24 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
             )}
 
             <div className="mt-4 flex flex-wrap gap-1.5 border-t border-neutral-100 pt-4">
-              <Btn onClick={() => void run(true)} disabled={busy}>
+              <Btn onClick={() => void run(true)} disabled={busy || gridDirty > 0}>
                 <Table className="h-3.5 w-3.5" />
                 {busy ? t("projectManager.reading") : t("projectManager.previewChanges")}
               </Btn>
-              <Btn variant="primary" onClick={() => void run(false)} disabled={busy || connector.status === "paused"}>
+              <Btn
+                variant="primary"
+                onClick={() => void run(false)}
+                disabled={busy || gridDirty > 0 || connector.status === "paused"}
+              >
                 <RefreshCw className="h-3.5 w-3.5" />
                 {busy ? t("projectManager.syncing") : t("projectManager.syncNow")}
               </Btn>
             </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-neutral-400">{t("projectManager.syncManualNote")}</p>
+            {gridDirty > 0 ? (
+              <p className="mt-2 text-[11px] leading-relaxed text-amber-700">{t("projectManager.gridSyncBlocked")}</p>
+            ) : (
+              <p className="mt-2 text-[11px] leading-relaxed text-neutral-400">{t("projectManager.syncManualNote")}</p>
+            )}
           </Panel>
 
           {unmappedHeaders && (
@@ -264,7 +289,10 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
             <SyncOutcomePanel
               outcome={outcome}
               onApply={() => void run(false)}
-              busy={busy}
+              // The preview panel's "Apply" is a third way into run(false),
+              // and it outlives the edit that made the grid dirty — gate it
+              // on the same interlock as the two buttons above.
+              busy={busy || gridDirty > 0}
               onSaveMapping={async (mapping) => {
                 const result = await update({ columnMapping: mapping });
                 if (!result.ok) setError(result.error ?? null);

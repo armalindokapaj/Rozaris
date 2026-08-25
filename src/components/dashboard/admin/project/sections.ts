@@ -5,6 +5,7 @@ export const PROJECT_SECTION_IDS = [
   "overview",
   "general",
   "location",
+  "mapControl",
   "media",
   "features",
   "inventory",

@@ -19,13 +19,21 @@ import { logApiError } from "@/lib/apiErrorLog";
  * download goes back through `/api/admin/3d-assets/download` by version
  * id, which keeps the store URLs off the wire and gives the transfer an
  * audit-log entry.
+ *
+ * An optional `?projectId=` narrows the inventory to one project, which
+ * is what the Project Manager's 3D Assets section reads. That is a
+ * filter on the same admin-gated query, not a record lookup: a project
+ * with no 3D rows yet answers 200 with an empty `projects` array, since
+ * "nothing uploaded yet" is an ordinary state that surface renders as its
+ * own empty panel rather than an error.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;
 
   try {
-    const projects = await getAdminAssetProjects();
+    const projectId = new URL(request.url).searchParams.get("projectId") ?? undefined;
+    const projects = await getAdminAssetProjects(projectId);
     return NextResponse.json({
       projects,
       totalProjects: projects.length,

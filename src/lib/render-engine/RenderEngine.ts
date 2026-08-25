@@ -281,15 +281,29 @@ const DEFAULT_QUALITY_CONFIG: QualityConfig = {
 /** The real target renderScale/dprCap for a config — QUALITY_TIERS'
  * fixed per-preset values, except "custom" which reads the two admin-
  * entered overrides (falling back to the tier's own default when unset). */
-function resolveQualityTarget(config: QualityConfig): { renderScale: number; dprCap: number } {
+function resolveQualityTarget(config: QualityConfig): { renderScale: number; dprCap: number; shadowMapSize: number } {
   const tier = QUALITY_TIERS[config.qualityPreset];
   if (config.qualityPreset === "custom") {
     return {
       renderScale: config.customRenderScale ?? tier.renderScale,
       dprCap: config.customDprCap ?? tier.dprCap,
+      shadowMapSize: tier.shadowMapSize,
     };
   }
-  return { renderScale: tier.renderScale, dprCap: tier.dprCap };
+  return { renderScale: tier.renderScale, dprCap: tier.dprCap, shadowMapSize: tier.shadowMapSize };
+}
+
+/** Resizing a shadow map after the first frame needs the already-allocated
+ * render target thrown away — three.js only reads `mapSize` when it has no
+ * `shadow.map` to reuse, so writing the vector alone would silently keep
+ * rendering at the old resolution. Disposing and nulling it makes the next
+ * frame reallocate at the new size. A no-op when the size is unchanged, so
+ * this is safe to call on every setQualityConfig(). */
+function applySunShadowMapSize(sun: THREE.DirectionalLight, size: number) {
+  if (sun.shadow.mapSize.x === size && sun.shadow.mapSize.y === size) return;
+  sun.shadow.mapSize.set(size, size);
+  sun.shadow.map?.dispose();
+  sun.shadow.map = null;
 }
 
 const UNIT_NODE_PATTERN = /^Unit_/i;
@@ -875,7 +889,13 @@ export class RenderEngine {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     setShadowMapTransmitted(renderer, this.lightingConfig.transmittedShadowsEnabled);
     sun.castShadow = this.lightingConfig.shadowsEnabled;
-    sun.shadow.mapSize.set(2048, 2048);
+    // Was a hardcoded 2048 regardless of tier — `QUALITY_TIERS.shadowMapSize`
+    // has always declared a real per-tier value (4096 down to 512) and
+    // nothing in the rebuilt engine ever read it, so every quality preset
+    // paid the same shadow-map cost. Wired up here and in setQualityConfig
+    // (applySunShadowMapSize) so the Settings → Quality levels differ by
+    // more than resolution alone.
+    applySunShadowMapSize(sun, resolveQualityTarget(this.qualityConfig).shadowMapSize);
     sun.shadow.radius = this.lightingConfig.shadowSoftness;
 
     const artificialLightSystem = new ArtificialLightSystem(scene);
@@ -1883,12 +1903,80 @@ export class RenderEngine {
    * change on top of a move reads as a lens swap, not as approaching. */
   revealUnit(unitId: string, screenBiasY = 0, frameFraction = 0.35): boolean {
     const entry = this.unitRegistry.get(unitId);
+    if (!entry) return false;
+    return this.revealSphere(entry.worldCenter, entry.worldBoundingSphere.radius, screenBiasY, frameFraction);
+  }
+
+  /** The same reveal, aimed at every unit standing on one floor at once —
+   * what the viewer's floor rail asks for when a visitor picks a floor
+   * (2026-08-25: "clicking the floor number immediately shows the floor in
+   * floor section", answered with a camera move as well as the cut).
+   *
+   * The union of the floor's unit blocks is a far better description of
+   * "floor 8" than the section rectangle an admin drew is: the rectangle
+   * is deliberately oversized (it has to swallow the whole footprint to
+   * clip it), while the units are exactly the things the visitor came to
+   * look at. `frameFraction` defaults higher than `revealUnit`'s — a whole
+   * floor is the subject here, not one block that needs its building
+   * around it for context.
+   *
+   * Returns false when NONE of the ids resolve to a loaded block (an
+   * entirely unmapped floor), which is real information for the caller:
+   * the cut still applies, the camera just has nothing trustworthy to aim
+   * at and is left where the visitor put it rather than being sent to a
+   * guessed position. */
+  revealUnits(unitIds: string[], screenBiasY = 0, frameFraction = 0.5): boolean {
+    const bounds = new THREE.Box3();
+    let matched = 0;
+    for (const unitId of unitIds) {
+      const entry = this.unitRegistry.get(unitId);
+      if (!entry) continue;
+      bounds.union(entry.worldBounds);
+      matched += 1;
+    }
+    if (matched === 0) return false;
+    const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+    return this.revealSphere(sphere.center, sphere.radius, screenBiasY, frameFraction);
+  }
+
+  /** Reveal a bare world-space region — the floor rail's fallback for a
+   * floor whose units have no blocks in the loaded GLB, where the section
+   * an admin drew is the only description of where that floor is. Wider
+   * `frameFraction` default than `revealUnits` for the reason above: a
+   * section footprint covers the whole building plan, so filling the same
+   * fraction of frame with it would push the camera much further out than
+   * the floor itself warrants. */
+  revealArea(
+    area: { centerX: number; centerZ: number; y: number; radius: number },
+    screenBiasY = 0,
+    frameFraction = 0.7
+  ): boolean {
+    return this.revealSphere(
+      new THREE.Vector3(area.centerX, area.y, area.centerZ),
+      area.radius,
+      screenBiasY,
+      frameFraction
+    );
+  }
+
+  /** The shared body of every reveal above — one bounding sphere, framed
+   * along the camera's CURRENT viewing direction. Split out when the floor
+   * rail needed the identical math for a group of units rather than one
+   * (the alternative was a second copy of the bias/distance solve, which
+   * is exactly the kind of duplication that lets two "same" framings drift
+   * apart). */
+  private revealSphere(
+    center: THREE.Vector3,
+    sphereRadius: number,
+    screenBiasY: number,
+    frameFraction: number
+  ): boolean {
     const camera = this.camera;
     const controls = this.controls;
-    if (!entry || !camera || !controls) return false;
+    if (!camera || !controls) return false;
     this.idleDrone.notifyInteraction(performance.now());
 
-    const endTarget = entry.worldCenter.clone();
+    const endTarget = center.clone();
     // Current viewing direction, target -> camera. Falls back to a plain
     // offset in the degenerate case where the camera sits exactly on its
     // own target (never happens with OrbitControls, but a zero-length
@@ -1898,7 +1986,7 @@ export class RenderEngine {
     direction.normalize();
 
     const halfFovRad = (camera.fov * Math.PI) / 360;
-    const radius = Math.max(entry.worldBoundingSphere.radius, 1e-3);
+    const radius = Math.max(sphereRadius, 1e-3);
     // Solve tan(theta) = radius / distance for the theta that makes the
     // unit's angular radius `frameFraction` of the vertical half-FOV.
     const targetAngle = Math.max(0.01, halfFovRad * frameFraction);
@@ -2721,6 +2809,7 @@ export class RenderEngine {
     this.effectiveRenderScale = target.renderScale;
     this.downgradeStep = 0;
     if (this.renderer) this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, target.dprCap));
+    if (this.sun) applySunShadowMapSize(this.sun, target.shadowMapSize);
     this.applyRenderScale();
   }
 

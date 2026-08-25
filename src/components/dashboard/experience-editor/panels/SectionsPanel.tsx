@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { ColorRow, GroupCard, SectionHeading, SliderRow, ToggleRow } from "../fields";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
-import { SECTION_MAX_DIMENSION_M } from "@/lib/render-engine/sections";
+import { SECTION_FOOTPRINT_MAX_M, SECTION_HEIGHT_STOPS_M, SECTION_MAX_DIMENSION_M } from "@/lib/render-engine/sections";
 import { parseSectionFloorNumber } from "@/lib/floorSections";
 
 /**
@@ -159,15 +159,19 @@ export function SectionsPanel({
             <ToggleRow label="Bottom Plane" checked={active.bottomEnabled} disabled={!canEdit} onChange={(v) => set({ bottomEnabled: v })} />
           </GroupCard>
 
-          <SliderRow label="Height (Slab)" value={active.heightM} min={-50} max={500} step={0.1} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ heightM: v })} />
+          {/* Piecewise, not flat: 0-100m covers essentially every slab an
+              admin cuts at, so it gets the slider's whole first half at
+              ~0.1m per pixel; the 100-350m tail is there for the rare
+              tower and shares the second half. */}
+          <SliderRow label="Height (Slab)" value={active.heightM} stops={SECTION_HEIGHT_STOPS_M} step={0.1} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ heightM: v })} />
 
           {!active.heightOnly && (
             <>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-600">Footprint</p>
               <SliderRow label="Center X" value={active.centerX} min={-SECTION_MAX_DIMENSION_M / 2} max={SECTION_MAX_DIMENSION_M / 2} step={0.5} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ centerX: v })} />
               <SliderRow label="Center Z" value={active.centerZ} min={-SECTION_MAX_DIMENSION_M / 2} max={SECTION_MAX_DIMENSION_M / 2} step={0.5} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ centerZ: v })} />
-              <SliderRow label="Width" value={active.widthM} min={1} max={SECTION_MAX_DIMENSION_M} step={0.5} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ widthM: v })} />
-              <SliderRow label="Depth" value={active.depthM} min={1} max={SECTION_MAX_DIMENSION_M} step={0.5} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ depthM: v })} />
+              <SliderRow label="Width" value={active.widthM} min={0} max={SECTION_FOOTPRINT_MAX_M} step={0.5} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ widthM: v })} />
+              <SliderRow label="Depth" value={active.depthM} min={0} max={SECTION_FOOTPRINT_MAX_M} step={0.5} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ depthM: v })} />
               <SliderRow label="Rotation" value={active.rotationDeg} min={-180} max={180} step={1} suffix="°" editable disabled={!canEdit} onChange={(v) => set({ rotationDeg: v })} />
             </>
           )}

@@ -24,11 +24,15 @@ import {
 } from "@/components/project/units-workspace/unitFilters";
 import { computeSunTimeline, geographicSunPosition, sunPositionForAnchors, sunTimelinePresets, type SunTimePreset } from "@/lib/sunPosition";
 import { resolveFloorSection } from "@/lib/floorSections";
+import { buildFloorRail, type FloorRailEntry } from "@/lib/floorRail";
+import { makeFloorId } from "@/lib/units";
+import { FloorRail } from "@/components/project/viewer-hud/FloorRail";
 import type { CameraPreset, Section } from "@/lib/types";
 import { ConstructionTimelineStrip } from "@/components/project/ConstructionTimelineStrip";
 import { UnitDiscoveryPanel } from "@/components/project/UnitDiscoveryPanel";
 import { UnitPreviewCard } from "@/components/project/UnitPreviewCard";
 import type { ProjectViewerRuntimeBootstrap, ViewerChannel } from "@/lib/viewer/runtimeTypes";
+import { applyViewerQuality, applyViewerQualityToLighting, applyViewerQualityToRendering } from "@/lib/viewerQuality";
 
 /** Sun & Time PRD — the public viewer's scrub range is a fixed constant
  * (direct instruction, 2026-08-17: "Time will always be from 06:00 to
@@ -171,11 +175,11 @@ export function ProjectViewerRuntime({
   // lands on a collapsed sheet — only a real 3D interaction (or the
   // toggle) collapses it.
   const [unitFiltersExpanded, setUnitFiltersExpanded] = useState(true);
-  const handleActiveModuleChange = useCallback((module: ActiveModule) => {
-    setActiveModule(module);
-    setUnitsListOpen((prev) => (module === "units" ? prev : false));
-    setUnitFiltersExpanded(true);
-  }, []);
+  // `handleActiveModuleChange` itself lives further down, next to the floor
+  // rail: leaving the Units module is one of the two transitions that can
+  // take away the last control able to undo a floor cut, so the handler
+  // needs `applyFloorSection`, which is declared with the rest of the
+  // sections state.
   const handleToggleUnitFilters = useCallback(() => setUnitFiltersExpanded((prev) => !prev), []);
   // Unfold-only, for the mobile units sheet's own Filters button — that
   // button's job is "show me the filters", so it must not toggle them shut
@@ -261,7 +265,7 @@ export function ProjectViewerRuntime({
   // for 60 seconds". Still gated to Explore-only + the real preference,
   // same as before this move.
   const idle = useIdleFade(60000);
-  const { interfaceAutoHide } = useViewerPreferences();
+  const { interfaceAutoHide, quality: viewerQuality } = useViewerPreferences();
   const chromeDimmed = interfaceAutoHide && idle && activeModule === "explore";
   const compareCount = useAppStore((s) => s.compare.length);
   const setCompareOverlayOpen = useAppStore((s) => s.setCompareOverlayOpen);
@@ -318,29 +322,62 @@ export function ProjectViewerRuntime({
   );
   const [activeFloorSectionId, setActiveFloorSectionId] = useState<string | null>(null);
 
-  const applyFloorSection = useCallback((section: Section | null) => {
-    // `showIndicator: false` — a `fillGapsEnabled: false` section's grey
-    // rectangle is an authoring aid for the plane an admin is dragging
-    // numbers against, and every section saved on this platform so far is
-    // one. See RenderEngine.activateSection's own doc comment.
-    viewerRef.current?.activateSection(section, { showIndicator: false });
-    setActiveFloorSectionId(section?.id ?? null);
-    // An admin can save a viewpoint onto a section ("activating this
-    // section clips without moving the camera" is the documented default
-    // when they haven't). Honour it when it's there; otherwise leave the
-    // camera exactly where the visitor put it — the unit they picked is
-    // already framed, and yanking the view on top of a cut is two changes
-    // at once.
-    if (section?.cameraPreset) {
-      viewerRef.current?.flyToPreset({
-        id: section.id,
-        label: section.name,
-        durationMs: 900,
-        ...section.cameraPreset,
-      });
-    }
-    viewerRef.current?.resetIdleTimer();
-  }, []);
+  /**
+   * `frameUnitIds` is what separates the rail's click from the card's
+   * button, and the difference is deliberate rather than an oversight:
+   * pressing "View in Floor" on a unit card happens with the camera
+   * already sitting on that very unit, so moving it again would be a
+   * second change nobody asked for; picking a floor off the rail happens
+   * from wherever the visitor was, with nothing framed, so the cut alone
+   * would very often open a floor that is behind the camera or across the
+   * building (2026-08-25 decision: a floor click cuts AND flies).
+   */
+  const applyFloorSection = useCallback(
+    (section: Section | null, options?: { frameUnitIds?: string[] }) => {
+      // `showIndicator: false` — a `fillGapsEnabled: false` section's grey
+      // rectangle is an authoring aid for the plane an admin is dragging
+      // numbers against, and every section saved on this platform so far is
+      // one. See RenderEngine.activateSection's own doc comment.
+      viewerRef.current?.activateSection(section, { showIndicator: false });
+      setActiveFloorSectionId(section?.id ?? null);
+      // An admin can save a viewpoint onto a section ("activating this
+      // section clips without moving the camera" is the documented default
+      // when they haven't). A real authored viewpoint outranks any framing
+      // this code could derive, so it is checked first.
+      if (section?.cameraPreset) {
+        viewerRef.current?.flyToPreset({
+          id: section.id,
+          label: section.name,
+          durationMs: 900,
+          ...section.cameraPreset,
+        });
+      } else if (section && options?.frameUnitIds?.length) {
+        // The floor's own units are the best description of where that
+        // floor is. When none of them resolve to a block in the loaded GLB
+        // (an unmapped floor — common on a partly-mapped project) the
+        // section's drawn footprint is the only thing left that knows, so
+        // fall back to it rather than leaving the visitor staring at an
+        // unchanged view of a building that just silently sliced open.
+        const framed = viewerRef.current?.revealUnits(
+          options.frameUnitIds,
+          isDesktop ? 0 : MOBILE_REVEAL_SCREEN_BIAS
+        );
+        if (!framed) {
+          viewerRef.current?.revealArea(
+            {
+              centerX: section.centerX,
+              centerZ: section.centerZ,
+              y: section.heightM,
+              radius: Math.max(section.widthM, section.depthM) / 2,
+            },
+            isDesktop ? 0 : MOBILE_REVEAL_SCREEN_BIAS
+          );
+        }
+      }
+      viewerRef.current?.resetIdleTimer();
+    },
+    [isDesktop]
+  );
 
   const handleToggleFloorSection = useCallback(() => {
     const section = floorSectionForSelectedUnit;
@@ -348,22 +385,91 @@ export function ProjectViewerRuntime({
     applyFloorSection(section.id === activeFloorSectionId ? null : section);
   }, [floorSectionForSelectedUnit, activeFloorSectionId, applyFloorSection]);
 
-  // A cut belongs to the unit that opened it. The button is the only way
-  // to close one, and it only exists on the card, so leaving a cut applied
-  // after the visitor moves to a unit on another floor (or dismisses the
-  // card) would strand them with a sliced building and no control to undo
-  // it. Selecting another unit on the *same* floor keeps it — that is the
-  // same cut, still answering the same question.
-  const clearFloorSectionUnless = useCallback(
-    (nextUnitId: string | null) => {
-      if (!activeFloorSectionId) return;
-      const nextUnit = nextUnitId ? units.find((u) => u.id === nextUnitId) ?? null : null;
-      const next = nextUnit ? resolveFloorSection(viewerConfig.sections, nextUnit) : null;
-      if (next?.id === activeFloorSectionId) return;
-      viewerRef.current?.activateSection(null, { showIndicator: false });
-      setActiveFloorSectionId(null);
+  // --- The floor rail -------------------------------------------------
+  //
+  // The floors real inventory stands on, per building, each carrying the
+  // section that cuts it open (see src/lib/floorRail.ts). Derived, not
+  // stored, and rebuilt only when the units or the project's sections
+  // actually change — `units` is polled by useProjectUnits, so a status
+  // change upstream must not be able to churn this every few seconds.
+  const floorRailBuildings = useMemo(
+    () => buildFloorRail(units, viewerConfig.sections),
+    [units, viewerConfig.sections]
+  );
+  const selectedFloorId = useMemo(
+    () => (selectedUnit ? makeFloorId(selectedUnit.buildingName, selectedUnit.floor) : null),
+    [selectedUnit]
+  );
+
+  const handleSelectFloor = useCallback(
+    (entry: FloorRailEntry) => {
+      // A floor with no section authored for it renders disabled, so this
+      // is unreachable from the rail; guarded anyway because "disabled in
+      // the UI" is not the same guarantee as "cannot be called".
+      if (!entry.sectionId) return;
+      if (entry.sectionId === activeFloorSectionId) {
+        // Re-clicking the lit floor closes the cut. The camera stays where
+        // the visitor last left it: restoring the pre-cut viewpoint would
+        // undo orbiting they did *while* the floor was open, which is
+        // their work, not the rail's to throw away.
+        applyFloorSection(null);
+        return;
+      }
+      const section = viewerConfig.sections.find((s) => s.id === entry.sectionId) ?? null;
+      if (!section) return;
+      applyFloorSection(section, { frameUnitIds: entry.unitIds });
     },
-    [activeFloorSectionId, units, viewerConfig.sections]
+    [activeFloorSectionId, applyFloorSection, viewerConfig.sections]
+  );
+
+  // One invariant, replacing the old "clear the cut whenever the visitor
+  // selects a unit on another floor" rule: a cut may only stay applied
+  // while something on screen can undo it. That used to be the unit card's
+  // button alone — hence the old rule, which existed purely so dismissing
+  // the card could not strand a visitor with a sliced building and no
+  // control. The rail is now that control for the whole Units module, so
+  // inside Units selecting a unit on another floor is free to leave the cut
+  // alone (2026-08-25 decision: only re-clicking the lit floor, or leaving
+  // Units, closes it). Outside Units the old reasoning still holds exactly,
+  // and the card is still the only control.
+  //
+  // Enforced at the two transitions that can actually take the last control
+  // away — a module change, and a change of selected unit — rather than
+  // from an effect watching the result: this codebase's
+  // react-hooks/set-state-in-effect rule rejects the latter, and both call
+  // sites already know the transition is happening.
+  const dropFloorCutIfUncontrolled = useCallback(
+    (nextModule: ActiveModule, nextUnitId: string | null) => {
+      if (!activeFloorSectionId) return;
+      if (nextModule === "units") return; // the rail is on screen and owns it
+      const nextUnit = nextUnitId ? units.find((u) => u.id === nextUnitId) ?? null : null;
+      const cardSection =
+        nextUnit && floorSectionsAvailable ? resolveFloorSection(viewerConfig.sections, nextUnit) : null;
+      const cardCanUndo =
+        !!cardSection &&
+        cardSection.id === activeFloorSectionId &&
+        viewerConfig.viewerUI.showUnitInfo !== false;
+      if (cardCanUndo) return;
+      applyFloorSection(null);
+    },
+    [
+      activeFloorSectionId,
+      units,
+      floorSectionsAvailable,
+      viewerConfig.sections,
+      viewerConfig.viewerUI.showUnitInfo,
+      applyFloorSection,
+    ]
+  );
+
+  const handleActiveModuleChange = useCallback(
+    (module: ActiveModule) => {
+      dropFloorCutIfUncontrolled(module, selectedUnitId);
+      setActiveModule(module);
+      setUnitsListOpen((prev) => (module === "units" ? prev : false));
+      setUnitFiltersExpanded(true);
+    },
+    [dropFloorCutIfUncontrolled, selectedUnitId]
   );
   // Same `units` handed to every slot — `applyUnitBoxes` only actually
   // matches entries against that slot's own `unitLinks` map, so a unit
@@ -537,17 +643,25 @@ export function ProjectViewerRuntime({
     [viewerConfig, chromeDimmed]
   );
 
+  // Settings → Quality (lib/viewerQuality.ts) — the visitor's own manual
+  // override, layered on top of the published config here rather than
+  // inside RenderEngine, so the engine keeps taking exactly one already-
+  // resolved config per tab and the override stays visible in one place.
+  // A no-op while the preference is "auto" (its default), which is why
+  // every one of these three memos returns the untouched project config
+  // for the visitor who never opens the control.
   const qualityConfig = useMemo(
-    () => ({
-      renderingMode: viewerConfig.renderingMode,
-      qualityPreset: viewerConfig.qualityPreset,
-      customRenderScale: viewerConfig.customRenderScale,
-      customDprCap: viewerConfig.customDprCap,
-      adaptiveQualityEnabled: viewerConfig.adaptiveQualityEnabled,
-      runtimeQualityReductionEnabled: viewerConfig.runtimeQualityReductionEnabled,
-      interactionQualityReductionEnabled: viewerConfig.interactionQualityReductionEnabled,
-    }),
-    [viewerConfig]
+    () =>
+      applyViewerQuality(viewerQuality, {
+        renderingMode: viewerConfig.renderingMode,
+        qualityPreset: viewerConfig.qualityPreset,
+        customRenderScale: viewerConfig.customRenderScale,
+        customDprCap: viewerConfig.customDprCap,
+        adaptiveQualityEnabled: viewerConfig.adaptiveQualityEnabled,
+        runtimeQualityReductionEnabled: viewerConfig.runtimeQualityReductionEnabled,
+        interactionQualityReductionEnabled: viewerConfig.interactionQualityReductionEnabled,
+      }),
+    [viewerConfig, viewerQuality]
   );
 
   const environmentConfig = useMemo(
@@ -640,82 +754,84 @@ export function ProjectViewerRuntime({
   );
 
   const lightingConfig = useMemo(
-    () => ({
-      sunLightEnabled: viewerConfig.sunLightEnabled,
-      sunTemperatureK: viewerConfig.sunTemperatureK,
-      autoSunIntensityEnabled: viewerConfig.autoSunIntensityEnabled,
-      autoSunColorEnabled: viewerConfig.autoSunColorEnabled,
-      manualSunIntensity: viewerConfig.manualSunIntensity,
-      manualSunColorHex: viewerConfig.manualSunColorHex,
-      csmEnabled: viewerConfig.csmEnabled,
-      csmCascades: viewerConfig.csmCascades,
-      csmMaxDistance: viewerConfig.csmMaxDistance,
-      csmResolution: viewerConfig.csmResolution,
-      csmSplitMode: viewerConfig.csmSplitMode,
-      csmMargin: viewerConfig.csmMargin,
-      softShadowsEnabled: viewerConfig.softShadowsEnabled,
-      shadowSoftness: viewerConfig.shadowSoftness,
-      shadowsEnabled: viewerConfig.shadowsEnabled,
-      contactShadowsEnabled: viewerConfig.contactShadowsEnabled,
-      contactShadowBlur: viewerConfig.contactShadowBlur,
-      contactShadowDarkness: viewerConfig.contactShadowDarkness,
-      contactShadowOpacity: viewerConfig.contactShadowOpacity,
-      contactShadowRange: viewerConfig.contactShadowRange,
-      transmittedShadowsEnabled: viewerConfig.transmittedShadowsEnabled,
-      coloredShadowsEnabled: viewerConfig.coloredShadowsEnabled,
-      transmittedShadowStrength: viewerConfig.transmittedShadowStrength,
-      giEnabled: viewerConfig.giEnabled,
-      giIndirectEnabled: viewerConfig.giIndirectEnabled,
-      giAOEnabled: viewerConfig.giAOEnabled,
-      giBackfaceLighting: viewerConfig.giBackfaceLighting,
-      giTemporalFiltering: viewerConfig.giTemporalFiltering,
-      giScreenSpaceSampling: viewerConfig.giScreenSpaceSampling,
-      giIntensity: viewerConfig.giIntensity,
-      giAOIntensity: viewerConfig.giAOIntensity,
-      giRadius: viewerConfig.giRadius,
-      giSliceCount: viewerConfig.giSliceCount,
-      giStepCount: viewerConfig.giStepCount,
-      giExpFactor: viewerConfig.giExpFactor,
-      giThickness: viewerConfig.giThickness,
-      giLinearThickness: viewerConfig.giLinearThickness,
-      artificialLights: viewerConfig.artificialLights,
-      volumetricLightingEnabled: viewerConfig.volumetricLightingEnabled,
-      sunShaftsEnabled: viewerConfig.sunShaftsEnabled,
-      lightVolumesEnabled: viewerConfig.lightVolumesEnabled,
-      volumetricRaymarchSteps: viewerConfig.volumetricRaymarchSteps,
-      volumetricDensity: viewerConfig.volumetricDensity,
-      volumetricMaxDensity: viewerConfig.volumetricMaxDensity,
-      volumetricDistanceAtten: viewerConfig.volumetricDistanceAtten,
-    }),
-    [viewerConfig]
+    () =>
+      applyViewerQualityToLighting(viewerQuality, {
+        sunLightEnabled: viewerConfig.sunLightEnabled,
+        sunTemperatureK: viewerConfig.sunTemperatureK,
+        autoSunIntensityEnabled: viewerConfig.autoSunIntensityEnabled,
+        autoSunColorEnabled: viewerConfig.autoSunColorEnabled,
+        manualSunIntensity: viewerConfig.manualSunIntensity,
+        manualSunColorHex: viewerConfig.manualSunColorHex,
+        csmEnabled: viewerConfig.csmEnabled,
+        csmCascades: viewerConfig.csmCascades,
+        csmMaxDistance: viewerConfig.csmMaxDistance,
+        csmResolution: viewerConfig.csmResolution,
+        csmSplitMode: viewerConfig.csmSplitMode,
+        csmMargin: viewerConfig.csmMargin,
+        softShadowsEnabled: viewerConfig.softShadowsEnabled,
+        shadowSoftness: viewerConfig.shadowSoftness,
+        shadowsEnabled: viewerConfig.shadowsEnabled,
+        contactShadowsEnabled: viewerConfig.contactShadowsEnabled,
+        contactShadowBlur: viewerConfig.contactShadowBlur,
+        contactShadowDarkness: viewerConfig.contactShadowDarkness,
+        contactShadowOpacity: viewerConfig.contactShadowOpacity,
+        contactShadowRange: viewerConfig.contactShadowRange,
+        transmittedShadowsEnabled: viewerConfig.transmittedShadowsEnabled,
+        coloredShadowsEnabled: viewerConfig.coloredShadowsEnabled,
+        transmittedShadowStrength: viewerConfig.transmittedShadowStrength,
+        giEnabled: viewerConfig.giEnabled,
+        giIndirectEnabled: viewerConfig.giIndirectEnabled,
+        giAOEnabled: viewerConfig.giAOEnabled,
+        giBackfaceLighting: viewerConfig.giBackfaceLighting,
+        giTemporalFiltering: viewerConfig.giTemporalFiltering,
+        giScreenSpaceSampling: viewerConfig.giScreenSpaceSampling,
+        giIntensity: viewerConfig.giIntensity,
+        giAOIntensity: viewerConfig.giAOIntensity,
+        giRadius: viewerConfig.giRadius,
+        giSliceCount: viewerConfig.giSliceCount,
+        giStepCount: viewerConfig.giStepCount,
+        giExpFactor: viewerConfig.giExpFactor,
+        giThickness: viewerConfig.giThickness,
+        giLinearThickness: viewerConfig.giLinearThickness,
+        artificialLights: viewerConfig.artificialLights,
+        volumetricLightingEnabled: viewerConfig.volumetricLightingEnabled,
+        sunShaftsEnabled: viewerConfig.sunShaftsEnabled,
+        lightVolumesEnabled: viewerConfig.lightVolumesEnabled,
+        volumetricRaymarchSteps: viewerConfig.volumetricRaymarchSteps,
+        volumetricDensity: viewerConfig.volumetricDensity,
+        volumetricMaxDensity: viewerConfig.volumetricMaxDensity,
+        volumetricDistanceAtten: viewerConfig.volumetricDistanceAtten,
+      }),
+    [viewerConfig, viewerQuality]
   );
 
   const renderingConfig = useMemo(
-    () => ({
-      ssrEnabled: viewerConfig.ssrEnabled,
-      ssrIntensity: viewerConfig.ssrIntensity,
-      ssrMaxDistance: viewerConfig.ssrMaxDistance,
-      ssrThickness: viewerConfig.ssrThickness,
-      ssrQuality: viewerConfig.ssrQuality,
-      antialiasEnabled: viewerConfig.antialiasEnabled,
-      bloomEnabled: viewerConfig.bloomEnabled,
-      bloomStrength: viewerConfig.bloomStrength,
-      bloomRadius: viewerConfig.bloomRadius,
-      lensFlareEnabled: viewerConfig.lensFlareEnabled,
-      lensFlareIntensity: viewerConfig.lensFlareIntensity,
-      depthOfFieldEnabled: viewerConfig.depthOfFieldEnabled,
-      depthOfFieldFocalLength: viewerConfig.depthOfFieldFocalLength,
-      depthOfFieldBokehScale: viewerConfig.depthOfFieldBokehScale,
-      cameraAutoFocusEnabled: viewerConfig.cameraAutoFocusEnabled,
-      motionBlurEnabled: viewerConfig.motionBlurEnabled,
-      motionBlurIntensity: viewerConfig.motionBlurIntensity,
-      exposure: viewerConfig.exposure,
-      toneMapping: viewerConfig.toneMapping,
-      lutEnabled: viewerConfig.lutEnabled,
-      lutPreset: viewerConfig.lutPreset,
-      lutIntensity: viewerConfig.lutIntensity,
-    }),
-    [viewerConfig]
+    () =>
+      applyViewerQualityToRendering(viewerQuality, {
+        ssrEnabled: viewerConfig.ssrEnabled,
+        ssrIntensity: viewerConfig.ssrIntensity,
+        ssrMaxDistance: viewerConfig.ssrMaxDistance,
+        ssrThickness: viewerConfig.ssrThickness,
+        ssrQuality: viewerConfig.ssrQuality,
+        antialiasEnabled: viewerConfig.antialiasEnabled,
+        bloomEnabled: viewerConfig.bloomEnabled,
+        bloomStrength: viewerConfig.bloomStrength,
+        bloomRadius: viewerConfig.bloomRadius,
+        lensFlareEnabled: viewerConfig.lensFlareEnabled,
+        lensFlareIntensity: viewerConfig.lensFlareIntensity,
+        depthOfFieldEnabled: viewerConfig.depthOfFieldEnabled,
+        depthOfFieldFocalLength: viewerConfig.depthOfFieldFocalLength,
+        depthOfFieldBokehScale: viewerConfig.depthOfFieldBokehScale,
+        cameraAutoFocusEnabled: viewerConfig.cameraAutoFocusEnabled,
+        motionBlurEnabled: viewerConfig.motionBlurEnabled,
+        motionBlurIntensity: viewerConfig.motionBlurIntensity,
+        exposure: viewerConfig.exposure,
+        toneMapping: viewerConfig.toneMapping,
+        lutEnabled: viewerConfig.lutEnabled,
+        lutPreset: viewerConfig.lutPreset,
+        lutIntensity: viewerConfig.lutIntensity,
+      }),
+    [viewerConfig, viewerQuality]
   );
 
   // Units Blocks & POI Layer PRD — real appearance + master POI camera
@@ -913,7 +1029,7 @@ export function ProjectViewerRuntime({
   // honest one-line note on the surface the visitor is looking at, rather
   // than a camera that silently refuses to move.
   const handleSelectUnit = useCallback((unitId: string | null) => {
-    clearFloorSectionUnless(unitId);
+    dropFloorCutIfUncontrolled(activeModule, unitId);
     setSelectedUnitId(unitId);
     resetDetailOnDismiss(unitId);
     const viewer = viewerRef.current;
@@ -965,7 +1081,7 @@ export function ProjectViewerRuntime({
     if (!(view.poiAuthored && viewer?.focusUnit(unitId))) {
       viewer?.revealUnit(unitId, isDesktop ? 0 : MOBILE_REVEAL_SCREEN_BIAS);
     }
-  }, [isDesktop, clearFloorSectionUnless, resetDetailOnDismiss]);
+  }, [isDesktop, activeModule, dropFloorCutIfUncontrolled, resetDetailOnDismiss]);
 
   // Units Blocks & POI Layer PRD §19-20 — the real "3D → List/Panel" half:
   // a genuine click on a unit block (RenderEngine already distinguishes
@@ -983,11 +1099,11 @@ export function ProjectViewerRuntime({
   // the instant visual feedback), so re-issuing `setSelectedUnit` here
   // would only force a redundant registry rebuild.
   const handleUnitClickIn3D = useCallback((unitId: string | null) => {
-    clearFloorSectionUnless(unitId);
+    dropFloorCutIfUncontrolled(activeModule, unitId);
     setSelectedUnitId(unitId);
     resetDetailOnDismiss(unitId);
     setUnmappedUnitId(null);
-  }, [clearFloorSectionUnless, resetDetailOnDismiss]);
+  }, [activeModule, dropFloorCutIfUncontrolled, resetDetailOnDismiss]);
 
   return (
     <div
@@ -1069,6 +1185,27 @@ export function ProjectViewerRuntime({
               // can be on-screen at once.
               <div className="pointer-events-none absolute right-3 top-[112px] z-20 flex justify-end pr-[env(safe-area-inset-right)] sm:right-4 sm:top-[124px]">
                 <MapViewEntryButton onClick={enterMapView} />
+              </div>
+            )}
+            {/* The floor rail. Anchored to THIS wrapper's left edge, not
+                the page's — the wrapper is the flex sibling that
+                UnitsWorkspace narrows, so the rail automatically sits just
+                right of the units list and slides across with it as that
+                panel opens and closes, instead of being covered by it
+                (2026-08-25 decision: "rail right of the panel").
+
+                Units-module-only, and only when this project actually has
+                sections to cut with: without them every row would be a
+                dead number, which is worse than no rail at all. */}
+            {activeModule === "units" && floorSectionsAvailable && (
+              <div className="pointer-events-none absolute left-3 top-1/2 z-30 -translate-y-1/2 pl-[env(safe-area-inset-left)] sm:left-4">
+                <FloorRail
+                  buildings={floorRailBuildings}
+                  activeSectionId={activeFloorSectionId}
+                  selectedFloorId={selectedFloorId}
+                  onSelectFloor={handleSelectFloor}
+                  isTouch={!isDesktop}
+                />
               </div>
             )}
           </>

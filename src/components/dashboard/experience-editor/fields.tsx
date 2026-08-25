@@ -7,21 +7,51 @@ import { cn } from "@/lib/utils";
  * component set" this editor deliberately uses instead of the site-wide
  * Button/Dropdown primitives (Experience Editor v2 rebuild decision). */
 
-export function SliderRow({
-  label,
-  value,
-  min,
-  max,
-  step,
-  suffix = "",
-  disabled,
-  editable = false,
-  onChange,
-}: {
+/** How many discrete positions a `stops`-scaled slider's travel is cut
+ * into. A piecewise slider's native `step` lives in POSITION space, not
+ * value space, so this has to be fine enough that even the WIDEST segment
+ * still resolves every multiple of `step` — otherwise the coarsest half
+ * silently snaps to its own grid and a value the readout happily accepts
+ * (60.90) becomes unreachable by dragging. Sized off the widest segment,
+ * then shared equally by all of them, so the narrow segments come out
+ * finer still. */
+function positionStepCount(stops: number[], step: number): number {
+  const segments = stops.length - 1;
+  const widest = Math.max(...stops.slice(1).map((hi, i) => Math.abs(hi - stops[i])));
+  return Math.max(segments, Math.ceil(widest / step) * segments);
+}
+
+/** Maps a value onto the slider's 0..1 travel across a piecewise-linear
+ * scale. `stops` sit at EQUAL fractions of the track, so `[0, 100, 350]`
+ * gives 0-100m the first half of the slider and 100-350m the second —
+ * fine control where the values an admin actually types cluster, without
+ * giving up reach at the top end. */
+function valueToPosition(value: number, stops: number[]): number {
+  const segments = stops.length - 1;
+  if (value <= stops[0]) return 0;
+  for (let i = 0; i < segments; i++) {
+    const lo = stops[i];
+    const hi = stops[i + 1];
+    if (value <= hi) return (i + (hi === lo ? 0 : (value - lo) / (hi - lo))) / segments;
+  }
+  return 1;
+}
+
+function positionToValue(position: number, stops: number[], step: number): number {
+  const segments = stops.length - 1;
+  const scaled = Math.min(segments, Math.max(0, position * segments));
+  // `segments - 1` so a position sitting exactly on the last stop reads
+  // from the final segment rather than indexing one past the array.
+  const i = Math.min(segments - 1, Math.floor(scaled));
+  const raw = stops[i] + (scaled - i) * (stops[i + 1] - stops[i]);
+  // toFixed(6) kills the float dust 0.1-stepped arithmetic leaves behind
+  // (60.900000000000006), which would otherwise reach the readout.
+  return Number((Math.round(raw / step) * step).toFixed(6));
+}
+
+type SliderRowProps = {
   label: string;
   value: number;
-  min: number;
-  max: number;
   step: number;
   suffix?: string;
   disabled?: boolean;
@@ -32,7 +62,21 @@ export function SliderRow({
    * the plain, non-focusable label it has always been. */
   editable?: boolean;
   onChange: (v: number) => void;
-}) {
+} & (
+  | { min: number; max: number; stops?: undefined }
+  /** A non-linear scale instead of a flat min/max: the bounds ARE the
+   * first and last stop, so passing both would be two sources of truth. */
+  | { min?: undefined; max?: undefined; stops: number[] }
+);
+
+export function SliderRow(props: SliderRowProps) {
+  const { label, value, step, suffix = "", disabled, editable = false, onChange, stops } = props;
+  // `=== undefined` rather than a truthiness check: a `number[]` is always
+  // truthy, so `props.stops ? ... : ...` would not narrow the union's
+  // other branch and `props.min` would stay possibly-undefined.
+  const min = props.stops === undefined ? props.min : props.stops[0];
+  const positionSteps = stops ? positionStepCount(stops, step) : 0;
+  const max = props.stops === undefined ? props.max : props.stops[props.stops.length - 1];
   const formatted = Number.isInteger(step) ? String(value) : value.toFixed(2);
   return (
     <label className={cn("block", disabled && "opacity-40")}>
@@ -57,12 +101,21 @@ export function SliderRow({
       </div>
       <input
         type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
+        min={stops ? 0 : min}
+        max={stops ? positionSteps : max}
+        step={stops ? 1 : step}
+        // A stored value outside the scale (an older record saved when the
+        // bounds were wider) pins the handle at an end instead of throwing
+        // it to the middle; the typed readout still shows the real number.
+        value={stops ? Math.round(valueToPosition(value, stops) * positionSteps) : value}
         disabled={disabled}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) =>
+          onChange(
+            stops
+              ? positionToValue(Number(e.target.value) / positionSteps, stops, step)
+              : Number(e.target.value)
+          )
+        }
         className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-neutral-800 accent-indigo-500 disabled:cursor-not-allowed"
       />
     </label>

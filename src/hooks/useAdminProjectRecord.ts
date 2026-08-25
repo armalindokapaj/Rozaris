@@ -28,6 +28,9 @@ export interface AdminProjectRecord {
   threeD: {
     hasMapModel: boolean;
     mapModelEnabled: boolean;
+    /** Null when no map-model version exists yet — see the route's own
+     * comment for why this is compared against the project's coordinates. */
+    mapModelPosition: { lat: number; lng: number } | null;
     hasConfig: boolean;
     slots: ProjectSlotSummary[];
   };

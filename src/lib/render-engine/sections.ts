@@ -24,6 +24,19 @@ const MIN_FOOTPRINT_M = 1;
  * zod schema (kept in sync by comment, not import — a route.ts importing
  * from the render engine would be an odd dependency direction). */
 export const SECTION_MAX_DIMENSION_M = 5000;
+
+/** Authoring bounds for the Sections panel's own sliders — deliberately
+ * far tighter than SECTION_MAX_DIMENSION_M's storage ceiling above. That
+ * 5000m bound exists so a mis-drag never silently 400s on save; these are
+ * the ranges an admin actually authors within, and a 5000m-wide slider
+ * makes every real footprint edit a sub-pixel drag. Values already stored
+ * beyond these still load and still save (the API schema, not these, is
+ * what validates) — the slider just pins at its end. */
+export const SECTION_FOOTPRINT_MAX_M = 200;
+/** Piecewise slider scale for a section's cut height: each consecutive
+ * pair gets an equal share of the slider's travel, so 0-100m takes the
+ * first half and 100-350m the second. */
+export const SECTION_HEIGHT_STOPS_M = [0, 100, 350];
 /** bottomEnabled clips at world Y=0 (ground) rather than a second stored
  * height — keeps the data model to exactly the fields the authoring UI
  * exposes. */

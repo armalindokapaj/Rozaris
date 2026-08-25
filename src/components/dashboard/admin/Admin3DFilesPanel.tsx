@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Download, Archive, Boxes, Map as MapIcon, Fi
 import { useT } from "@/lib/i18n/useT";
 import { cn, formatBytes, formatRelativeDate } from "@/lib/utils";
 import { useSection, DashboardCard } from "./dashboardKit";
+import { downloadAdminAsset, pickCurrentFile } from "@/lib/admin3dAssetView";
 import type { AdminAssetFile, AdminAssetGroup, AdminAssetProject } from "@/lib/admin3dAssets";
 
 interface AssetInventory {
@@ -59,28 +60,14 @@ export function Admin3DFilesPanel() {
     });
   }
 
-  /**
-   * Pulls the file through `fetch`, then hands the browser a one-shot
-   * object URL. The server's own `Content-Disposition` is the source of
-   * truth for the name — `fallbackName` only covers a proxy stripping it.
-   */
+  /** Wraps the shared transfer helper in this panel's own single-flight
+   *  busy/failed keys, so exactly one control at a time reports itself as
+   *  preparing and a failure lands on the row that caused it. */
   async function download(url: string, key: string, fallbackName: string) {
     setBusy(key);
     setFailed(null);
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(String(res.status));
-      const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = filenameFromDisposition(res.headers.get("content-disposition")) ?? fallbackName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      // Revoked on the next tick — revoking synchronously can race the
-      // browser actually reading the blob in some engines.
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      await downloadAdminAsset(url, fallbackName);
     } catch {
       setFailed(key);
     } finally {
@@ -242,16 +229,7 @@ function AssetGroupRows({
   const { t } = useT();
   const [showAll, setShowAll] = useState(false);
 
-  // Mirrors the server's `pickCurrent()`: a map model can be *published as
-  // pure placement* with the real GLB on an earlier version, so a
-  // published-but-fileless row yields to the newest row that has a file.
-  // Without this the default view would show "no model file" while the
-  // actual model sat hidden behind the history toggle.
-  const published = group.files.find((f) => f.publicationStatus === "published");
-  const current =
-    published?.downloadable === true
-      ? published
-      : (group.files.find((f) => f.downloadable) ?? published ?? group.files[0]);
+  const current = pickCurrentFile(group.files);
   const older = group.files.filter((f) => f.versionId !== current?.versionId);
   const shown = showAll ? group.files : current ? [current] : [];
 
@@ -385,20 +363,4 @@ function AssetFileRow({
 
 function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-/** Reads `filename*=UTF-8''…` (preferred) or the quoted ASCII fallback
- *  out of a `Content-Disposition` header. */
-function filenameFromDisposition(header: string | null): string | null {
-  if (!header) return null;
-  const extended = /filename\*=UTF-8''([^;]+)/i.exec(header);
-  if (extended) {
-    try {
-      return decodeURIComponent(extended[1]);
-    } catch {
-      // fall through to the ASCII form
-    }
-  }
-  const plain = /filename="([^"]+)"/i.exec(header);
-  return plain ? plain[1] : null;
 }

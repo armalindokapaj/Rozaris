@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useRef, type ReactNode, type RefObject } from "react";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { cn } from "@/lib/utils";
 
@@ -36,21 +36,38 @@ import { cn } from "@/lib/utils";
  * on the same keypress and race it (see `useEscapeKey.ts`'s own doc
  * comment for why that's a real bug, not just redundant).
  *
- * Click-outside is scoped to *this popover's own* `ref`, not the whole
- * dock — the same `useClickOutside` hook, the same scoping technique
- * `CompactFilterSelect` already proved safe. A dock-*wide* click-outside
- * was tried once this session and broke orbit-drag on the 3D canvas
- * (a drag's own `mousedown` read as "outside"); that risk doesn't apply
- * here since this only listens while its own small popover is open.
+ * Click-outside is scoped to *this popover's own* `ref` plus its
+ * `triggerRef`, not the whole dock — the same `useClickOutside` hook, the
+ * same scoping technique `CompactFilterSelect` already proved safe. A
+ * dock-*wide* click-outside was tried once this session and broke
+ * orbit-drag on the 3D canvas (a drag's own `mousedown` read as
+ * "outside"); that risk doesn't apply here since this only listens while
+ * its own small popover is open.
+ *
+ * `triggerRef` is REQUIRED, and is a real bug fix rather than tidiness
+ * (direct report, 2026-08-25: "clicking rooms or bathrooms once opens the
+ * dropmenu, clicking it again the dropdown menu goes out"). Scoping the
+ * outside-check to the panel alone made the trigger itself count as
+ * "outside": `useClickOutside` fires on `mousedown`, which closed the
+ * popover, and then the trigger's own `onClick` toggled it straight back
+ * open — so re-clicking a trigger never dismissed its popover, on any of
+ * the four (Surface, Rooms desktop, Rooms mobile, Time presets). Naming
+ * the trigger makes `mousedown` on it a no-op and lets the `click`
+ * toggle do the closing. Required, not optional, so a new popover cannot
+ * quietly reintroduce the same bug — the type checker asks for it.
  */
 export function DockPopover({
   open,
   onClose,
+  triggerRef,
   anchorClassName,
   children,
 }: {
   open: boolean;
   onClose: () => void;
+  /** The button that toggles this popover — see the note above on why
+   * omitting it makes the popover impossible to close by re-clicking. */
+  triggerRef: RefObject<HTMLElement | null>;
   /** Extra classes for horizontal alignment against the trigger — callers
    * wrap trigger+popover in one `relative` container (see `TimeContent`'s
    * own preset-trigger wrapper) and pass e.g. `"right-0"` / `"left-0"`. */
@@ -58,7 +75,7 @@ export function DockPopover({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  useClickOutside(ref, onClose, open);
+  useClickOutside(ref, onClose, open, triggerRef);
 
   if (!open) return null;
 

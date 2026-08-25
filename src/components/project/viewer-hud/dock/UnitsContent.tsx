@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useMemo, useRef, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
+import { forwardRef, Fragment, useEffect, useMemo, useRef, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
 import { gsap } from "gsap";
 import { Building2, Check, ChevronDown, SlidersHorizontal, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
@@ -10,7 +10,7 @@ import { clamp, cn } from "@/lib/utils";
 import { formatUnitArea } from "../../units-workspace/unitDisplay";
 import {
   activeFilterCount,
-  BEDROOM_OPTIONS,
+  unitFacets,
   bedroomLabel,
   filterUnits,
   STATUS_DOT,
@@ -29,7 +29,11 @@ import type { DockPopoverId } from "./DockContent";
 // `UnitSearchView.tsx`'s own filter pills and per-unit status rows already
 // use (`STATUS_DOT`, moved to `unitFilters.ts` as a shared export so both
 // surfaces read one real color scheme instead of two copies).
-const AVAILABILITY_PILLS: StatusFilter[] = ["all", "available", "reserved", "sold"];
+// Only the statuses a project's units actually use are rendered now
+// (2026-08-25, "Show only whats in units … wasted space") — see
+// `unitFacets`. "All" always leads, per the instruction above; the other
+// three are this surface's ordering template, not the list itself.
+const AVAILABILITY_PILL_ORDER: Exclude<StatusFilter, "all">[] = ["available", "reserved", "sold"];
 
 /**
  * Morphing Bottom Dock Phase 2 (2026-08-18) — Units' content, redesigned
@@ -129,7 +133,36 @@ export const UnitsContent = forwardRef<
     return min < max ? { min: Math.floor(min), max: Math.ceil(max) } : null;
   }, [units]);
 
-  const bathroomOptions = useMemo(() => Array.from(new Set(units.map((u) => u.bathrooms))).sort((a, b) => a - b), [units]);
+  // Only the options this project's units actually justify — see
+  // `unitFacets` for the two rules. Bathrooms was already derived this way
+  // inline here; Bedrooms and Availability were still fixed lists, and are
+  // now folded into the same shared derivation.
+  const facets = useMemo(() => unitFacets(units, filters), [units, filters]);
+  const availabilityPills = useMemo<StatusFilter[]>(
+    () => (facets.statuses.length === 0 ? [] : ["all", ...AVAILABILITY_PILL_ORDER.filter((id) => facets.statuses.includes(id))]),
+    [facets.statuses]
+  );
+  // Whether each composite control has anything left to offer. Rooms hosts
+  // Bedrooms and Bathrooms in one popover, so it survives on either half;
+  // Surface is already data-driven via `areaBounds` (null when every unit
+  // shares one area) and only ever rendered an empty popover in that case.
+  const hasBedrooms = facets.bedrooms.length > 0;
+  const hasBathrooms = facets.bathrooms.length > 0;
+  const hasRooms = hasBedrooms || hasBathrooms;
+  const hasSurface = areaBounds != null;
+  const hasAvailability = availabilityPills.length > 0;
+  // A project can leave nothing worth filtering on at all (say a handful of
+  // identical units). Mobile's collapse toggle then opens an empty drawer,
+  // so it is dropped too.
+  const hasAnyFilter = hasSurface || hasRooms || hasAvailability;
+
+  // One per popover trigger, so `mousedown` on a trigger is not mistaken
+  // for a click outside its own popover — see `DockPopover`'s own note.
+  // Rooms has two because desktop and mobile render different triggers for
+  // the same `unitsRooms` popover, and only one of them is ever mounted.
+  const surfaceTriggerRef = useRef<HTMLButtonElement>(null);
+  const roomsTriggerRef = useRef<HTMLButtonElement>(null);
+  const roomsTriggerMobileRef = useRef<HTMLButtonElement>(null);
 
   // How many filters are actually narrowing the list right now — shown as a
   // badge on the mobile collapse toggle so the *collapsed* bar still says
@@ -325,6 +358,7 @@ export const UnitsContent = forwardRef<
   const surfaceTrigger = (
     <div className="relative flex shrink-0 items-center">
       <button
+        ref={surfaceTriggerRef}
         type="button"
         onClick={() => onTogglePopover("unitsSurface")}
         aria-haspopup="dialog"
@@ -339,7 +373,12 @@ export const UnitsContent = forwardRef<
           aria-hidden="true"
         />
       </button>
-      <DockPopover open={openPopover === "unitsSurface"} onClose={onClosePopover} anchorClassName="left-0 w-56">
+      <DockPopover
+        open={openPopover === "unitsSurface"}
+        onClose={onClosePopover}
+        triggerRef={surfaceTriggerRef}
+        anchorClassName="left-0 w-56"
+      >
         {areaBounds && (
           <div className="flex flex-col gap-2 px-1.5 py-1">
             {surfaceSlider}
@@ -422,6 +461,7 @@ export const UnitsContent = forwardRef<
   const roomsTrigger = (
     <div className="relative flex shrink-0 items-center">
       <button
+        ref={roomsTriggerRef}
         type="button"
         onClick={() => onTogglePopover("unitsRooms")}
         aria-haspopup="menu"
@@ -435,14 +475,21 @@ export const UnitsContent = forwardRef<
           aria-hidden="true"
         />
       </button>
-      <DockPopover open={openPopover === "unitsRooms"} onClose={onClosePopover} anchorClassName="left-0 flex gap-1">
-        {optionList(t("units.filterBedrooms"), filters.bedrooms, BEDROOM_OPTIONS, bedroomLabel, (v) =>
-          onFiltersChange((prev) => ({ ...prev, bedrooms: v }))
-        )}
-        <span className="my-1 w-px shrink-0 bg-white/10" aria-hidden="true" />
-        {optionList(t("units.filterBathrooms"), filters.bathrooms, bathroomOptions, (v) => String(v), (v) =>
-          onFiltersChange((prev) => ({ ...prev, bathrooms: v }))
-        )}
+      <DockPopover
+        open={openPopover === "unitsRooms"}
+        onClose={onClosePopover}
+        triggerRef={roomsTriggerRef}
+        anchorClassName="left-0 flex gap-1"
+      >
+        {hasBedrooms &&
+          optionList(t("units.filterBedrooms"), filters.bedrooms, facets.bedrooms, bedroomLabel, (v) =>
+            onFiltersChange((prev) => ({ ...prev, bedrooms: v }))
+          )}
+        {hasBedrooms && hasBathrooms && <span className="my-1 w-px shrink-0 bg-white/10" aria-hidden="true" />}
+        {hasBathrooms &&
+          optionList(t("units.filterBathrooms"), filters.bathrooms, facets.bathrooms, (v) => String(v), (v) =>
+            onFiltersChange((prev) => ({ ...prev, bathrooms: v }))
+          )}
       </DockPopover>
     </div>
   );
@@ -457,7 +504,7 @@ export const UnitsContent = forwardRef<
   function renderAvailabilityPills(wrapperClassName: string) {
     return (
       <div className={wrapperClassName}>
-        {AVAILABILITY_PILLS.map((id) => {
+        {availabilityPills.map((id) => {
           const isActive = filters.status === id;
           const dotClass = id === "all" ? null : STATUS_DOT[id];
           return (
@@ -584,7 +631,7 @@ export const UnitsContent = forwardRef<
         <span className="truncate text-left">{t("units.filterListLabel")}</span>
         <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-xs font-semibold text-white/70">{filteredCount}</span>
       </button>
-      {filtersToggleMobile}
+      {hasAnyFilter && filtersToggleMobile}
       {closeButton}
     </div>
   );
@@ -603,21 +650,30 @@ export const UnitsContent = forwardRef<
   const roomsTriggerMobile = (
     <div className="relative flex w-full items-center">
       <button
+        ref={roomsTriggerMobileRef}
         type="button"
         onClick={() => onTogglePopover("unitsRooms")}
         aria-haspopup="menu"
         aria-expanded={openPopover === "unitsRooms"}
         className="flex h-11 w-full items-stretch rounded-control border border-white/15 text-sm font-medium text-white transition-colors hover:border-white/25"
       >
-        <span className="flex flex-1 flex-col items-start justify-center gap-0.5 px-3 text-left">
-          <span className="text-[11px] uppercase tracking-wide text-white/50">{t("units.filterBedrooms")}</span>
-          <span className="text-xs font-semibold text-white">{bedroomsSummary}</span>
-        </span>
-        <span className="my-2 w-px shrink-0 bg-white/15" aria-hidden="true" />
-        <span className="flex flex-1 flex-col items-start justify-center gap-0.5 px-3 text-left">
-          <span className="text-[11px] uppercase tracking-wide text-white/50">{t("units.filterBathrooms")}</span>
-          <span className="text-xs font-semibold text-white">{bathroomsSummary}</span>
-        </span>
+        {/* Each half is dropped when the project has nothing to offer for
+            it, so a project whose units all have the same bathroom count
+            gets a full-width Bedrooms trigger rather than half a control
+            plus a dead "Bathrooms — Any" half. */}
+        {hasBedrooms && (
+          <span className="flex flex-1 flex-col items-start justify-center gap-0.5 px-3 text-left">
+            <span className="text-[11px] uppercase tracking-wide text-white/50">{t("units.filterBedrooms")}</span>
+            <span className="text-xs font-semibold text-white">{bedroomsSummary}</span>
+          </span>
+        )}
+        {hasBedrooms && hasBathrooms && <span className="my-2 w-px shrink-0 bg-white/15" aria-hidden="true" />}
+        {hasBathrooms && (
+          <span className="flex flex-1 flex-col items-start justify-center gap-0.5 px-3 text-left">
+            <span className="text-[11px] uppercase tracking-wide text-white/50">{t("units.filterBathrooms")}</span>
+            <span className="text-xs font-semibold text-white">{bathroomsSummary}</span>
+          </span>
+        )}
         <ChevronDown
           className={cn("mr-3 h-3.5 w-3.5 shrink-0 self-center text-white/50 transition-transform", openPopover === "unitsRooms" && "rotate-180")}
           aria-hidden="true"
@@ -640,30 +696,46 @@ export const UnitsContent = forwardRef<
           matching "Bedrooms"/"Bathrooms" half above — same one shared
           popover/filtering wiring, unchanged (the "careful with the
           dropdown" part). */}
-      <DockPopover open={openPopover === "unitsRooms"} onClose={onClosePopover} anchorClassName="inset-x-0 flex gap-1">
-        {optionList(t("units.filterBedrooms"), filters.bedrooms, BEDROOM_OPTIONS, bedroomLabel, (v) =>
-          onFiltersChange((prev) => ({ ...prev, bedrooms: v }))
-        )}
-        <span className="my-1 w-px shrink-0 bg-white/10" aria-hidden="true" />
-        {optionList(t("units.filterBathrooms"), filters.bathrooms, bathroomOptions, (v) => String(v), (v) =>
-          onFiltersChange((prev) => ({ ...prev, bathrooms: v }))
-        )}
+      <DockPopover
+        open={openPopover === "unitsRooms"}
+        onClose={onClosePopover}
+        triggerRef={roomsTriggerMobileRef}
+        anchorClassName="inset-x-0 flex gap-1"
+      >
+        {hasBedrooms &&
+          optionList(t("units.filterBedrooms"), filters.bedrooms, facets.bedrooms, bedroomLabel, (v) =>
+            onFiltersChange((prev) => ({ ...prev, bedrooms: v }))
+          )}
+        {hasBedrooms && hasBathrooms && <span className="my-1 w-px shrink-0 bg-white/10" aria-hidden="true" />}
+        {hasBathrooms &&
+          optionList(t("units.filterBathrooms"), filters.bathrooms, facets.bathrooms, (v) => String(v), (v) =>
+            onFiltersChange((prev) => ({ ...prev, bathrooms: v }))
+          )}
       </DockPopover>
     </div>
   );
 
   if (isDesktop) {
+    // Built as a list and interleaved rather than written out with literal
+    // `{divider}`s between fixed children: any of Surface/Rooms/
+    // Availability can now be absent for a given project (see `unitFacets`),
+    // and hardcoded separators would leave a double divider — or a leading
+    // one against the close button — wherever a control dropped out.
+    const zones = [
+      listTrigger,
+      hasSurface ? surfaceTrigger : null,
+      hasRooms ? roomsTrigger : null,
+      hasAvailability ? renderAvailabilityPills("flex shrink-0 items-center gap-1.5") : null,
+      closeButton,
+    ].filter(Boolean);
     return (
       <div ref={ref} className="flex h-full w-full items-center gap-2 px-3.5 sm:px-4">
-        {listTrigger}
-        {divider}
-        {surfaceTrigger}
-        {divider}
-        {roomsTrigger}
-        {divider}
-        {renderAvailabilityPills("flex shrink-0 items-center gap-1.5")}
-        {divider}
-        {closeButton}
+        {zones.map((zone, i) => (
+          <Fragment key={i}>
+            {i > 0 && divider}
+            {zone}
+          </Fragment>
+        ))}
       </div>
     );
   }
@@ -696,15 +768,18 @@ export const UnitsContent = forwardRef<
       {listTriggerMobile}
       <div ref={collapsibleRef} id="viewer-units-filters">
         <div className="flex flex-col gap-3 pt-3">
-          <div className="flex flex-col gap-1.5 rounded-control border border-white/15 px-3 py-2">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[11px] uppercase tracking-wide text-white/50">{t("units.filterSurface")}</span>
-              <span className="text-xs font-semibold tabular-nums text-white">{surfaceLabel}</span>
+          {hasSurface && (
+            <div className="flex flex-col gap-1.5 rounded-control border border-white/15 px-3 py-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[11px] uppercase tracking-wide text-white/50">{t("units.filterSurface")}</span>
+                <span className="text-xs font-semibold tabular-nums text-white">{surfaceLabel}</span>
+              </div>
+              {surfaceSlider}
             </div>
-            {surfaceSlider}
-          </div>
-          {roomsTriggerMobile}
-          {renderAvailabilityPills("flex items-stretch gap-2 [&>button]:flex-1 [&>button]:justify-center [&>button]:py-2.5")}
+          )}
+          {hasRooms && roomsTriggerMobile}
+          {hasAvailability &&
+            renderAvailabilityPills("flex items-stretch gap-2 [&>button]:flex-1 [&>button]:justify-center [&>button]:py-2.5")}
         </div>
       </div>
     </div>

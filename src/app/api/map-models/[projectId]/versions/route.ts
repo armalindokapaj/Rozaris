@@ -27,8 +27,13 @@ const createSchema = z.object({
   scale: z.number().positive().max(1000).default(1),
   rotationDeg: z.number().default(0),
   altitudeOffset: z.number().default(0),
-  // Optional — defaults to the project's own coordinates below when
-  // omitted (e.g. the very first upload, before Admin has dragged it).
+  // ONE LOCATION — accepted for backwards compatibility with older
+  // clients and then DELIBERATELY IGNORED: a version's anchor is the
+  // project's own coordinates, never an independently-authored offset.
+  // See src/lib/projectLocation.ts for why (three surfaces used to author
+  // the same site and drift apart). Moving the model in the 3D Map
+  // Control moves the PROJECT, through
+  // `PATCH /api/admin/projects/[projectId]/location`.
   longitude: z.number().optional(),
   latitude: z.number().optional(),
   hideBaseBuilding: z.boolean().default(false),
@@ -107,12 +112,12 @@ export async function POST(
       meshCount: validation.meshCount,
       materialCount: validation.materialCount,
       textureCount: validation.textureCount,
-      // Defaults to the project's own coordinates (PRD_Admin_Mapbox_GLB §8's
-      // own default) when Admin hasn't dragged the model anywhere yet —
-      // MapView.tsx and MapModelMapPreview.tsx now read this row's
-      // lat/lng directly instead of always assuming the project's own.
-      latitude: parsed.data.latitude ?? project.lat,
-      longitude: parsed.data.longitude ?? project.lng,
+      // Always the project's own coordinates — see `createSchema`'s
+      // comment on latitude/longitude above. MapView.tsx and
+      // MapModelMapPreview.tsx keep reading these columns; they just can
+      // no longer disagree with the project record.
+      latitude: project.lat,
+      longitude: project.lng,
       heading: parsed.data.rotationDeg,
       altitude: parsed.data.altitudeOffset,
       scale: parsed.data.scale,

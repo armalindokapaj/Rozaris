@@ -9,7 +9,7 @@ import { useClickOutside } from "@/hooks/useClickOutside";
 import { useViewerPreferences } from "@/hooks/useViewerPreferences";
 import { clamp, cn } from "@/lib/utils";
 import { formatUnitArea } from "./unitDisplay";
-import { BEDROOM_OPTIONS, bedroomLabel, filterUnits, type StatusFilter, type UnitFilterState } from "./unitFilters";
+import { bedroomLabel, filterUnits, unitFacets, type StatusFilter, type UnitFilterState } from "./unitFilters";
 import type { Unit } from "@/lib/types";
 import type { ActiveModule } from "../viewer-hud/types";
 
@@ -279,10 +279,11 @@ export function UnitsBar({
     return min < max ? { min: Math.floor(min), max: Math.ceil(max) } : null;
   }, [units]);
 
-  const bathroomOptions = useMemo(
-    () => Array.from(new Set(units.map((u) => u.bathrooms))).sort((a, b) => a - b),
-    [units]
-  );
+  // Unreferenced file (see ViewerHUD.tsx — the dock replaced this bar and
+  // it is kept only as historical reference), carried onto the shared
+  // `unitFacets` derivation alongside the live surfaces so it still
+  // compiles and would not reintroduce the fixed bedroom scale if revived.
+  const facets = useMemo(() => unitFacets(units, filters), [units, filters]);
 
   const effMin = areaBounds ? clamp(filters.minArea ?? areaBounds.min, areaBounds.min, areaBounds.max) : 0;
   const effMax = areaBounds ? clamp(filters.maxArea ?? areaBounds.max, areaBounds.min, areaBounds.max) : 0;
@@ -405,14 +406,14 @@ export function UnitsBar({
           <MobileFilterSelect
             label={t("units.filterBedrooms")}
             value={filters.bedrooms}
-            options={BEDROOM_OPTIONS}
+            options={facets.bedrooms}
             formatOption={bedroomLabel}
             onChange={(v) => onFiltersChange((prev) => ({ ...prev, bedrooms: v }))}
           />
           <MobileFilterSelect
             label={t("units.filterBathrooms")}
             value={filters.bathrooms}
-            options={bathroomOptions}
+            options={facets.bathrooms}
             formatOption={(v) => String(v)}
             onChange={(v) => onFiltersChange((prev) => ({ ...prev, bathrooms: v }))}
           />
@@ -577,7 +578,7 @@ export function UnitsBar({
       <CompactFilterSelect
         label={t("units.filterBedrooms")}
         value={filters.bedrooms}
-        options={BEDROOM_OPTIONS}
+        options={facets.bedrooms}
         formatOption={bedroomLabel}
         onChange={(v) => onFiltersChange((prev) => ({ ...prev, bedrooms: v }))}
       />
@@ -587,7 +588,7 @@ export function UnitsBar({
       <CompactFilterSelect
         label={t("units.filterBathrooms")}
         value={filters.bathrooms}
-        options={bathroomOptions}
+        options={facets.bathrooms}
         formatOption={(v) => String(v)}
         onChange={(v) => onFiltersChange((prev) => ({ ...prev, bathrooms: v }))}
       />

@@ -15,7 +15,9 @@
     "db:migrate-3d-versions": "tsx scripts/migrate-3d-versions.ts",
     "db:backfill-experience-documents": "tsx scripts/backfill-experience-documents.ts",
     "db:migrate-detail-model-slots": "tsx scripts/migrate-detail-model-slots.ts",
-    "test:sections": "tsx scripts/test-sections.ts"
+    "test:sections": "tsx scripts/test-sections.ts",
+    "test:unit-facets": "tsx scripts/test-unit-facets.ts",
+    "test:floor-rail": "tsx scripts/test-floor-rail-magnify.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

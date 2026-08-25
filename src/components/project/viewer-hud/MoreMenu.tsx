@@ -6,6 +6,7 @@ import { gsap } from "gsap";
 import {
   ArrowLeft,
   BadgeCheck,
+  ChevronDown,
   Copy,
   ExternalLink,
   Hand,
@@ -25,6 +26,7 @@ import { useClickOutside } from "@/hooks/useClickOutside";
 import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
 import { useAppStore } from "@/lib/store";
 import { useViewerPreferences } from "@/hooks/useViewerPreferences";
+import { VIEWER_QUALITY_LEVELS, type ViewerQualityLevel } from "@/lib/viewerQuality";
 import { cn } from "@/lib/utils";
 import type { Currency, Locale, PropertyType } from "@/lib/types";
 
@@ -147,8 +149,17 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
   const setLocale = useAppStore((s) => s.setLocale);
   const currency = useAppStore((s) => s.currency);
   const setCurrency = useAppStore((s) => s.setCurrency);
-  const { areaUnit, reducedMotionOverride, interfaceAutoHide, setAreaUnit, setReducedMotionOverride, setInterfaceAutoHide, reset } =
-    useViewerPreferences();
+  const {
+    areaUnit,
+    reducedMotionOverride,
+    interfaceAutoHide,
+    quality,
+    setAreaUnit,
+    setReducedMotionOverride,
+    setInterfaceAutoHide,
+    setQuality,
+    reset,
+  } = useViewerPreferences();
 
   function closeAll() {
     setOpen(false);
@@ -309,6 +320,8 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
 
       {section === "settings" && (
         <div className="space-y-3 px-2.5 py-1.5">
+          <QualitySetting value={quality} onChange={setQuality} reducedMotion={reducedMotion} textSecondary={textSecondary} />
+
           <SettingsRow label={t("more.settingsLanguage")}>
             <SegmentedToggle
               value={locale}
@@ -429,6 +442,135 @@ export function MoreMenu({ project }: { project: MoreMenuProjectInfo }) {
         )}
       >
         {body}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Settings → Quality. Collapsed to a row that reads "Quality  [AUTOMATIC ⌄]";
+ * clicking anywhere on the row drops the five levels down (direct
+ * instruction, 2026-08-25: "Quality is Clicked then the menu dropdown the
+ * qualities"). Picking one applies it and collapses the row again.
+ *
+ * Styled to match the rest of this Settings panel rather than as its own
+ * thing (direct instruction, 2026-08-25: "match everything else") — it
+ * first shipped with its own larger type scale, full-width solid-brand
+ * selected bar, check marks, a divider and a helper line, none of which
+ * any other row here has. Now it reuses exactly the vocabulary
+ * `SegmentedToggle`/`ToggleButton` already established two rows below:
+ * the trigger is the same `h-7 rounded-pill bg-white/10` control in the
+ * same right-hand slot every other row puts its control in, and the
+ * dropdown is that same control stacked vertically — one `bg-white/10`
+ * track, `rounded-pill` children, `text-[10px]` uppercase, `bg-brand-500`
+ * for the selected one. Selection is that brand fill alone, exactly like
+ * the toggles, so no check mark is needed to say the same thing twice.
+ *
+ * The whole row is the trigger, not just the pill, so the label itself is
+ * clickable — the row still reads as an ordinary `SettingsRow` because
+ * its two halves are styled identically to one.
+ *
+ * An INLINE disclosure, not a floating popover: the site's shared
+ * `DropdownPanel` (components/ui/Dropdown.tsx) is light-themed and
+ * `position:absolute`, and this panel is itself an absolutely-positioned
+ * `overflow-hidden` shell wrapped around an `overflow-y-auto` body — a
+ * nested popover would be clipped by the first and scroll away from its
+ * trigger inside the second. Expanding in flow has neither problem.
+ *
+ * Vertical rather than a 5-across `SegmentedToggle`: five options is well
+ * past what a 2-way pill row was built for, and the labels are full words
+ * that grow substantially in Albanian ("Maksimale"/"Mesatare"), which a
+ * 5-across row inside a 192px mobile panel cannot absorb.
+ *
+ * Open/close is the same GSAP tween pattern the parent panel itself uses
+ * rather than conditional rendering, so CLOSING animates too — `height`
+ * to/from `"auto"` alongside `autoAlpha`, which GSAP resolves by
+ * measuring, so nothing here hardcodes a row count or pixel height. The
+ * whole thing unmounts with the Settings section, so re-entering Settings
+ * always starts collapsed.
+ */
+function QualitySetting({
+  value,
+  onChange,
+  reducedMotion,
+  textSecondary,
+}: {
+  value: ViewerQualityLevel;
+  onChange: (level: ViewerQualityLevel) => void;
+  reducedMotion: boolean;
+  textSecondary: string;
+}) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    gsap.to(el, {
+      height: open ? "auto" : 0,
+      autoAlpha: open ? 1 : 0,
+      duration: reducedMotion ? 0 : 0.2,
+      ease: open ? "power2.out" : "power1.in",
+    });
+  }, [open, reducedMotion]);
+
+  return (
+    <div>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-expanded={open}
+        aria-controls="viewer-quality-options"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 text-left"
+      >
+        <span className={cn("text-white/70", textSecondary)}>{t("more.settingsQuality")}</span>
+        <span
+          className={cn(
+            "flex h-7 shrink-0 items-center gap-1 rounded-pill px-2.5 text-[10px] font-semibold uppercase tracking-wide transition-colors",
+            open ? "bg-white/20 text-white" : "bg-white/10 text-white/80"
+          )}
+        >
+          {t(`more.quality.${value}`)}
+          <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} aria-hidden="true" />
+        </span>
+      </button>
+      {/* `h-0 invisible opacity-0` is the matching static initial state the
+          GSAP effect above tweens away from — the same starting pair the
+          parent panel uses, plus the height this one also animates. */}
+      <div ref={listRef} id="viewer-quality-options" className="invisible h-0 overflow-hidden opacity-0">
+        <div
+          role="radiogroup"
+          aria-label={t("more.settingsQuality")}
+          className="mt-1.5 space-y-0.5 rounded-control bg-white/10 p-0.5"
+        >
+          {VIEWER_QUALITY_LEVELS.map((level) => (
+            <button
+              key={level}
+              type="button"
+              role="radio"
+              aria-checked={value === level}
+              // Collapses on pick, the way choosing from a dropdown
+              // normally does — the trigger shows the new level, so the
+              // choice stays visible without the list staying open. Focus
+              // goes back to the trigger it came from rather than being
+              // dropped on a now-hidden element.
+              onClick={() => {
+                onChange(level);
+                setOpen(false);
+                triggerRef.current?.focus();
+              }}
+              className={cn(
+                "flex h-8 w-full items-center rounded-pill px-2.5 text-[10px] font-semibold uppercase tracking-wide transition-colors",
+                value === level ? "bg-brand-500 text-white" : "text-white/60 hover:bg-white/10 hover:text-white"
+              )}
+            >
+              <span className="truncate">{t(`more.quality.${level}`)}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

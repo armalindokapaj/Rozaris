@@ -17,6 +17,7 @@ import {
   MapPin,
   Rocket,
   Sheet,
+  Map,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -31,6 +32,7 @@ import { PROJECT_SECTION_IDS, type ProjectSectionId } from "@/components/dashboa
 import { ProjectOverviewSection } from "@/components/dashboard/admin/project/ProjectOverviewSection";
 import { ProjectGeneralSection } from "@/components/dashboard/admin/project/ProjectGeneralSection";
 import { ProjectLocationSection } from "@/components/dashboard/admin/project/ProjectLocationSection";
+import { ProjectMapControlSection } from "@/components/dashboard/admin/project/ProjectMapControlSection";
 import { ProjectMediaSection } from "@/components/dashboard/admin/project/ProjectMediaSection";
 import { ProjectFeaturesSection } from "@/components/dashboard/admin/project/ProjectFeaturesSection";
 import { ProjectInventorySection } from "@/components/dashboard/admin/project/ProjectInventorySection";
@@ -47,6 +49,7 @@ const SECTIONS: { id: ProjectSectionId; labelKey: string; icon: LucideIcon; grou
   { id: "overview", labelKey: "projectManager.navOverview", icon: Gauge, group: "record" },
   { id: "general", labelKey: "projectManager.navGeneral", icon: FileText, group: "record" },
   { id: "location", labelKey: "projectManager.navLocation", icon: MapPin, group: "record" },
+  { id: "mapControl", labelKey: "projectManager.navMapControl", icon: Map, group: "record" },
   { id: "media", labelKey: "projectManager.navMedia", icon: ImageIcon, group: "record" },
   { id: "features", labelKey: "projectManager.navFeatures", icon: Building2, group: "record" },
   { id: "inventory", labelKey: "projectManager.navInventory", icon: LayoutGrid, group: "inventory" },
@@ -67,7 +70,7 @@ const GROUPS: { id: "record" | "inventory" | "reach"; labelKey: string }[] = [
 
 /** Which sections edit the shared project draft (and therefore need the
  * save bar). Everything else writes through its own API on its own. */
-const DRAFT_SECTIONS: ProjectSectionId[] = ["general", "location", "media", "features"];
+const DRAFT_SECTIONS: ProjectSectionId[] = ["general", "location", "mapControl", "media", "features"];
 
 /**
  * The Project Manager — Admin's full-page, ERP-style record view for one
@@ -285,7 +288,12 @@ function ProjectManagerInner() {
             {section === "general" && (
               <ProjectGeneralSection draft={draft} onChange={patchDraft} publishers={publishers} project={project} />
             )}
-            {section === "location" && <ProjectLocationSection draft={draft} onChange={patchDraft} />}
+            {section === "location" && (
+              <ProjectLocationSection draft={draft} onChange={patchDraft} record={record} onNavigate={goToSection} />
+            )}
+            {section === "mapControl" && (
+              <ProjectMapControlSection project={project} draft={draft} onChange={patchDraft} savedAt={savedAt} />
+            )}
             {section === "media" && (
               <ProjectMediaSection projectId={project.id} draft={draft} onChange={patchDraft} />
             )}
@@ -295,7 +303,7 @@ function ProjectManagerInner() {
             {section === "listings" && <ProjectListingsPanel project={project} publishers={publishers} />}
             {section === "timeline" && <ProjectTimelineSection project={project} />}
             {section === "team" && <ProjectTeamSection projectId={project.id} onChanged={refresh} />}
-            {section === "threeD" && <Project3DSection record={record} />}
+            {section === "threeD" && <Project3DSection record={record} onNavigate={goToSection} />}
             {section === "publishing" && <ProjectPublishingSection record={record} onChanged={refresh} />}
             {section === "activity" && <ProjectActivitySection projectId={project.id} />}
           </div>
@@ -341,6 +349,10 @@ function dirtyFieldsInSection(dirty: (keyof ProjectDraft)[], section: ProjectSec
   const map: Record<string, (keyof ProjectDraft)[]> = {
     general: ["name", "slug", "publisherId", "propertyType", "setting", "status", "progressPercent", "premium", "completionLabel", "descriptionEn", "descriptionSq"],
     location: ["neighborhoodId", "city", "lat", "lng"],
+    // The map-control pin IS the project's coordinates — same two fields
+    // as Location above, so both rail entries light up together, which is
+    // exactly right: they are two views of one value.
+    mapControl: ["lat", "lng"],
     media: ["heroImage", "gallery"],
     features: ["buildings", "amenities"],
   };

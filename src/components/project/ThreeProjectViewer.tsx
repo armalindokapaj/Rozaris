@@ -64,6 +64,10 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
       focusUnit: (unitId) => engineRef.current?.focusUnit(unitId) ?? false,
       getUnitViewportState: (unitId) => engineRef.current?.getUnitViewportState(unitId) ?? null,
       revealUnit: (unitId, screenBiasY) => engineRef.current?.revealUnit(unitId, screenBiasY) ?? false,
+      revealUnits: (unitIds, screenBiasY, frameFraction) =>
+        engineRef.current?.revealUnits(unitIds, screenBiasY, frameFraction) ?? false,
+      revealArea: (area, screenBiasY, frameFraction) =>
+        engineRef.current?.revealArea(area, screenBiasY, frameFraction) ?? false,
       resetUnitCamera: () => engineRef.current?.resetUnitCamera(),
       getUnitRegistrySnapshot: () => engineRef.current?.getUnitRegistrySnapshot() ?? [],
       resetIdleTimer: () => engineRef.current?.resetIdleTimer(),

@@ -74,6 +74,18 @@ export interface ThreeProjectViewerHandle {
    * without using its authored POI camera — the safe framing for a unit
    * nobody has aimed. See RenderEngine.revealUnit. */
   revealUnit: (unitId: string, screenBiasY?: number) => boolean;
+  /** The same framing aimed at a whole floor's worth of units at once —
+   * the floor rail's camera move. False when none of the ids have a block
+   * in the loaded model. See RenderEngine.revealUnits. */
+  revealUnits: (unitIds: string[], screenBiasY?: number, frameFraction?: number) => boolean;
+  /** Frames a bare world-space region — the floor rail's fallback when a
+   * floor's units are unmapped and the admin's section footprint is the
+   * only thing that knows where that floor is. See RenderEngine.revealArea. */
+  revealArea: (
+    area: { centerX: number; centerZ: number; y: number; radius: number },
+    screenBiasY?: number,
+    frameFraction?: number
+  ) => boolean;
   /** §18 — clears selection/isolation and reframes on the whole scene. */
   resetUnitCamera: () => void;
   /** Read-only — every unit currently resolved in the live registry

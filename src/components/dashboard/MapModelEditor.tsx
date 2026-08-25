@@ -8,7 +8,7 @@ import { cn, formatRelativeDate } from "@/lib/utils";
 import { MapModelMapPreview, type HiddenBuildingEntry } from "./MapModelMapPreview";
 import { ValidationBadge } from "./ValidationBadge";
 import type { BuildingFootprint } from "@/components/map/BuildingHider";
-import type { Project } from "@/lib/types";
+import type { GeoPoint, Project } from "@/lib/types";
 
 const MAX_FILE_BYTES = 60 * 1024 * 1024; // keep in sync with api/blob/upload's maximumSizeInBytes
 // Two picked buildings within this many degrees of each other are treated
@@ -73,24 +73,75 @@ function formatBytes(bytes: number) {
  *
  * "Multi-building-pick + reposition" pass: `hiddenBuildingLng/Lat` (one
  * point per project) is replaced by `hiddenBuildings` (a list — Admin can
- * pick, and un-pick, several real buildings), and the model's own position
- * is now draggable in the preview instead of being locked to the project's
- * exact coordinates — see MapModelMapPreview.tsx and BuildingHider.ts for
- * the mechanics.
+ * pick, and un-pick, several real buildings) — see MapModelMapPreview.tsx
+ * and BuildingHider.ts for the mechanics.
+ *
+ * ONE LOCATION. The draggable pin is no longer a model position of its
+ * own: it IS the project's site coordinates, controlled by the caller via
+ * `location`/`onLocationChange`, and every `MapModelVersion` is anchored
+ * to it server-side (src/lib/projectLocation.ts). That reverses the
+ * earlier "reposition" pass, which let the model sit somewhere the record,
+ * the search pin and the units' listings did not — three coordinates for
+ * one building, with nothing reconciling them. Placement that IS model
+ * content — scale, heading, altitude, hidden footprints — still belongs to
+ * the version and keeps its own draft/publish lifecycle.
  */
 export function MapModelEditor({
   project,
+  location,
+  onLocationChange,
+  onSaveLocation,
+  locationDirty = false,
+  savingLocation = false,
+  locationNote,
+  reloadToken,
   onClose,
   onDeleteProject,
   deletingProject = false,
+  embedded = false,
 }: {
   project: Project;
-  onClose: () => void;
+  /** ONE LOCATION — the project's real site coordinates, owned by the
+   * caller. There is no separate "model position" any more: dragging the
+   * pin here moves the project itself, and every map-model version is
+   * re-anchored to it server-side (src/lib/projectLocation.ts). The two
+   * callers differ only in how they persist it — the standalone page
+   * PATCHes `/api/admin/projects/[id]/location` (and passes
+   * `onSaveLocation`), the Project Manager folds it into its own record
+   * draft and save bar (and doesn't). */
+  location: GeoPoint;
+  onLocationChange: (point: GeoPoint) => void;
+  /** Present only when this editor owns persistence — renders its own
+   * "Save location" button. Absent means the surrounding record view
+   * saves it. */
+  onSaveLocation?: () => void;
+  locationDirty?: boolean;
+  savingLocation?: boolean;
+  /** Replaces the default "this pin is shared" line — the Project Manager
+   * says "…and saves with the record" instead. */
+  locationNote?: string;
+  /** Bump to make this editor refetch its version list. The caller owns
+   * the location, so a location save happens entirely outside this
+   * component — and the server re-anchors every version as part of it
+   * (src/lib/projectLocation.ts). Without a nudge the version rows held
+   * here keep their pre-save coordinates, which is what the "model isn't
+   * where the record says" notice compares against: it would go on
+   * claiming a split that the save just resolved. */
+  reloadToken?: unknown;
+  /** The standalone page's "back to the console" action. Unused when
+   * `embedded` — the back arrow it drives lives in the record view's own
+   * header there. */
+  onClose?: () => void;
   // Real "delete a Project" from inside the editor itself — optional so
   // this component still works standalone without every call site needing
   // to wire it up (mirrors Project3DConfigEditor.tsx's identical prop).
   onDeleteProject?: () => void;
   deletingProject?: boolean;
+  /** Rendered inside the Project Manager's scrolling record view rather
+   * than as a whole page: drops the back arrow and the delete-project
+   * button (the record view has its own header for both) and stops
+   * claiming `h-full`. */
+  embedded?: boolean;
 }) {
   const { t, locale } = useT();
 
@@ -112,8 +163,6 @@ export function MapModelEditor({
   const [scale, setScale] = useState(1);
   const [rotationDeg, setRotationDeg] = useState(0);
   const [altitudeOffset, setAltitudeOffset] = useState(0);
-  const [longitude, setLongitude] = useState(project.coords.lng);
-  const [latitude, setLatitude] = useState(project.coords.lat);
   const [hideBaseBuilding, setHideBaseBuilding] = useState(false);
   const [hiddenBuildings, setHiddenBuildings] = useState<HiddenBuildingEntry[]>([]);
 
@@ -126,8 +175,9 @@ export function MapModelEditor({
       setScale(active.scale);
       setRotationDeg(active.heading);
       setAltitudeOffset(active.altitude);
-      setLongitude(active.longitude ?? project.coords.lng);
-      setLatitude(active.latitude ?? project.coords.lat);
+      // Deliberately NOT seeding coordinates from the version any more —
+      // `location` is the project's, owned by the caller, and the version's
+      // own columns are now server-derived from it.
       setHideBaseBuilding(active.hideBaseBuilding);
       setHiddenBuildings(active.hiddenBuildings ?? []);
     }
@@ -136,8 +186,10 @@ export function MapModelEditor({
 
   useEffect(() => {
     let cancelled = false;
-    // Initial version-history load, guarded by `cancelled` like every other
-    // fetch effect in this app (see e.g. useProjectDetailModel.ts).
+    // Initial version-history load — and a re-load whenever `reloadToken`
+    // changes (see that prop's own comment). Guarded by `cancelled` like
+    // every other fetch effect in this app (see e.g.
+    // useProjectDetailModel.ts).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh().finally(() => {
       if (!cancelled) setLoaded(true);
@@ -146,7 +198,7 @@ export function MapModelEditor({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id]);
+  }, [project.id, reloadToken]);
 
   const activeVersion = pickActiveVersion(versions);
   const isDraftActive = activeVersion?.publicationStatus === "draft";
@@ -204,8 +256,6 @@ export function MapModelEditor({
               scale,
               rotationDeg,
               altitudeOffset,
-              longitude,
-              latitude,
               hideBaseBuilding,
               hiddenBuildings,
             }),
@@ -300,8 +350,6 @@ export function MapModelEditor({
           scale,
           rotationDeg,
           altitudeOffset,
-          longitude,
-          latitude,
           hideBaseBuilding,
           hiddenBuildings,
         }),
@@ -336,7 +384,7 @@ export function MapModelEditor({
     setBusy(true);
     setError(null);
     try {
-      const body = JSON.stringify({ scale, rotationDeg, altitudeOffset, longitude, latitude, hideBaseBuilding, hiddenBuildings });
+      const body = JSON.stringify({ scale, rotationDeg, altitudeOffset, hideBaseBuilding, hiddenBuildings });
       const res = activeVersion
         ? await fetch(`/api/map-models/${project.id}/versions/${activeVersion.id}`, {
             method: "PATCH",
@@ -511,15 +559,27 @@ export function MapModelEditor({
   // rather than locked until a draft exists. Once a model has been
   // uploaded, the usual draft/published rule takes back over.
   const canEdit = isDraftActive || !hasModel;
-  const positionMoved =
-    Math.abs(longitude - project.coords.lng) > 1e-9 || Math.abs(latitude - project.coords.lat) > 1e-9;
+  // A model anchored somewhere the record isn't — the pre-"one location"
+  // split (a model dragged onto the real building while the project row
+  // kept a neighbourhood-centroid default, or vice versa). Surfaced rather
+  // than silently resolved: whichever of the two is right is a question
+  // only an admin can answer, and saving the pin would otherwise drag a
+  // correctly-placed model to a wrong coordinate with no warning.
+  const modelAnchor =
+    activeVersion && (activeVersion.latitude !== location.lat || activeVersion.longitude !== location.lng)
+      ? { lat: activeVersion.latitude, lng: activeVersion.longitude }
+      : null;
+  // The pin is ALWAYS movable — it is the project's location, not part of
+  // the model version's draft/published lifecycle (a published GLB sitting
+  // at the wrong address still has to be movable without opening a new
+  // model draft first).
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col lg:flex-row">
+    <div className={cn("flex min-h-0 w-full flex-col lg:flex-row", embedded ? "h-[42rem]" : "h-full")}>
       <div className="h-64 shrink-0 bg-neutral-900 lg:h-full lg:flex-1">
         <MapModelMapPreview
-          coords={project.coords}
-          modelPosition={{ lng: longitude, lat: latitude }}
+          coords={location}
+          modelPosition={location}
           glbUrl={previewUrl}
           scale={scale}
           rotationDeg={rotationDeg}
@@ -528,15 +588,11 @@ export function MapModelEditor({
           hiddenBuildings={hiddenBuildings}
           picking={picking}
           onToggleBuilding={handleToggleBuilding}
-          canMoveModel={canEdit}
-          onMoveModel={(point) => {
-            setLongitude(point.lng);
-            setLatitude(point.lat);
-          }}
-          relocating={canEdit && relocating}
+          canMoveModel
+          onMoveModel={onLocationChange}
+          relocating={relocating}
           onRelocate={(point) => {
-            setLongitude(point.lng);
-            setLatitude(point.lat);
+            onLocationChange(point);
             // One click is the whole action — auto-exit so Admin gets
             // immediate visual confirmation (the marker/model jumping to
             // the new spot) instead of staying in a mode that now reads as
@@ -547,81 +603,123 @@ export function MapModelEditor({
       </div>
 
       <div className="flex min-h-0 w-full flex-1 flex-col border-t border-neutral-100 lg:h-full lg:max-w-md lg:border-l lg:border-t-0">
-        <div className="flex shrink-0 items-center gap-3 border-b border-neutral-100 px-5 py-4">
-          <button
-            onClick={onClose}
-            aria-label={t("common.back")}
-            className="shrink-0 rounded-control p-2 text-neutral-500 hover:bg-neutral-100"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-base font-bold text-neutral-900">{t("admin.mapModelTitle")}</h2>
-            <p className="truncate text-xs text-neutral-500">{project.name}</p>
+        {/* Dropped entirely when embedded: every part of this row — back
+            arrow, title, project name, delete-project — is already in the
+            Project Manager's own header and section header a few pixels
+            above it. Real "delete a Project" lives here rather than only in
+            the admin grid's kebab menu; same audit-logged Recycle Bin
+            route, see useDeleteProject.ts. */}
+        {!embedded && (
+          <div className="flex shrink-0 items-center gap-3 border-b border-neutral-100 px-5 py-4">
+            <button
+              onClick={onClose}
+              aria-label={t("common.back")}
+              className="shrink-0 rounded-control p-2 text-neutral-500 hover:bg-neutral-100"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base font-bold text-neutral-900">{t("admin.mapModelTitle")}</h2>
+              <p className="truncate text-xs text-neutral-500">{project.name}</p>
+            </div>
+            <button
+              onClick={onDeleteProject ?? (() => {})}
+              disabled={deletingProject}
+              title={t("admin.deleteProjectAction")}
+              aria-label={t("admin.deleteProjectAction")}
+              className="shrink-0 rounded-control border border-red-200 p-2 text-red-500 hover:bg-red-50 disabled:opacity-40"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
           </div>
-          {/* Real "delete a Project" from inside the editor itself, not
-              just the admin grid's kebab menu — same audit-logged Recycle
-              Bin route, see useDeleteProject.ts. */}
-          <button
-            onClick={onDeleteProject ?? (() => {})}
-            disabled={deletingProject}
-            title={t("admin.deleteProjectAction")}
-            aria-label={t("admin.deleteProjectAction")}
-            className="shrink-0 rounded-control border border-red-200 p-2 text-red-500 hover:bg-red-50 disabled:opacity-40"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
+        )}
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scroll-thin p-5">
-            {/* "Move location first, then add the 3D model" — this used to
-                only appear once a model existed (`{hasModel && ...}`
-                inside the fieldset below), forcing upload-then-position as
-                the only order. `canEdit` now covers the pre-upload state
-                too (see its own comment), and the position marker itself
-                renders regardless of `glbUrl` (MapModelMapPreview), so
-                this is real and usable before anything's been uploaded —
-                moved ahead of the Upload section to match. */}
-            <fieldset disabled={!canEdit} className="disabled:opacity-50">
-              <div className="space-y-2 rounded-panel border border-neutral-200 bg-neutral-50 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-xs font-medium text-neutral-600">
-                    <MapPin className="h-3.5 w-3.5 text-brand-500" />
-                    {hasModel ? t("admin.mapModelPositionHint") : t("admin.mapModelPositionHintPreUpload")}
-                  </div>
-                  {positionMoved && (
-                    <button
-                      onClick={() => {
-                        setRelocating(false);
-                        setLongitude(project.coords.lng);
-                        setLatitude(project.coords.lat);
-                      }}
-                      className="shrink-0 text-[11px] font-semibold text-red-500 hover:underline"
-                    >
-                      {t("admin.mapModelResetPosition")}
-                    </button>
-                  )}
-                </div>
-                <button
-                  onClick={() => {
-                    // Mutually exclusive with "Pick buildings to remove" —
-                    // see that button's own comment.
-                    setPicking(false);
-                    setRelocating((v) => !v);
-                  }}
-                  aria-pressed={relocating}
-                  className={cn(
-                    "flex w-full items-center justify-center gap-1.5 rounded-control py-2 text-xs font-semibold",
-                    relocating
-                      ? "bg-brand-500 text-white hover:bg-brand-600"
-                      : "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100"
-                  )}
-                >
-                  <Crosshair className="h-3.5 w-3.5" />
-                  {relocating ? t("admin.mapModelRelocateDone") : t("admin.mapModelRelocate")}
-                </button>
+            {/* THE project's location — not a model offset. Drag the pin
+                (or click "Move location" and then the map) and the record,
+                the public search pin, every unit's listing address and
+                every map-model version move together; see
+                src/lib/projectLocation.ts. Sits ahead of the Upload
+                section because "place the site, then add the model" is the
+                real order of work, and the pin is usable before anything
+                has been uploaded. */}
+            <div className="space-y-2 rounded-panel border border-brand-200 bg-brand-50/50 p-3">
+              <div className="flex items-center gap-2 text-xs font-semibold text-neutral-700">
+                <MapPin className="h-3.5 w-3.5 text-brand-500" />
+                {t("admin.mapModelLocationTitle")}
               </div>
-            </fieldset>
+              <p className="text-[11px] leading-snug text-neutral-500">
+                {locationNote ?? t("admin.mapModelLocationShared")}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <LatLngField
+                  label={t("admin.mapModelLatitude")}
+                  value={location.lat}
+                  min={-90}
+                  max={90}
+                  onChange={(lat) => onLocationChange({ lat, lng: location.lng })}
+                />
+                <LatLngField
+                  label={t("admin.mapModelLongitude")}
+                  value={location.lng}
+                  min={-180}
+                  max={180}
+                  onChange={(lng) => onLocationChange({ lat: location.lat, lng })}
+                />
+              </div>
+              <button
+                onClick={() => {
+                  // Mutually exclusive with "Pick buildings to remove" —
+                  // see that button's own comment.
+                  setPicking(false);
+                  setRelocating((v) => !v);
+                }}
+                aria-pressed={relocating}
+                className={cn(
+                  "flex w-full items-center justify-center gap-1.5 rounded-control py-2 text-xs font-semibold",
+                  relocating
+                    ? "bg-brand-500 text-white hover:bg-brand-600"
+                    : "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100"
+                )}
+              >
+                <Crosshair className="h-3.5 w-3.5" />
+                {relocating ? t("admin.mapModelRelocateDone") : t("admin.mapModelRelocate")}
+              </button>
+              {modelAnchor && (
+                <div className="space-y-1.5 rounded-control border border-amber-200 bg-amber-50 p-2.5">
+                  <p className="text-[11px] font-semibold text-amber-800">{t("admin.mapModelAnchorSplit")}</p>
+                  <p className="text-[11px] leading-snug text-amber-700">
+                    {t("admin.mapModelAnchorSplitDetail", {
+                      lat: modelAnchor.lat.toFixed(6),
+                      lng: modelAnchor.lng.toFixed(6),
+                    })}
+                  </p>
+                  <button
+                    onClick={() => onLocationChange(modelAnchor)}
+                    className="w-full rounded-control border border-amber-300 bg-white py-1.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
+                  >
+                    {t("admin.mapModelUseModelAnchor")}
+                  </button>
+                </div>
+              )}
+
+              {/* Only when this editor owns persistence (the standalone
+                  page). Inside the Project Manager the record's own save
+                  bar commits the pin along with everything else. */}
+              {onSaveLocation && (
+                <button
+                  onClick={onSaveLocation}
+                  disabled={!locationDirty || savingLocation}
+                  className="w-full rounded-control bg-neutral-900 py-2 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-40"
+                >
+                  {savingLocation
+                    ? t("common.loading")
+                    : locationDirty
+                    ? t("admin.mapModelSaveLocation")
+                    : t("admin.mapModelLocationSaved")}
+                </button>
+              )}
+            </div>
 
             <section>
               <input
@@ -945,6 +1043,54 @@ export function MapModelEditor({
           </div>
         </div>
       </div>
+  );
+}
+
+/** A coordinate input that lets Admin type a real number without the
+ * field fighting them mid-keystroke. Bound to a local string while
+ * focused: a controlled `type="number"` bound straight to the numeric
+ * value re-formats on every keypress, so typing "41.32" turns into 41 the
+ * moment the decimal point is entered and the pin jumps to the middle of
+ * nowhere. Commits on blur (or Enter), clamped to the real coordinate
+ * range. */
+function LatLngField({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (next: number) => void;
+}) {
+  const [text, setText] = useState<string | null>(null);
+
+  function commit() {
+    if (text === null) return;
+    const parsed = Number(text);
+    setText(null);
+    if (!Number.isFinite(parsed)) return;
+    onChange(Math.min(max, Math.max(min, parsed)));
+  }
+
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-neutral-500">{label}</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={text ?? value.toFixed(6)}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        className="w-full rounded-control border border-neutral-200 bg-white px-2 py-1.5 text-xs tabular-nums text-neutral-900 focus:border-brand-400 focus:outline-none"
+      />
+    </label>
   );
 }
 

@@ -46,11 +46,15 @@ export function MapModelMapPreview({
   onRelocate,
   className,
 }: {
-  /** The project's own coordinates — only used to center/recenter the map,
-   * independent of where the model itself is actually placed. */
+  /** Where the map is centred. ONE LOCATION — this and `modelPosition`
+   * are now the same value (the project's site coordinates); they stayed
+   * separate props because the camera and the model reconcile on different
+   * effects, and the camera deliberately holds still for a move the user
+   * made here (see `selfMovedRef`). */
   coords: GeoPoint;
-  /** Where the GLB (and its draggable position handle) actually renders —
-   * defaults to `coords` until Admin drags it elsewhere. */
+  /** Where the GLB and its draggable handle render — the project's own
+   * coordinates. Dragging the handle moves the PROJECT, not a model offset
+   * of its own; see src/lib/projectLocation.ts. */
   modelPosition: GeoPoint;
   glbUrl: string | null;
   scale: number;
@@ -84,6 +88,15 @@ export function MapModelMapPreview({
   const modelLayerRef = useRef<ProjectModelLayer | null>(null);
   const buildingHiderRef = useRef<BuildingHider | null>(null);
   const positionMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  // The last point this preview itself reported upward. `coords` is now
+  // the project's ONE location (src/lib/projectLocation.ts), so it comes
+  // straight back down as a prop the moment Admin drags the marker — and
+  // the recenter effect below would then `jumpTo` on every drag, yanking
+  // the camera out from under the gesture. A change that matches this ref
+  // is our own echo and must not move the camera; anything else (the
+  // lat/lng fields, "use neighbourhood centre", a different project) is
+  // external and should.
+  const selfMovedRef = useRef<GeoPoint | null>(null);
   const onMoveModelRef = useRef(onMoveModel);
   useEffect(() => {
     onMoveModelRef.current = onMoveModel;
@@ -176,7 +189,9 @@ export function MapModelMapPreview({
       const marker = new mapboxgl.Marker({ element: el, draggable: true });
       marker.on("dragend", () => {
         const lngLat = marker.getLngLat();
-        onMoveModelRef.current?.({ lng: lngLat.lng, lat: lngLat.lat });
+        const point = { lng: lngLat.lng, lat: lngLat.lat };
+        selfMovedRef.current = point;
+        onMoveModelRef.current?.(point);
       });
       positionMarkerRef.current = marker;
 
@@ -196,8 +211,13 @@ export function MapModelMapPreview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // --- Recenter if the project itself changes (editor is reused across projects) ---
+  // --- Recenter when the location changed from OUTSIDE this map (a
+  // different project, a typed coordinate, a neighbourhood-centre reset).
+  // See `selfMovedRef` for why a drag/relocate of our own marker is
+  // deliberately excluded. ---
   useEffect(() => {
+    const self = selfMovedRef.current;
+    if (self && self.lat === coords.lat && self.lng === coords.lng) return;
     mapRef.current?.jumpTo({ center: [coords.lng, coords.lat] });
   }, [coords.lat, coords.lng]);
 
@@ -301,7 +321,12 @@ export function MapModelMapPreview({
     canvas.style.cursor = "crosshair";
 
     function onClick(e: mapboxgl.MapMouseEvent) {
-      onRelocateRef.current?.({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+      const point = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      // Same "don't recenter on our own move" rule as the marker drag —
+      // Admin clicked a spot they can already see; jumping the camera to
+      // centre it would shift everything under the cursor.
+      selfMovedRef.current = point;
+      onRelocateRef.current?.(point);
     }
     map.on("click", onClick);
     return () => {

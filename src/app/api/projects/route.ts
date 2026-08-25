@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { getAllProjects, getProjectsByPublisherAnyStatus } from "@/lib/projects.server";
 import { resolveLocation } from "@/lib/locations";
+import { syncProjectLocationDependents } from "@/lib/projectLocation";
 
 /** Public project catalog — the client-side equivalent of
  * `projects.server.ts`'s `getAllProjects()` for consumers that can't be a
@@ -147,14 +148,15 @@ export async function POST(request: Request) {
       },
     });
 
-    // "Unit location follows project location" (see POST /api/listings'
-    // own doc comment for the same rule at creation/link time) — every
-    // Listing already attached to this project needs to move with it too
-    // when its location is edited here, not just ones created or newly
-    // linked after the fact. Gated on an actual change (not every save —
-    // a rename or hero-image edit shouldn't touch every listing's
-    // Property row) and only for an existing project, since a brand-new
-    // one can't have any Listings yet.
+    // One location, cascaded — see src/lib/projectLocation.ts. Covers the
+    // units' listings ("unit location follows project location", the same
+    // rule POST /api/listings applies at creation time), every
+    // MapModelVersion's anchor, and the 3D Experience map view, so a
+    // location edited here can't leave the 3D Map Control pointing at the
+    // old spot. Gated on an actual change (not every save — a rename or
+    // hero-image edit shouldn't touch every listing's Property row) and
+    // only for an existing project, since a brand-new one can't have any
+    // Listings, model versions or 3D config yet.
     if (
       existingById &&
       (existingById.neighborhoodId !== project.neighborhoodId ||
@@ -162,23 +164,7 @@ export async function POST(request: Request) {
         existingById.lng !== project.lng ||
         existingById.locationId !== project.locationId)
     ) {
-      const affectedListings = await prisma.listing.findMany({
-        where: { projectId: project.id, deletedAt: null },
-        select: { propertyId: true },
-      });
-      if (affectedListings.length > 0) {
-        await prisma.property.updateMany({
-          where: { id: { in: affectedListings.map((l) => l.propertyId) } },
-          data: {
-            neighborhoodId: project.neighborhoodId,
-            city: project.city,
-            locationId: project.locationId,
-            lat: project.lat,
-            lng: project.lng,
-            locationConfirmed: true,
-          },
-        });
-      }
+      await syncProjectLocationDependents(project);
     }
 
     // Same ISR staleness the publication route now fixes (see its doc

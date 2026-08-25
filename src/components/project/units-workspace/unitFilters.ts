@@ -9,14 +9,13 @@ export function bedroomLabel(bedrooms: number): string {
   return bedrooms === 0 ? "Studio" : `${bedrooms}+1`;
 }
 
-/** Real, fixed bedroom-count buckets (Studio→4+1) — shared between
- * UnitSearchView's own pill row and UnitsBar's dropdown (2026-08-17,
- * Units Bar redesign) so both surfaces offer the identical set rather than
- * two independently-maintained copies. Not derived from the live `units`
- * array (unlike `bathroomOptions` in UnitsBar) — this is a real-estate
- * category scale, not a data-driven option list, same reasoning
- * UnitSearchView's own doc comment already gives for it. */
-export const BEDROOM_OPTIONS = [0, 1, 2, 3, 4];
+/** Bedroom counts used to be a fixed Studio→4+1 scale here, offered
+ * identically by every surface regardless of what the project actually
+ * had — so a project with nothing but 2+1s still rendered Studio, 1+1,
+ * 3+1 and 4+1 pills that could only ever return zero results. Replaced by
+ * `unitFacets` below (direct instruction, 2026-08-25: "Show only whats in
+ * units. For example 'bedrooms' doesnt need to show 4 bedroom if there is
+ * no unit in the project posted as 4 bedroom. wasted space."). */
 
 export type StatusFilter = "available" | "reserved" | "sold" | "all";
 
@@ -91,6 +90,78 @@ export function activeFilterCount(state: UnitFilterState): number {
   return n;
 }
 
+/** Availability ordering, shared by `sortUnits`' "recommended" ranking and
+ * by `unitFacets`' own status list so both read one order. */
+const STATUS_RANK: Record<Unit["status"], number> = { available: 0, reserved: 1, sold: 2 };
+
+/** The option lists every filter surface should actually offer for a given
+ * project, derived from its real units instead of a fixed scale.
+ *
+ * Two rules, both from the same instruction (2026-08-25, "Show only whats
+ * in units … wasted space"):
+ *
+ * 1. An option only appears if some unit in the project has that value.
+ * 2. A list with fewer than two options comes back EMPTY, and its call
+ *    site drops the whole control. One option filters nothing — every
+ *    unit already matches it — so a lone "2+1" pill, or an Availability
+ *    row reading "All | Available" for a project where nothing is sold,
+ *    is the same wasted space rule 1 is about, one level up.
+ *
+ * Derived from the project's full unit list, NOT from the currently
+ * filtered subset: faceting against live results would make the other
+ * options vanish the moment one is picked, so a visitor could never
+ * switch from "2+1" to "3+1" without clearing first.
+ *
+ * `active` is the current filter state, and the one exception to both
+ * rules — whatever is selected right now always stays in its list even if
+ * no unit backs it any more (units are live Postgres rows and can change
+ * under a selection). Hiding an applied filter would strand the visitor
+ * on an unexplained empty list with no control to undo it.
+ */
+export interface UnitFacets {
+  bedrooms: number[];
+  bathrooms: number[];
+  buildings: string[];
+  /** Real statuses present, in `STATUS_RANK` order. Never includes "all" —
+   * that is each surface's own always-present reset pill, not a facet. */
+  statuses: Unit["status"][];
+}
+
+function facetList<T>(values: T[], active: T | null, compare: (a: T, b: T) => number): T[] {
+  const distinct = new Set(values);
+  if (active != null) distinct.add(active);
+  const list = [...distinct].sort(compare);
+  return list.length < 2 && active == null ? [] : list;
+}
+
+export function unitFacets(units: Unit[], active?: UnitFilterState): UnitFacets {
+  const activeStatus = active && active.status !== "all" ? active.status : null;
+  return {
+    bedrooms: facetList(
+      units.map((u) => u.bedrooms),
+      active?.bedrooms ?? null,
+      (a, b) => a - b
+    ),
+    bathrooms: facetList(
+      units.map((u) => u.bathrooms),
+      active?.bathrooms ?? null,
+      (a, b) => a - b
+    ),
+    buildings: facetList(
+      // A unit with no building name authored yet would otherwise show up
+      // as a blank, unlabelled and unpickable row in the Building list.
+      units.map((u) => u.buildingName).filter((name) => name.trim().length > 0),
+      active?.building ?? null,
+      (a, b) => a.localeCompare(b)
+    ),
+    statuses: facetList(
+      units.map((u) => u.status),
+      activeStatus,
+      (a, b) => STATUS_RANK[a] - STATUS_RANK[b]
+    ),
+  };
+}
+
 export function filterUnits(units: Unit[], state: UnitFilterState): Unit[] {
   const q = state.query.trim().toLowerCase();
   return units.filter((u) => {
@@ -111,8 +182,6 @@ export function filterUnits(units: Unit[], state: UnitFilterState): Unit[] {
     return true;
   });
 }
-
-const STATUS_RANK: Record<Unit["status"], number> = { available: 0, reserved: 1, sold: 2 };
 
 export function sortUnits(units: Unit[], sort: SortOption): Unit[] {
   const sorted = [...units];

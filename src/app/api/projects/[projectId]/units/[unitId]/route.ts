@@ -47,7 +47,30 @@ export async function PATCH(
     return NextResponse.json({ error: "Unit not found." }, { status: 404 });
   }
 
-  const unit = await prisma.unit.update({ where: { id: unitId }, data: parsed.data });
+  // `@@unique([projectId, code])`: renaming a unit onto a code another unit
+  // already holds is a normal thing to attempt (it is one keystroke in the
+  // Sheet Sync grid's UNIT column, and `code` is the key the Google Sheets
+  // connector matches on), so it has to come back as a readable 409 rather
+  // than as the unhandled P2002 -> opaque 500 it used to be.
+  let unit;
+  try {
+    unit = await prisma.unit.update({ where: { id: unitId }, data: parsed.data });
+  } catch (err) {
+    // Matched on the error's own `code` rather than
+    // `instanceof Prisma.PrismaClientKnownRequestError`: `src/lib/db.ts`
+    // caches the client on `globalThis` across hot reloads, so in dev the
+    // thrown error routinely comes from an EARLIER evaluation of the
+    // generated client than the one this module imported, and `instanceof`
+    // silently returns false — turning this back into the opaque 500 it is
+    // here to remove. Verified against a real duplicate.
+    if (typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2002") {
+      return NextResponse.json(
+        { error: `Another unit in this project already uses the code "${parsed.data.code}".` },
+        { status: 409 }
+      );
+    }
+    throw err;
+  }
   // Multi-Channel Publishing PRD Phase 6 — see inventoryRevision.ts's doc
   // comment. Unconditional even for edits that don't touch price/status
   // (e.g. a floor plan image) — simpler and safe than trying to allowlist
