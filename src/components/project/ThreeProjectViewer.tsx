@@ -19,7 +19,7 @@ export type { ThreeProjectViewerHandle, ThreeProjectViewerProps } from "./viewer
  */
 export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProjectViewerProps>(
   function ThreeProjectViewer(
-    { detailModels, className, showPerfStats, onPerfStats, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, unitsConfig, onUnitClick, onUnitHover, onReady },
+    { detailModels, className, showPerfStats, onPerfStats, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, unitsConfig, siteConfig, onUnitClick, onUnitHover, onReady, onSiteStatus },
     ref
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -33,7 +33,9 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
     const onUnitClickRef = useRef(onUnitClick);
     onUnitClickRef.current = onUnitClick;
     const onUnitHoverRef = useRef(onUnitHover);
+    const onSiteStatusRef = useRef(onSiteStatus);
     onUnitHoverRef.current = onUnitHover;
+    onSiteStatusRef.current = onSiteStatus;
     // Multi-Channel Publishing PRD Phase 5 fix (2026-08-18) — read through
     // a ref for the same reason the two above are, but for a real bug
     // this one exists to fix: see the mount effect's own doc comment.
@@ -87,6 +89,11 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
         onPerfStats: (stats) => onPerfStats?.(stats),
         onUnitClick: (unitId) => onUnitClickRef.current?.(unitId),
         onUnitHover: (unitId) => onUnitHoverRef.current?.(unitId),
+        // Read through a ref for the same reason onUnitClick/onUnitHover
+        // are: callers pass an inline arrow, so a direct capture here
+        // would freeze the very first render's closure for the life of
+        // the engine.
+        onSiteStatus: (status) => onSiteStatusRef.current?.(status),
       });
       engineRef.current = engine;
       // Real bug fix (Multi-Channel Publishing PRD Phase 5, 2026-08-18,
@@ -185,6 +192,17 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
     useEffect(() => {
       if (unitsConfig) engineRef.current?.setUnitsConfig(unitsConfig);
     }, [unitsConfig]);
+
+    // "Map" tab — real-world site context. Same prop-identity pattern as
+    // every other config effect above: the caller useMemo's this object
+    // over the config draft, so an alignment drag re-enters setSiteConfig
+    // (a matrix write) without ever remounting the engine or refetching a
+    // tile. Deliberately not a mount param — the abandoned Mapbox-owns-
+    // the-canvas design had to be one, which is precisely why toggling it
+    // would have torn down and re-downloaded the whole scene.
+    useEffect(() => {
+      if (siteConfig) engineRef.current?.setSiteConfig(siteConfig);
+    }, [siteConfig]);
 
     return (
       <div ref={containerRef} className={className}>

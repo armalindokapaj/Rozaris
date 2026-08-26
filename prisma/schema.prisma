@@ -1269,6 +1269,36 @@ model Project3DConfig {
   mapViewPitchDeg   Float   @default(60)
   mapViewBearingDeg Float   @default(-20)
 
+  /// "Map" tab, 2026-08-26 rewrite — real-world SITE CONTEXT rebuilt as
+  /// ordinary three.js geometry from Mapbox raster-DEM + satellite tiles,
+  /// living inside the engine's own scene graph (so it is lit by the ONE
+  /// Global Sun Vector and picks up fog/SSGI/SSR/DOF/TRAA/LUT for free).
+  /// This REPLACES the meaning of the nine mapView* columns above, which
+  /// drove a separate mapbox-gl view the visitor switched to; those
+  /// columns are retained, not dropped, because projectLocation.ts's
+  /// syncProjectLocationDependents() writes mapViewLatitude/Longitude on
+  /// every project move.
+  ///
+  /// Transform rule: the SITE moves, the building never does. siteOffsetX
+  /// /Z, siteElevationOffset, siteRotationDeg and siteScale move the world
+  /// around the project's authored origin — the opposite direction from
+  /// the mapView* placement fields above.
+  ///
+  /// siteRotationDeg additionally feeds the sun: rotating the site is the
+  /// admin stating where north is, so it is added to the resolved sun
+  /// azimuth exactly as northOffsetDeg is. See src/lib/types.ts for the
+  /// derivation. All defaults are the feature-absent state.
+  siteEnabled           Boolean @default(false)
+  siteRadiusM           Float   @default(600)
+  siteTerrainEnabled    Boolean @default(true)
+  siteImageryEnabled    Boolean @default(true)
+  siteImageryBrightness Float   @default(0.85)
+  siteOffsetX           Float   @default(0)
+  siteOffsetZ           Float   @default(0)
+  siteElevationOffset   Float   @default(0)
+  siteRotationDeg       Float   @default(0)
+  siteScale             Float   @default(1)
+
   /// 360° Backdrop Photo — an admin-uploaded equirectangular PNG (real
   /// site-context photography) with a transparent sky region, composited
   /// as an unlit sphere just inside the SkyMesh dome so the physical sky/

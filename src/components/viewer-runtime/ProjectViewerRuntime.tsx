@@ -10,9 +10,7 @@ import { use3DAssetCache } from "@/hooks/use3DAssetCache";
 import { useT } from "@/lib/i18n/useT";
 import { ThreeProjectViewer, type ThreeProjectViewerHandle } from "@/components/project/ThreeProjectViewer";
 import { ViewerHUD } from "@/components/project/viewer-hud/ViewerHUD";
-import { MapViewEntryButton, MapModeBar } from "@/components/project/viewer-hud/MapViewToggle";
 import { getViewerLayoutState } from "@/components/project/viewer-hud/layoutState";
-import { ProjectMapView } from "@/components/map/ProjectMapView";
 import type { ActiveModule } from "@/components/project/viewer-hud/types";
 import { UnitsWorkspace } from "@/components/project/units-workspace/UnitsWorkspace";
 import { MobileUnitsSheet } from "@/components/project/units-workspace/MobileUnitsSheet";
@@ -197,19 +195,6 @@ export function ProjectViewerRuntime({
     if (activeModule === "explore") viewerRef.current?.resetIdleTimer();
   }, [activeModule]);
 
-  // Studio ⇄ Map (Experience Editor "Map" tab) — independent of
-  // `activeModule` above, which is "which Studio HUD dock panel is open,"
-  // a different concern from "which render engine is mounted." Only one of
-  // Studio/Map is ever mounted at a time (see the render below) — never
-  // both ("do not overlay"). Reset to Studio's own default nav state on
-  // entering Map mode so returning later doesn't land on a stale dock
-  // panel that has nothing to act on there.
-  const [viewMode, setViewMode] = useState<"studio" | "map">("studio");
-  const enterMapView = useCallback(() => {
-    setViewMode("map");
-    setActiveModule("explore");
-    setUnitsListOpen(false);
-  }, []);
   const handleToggleUnitsList = useCallback(() => {
     setUnitsListOpen((prev) => {
       // Opening the mobile sheet folds the dock's own filter stack away in
@@ -481,15 +466,6 @@ export function ProjectViewerRuntime({
     [detailModels, units]
   );
 
-  // Map mode — the same "building"-role model Studio renders (v1 scope:
-  // only that one slot, see Project3DConfig's own doc comment), sourced
-  // from the same published-only `detailModels` Studio already has, so
-  // there's no separate fetch and Map mode can never show a draft.
-  const mapViewGlbUrl = useMemo(
-    () => detailModels.find((m) => m.slotRole === "building")?.model.glbUrl ?? null,
-    [detailModels]
-  );
-
   // More / Settings Menu PRD — real project fields for MoreMenu's own
   // Project Information section (and the header identity plate, which
   // this replaces the old projectName/developerName/city trio for).
@@ -679,6 +655,7 @@ export function ProjectViewerRuntime({
       geoLongitude: viewerConfig.geoLongitude,
       simulationDate: effectiveSunDate,
       northOffsetDeg: viewerConfig.northOffsetDeg,
+      siteRotationDeg: viewerConfig.siteRotationDeg,
       sunDiscEnabled: viewerConfig.sunDiscEnabled,
       autoSunIntensityEnabled: viewerConfig.autoSunIntensityEnabled,
       autoSunColorEnabled: viewerConfig.autoSunColorEnabled,
@@ -837,6 +814,30 @@ export function ProjectViewerRuntime({
   // Units Blocks & POI Layer PRD — real appearance + master POI camera
   // config for the public viewer's own unit blocks (same shape/pattern as
   // every other *Config memo here).
+
+  // "Map" tab — real-world site context as geometry inside this same
+  // scene. There is no longer a separate map view to switch to: turning
+  // the Map toggle on in the Experience Editor integrates the site here
+  // directly. Coordinates come from the project record, never from
+  // site-owned fields (Project.lat/lng is canonical — see
+  // src/lib/projectLocation.ts).
+  const siteConfig = useMemo(
+    () => ({
+      siteEnabled: viewerConfig.siteEnabled,
+      siteRadiusM: viewerConfig.siteRadiusM,
+      siteTerrainEnabled: viewerConfig.siteTerrainEnabled,
+      siteImageryEnabled: viewerConfig.siteImageryEnabled,
+      siteImageryBrightness: viewerConfig.siteImageryBrightness,
+      siteOffsetX: viewerConfig.siteOffsetX,
+      siteOffsetZ: viewerConfig.siteOffsetZ,
+      siteElevationOffset: viewerConfig.siteElevationOffset,
+      siteRotationDeg: viewerConfig.siteRotationDeg,
+      siteScale: viewerConfig.siteScale,
+      latitude: project.coords?.lat ?? null,
+      longitude: project.coords?.lng ?? null,
+    }),
+    [viewerConfig, project.coords]
+  );
   const unitsConfig = useMemo(
     () => ({
       unitColorAvailable: viewerConfig.unitColorAvailable,
@@ -1134,14 +1135,7 @@ export function ProjectViewerRuntime({
           together as UnitsWorkspace opens, instead of staying pinned to
           the full browser width while only the canvas itself moves. */}
       <div className="relative h-full min-w-0 flex-1">
-        {viewMode === "map" ? (
-          <MapModeBar
-            projectName={moreMenuProject.name}
-            developerName={moreMenuProject.developerName}
-            city={moreMenuProject.city}
-            onExit={() => setViewMode("studio")}
-          />
-        ) : (
+        {(
           <>
             <ViewerHUD
               viewerRef={viewerRef}
@@ -1177,16 +1171,6 @@ export function ProjectViewerRuntime({
               unitFiltersExpanded={unitFiltersExpanded}
               onToggleUnitFilters={handleToggleUnitFilters}
             />
-            {viewerConfig.mapViewEnabled && !unitCardOpen && (
-              // Clears the compare-tray/construction-strip cluster below
-              // (`top-[60px]`/`top-[68px]`, conditionally shown) with real
-              // margin rather than sharing its row — that cluster's own
-              // visibility doesn't depend on `mapViewEnabled`, so the two
-              // can be on-screen at once.
-              <div className="pointer-events-none absolute right-3 top-[112px] z-20 flex justify-end pr-[env(safe-area-inset-right)] sm:right-4 sm:top-[124px]">
-                <MapViewEntryButton onClick={enterMapView} />
-              </div>
-            )}
             {/* The floor rail. Anchored to THIS wrapper's left edge, not
                 the page's — the wrapper is the flex sibling that
                 UnitsWorkspace narrows, so the rail automatically sits just
@@ -1218,7 +1202,7 @@ export function ProjectViewerRuntime({
             only, same as ViewerHUD itself: nothing that opens either (the
             Units workflow, ViewerHUD's own construction awareness) is
             reachable while Map mode's own minimal bar is showing. */}
-        {viewMode === "studio" && !unitCardOpen && (compareCount > 0 || (!unitPanelOpen && project.status === "under_construction")) && (
+        {!unitCardOpen && (compareCount > 0 || (!unitPanelOpen && project.status === "under_construction")) && (
           <div className="absolute right-3 top-[60px] z-20 flex shrink-0 items-stretch gap-2 pr-[env(safe-area-inset-right)] sm:right-4 sm:top-[68px]">
             {compareCount > 0 && (
               <button
@@ -1241,42 +1225,19 @@ export function ProjectViewerRuntime({
           </div>
         )}
 
-        {viewMode === "studio" && screenshotFlash && (
+        {screenshotFlash && (
           <div className="glass-panel-dark pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-pill px-4 py-2 text-xs font-semibold text-white sm:top-20">
             {t(screenshotFlash === "success" ? "project.screenshotSaved" : "project.screenshotFailed")}
           </div>
         )}
 
-        {viewMode === "studio" && fullscreenUnsupported && (
+        {fullscreenUnsupported && (
           <div className="glass-panel-dark pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-pill px-4 py-2 text-xs font-semibold text-white sm:top-20">
             {t("project.fullscreenUnavailable")}
           </div>
         )}
 
-        {viewMode === "map" ? (
-          <ProjectMapView
-            project={{ id: project.id, coords: project.coords }}
-            glbUrl={mapViewGlbUrl}
-            editable={false}
-            placement={{
-              latitude: viewerConfig.mapViewLatitude,
-              longitude: viewerConfig.mapViewLongitude,
-              altitude: viewerConfig.mapViewAltitude,
-              headingDeg: viewerConfig.mapViewHeadingDeg,
-              scale: viewerConfig.mapViewScale,
-            }}
-            sun={{
-              azimuthDeg: viewerConfig.sunAzimuthDeg,
-              elevationDeg: viewerConfig.sunElevationDeg,
-              autoIntensityEnabled: viewerConfig.autoSunIntensityEnabled,
-              autoColorEnabled: viewerConfig.autoSunColorEnabled,
-              manualIntensity: viewerConfig.manualSunIntensity,
-              manualColorHex: viewerConfig.manualSunColorHex,
-              enabled: viewerConfig.sunLightEnabled,
-            }}
-            className="relative h-full w-full"
-          />
-        ) : (
+        {(
           // Wrapper exists only to catch pointer-downs aimed at the scene
           // (`handleScenePointerDown` above) — `ThreeProjectViewer` owns
           // its own canvas/renderer lifecycle and has no business growing
@@ -1293,13 +1254,14 @@ export function ProjectViewerRuntime({
               lightingConfig={lightingConfig}
               renderingConfig={renderingConfig}
               unitsConfig={unitsConfig}
+              siteConfig={siteConfig}
               onUnitClick={handleUnitClickIn3D}
               onReady={handleReady}
               className="relative h-full w-full"
             />
           </div>
         )}
-        {viewMode === "studio" && (
+        {(
           <MobileUnitsSheet
             open={unitsSheetOpen}
             onClose={handleCloseUnitsList}

@@ -480,6 +480,72 @@ export interface Project3DConfig {
   mapViewPitchDeg: number;
   mapViewBearingDeg: number;
 
+  /** "Map" tab, 2026-08-26 rewrite — real-world SITE CONTEXT as ordinary
+   * scene geometry, replacing the nine `mapView*` fields' old meaning (a
+   * SEPARATE mapbox-gl view the visitor toggled to, mutually exclusive
+   * with the Studio scene — see ProjectViewerRuntime's old `viewMode`).
+   *
+   * The inversion that makes this work: nothing here hands Mapbox a
+   * canvas or a GL context. Mapbox raster-DEM + satellite tiles are
+   * fetched as DATA and rebuilt as a real `THREE.Mesh` inside the engine's
+   * own scene graph, so the site is lit by the ONE Global Sun Vector, and
+   * picks up fog/SSGI/SSR/DOF/TRAA/LUT for free — because it is just
+   * geometry. (The abandoned inverse — Mapbox owns the canvas, three.js
+   * draws into its WebGL2 context — could never do that: the TSL
+   * RenderPipeline's full-screen composite overwrites Mapbox's
+   * framebuffer, there is no shared depth so no mutual occlusion, and it
+   * forces `forceWebGL:true`, losing the WebGPU backend outright.)
+   *
+   * TRANSFORM RULE (the product decision this whole shape encodes): the
+   * SITE moves, the building never does. Every project GLB stays at its
+   * authored origin; `siteOffsetX/Z`, `siteElevationOffset`,
+   * `siteRotationDeg` and `siteScale` move the world around it. This is
+   * deliberately the OPPOSITE direction from the `mapView*` placement
+   * fields above (which moved the model onto a map), and the opposite of
+   * `transformParentSlotId` inheritance (which copies a parent's
+   * transform onto a child) — the site owns its transform and is nobody's
+   * child.
+   *
+   * `siteRotationDeg` is NOT only cosmetic: rotating the site is the
+   * admin stating where north really is, so it is added to the resolved
+   * sun azimuth exactly the way `northOffsetDeg` already is (see
+   * RenderEngine.resolveGlobalSunVector). Derivation: a Y-rotation by θ
+   * maps the sun's horizontal direction (sin a, cos a) to
+   * (sin(a+θ), cos(a+θ)) — i.e. rotating the site by θ and adding θ to
+   * the azimuth are the same operation, so the two fields are the same
+   * physical quantity in the same sign and units and simply add.
+   *
+   * Default off/zero: zero behavior change for any existing project. */
+  siteEnabled: boolean;
+  /** Extraction radius in real metres from the project's canonical
+   * `Project.lat/lng`, capped at 2000 (a 4 km square).
+   *
+   * The cap is NOT the sky dome, despite the fixed 1600-unit
+   * SKY_DOME_SCALE: `SkyMesh` renders BackSide with `depthWrite: false`,
+   * so it never occludes geometry beyond it. What actually clips a large
+   * site is the camera far plane — and because the site is deliberately
+   * excluded from `boundingRadius`, nothing else knows how far it reaches,
+   * so `applyCameraConfig` gives it an explicit far-plane floor of its own
+   * (see `siteFarExtentM`). Past ~2 km the 0.1 default near plane starts
+   * costing visible depth precision, which is the real ceiling. */
+  siteRadiusM: number;
+  /** Real DEM displacement (Mapbox raster-DEM). Off renders the same
+   * extent dead flat at Y=0, which is the right answer for a genuinely
+   * flat site and saves the DEM fetch entirely. */
+  siteTerrainEnabled: boolean;
+  /** Satellite imagery as the site's albedo. */
+  siteImageryEnabled: boolean;
+  /** Multiplier on the imagery albedo. Aerial imagery arrives with the
+   * sun of the day it was captured already baked into it, which fights
+   * the engine's own movable sun — pulling it down is the cheap, honest
+   * mitigation (a real de-lighting pass is out of scope). */
+  siteImageryBrightness: number;
+  siteOffsetX: number;
+  siteOffsetZ: number;
+  siteElevationOffset: number;
+  siteRotationDeg: number;
+  siteScale: number;
+
   /** 360° Backdrop Photo — an admin-uploaded equirectangular PNG (real
    * site-context photography: surrounding buildings/terrain/horizon) with
    * a transparent sky region, rendered as an unlit sphere just inside the
@@ -995,6 +1061,15 @@ export type EnvironmentConfig = Pick<
   | "geoLongitude"
   | "simulationDate"
   | "northOffsetDeg"
+  // Deliberately in BOTH EnvironmentConfig and SiteConfig: it is one
+  // field read by two systems. Rotating the site restates where north is,
+  // so the sun must follow it (see the field's own doc comment for the
+  // derivation) — which makes it a real Sun & Sky input, not just a
+  // transform. Re-entering applyEnvironmentConfig on a rotation drag is
+  // correct, not waste: a new north means a new sun, which means a new
+  // sky, which means the PMREM environment genuinely is stale (and that
+  // rebuild is already debounced).
+  | "siteRotationDeg"
   | "sunDiscEnabled"
   | "autoSunIntensityEnabled"
   | "autoSunColorEnabled"
@@ -1066,6 +1141,47 @@ export type EnvironmentConfig = Pick<
   | "groundFogEnabled"
   | "groundFogRadius"
 >;
+
+/** "Map" tab — real-world site context as scene geometry (see
+ * Project3DConfig's own `siteEnabled` doc comment for the whole design).
+ *
+ * A config path of its own rather than more fields on EnvironmentConfig,
+ * for one concrete reason: `applyEnvironmentConfig` re-derives the sun,
+ * the sky uniforms and (debounced) the PMREM environment capture on every
+ * call. A transform slider has no business touching any of that, and the
+ * engine's own established discipline is one apply-method per concern
+ * (setCameraConfig / setQualityConfig / setEnvironmentConfig / …), each
+ * re-entered by prop identity from a useMemo. `siteRotationDeg` is the
+ * single deliberate exception and appears in both — it really is a Sun &
+ * Sky input, because it restates where north is. */
+export type SiteConfig = Pick<
+  Project3DConfig,
+  | "siteEnabled"
+  | "siteRadiusM"
+  | "siteTerrainEnabled"
+  | "siteImageryEnabled"
+  | "siteImageryBrightness"
+  | "siteOffsetX"
+  | "siteOffsetZ"
+  | "siteElevationOffset"
+  | "siteRotationDeg"
+  | "siteScale"
+>;
+
+/** What the engine actually needs to build a site: the admin's settings
+ * plus the project's own coordinates.
+ *
+ * The coordinates are carried alongside rather than stored as site fields
+ * on purpose. `Project.lat/lng` is canonical and src/lib/projectLocation.ts
+ * exists specifically to stop map features from authoring their own
+ * private copy — that three-way drift (project vs MapModelVersion vs
+ * Project3DConfig.mapView*) is the bug that module was written to kill.
+ * A site with its own lat/lng would recreate it immediately. Null
+ * coordinates simply mean "no site" — the same state as the toggle off. */
+export interface SiteRuntimeConfig extends SiteConfig {
+  latitude: number | null;
+  longitude: number | null;
+}
 
 // `PlatformHdri` (a shared, platform-wide HDRI environment map) removed
 // entirely 2026-08-14 along with `Project3DConfig.hdriId` — see

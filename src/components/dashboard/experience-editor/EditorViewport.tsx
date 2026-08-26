@@ -4,9 +4,9 @@ import { forwardRef, useCallback, useRef, useState } from "react";
 import { Expand, Minimize, Move, MousePointer2, RotateCw, Scale as ScaleIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThreeProjectViewer } from "@/components/project/ThreeProjectViewer";
-import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
+import type { ThreeProjectViewerHandle, ThreeProjectViewerProps } from "@/components/project/viewerTypes";
 import type { CameraConfig, DetailModelEntry, QualityConfig } from "@/lib/render-engine/RenderEngine";
-import type { EnvironmentConfig, LightingConfig, RenderingConfig, UnitsConfig } from "@/lib/types";
+import type { EnvironmentConfig, LightingConfig, RenderingConfig, SiteRuntimeConfig, UnitsConfig } from "@/lib/types";
 
 type Tool = "select" | "move" | "rotate" | "scale";
 
@@ -39,6 +39,8 @@ export const EditorViewport = forwardRef<
     lightingConfig?: LightingConfig;
     renderingConfig?: RenderingConfig;
     unitsConfig?: UnitsConfig;
+    siteConfig?: SiteRuntimeConfig;
+    onSiteStatus?: ThreeProjectViewerProps["onSiteStatus"];
     onUnitClick?: (unitId: string | null) => void;
     onUnitHover?: (unitId: string | null) => void;
     onPerfStats?: (
@@ -46,7 +48,7 @@ export const EditorViewport = forwardRef<
     ) => void;
   }
 >(function EditorViewport(
-  { detailModels, slotsLoaded, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, unitsConfig, onUnitClick, onUnitHover, onPerfStats },
+  { detailModels, slotsLoaded, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, unitsConfig, siteConfig, onUnitClick, onUnitHover, onPerfStats, onSiteStatus },
   viewerRef
 ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -134,6 +136,8 @@ export const EditorViewport = forwardRef<
             lightingConfig={lightingConfig}
             renderingConfig={renderingConfig}
             unitsConfig={unitsConfig}
+            siteConfig={siteConfig}
+            onSiteStatus={onSiteStatus}
             onUnitClick={onUnitClick}
             onUnitHover={onUnitHover}
             className="relative h-full w-full"

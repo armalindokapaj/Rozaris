@@ -242,6 +242,29 @@ const patchSchema = z.object({
   mapViewZoom: z.number().min(0).max(22).optional(),
   mapViewPitchDeg: z.number().min(0).max(85).optional(),
   mapViewBearingDeg: z.number().min(-360).max(360).optional(),
+  // "Map" tab — real-world site context as scene geometry (see
+  // src/lib/types.ts `siteEnabled`). Ranges are deliberately permissive:
+  // useProjectConfigEditor PATCHes the WHOLE draft on every save, so a
+  // bound tighter than the UI can produce 400s the entire save and
+  // silently loses unrelated edits (the documented Section widthM
+  // 500->5000 precedent).
+  siteEnabled: z.boolean().optional(),
+  // Upper bound is a real rendering limit, not taste. It is NOT the sky
+  // dome: SkyMesh renders BackSide with depthWrite:false, so it never
+  // occludes geometry beyond it. The real constraint is the camera far
+  // plane, which RenderEngine.applyCameraConfig now gives its own
+  // site-aware floor. 2000 m (a 4 km square, ~2.8 km to the corners) is
+  // where the near/far ratio starts costing real depth precision against
+  // the 0.1 default near plane.
+  siteRadiusM: z.number().min(100).max(2000).optional(),
+  siteTerrainEnabled: z.boolean().optional(),
+  siteImageryEnabled: z.boolean().optional(),
+  siteImageryBrightness: z.number().min(0).max(2).optional(),
+  siteOffsetX: z.number().min(-2000).max(2000).optional(),
+  siteOffsetZ: z.number().min(-2000).max(2000).optional(),
+  siteElevationOffset: z.number().min(-1000).max(1000).optional(),
+  siteRotationDeg: z.number().min(-360).max(360).optional(),
+  siteScale: z.number().positive().max(10).optional(),
   // 360° Backdrop Photo — real-photo site context composited under the
   // physical sky via a transparent-PNG sphere (RenderEngine.ts's
   // backdropMesh). `backdropImageUrl` is a Vercel Blob URL, uploaded via

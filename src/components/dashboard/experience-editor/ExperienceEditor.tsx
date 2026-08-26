@@ -7,10 +7,10 @@ import { useModelEditor, type ModelSwitches, type ModelTransform } from "@/hooks
 import { useProjectConfigEditor } from "@/hooks/useProjectConfigEditor";
 import { useProjectUnits } from "@/hooks/useProjectUnits";
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
+import type { SiteStatus } from "./panels/MapPanel";
 import { EditorTopBar } from "./EditorTopBar";
 import { SceneNavigator } from "./SceneNavigator";
 import { EditorViewport } from "./EditorViewport";
-import { MapEditorViewport } from "./MapEditorViewport";
 import { Inspector } from "./Inspector";
 import { StatusBar } from "./StatusBar";
 import type { EditorTabId } from "./tabs";
@@ -134,6 +134,10 @@ export function ExperienceEditor({
     dpr: number;
   } | null>(null);
   const [statusPreviewEnabled, setStatusPreviewEnabled] = useState(true);
+  // "Map" tab — real build state from the engine, so the panel can show
+  // "loading tiles" / a real failure / the site's actual elevation and
+  // relief instead of leaving the admin guessing at a silent viewport.
+  const [siteStatus, setSiteStatus] = useState<SiteStatus>(null);
   const [effectiveRenderScale, setEffectiveRenderScale] = useState<number | null>(null);
   const viewerRef = useRef<ThreeProjectViewerHandle>(null);
   const detail = useDetailModelSlots(project.id);
@@ -167,14 +171,28 @@ export function ExperienceEditor({
     return entries;
   }, [detail.slots, detail.activeSlotId, detail.activeVersion, detail.versionsBySlot, modelEditor.transform, modelEditor.switches, modelEditor.overrides, modelEditor.links, units, statusPreviewEnabled]);
 
-  // "Map" tab — the same "building"-role model Studio renders (v1 scope:
-  // only that one slot, no Units/surroundings composition on the map — see
-  // Project3DConfig's own doc comment), read straight off `detailModels`
-  // above so this stays in sync with whatever draft/published state that
-  // memo already resolved rather than re-deriving it a second way.
-  const mapViewGlbUrl = useMemo(
-    () => detailModels.find((m) => m.slotRole === "building")?.model.glbUrl ?? null,
-    [detailModels]
+  // "Map" tab — real-world site context, built as geometry INSIDE the
+  // Studio scene rather than shown as a separate mapbox-gl view. The
+  // coordinates come from the project record, never from site-owned
+  // fields: Project.lat/lng is canonical (src/lib/projectLocation.ts), and
+  // a site with its own copy would recreate exactly the drift that module
+  // exists to prevent.
+  const siteConfig = useMemo(
+    () => ({
+      siteEnabled: configEditor.draft.siteEnabled,
+      siteRadiusM: configEditor.draft.siteRadiusM,
+      siteTerrainEnabled: configEditor.draft.siteTerrainEnabled,
+      siteImageryEnabled: configEditor.draft.siteImageryEnabled,
+      siteImageryBrightness: configEditor.draft.siteImageryBrightness,
+      siteOffsetX: configEditor.draft.siteOffsetX,
+      siteOffsetZ: configEditor.draft.siteOffsetZ,
+      siteElevationOffset: configEditor.draft.siteElevationOffset,
+      siteRotationDeg: configEditor.draft.siteRotationDeg,
+      siteScale: configEditor.draft.siteScale,
+      latitude: project.coords?.lat ?? null,
+      longitude: project.coords?.lng ?? null,
+    }),
+    [configEditor.draft, project.coords]
   );
 
   const unitsConfig = useMemo(
@@ -265,6 +283,7 @@ export function ExperienceEditor({
       geoLongitude: configEditor.draft.geoLongitude,
       simulationDate: configEditor.draft.simulationDate,
       northOffsetDeg: configEditor.draft.northOffsetDeg,
+      siteRotationDeg: configEditor.draft.siteRotationDeg,
       sunDiscEnabled: configEditor.draft.sunDiscEnabled,
       autoSunIntensityEnabled: configEditor.draft.autoSunIntensityEnabled,
       autoSunColorEnabled: configEditor.draft.autoSunColorEnabled,
@@ -491,37 +510,28 @@ export function ExperienceEditor({
           {leftOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
         </button>
 
-        {activeTab === "map" ? (
-          <MapEditorViewport
-            project={project}
-            draft={configEditor.draft}
-            glbUrl={mapViewGlbUrl}
-            onMove={(point) => configEditor.update({ mapViewLatitude: point.lat, mapViewLongitude: point.lng })}
-            onCaptureCamera={(camera) =>
-              configEditor.update({
-                mapViewZoom: camera.zoom,
-                mapViewPitchDeg: camera.pitchDeg,
-                mapViewBearingDeg: camera.bearingDeg,
-              })
-            }
-          />
-        ) : (
-          <EditorViewport
-            ref={viewerRef}
-            detailModels={detailModels}
-            slotsLoaded={detail.slotsLoaded}
-            cameraConfig={cameraConfig}
-            qualityConfig={qualityConfig}
-            environmentConfig={environmentConfig}
-            lightingConfig={lightingConfig}
-            renderingConfig={renderingConfig}
-            unitsConfig={unitsConfig}
-            onPerfStats={(stats) => {
-              setPerfStats(stats);
-              setEffectiveRenderScale(viewerRef.current?.getEffectiveRenderScale() ?? null);
-            }}
-          />
-        )}
+        {/* The Map tab no longer swaps in a separate mapbox-gl viewport.
+            The site is real geometry in this same scene now, so the admin
+            has to be looking at the Studio viewport to align it — a
+            separate map preview would show them the one thing they cannot
+            align against. */}
+        <EditorViewport
+          ref={viewerRef}
+          detailModels={detailModels}
+          slotsLoaded={detail.slotsLoaded}
+          cameraConfig={cameraConfig}
+          qualityConfig={qualityConfig}
+          environmentConfig={environmentConfig}
+          lightingConfig={lightingConfig}
+          renderingConfig={renderingConfig}
+          unitsConfig={unitsConfig}
+          siteConfig={siteConfig}
+          onSiteStatus={setSiteStatus}
+          onPerfStats={(stats) => {
+            setPerfStats(stats);
+            setEffectiveRenderScale(viewerRef.current?.getEffectiveRenderScale() ?? null);
+          }}
+        />
 
         <button
           onClick={() => setRightOpen((v) => !v)}
@@ -543,6 +553,7 @@ export function ExperienceEditor({
               createUnit={createUnit}
               statusPreviewEnabled={statusPreviewEnabled}
               onStatusPreviewChange={setStatusPreviewEnabled}
+              siteStatus={siteStatus}
               onGroundAlign={handleGroundAlign}
               locale="en"
             />

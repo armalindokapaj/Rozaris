@@ -2,6 +2,7 @@ import * as THREE from "three/webgpu";
 import mapboxgl from "mapbox-gl";
 import { StudioBasemapLayer } from "./StudioBasemapLayer";
 import type { BasemapAnchor } from "./basemapCameraSync";
+import { buildSiteTerrain, type SiteTerrainResult } from "./siteTerrain";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -46,6 +47,7 @@ import type {
   CameraPreset,
   DetailModelSlotRole,
   EnvironmentConfig,
+  SiteRuntimeConfig,
   LightingConfig,
   NodeOverride,
   Project3DConfig,
@@ -67,6 +69,7 @@ export const DEFAULT_ENVIRONMENT_CONFIG: EnvironmentConfig = {
   geoLongitude: 19.8187,
   simulationDate: "2025-01-01T00:00:00.000Z",
   northOffsetDeg: 0,
+  siteRotationDeg: 0,
   sunDiscEnabled: true,
   autoSunIntensityEnabled: true,
   autoSunColorEnabled: true,
@@ -409,6 +412,18 @@ const RESIZE_THROTTLE_MS = 90;
 
 export interface RenderEngineCallbacks {
   onWebglFail: () => void;
+  /** "Map" tab — progress/outcome of a site build, so the Map panel can
+   * show a real state instead of a silent nothing while tiles download.
+   * Optional: every existing caller predates the site feature. `ready`
+   * carries the real elevation numbers so an admin can see the site's
+   * true height above sea level and its actual relief rather than
+   * guessing from a flat-looking render. */
+  onSiteStatus?: (
+    status:
+      | { state: "loading" }
+      | { state: "failed" }
+      | { state: "ready"; centreElevationM: number; reliefM: { min: number; max: number } }
+  ) => void;
   onPerfStats: (
     stats: {
       fps: number;
@@ -753,6 +768,42 @@ export class RenderEngine {
   private groundSunDirectionUniform: { value: THREE.Vector3 } | null = null;
   private cloudSystem: CloudSystem | null = null;
   private fogSystem: FogSystem | null = null;
+  /** "Map" tab — real-world site context as scene geometry (see
+   * render-engine/siteTerrain.ts). Added straight to `scene`, deliberately
+   * NOT to `clippingGroup`: `collectClippableMeshes()` walks that group,
+   * so a site inside it would be sliced by every Section — a "Floor 7" cut
+   * authored for the building would also cut the terrain and, with fill
+   * enabled, silently double the site's draw calls by building a BackSide
+   * twin of it.
+   *
+   * Equally deliberately NOT a DetailModelSlot, despite the slot system
+   * already owning GLB versioning and a five-field transform that matches
+   * this one exactly. Three concrete reasons: `frameLoadedContent()` unions
+   * a Box3 over every loaded root, so a 1.2 km site would inflate
+   * boundingRadius ~30x and collapse the shadow frustum, camera framing,
+   * sun distance and ground disc in one step; `compileViewerRelease()`
+   * throws if ANY slot has no published version, so a draft site would
+   * break white-label release compilation for the whole project; and
+   * `SceneNavigator` would list it under "Buildings", which reads wrong.
+   * Living outside `loadedRoots` gets the boundingRadius exclusion for
+   * free rather than as a special case someone must remember. */
+  private siteGroup: THREE.Group | null = null;
+  private siteResult: SiteTerrainResult | null = null;
+  private siteConfig: SiteRuntimeConfig | null = null;
+  /** Signature of the inputs that require a real rebuild (location,
+   * radius, which layers). Transform and brightness changes deliberately
+   * do NOT appear here — they are uniform/matrix writes, matching the
+   * engine's existing three-tier discipline (remount / signature-keyed
+   * structural rebuild / plain uniform write). */
+  private siteSignature: string | null = null;
+  private siteAbort: AbortController | null = null;
+  /** Guards against a slow build landing after a newer one was requested
+   * or after unmount — the same mount-token pattern createRenderer uses. */
+  private siteToken = 0;
+  /** How far the current site reaches from the world origin, in scene
+   * units — read only by applyCameraConfig's far-plane floor. Zero when
+   * no site is loaded, so it can never affect a project without one. */
+  private siteFarExtentM = 0;
   /** The one real Global Sun Vector (PRD §10) — every Environment feature
    * (Sky/Water/Clouds/Fog/Ground today; Shadows/GI/Volumetrics/Lens Flare
    * in later phases) reads this SAME field, computed once per
@@ -2362,7 +2413,16 @@ export class RenderEngine {
     // the ground plane (much closer to the camera) rendered normally.
     // The sky dome must never be subject to the admin's scene-geometry
     // far-clip setting, so it gets its own floor here.
-    camera.far = Math.max(config.cameraFarClip, this.boundingRadius * 8, SKY_DOME_SCALE * 1.1);
+    // "Map" tab — the site gets its own far-plane floor for exactly the
+    // same reason the sky dome above does: it is deliberately excluded
+    // from `boundingRadius` (a kilometre-scale site would wreck the shadow
+    // frustum, camera framing and sun distance that number drives), so
+    // nothing else here knows how far it reaches. Without this a large
+    // site's far corners are silently frustum-culled and the ground just
+    // stops mid-air. `siteFarExtentM` is the half-DIAGONAL, not the
+    // radius — the site mesh is square, so its corners sit radius*sqrt(2)
+    // out — plus the orbit distance the camera can pull back to.
+    camera.far = Math.max(config.cameraFarClip, this.boundingRadius * 8, SKY_DOME_SCALE * 1.1, this.siteFarExtentM);
     camera.updateProjectionMatrix();
 
     controls.enableRotate = config.cameraOrbitEnabled;
@@ -2405,13 +2465,28 @@ export class RenderEngine {
    * result either way. */
   private resolveGlobalSunVector(config: EnvironmentConfig): { elevationDeg: number; azimuthDeg: number } {
     if (!config.solarControllerEnabled) {
-      return { elevationDeg: config.sunElevationDeg, azimuthDeg: config.sunAzimuthDeg };
+      // Site rotation applies on this branch too. A direct-authored sun is
+      // still a sun in the scene's frame, so if the world rotates under it
+      // and this azimuth did not follow, the shadows would visibly detach
+      // from the site the instant an admin dragged the rotation slider.
+      const manualAz = (((config.sunAzimuthDeg + config.siteRotationDeg) % 360) + 360) % 360;
+      return { elevationDeg: config.sunElevationDeg, azimuthDeg: manualAz };
     }
     const raw =
       config.solarPathMode === "geographic"
         ? geographicSunPosition(new Date(config.simulationDate), config.geoLatitude, config.geoLongitude, config.viewerTimeHours)
         : sunPositionForAnchors(config.viewerTimeHours, config.solarAnchors);
-    return { elevationDeg: raw.elevationDeg, azimuthDeg: (((raw.azimuthDeg + config.northOffsetDeg) % 360) + 360) % 360 };
+    // `siteRotationDeg` adds here for a real physical reason, not as a
+    // convenience: rotating the site is the admin restating where north
+    // is, and a Y-rotation by theta maps the sun's horizontal direction
+    // (sin a, cos a) to (sin(a+theta), cos(a+theta)) — so rotating the
+    // world by theta and adding theta to the azimuth are the SAME
+    // operation. `northOffsetDeg` and `siteRotationDeg` are therefore one
+    // physical quantity in the same sign and units, and simply sum.
+    // Deriving it this way also means the sun stays locked to the site
+    // through an alignment drag with no extra bookkeeping.
+    const northDeg = config.northOffsetDeg + config.siteRotationDeg;
+    return { elevationDeg: raw.elevationDeg, azimuthDeg: (((raw.azimuthDeg + northDeg) % 360) + 360) % 360 };
   }
 
   /** Restored near-verbatim from the pre-rebuild engine's own
@@ -2462,6 +2537,173 @@ export class RenderEngine {
   /** Environment tab (PRD §7-13) — applies every field live, no remount.
    * Safe to call on every slider drag; the expensive PMREM rebuild is
    * debounced internally (scheduleEnvironmentRebuild). */
+  // ---------------------------------------------------------------------
+  // "Map" tab — real-world site context as scene geometry.
+  // ---------------------------------------------------------------------
+
+  /**
+   * Applies the site config, following the engine's own established
+   * three-tier discipline rather than rebuilding on every change:
+   *
+   *   - inputs that change what the geometry IS (location, radius, which
+   *     layers) are signature-keyed and trigger a real async rebuild;
+   *   - the transform is a plain matrix write on the group;
+   *   - imagery brightness is a material write.
+   *
+   * That split is what makes an alignment drag cheap: dragging rotation or
+   * offset never refetches a tile, exactly as dragging a detail model's
+   * transform never reloads its GLB.
+   */
+  setSiteConfig(config: SiteRuntimeConfig) {
+    const previous = this.siteConfig;
+    this.siteConfig = config;
+    if (!this.scene) return;
+
+    const hasLocation = config.latitude != null && config.longitude != null;
+    const active = config.siteEnabled && hasLocation;
+    const signature = active
+      ? [config.latitude, config.longitude, config.siteRadiusM, config.siteTerrainEnabled, config.siteImageryEnabled].join("|")
+      : null;
+
+    if (signature !== this.siteSignature) {
+      this.siteSignature = signature;
+      void this.rebuildSite(active ? config : null);
+    } else {
+      this.applySiteTransform();
+      this.applySiteMaterial();
+    }
+
+    // The abstract ground disc and a real site are mutually exclusive by
+    // rule, not by an admin remembering a toggle on a different tab: the
+    // disc is CircleGeometry(boundingRadius*1.6) sitting at Y=0, so with a
+    // site present it z-fights the terrain across the whole overlap and
+    // double-receives the sun's shadow. Re-applying the environment config
+    // is what actually moves the disc, so only do it when the answer
+    // changed.
+    const wasActive = !!previous && previous.siteEnabled && previous.latitude != null && previous.longitude != null;
+    if (wasActive !== active) this.applyEnvironmentConfig(this.environmentConfig, false);
+  }
+
+  /** True while a site is showing — read by applyEnvironmentConfig to
+   * suppress the abstract ground disc (see setSiteConfig). */
+  private hasActiveSite(): boolean {
+    return !!this.siteGroup && !!this.siteResult;
+  }
+
+  private async rebuildSite(config: SiteRuntimeConfig | null) {
+    const token = ++this.siteToken;
+    // Abort any in-flight tile fetches first — an admin dragging the
+    // radius slider commits several times, and without this the earlier
+    // requests keep downloading tiles nobody will ever look at.
+    this.siteAbort?.abort();
+    this.siteAbort = null;
+    this.siteFarExtentM = 0;
+    this.disposeSite();
+
+    if (!config || !this.scene) {
+      // A site that just turned off still has to release its ground-disc
+      // suppression, which applyEnvironmentConfig owns.
+      if (this.scene) this.applyEnvironmentConfig(this.environmentConfig, false);
+      return;
+    }
+
+    const accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    if (!accessToken) return;
+
+    const controller = new AbortController();
+    this.siteAbort = controller;
+    this.callbacks.onSiteStatus?.({ state: "loading" });
+
+    let result: SiteTerrainResult | null = null;
+    try {
+      result = await buildSiteTerrain({
+        latitude: config.latitude as number,
+        longitude: config.longitude as number,
+        radiusM: config.siteRadiusM,
+        terrainEnabled: config.siteTerrainEnabled,
+        imageryEnabled: config.siteImageryEnabled,
+        accessToken,
+        signal: controller.signal,
+      });
+    } catch {
+      result = null;
+    }
+
+    // A newer request (or an unmount) superseded this one while tiles were
+    // in flight — drop the result rather than adding a stale site to a
+    // scene that has already moved on.
+    if (token !== this.siteToken || !this.scene) {
+      result?.dispose();
+      return;
+    }
+    if (!result) {
+      this.callbacks.onSiteStatus?.({ state: "failed" });
+      return;
+    }
+
+    const group = new THREE.Group();
+    group.name = "rz-site";
+    group.add(result.mesh);
+    this.scene.add(group);
+    this.siteGroup = group;
+    this.siteResult = result;
+    // Half-diagonal of the square site, scaled by the admin's own scale
+    // field, plus generous headroom for how far the camera can orbit out.
+    this.siteFarExtentM = result.halfExtentM * Math.SQRT2 * Math.max(0.1, config.siteScale) + 1000;
+    this.applySiteTransform();
+    this.applySiteMaterial();
+    // Re-apply the environment so the ground disc yields to the real site,
+    // and the camera so the far plane grows to actually reach it — neither
+    // happens on its own, since the site sits outside every bounds
+    // computation by design.
+    this.applyEnvironmentConfig(this.environmentConfig, false);
+    this.applyCameraConfig(this.cameraConfig);
+    this.callbacks.onSiteStatus?.({
+      state: "ready",
+      centreElevationM: result.centreElevationM,
+      reliefM: result.reliefM,
+    });
+  }
+
+  /** The transform rule this whole feature encodes: the SITE moves, the
+   * building never does. Every project GLB stays at its authored origin
+   * and this group carries the alignment instead. */
+  private applySiteTransform() {
+    const { siteGroup, siteConfig } = this;
+    if (!siteGroup || !siteConfig) return;
+    siteGroup.position.set(siteConfig.siteOffsetX, siteConfig.siteElevationOffset, siteConfig.siteOffsetZ);
+    siteGroup.rotation.set(0, THREE.MathUtils.degToRad(siteConfig.siteRotationDeg), 0);
+    siteGroup.scale.setScalar(siteConfig.siteScale);
+  }
+
+  private applySiteMaterial() {
+    const { siteResult, siteConfig } = this;
+    if (!siteResult || !siteConfig) return;
+    // Aerial imagery ships with the capture day's sun already baked into
+    // it, which fights this engine's own movable sun. Scaling the albedo
+    // down is the cheap, honest mitigation — a real de-lighting pass would
+    // be a different piece of work, and pretending otherwise would be
+    // worse than admitting the trade.
+    //
+    // Written to the material's own uniform, not `material.color`: once
+    // imagery exists the site material drives colour entirely through a
+    // colorNode (it blends a sharp detail sheet over the wide one), and a
+    // `.color` write there would be silently ignored. Null uniform means
+    // no imagery, and the untextured fallback keeps its authored neutral.
+    const brightness = siteResult.brightnessUniform;
+    if (!brightness) return;
+    brightness.value = Math.max(0, Math.min(2, siteConfig.siteImageryBrightness));
+  }
+
+  private disposeSite() {
+    if (this.siteGroup) {
+      this.scene?.remove(this.siteGroup);
+      this.siteGroup = null;
+    }
+    this.siteResult?.dispose();
+    this.siteResult = null;
+  }
+
   setEnvironmentConfig(config: EnvironmentConfig) {
     this.applyEnvironmentConfig(config, false);
   }
@@ -2566,7 +2808,12 @@ export class RenderEngine {
     }
 
     if (groundMesh) {
-      groundMesh.visible = config.groundEnabled;
+      // A real site replaces the abstract ground outright. Both occupy
+      // Y=0 over the same footprint, so leaving the disc on z-fights the
+      // terrain across the whole overlap and receives the sun's shadow a
+      // second time. Enforced here as a rule rather than left to an admin
+      // remembering to turn Environment -> Ground off on another tab.
+      groundMesh.visible = config.groundEnabled && !this.hasActiveSite();
       const wantsInfinite = config.groundStyle === "infinite";
       const wantedRadius = Math.max(this.boundingRadius * 1.6, 10);
       const currentIsInfinite = groundMesh.userData.isInfinite === true;
@@ -3049,6 +3296,14 @@ export class RenderEngine {
   dispose() {
     this.mountToken++;
     this.syncToken++;
+    // "Map" tab — bump the site token and abort in-flight tile fetches
+    // BEFORE anything else tears down, so a build still downloading cannot
+    // land on a disposed scene. Same reasoning as the mount-token guard.
+    this.siteToken++;
+    this.siteAbort?.abort();
+    this.siteAbort = null;
+    this.siteSignature = null;
+    this.disposeSite();
     const renderer = this.renderer;
     if (renderer) renderer.setAnimationLoop(null);
     // "Real-world basemap" mount path — this engine's own repaint-request

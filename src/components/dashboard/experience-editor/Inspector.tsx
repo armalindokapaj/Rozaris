@@ -14,7 +14,7 @@ import { ShotsPanel } from "./panels/ShotsPanel";
 import { SectionsPanel } from "./panels/SectionsPanel";
 import { InteractionPanel } from "./panels/InteractionPanel";
 import { PerformancePanel } from "./panels/PerformancePanel";
-import { MapPanel } from "./panels/MapPanel";
+import { MapPanel, type SiteStatus } from "./panels/MapPanel";
 import { PublishPanel } from "./panels/PublishPanel";
 import { EDITOR_TAB_LABELS, EDITOR_TAB_PHASE, type EditorTabId } from "./tabs";
 import type { UseDetailModelSlotsReturn } from "@/hooks/useDetailModelSlots";
@@ -50,6 +50,7 @@ export function Inspector({
   onStatusPreviewChange,
   onGroundAlign,
   locale,
+  siteStatus,
 }: {
   activeTab: EditorTabId;
   project: Project;
@@ -63,6 +64,7 @@ export function Inspector({
   onStatusPreviewChange: (v: boolean) => void;
   onGroundAlign: () => void;
   locale: Locale;
+  siteStatus: SiteStatus;
 }) {
   return (
     <aside className="flex h-full w-full flex-col overflow-y-auto border-l border-neutral-800 bg-neutral-950 p-3">
@@ -113,7 +115,7 @@ export function Inspector({
       ) : activeTab === "performance" ? (
         <PerformancePanel configEditor={configEditor} />
       ) : activeTab === "map" ? (
-        <MapPanel detail={detail} configEditor={configEditor} />
+        <MapPanel project={project} configEditor={configEditor} siteStatus={siteStatus} />
       ) : activeTab === "publish" ? (
         <PublishPanel project={project} detail={detail} configEditor={configEditor} modelEditor={modelEditor} units={units} locale={locale} />
       ) : (

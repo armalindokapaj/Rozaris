@@ -1,5 +1,13 @@
-import type { CameraConfig, DetailModelEntry, QualityConfig } from "@/lib/render-engine/RenderEngine";
-import type { CameraPreset, EnvironmentConfig, LightingConfig, RenderingConfig, Section, UnitsConfig } from "@/lib/types";
+import type { CameraConfig, DetailModelEntry, QualityConfig, RenderEngineCallbacks } from "@/lib/render-engine/RenderEngine";
+import type {
+  CameraPreset,
+  EnvironmentConfig,
+  LightingConfig,
+  RenderingConfig,
+  Section,
+  SiteRuntimeConfig,
+  UnitsConfig,
+} from "@/lib/types";
 
 /**
  * ThreeProjectViewer's imperative handle + props contract — ground-up
@@ -122,6 +130,11 @@ export interface ThreeProjectViewerProps {
    * remount), same pattern as environmentConfig/lightingConfig/
    * renderingConfig below. */
   unitsConfig?: UnitsConfig;
+  /** "Map" tab — real-world site context as scene geometry. Optional so
+   * every caller that predates the feature keeps compiling and simply
+   * renders no site. */
+  siteConfig?: SiteRuntimeConfig;
+  onSiteStatus?: RenderEngineCallbacks["onSiteStatus"];
   /** §19-20 — real 3D-click/hover on a unit block. Optional: the editor's
    * own live-preview viewport doesn't need to wire these (it drives
    * selection from the Units tab's own list instead). */

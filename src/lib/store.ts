@@ -149,6 +149,19 @@ export const defaultProject3DConfig: Project3DConfig = {
   mapViewZoom: 17.5,
   mapViewPitchDeg: 60,
   mapViewBearingDeg: -20,
+  // "Map" tab — real-world site context (see types.ts `siteEnabled`).
+  // Every value here is the "feature absent" state, so no existing
+  // project changes behavior until an admin turns it on.
+  siteEnabled: false,
+  siteRadiusM: 600,
+  siteTerrainEnabled: true,
+  siteImageryEnabled: true,
+  siteImageryBrightness: 0.85,
+  siteOffsetX: 0,
+  siteOffsetZ: 0,
+  siteElevationOffset: 0,
+  siteRotationDeg: 0,
+  siteScale: 1,
   // 360° Backdrop Photo — off/null by default, zero behavior change.
   backdropEnabled: false,
   backdropImageUrl: null,
