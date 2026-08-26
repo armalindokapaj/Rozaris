@@ -17,7 +17,8 @@
     "db:migrate-detail-model-slots": "tsx scripts/migrate-detail-model-slots.ts",
     "test:sections": "tsx scripts/test-sections.ts",
     "test:unit-facets": "tsx scripts/test-unit-facets.ts",
-    "test:floor-rail": "tsx scripts/test-floor-rail-magnify.ts"
+    "test:floor-rail": "tsx scripts/test-floor-rail-magnify.ts",
+    "db:normalize-map-models": "tsx scripts/normalize-map-models-for-mapbox.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

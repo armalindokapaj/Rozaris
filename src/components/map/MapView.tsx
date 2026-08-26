@@ -15,7 +15,7 @@ import {
   buildListingMarker,
   buildProjectMarker,
 } from "./markerFactory";
-import { ProjectModelLayer, type MapModelEntry } from "./ProjectModelLayer";
+import { ProjectModelSource, type MapModelEntry } from "./ProjectModelSource";
 import { computeProjectMassing } from "@/lib/threeBuilding";
 import { BuildingHider, type BuildingFootprint } from "./BuildingHider";
 import { MapControls } from "./MapControls";
@@ -112,7 +112,7 @@ export function MapView({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
-  const modelLayerRef = useRef<ProjectModelLayer | null>(null);
+  const modelLayerRef = useRef<ProjectModelSource | null>(null);
   const buildingHiderRef = useRef<BuildingHider | null>(null);
   const popupCardRef = useRef<HTMLDivElement>(null);
 
@@ -218,8 +218,9 @@ export function MapView({
 
       // "3D Map Control" — Admin-uploaded GLBs (real Vercel Blob URLs, see
       // MapModelEditor.tsx) plotted as real georeferenced models rather than
-      // flat pins (see ProjectModelLayer.ts doc comment).
-      const modelLayer = new ProjectModelLayer({
+      // flat pins (see ProjectModelSource.ts doc comment) — Mapbox's own
+      // `model` layer type, not a Three.js custom layer.
+      modelLayerRef.current = new ProjectModelSource(map, {
         onPick: (projectId) => {
           const project = liveProjectsRef.current?.find((p) => p.id === projectId);
           if (project) window.open(`/project/${project.slug}`, "_blank", "noopener");
@@ -228,8 +229,6 @@ export function MapView({
           console.error(`3D Map Control: failed to load GLB for project "${projectId}"`, error);
         },
       });
-      map.addLayer(modelLayer);
-      modelLayerRef.current = modelLayer;
       buildingHiderRef.current = new BuildingHider(map);
     });
 
@@ -265,9 +264,10 @@ export function MapView({
     return () => {
       buildingHiderRef.current?.destroy();
       buildingHiderRef.current = null;
+      modelLayerRef.current?.destroy();
+      modelLayerRef.current = null;
       map.remove();
       mapRef.current = null;
-      modelLayerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
@@ -301,6 +301,14 @@ export function MapView({
             scale: model.scale,
             rotationDeg: model.rotationDeg,
             altitudeOffset: model.altitudeOffset,
+            // A modeled project renders no flat pin (see the marker effect
+            // below), and Mapbox does not return native `model` layers from
+            // `queryRenderedFeatures` — so the GLB needs an invisible,
+            // queryable stand-in or it simply cannot be clicked anywhere
+            // except right at its base. The project's own computed massing
+            // is the honest shape to use: same real unit/floor data the
+            // no-GLB case renders as a visible volume.
+            pickMassing: computeProjectMassing(p),
           },
         ];
       }

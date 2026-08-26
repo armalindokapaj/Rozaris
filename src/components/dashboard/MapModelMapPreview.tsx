@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
-import { ProjectModelLayer } from "@/components/map/ProjectModelLayer";
+import { ProjectModelSource } from "@/components/map/ProjectModelSource";
 import { BuildingHider, type BuildingFootprint } from "@/components/map/BuildingHider";
 import { MapFallback } from "@/components/map/MapFallback";
 import { useT } from "@/lib/i18n/useT";
@@ -18,10 +18,9 @@ export interface HiddenBuildingEntry {
 
 /**
  * Admin's "3D Map Control" preview — the SAME Mapbox map (style, token,
- * `ProjectModelLayer` custom layer) that renders every other map in Rozaris
- * (MapView.tsx on the search page, StaticContextMap.tsx on listing/project
- * detail pages), centered on this project's real coordinates. Replaces the
- * old standalone Three.js grid preview (GlbPreviewCanvas) — what Admin sees
+ * `ProjectModelSource` native `model` layers) that renders the public
+ * search map (MapView.tsx), centered on this project's real coordinates.
+ * Replaces the old standalone Three.js preview (GlbPreviewCanvas) — what Admin sees
  * here, positioning scale/rotation/altitude against real streets and
  * terrain, is a WYSIWYG match for exactly what a visitor sees on the live
  * search map, not an abstract stand-in for it.
@@ -85,7 +84,7 @@ export function MapModelMapPreview({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
-  const modelLayerRef = useRef<ProjectModelLayer | null>(null);
+  const modelLayerRef = useRef<ProjectModelSource | null>(null);
   const buildingHiderRef = useRef<BuildingHider | null>(null);
   const positionMarkerRef = useRef<mapboxgl.Marker | null>(null);
   // The last point this preview itself reported upward. `coords` is now
@@ -141,15 +140,18 @@ export function MapModelMapPreview({
     map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
     map.on("load", () => {
-      const modelLayer = new ProjectModelLayer({
+      modelLayerRef.current = new ProjectModelSource(map, {
         onPick: () => {},
         onLoadError: (_projectId, error, url) => {
           console.error("3D Map Control: failed to load GLB", error);
           setFailedGlbUrl(url);
         },
+        // Admin drags the position marker and clicks to pick buildings on
+        // this very map — a proximity "close enough to the model" pick
+        // would hijack those gestures. Require a real geometry hit; there
+        // is nothing to open from the preview anyway (`onPick` is a no-op).
+        pickFallbackPx: 0,
       });
-      map.addLayer(modelLayer);
-      modelLayerRef.current = modelLayer;
       buildingHiderRef.current = new BuildingHider(map);
 
       // "Pick Buildings to Remove" highlight — a real footprint outline
@@ -174,10 +176,10 @@ export function MapModelMapPreview({
       });
 
       // Draggable "move the model" handle — a plain mapboxgl.Marker rather
-      // than raycasting against the 3D model itself (ProjectModelLayer.ts
-      // is shared with the live public map; keeping this purely in the
-      // admin preview via the standard Marker API avoids touching it at
-      // all). Position/visibility are reconciled by the effects below.
+      // than hit-testing the 3D model itself (ProjectModelSource.ts is
+      // shared with the live public map; keeping this purely in the admin
+      // preview via the standard Marker API avoids touching it at all).
+      // Position/visibility are reconciled by the effects below.
       const el = document.createElement("div");
       el.style.width = "22px";
       el.style.height = "22px";
@@ -203,9 +205,10 @@ export function MapModelMapPreview({
       positionMarkerRef.current = null;
       buildingHiderRef.current?.destroy();
       buildingHiderRef.current = null;
+      modelLayerRef.current?.destroy();
+      modelLayerRef.current = null;
       map.remove();
       mapRef.current = null;
-      modelLayerRef.current = null;
       setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

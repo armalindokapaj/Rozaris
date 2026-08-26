@@ -149,6 +149,11 @@ export function MapModelEditor({
   const [loaded, setLoaded] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+  /** Non-fatal notes from the Mapbox normalization pass — currently only
+   * the 16-bit index ceiling (see glbMapboxNormalize.ts). Surfaced next to
+   * the upload error so an over-budget model is visible rather than just
+   * quietly rendering wrong. */
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -213,14 +218,48 @@ export function MapModelEditor({
       setError(t("admin.mapModelTooLarge", { max: formatBytes(MAX_FILE_BYTES) }));
       return;
     }
-    setLocalPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
-    });
     setBusy(true);
     setUploadProgress(0);
     try {
-      const blob = await upload(`project-map-models/${project.id}-${file.name}`, file, {
+      // Mapbox's model loader cannot read interleaved vertex attributes —
+      // the layout most exporters emit by default — and fails with a bare
+      // `RangeError: offset is out of bounds` instead of anything
+      // diagnosable. Re-laying the file out BEFORE it reaches Vercel Blob
+      // means the stored file, the version history, the admin preview
+      // below and the public search map are all the same Mapbox-ready
+      // bytes; see src/lib/glbMapboxNormalize.ts for the full mechanism.
+      //
+      // Imported dynamically so `@gltf-transform/core` only enters the
+      // bundle an admin actually loads, and wrapped so a file it can't
+      // re-serialize still uploads as-is (worst case is the pre-existing
+      // behavior) rather than blocking the upload outright.
+      let payload: File | Blob = file;
+      let normalizeWarnings: string[] = [];
+      try {
+        const { normalizeGlbForMapbox } = await import("@/lib/glbMapboxNormalize");
+        const result = await normalizeGlbForMapbox(new Uint8Array(await file.arrayBuffer()));
+        normalizeWarnings = result.warnings;
+        if (result.changed) {
+          payload = new File([result.bytes as BlobPart], file.name, { type: "model/gltf-binary" });
+        }
+      } catch (normalizeError) {
+        console.error("3D Map Control: could not normalize GLB for Mapbox, uploading as-is", normalizeError);
+      }
+      if (normalizeWarnings.length > 0) {
+        console.warn("3D Map Control: GLB warnings", normalizeWarnings);
+        setWarnings(normalizeWarnings);
+      } else {
+        setWarnings([]);
+      }
+      // The preview shows the SAME bytes that are being uploaded, not the
+      // raw file — otherwise the map preview would try to render the
+      // un-normalized original and fail exactly the way the published
+      // model no longer does.
+      setLocalPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(payload);
+      });
+      const blob = await upload(`project-map-models/${project.id}-${file.name}`, payload, {
         access: "public",
         handleUploadUrl: "/api/blob/upload",
         onUploadProgress: (p) => setUploadProgress(p.percentage),
@@ -244,7 +283,7 @@ export function MapModelEditor({
         ? await fetch(`/api/map-models/${project.id}/versions/${attachTarget.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ glbUrl: blob.url, fileName: file.name, fileSize: file.size }),
+            body: JSON.stringify({ glbUrl: blob.url, fileName: file.name, fileSize: payload.size }),
           })
         : await fetch(`/api/map-models/${project.id}/versions`, {
             method: "POST",
@@ -252,7 +291,7 @@ export function MapModelEditor({
             body: JSON.stringify({
               glbUrl: blob.url,
               fileName: file.name,
-              fileSize: file.size,
+              fileSize: payload.size,
               scale,
               rotationDeg,
               altitudeOffset,
@@ -848,6 +887,11 @@ export function MapModelEditor({
                 </div>
               )}
               {error && <p className="mt-2 text-xs font-medium text-red-600">{error}</p>}
+              {warnings.map((warning) => (
+                <p key={warning} className="mt-2 rounded-control bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                  {warning}
+                </p>
+              ))}
               <p className="mt-2 text-[11px] text-neutral-400">{t("admin.mapModelStorageNote")}</p>
             </section>
 
