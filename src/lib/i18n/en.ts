@@ -989,7 +989,7 @@ const en = {
     inventoryDescription: "Every unit in this development. Edit in place, or select rows for bulk changes.",
     addUnit: "Add unit",
     addUnitTitle: "New unit",
-    exportCsv: "Export CSV",
+    exportCsv: "Export sheet",
     searchUnits: "Search unit or building…",
     allBuildings: "All buildings",
     allStatuses: "All statuses",
@@ -1046,7 +1046,7 @@ const en = {
     // --- the seven sheet columns, editable in place ---
     gridTitle: "Units",
     gridDescription:
-      "The seven columns a linked sheet writes back — the header row below is exactly the one your sheet needs. Edit any cell here instead; every change saves itself, there is no Save button.",
+      "The seven columns a linked sheet writes back, plus 3D BLOCK — the header row below, minus 3D BLOCK, is exactly the one your sheet needs. Edit any cell here instead; every change saves itself, there is no Save button.",
     gridRowState: "Save state",
     gridUnsaved: "{count} cell(s) not saved yet",
     gridSaving: "Saving…",
@@ -1067,6 +1067,23 @@ const en = {
     gridSyncBlocked: "Finish or undo your unit edits above before syncing from the sheet.",
     gridHelp:
       "Tab moves across, Enter moves down, Esc undoes a cell. Paste a block copied from a spreadsheet to fill many cells at once. Adding and removing units — and the other unit fields — live in Inventory.",
+    // --- 3D BLOCK column (UnitMeshLinkV2, not a Unit field) ---
+    blockColumn: "3D BLOCK",
+    blockColumnHelp: "Which block of {file} this unit is, in the 3D viewer.",
+    blockNone: "— not in the model —",
+    blockNote:
+      "3D BLOCK binds each unit to a block of the {slot} model ({file}, v{version}). Picking a block another unit already holds swaps the two.",
+    blockLiveNote: "This model is published, so a change here reaches the public viewer immediately.",
+    blockDraftNote: "This model is still a draft — publish it in the 3D Configurator for the change to reach visitors.",
+    blockOrphan: "\"{mesh}\" is no longer a block in {file} — pick a real one, or clear it.",
+    blockUnmappedBlocks: "{count} block(s) with no unit ({names}).",
+    blockUnmappedUnits: "{count} unit(s) with no block ({codes}).",
+    blockArchivedNote:
+      "This version is archived, so nothing public uses it — but a rollback to it would restore the mapping you set here.",
+    blockStaleReleases:
+      "{count} compiled release(s) still serve the previous mapping — embedded and white-label copies update only when a new release is created in Publishing.",
+    blockNewerDraft:
+      "A newer draft (v{version}) exists in the 3D Configurator. This edits the live version only — map the draft there before publishing it.",
     connectSheetTitle: "Connect a sheet",
     connectSheetDescription: "Paste the Google Sheets link the developer shared with you.",
     connectSheet: "Connect",
@@ -1103,7 +1120,13 @@ const en = {
     andMoreErrors: "…and {count} more",
     columnMappingTitle: "Column mapping",
     columnMappingDescription: "Columns are matched by name. If one of yours wasn't picked up, point it at the right field here and save the mapping.",
+    columnAuto: "Match by name (default)",
     columnIgnored: "Ignore this column",
+    gridDiscard: "Discard {count} unsaved edit(s)",
+    gridSyncingLock: "A sheet sync is writing these units — the grid is read-only until it finishes.",
+    sheetLinkedBadge: "Inventory synced from a Google Sheet",
+    sheetLinkedNote: "This project's inventory is linked to a Google Sheet. A sync can overwrite area, price, bedrooms, bathrooms, floor and status edited here.",
+    sheetLinkedOpen: "Open Sheet Sync",
     saveMapping: "Save mapping",
     syncHistoryTitle: "Sync history",
     noSyncRuns: "No syncs have run yet.",

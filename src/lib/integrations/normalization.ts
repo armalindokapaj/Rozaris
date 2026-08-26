@@ -103,10 +103,29 @@ const NORMALIZED_ALIASES: Record<SyncableField, string[]> = Object.fromEntries(
   ])
 ) as Record<SyncableField, string[]>;
 
+/** Stored in a connector's `columnMapping` to mean "never read this
+ * column", as opposed to "no opinion". Without it the mapping editor's
+ * own "Ignore this column" choice was unenforceable against any header the
+ * built-in alias table recognises: dropping the entry just fell through to
+ * the aliases, so a sheet whose "ROOMS" column means something other than
+ * bedrooms could not be told to stop overwriting bedrooms. */
+export const IGNORE_COLUMN = "__ignore__";
+
+/** What a stored `columnMapping` value may be: one of the seven fields, or
+ * the explicit "never read this column" sentinel. */
+export type ColumnMappingValue = SyncableField | typeof IGNORE_COLUMN;
+
+/** The same set as a plain array, for the zod schemas on the connector
+ * routes — which rejected `IGNORE_COLUMN` outright while the UI was busy
+ * offering it as a choice. */
+export const COLUMN_MAPPING_VALUES = [...SYNCABLE_FIELDS, IGNORE_COLUMN] as const;
+
 /** Which syncable field (if any) a sheet header names. `columnMapping`
  * (stored per connector) wins over the built-in aliases, so a sheet whose
  * column is called something this list has never heard of ("SHITJA
- * FUNDIT") can still be pointed at a field by hand from the admin UI. */
+ * FUNDIT") can still be pointed at a field by hand from the admin UI —
+ * and, with `IGNORE_COLUMN`, a column the aliases DO recognise can be
+ * turned off by hand. */
 export function matchHeaderToField(
   header: string,
   columnMapping?: Record<string, string> | null
@@ -114,9 +133,9 @@ export function matchHeaderToField(
   const normalized = normalizeHeader(header);
   if (columnMapping) {
     for (const [sheetHeader, field] of Object.entries(columnMapping)) {
-      if (normalizeHeader(sheetHeader) === normalized && (SYNCABLE_FIELDS as readonly string[]).includes(field)) {
-        return field as SyncableField;
-      }
+      if (normalizeHeader(sheetHeader) !== normalized) continue;
+      if (field === IGNORE_COLUMN) return null;
+      if ((SYNCABLE_FIELDS as readonly string[]).includes(field)) return field as SyncableField;
     }
   }
   for (const field of SYNCABLE_FIELDS) {
@@ -157,7 +176,14 @@ export function parseNumericCell(raw: string): number | null {
   if (!cleaned || !/[0-9]/.test(cleaned)) return null;
 
   const negative = cleaned.startsWith("-");
-  const digitsOnly = cleaned.replace(/-/g, "");
+  const digitsOnly = cleaned.replace(/^-/, "");
+  // A hyphen anywhere but the front is not a sign — it is a RANGE
+  // ("350000-400000", "120 - 150 m2") or a placeholder ("-"). Stripping
+  // every hyphen and gluing the digits together turned a €350k-€400k
+  // price range into €350,000,400,000 and wrote it to the unit. Refuse
+  // instead: `null` here leaves the raw text on the row, so zod rejects
+  // that row with a readable reason rather than corrupting it.
+  if (digitsOnly.includes("-")) return null;
 
   const lastDot = digitsOnly.lastIndexOf(".");
   const lastComma = digitsOnly.lastIndexOf(",");

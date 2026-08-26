@@ -17,7 +17,14 @@ import { useInventoryConnector, type SyncOutcome } from "@/hooks/useInventoryCon
 import { useProjectUnits } from "@/hooks/useProjectUnits";
 import { useT } from "@/lib/i18n/useT";
 import { sheetEditUrl } from "@/lib/integrations/googleSheets";
-import { FIELD_HEADER_ALIASES, FIELD_LABELS, SYNCABLE_FIELDS, type SyncableField } from "@/lib/integrations/normalization";
+import {
+  FIELD_HEADER_ALIASES,
+  FIELD_LABELS,
+  IGNORE_COLUMN,
+  SYNCABLE_FIELDS,
+  type ColumnMappingValue,
+  type SyncableField,
+} from "@/lib/integrations/normalization";
 import type { Project, Unit } from "@/lib/types";
 import { Badge, Btn, EmptyState, ErrorNote, Panel, SectionHeader, inputClass } from "./kit";
 import { ProjectUnitGrid } from "./ProjectUnitGrid";
@@ -43,7 +50,8 @@ import { ProjectUnitGrid } from "./ProjectUnitGrid";
  */
 export function ProjectSheetSyncSection({ project }: { project: Project }) {
   const { t } = useT();
-  const { connector, runs, loading, busy, connect, update, disconnect, sync } = useInventoryConnector(project.id);
+  const { connector, runs, loading, busy, connect, update, disconnect, sync, refresh: refreshConnector } =
+    useInventoryConnector(project.id);
   // Exactly ONE useProjectUnits instance for the whole section — a second
   // one would mean a second 30s poll, a second focus listener, and two
   // divergent `units` arrays, so a real sync's `refreshUnits()` would
@@ -72,6 +80,16 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
    * — "map one of the columns below" — would point at nothing. */
   const [unmappedHeaders, setUnmappedHeaders] = useState<string[] | null>(null);
   const [editingLink, setEditingLink] = useState(false);
+  /* A dry-run preview describes ONE sheet. Disconnect and link a different
+   * one and the panel used to keep the old preview on screen, its "Apply
+   * N changes" button now pointed at the new connector — one click away
+   * from writing sheet A's numbers after reading sheet B. Tie the preview
+   * to the connector it came from and drop it the moment that changes. */
+  const [outcomeConnectorId, setOutcomeConnectorId] = useState<string | null>(null);
+  if (outcome && outcomeConnectorId !== (connector?.id ?? null)) {
+    setOutcome(null);
+    setUnmappedHeaders(null);
+  }
 
   const gid = connector?.configuration?.gid ?? "0";
   const sheetUrl = connector?.externalResourceId ? sheetEditUrl(connector.externalResourceId, gid) : null;
@@ -105,9 +123,15 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
       setError(result.error ?? null);
       const headers = (result.data as { sheet?: { headers?: string[] } } | undefined)?.sheet?.headers;
       if (headers?.length) setUnmappedHeaders(headers);
+      // A failed REAL run just set `status: "error"` and wrote a run row
+      // server-side. Without this the badge kept saying "Connected" and the
+      // sync history kept showing the previous run — the UI disagreeing
+      // with the database about whether the sheet works.
+      if (!dryRun) await refreshConnector();
       return;
     }
     setOutcome(result.outcome ?? null);
+    setOutcomeConnectorId(connector?.id ?? null);
     // A real run just rewrote units this page is also showing elsewhere.
     if (!dryRun) refreshUnits();
   }
@@ -142,6 +166,7 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
       <ProjectUnitGrid
         projectId={project.id}
         units={units}
+        locked={busy}
         onServerChanged={refreshUnits}
         onDirtyChange={setGridDirty}
       />
@@ -174,7 +199,11 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
             actions={
               <>
                 <Btn
-                  onClick={() => update({ status: connector.status === "paused" ? "active" : "paused" })}
+                  onClick={async () => {
+                    setError(null);
+                    const result = await update({ status: connector.status === "paused" ? "active" : "paused" });
+                    if (!result.ok) setError(result.error ?? null);
+                  }}
                   disabled={busy}
                 >
                   {connector.status === "paused" ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
@@ -183,8 +212,11 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
                 <Btn
                   variant="danger"
                   disabled={busy}
-                  onClick={() => {
-                    if (confirm(t("projectManager.confirmDisconnect"))) void disconnect();
+                  onClick={async () => {
+                    if (!confirm(t("projectManager.confirmDisconnect"))) return;
+                    setError(null);
+                    const result = await disconnect();
+                    if (!result.ok) setError(result.error ?? null);
                   }}
                 >
                   <Link2Off className="h-3.5 w-3.5" />
@@ -289,6 +321,9 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
             <SyncOutcomePanel
               outcome={outcome}
               onApply={() => void run(false)}
+              // Paused is a server-side 409, so an ungated Apply just
+              // produced a mystery error. Same gate as "Sync now" above.
+              paused={connector.status === "paused"}
               // The preview panel's "Apply" is a third way into run(false),
               // and it outlives the edit that made the grid dirty — gate it
               // on the same interlock as the two buttons above.
@@ -296,7 +331,11 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
               onSaveMapping={async (mapping) => {
                 const result = await update({ columnMapping: mapping });
                 if (!result.ok) setError(result.error ?? null);
-                else setOutcome(null);
+                // Re-preview rather than just clearing the panel: the whole
+                // reason to edit a mapping mid-preview is to see what the
+                // sheet reads as NOW. Blanking the panel left the admin
+                // with no confirmation that anything had happened.
+                else await run(true);
               }}
               currentMapping={connector.columnMapping}
             />
@@ -371,15 +410,17 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
 function SyncOutcomePanel({
   outcome,
   busy,
+  paused,
   onApply,
   onSaveMapping,
   currentMapping,
 }: {
   outcome: SyncOutcome;
   busy: boolean;
+  paused: boolean;
   onApply: () => void;
-  onSaveMapping: (mapping: Record<string, SyncableField>) => void;
-  currentMapping: Record<string, SyncableField> | null;
+  onSaveMapping: (mapping: Record<string, ColumnMappingValue>) => void;
+  currentMapping: Record<string, ColumnMappingValue> | null;
 }) {
   const { t } = useT();
 
@@ -388,7 +429,7 @@ function SyncOutcomePanel({
       title={outcome.dryRun ? t("projectManager.previewResultTitle") : t("projectManager.syncResultTitle")}
       actions={
         outcome.dryRun && outcome.rowsChanged > 0 ? (
-          <Btn variant="primary" onClick={onApply} disabled={busy}>
+          <Btn variant="primary" onClick={onApply} disabled={busy || paused}>
             <CheckCircle2 className="h-3.5 w-3.5" />
             {t("projectManager.applyChanges", { count: outcome.rowsChanged })}
           </Btn>
@@ -487,9 +528,9 @@ function ColumnMappingEditor({
   onSave,
 }: {
   headers: string[];
-  initial: Record<string, SyncableField>;
+  initial: Record<string, ColumnMappingValue>;
   busy: boolean;
-  onSave: (mapping: Record<string, SyncableField>) => void;
+  onSave: (mapping: Record<string, ColumnMappingValue>) => void;
 }) {
   const { t } = useT();
   const [mapping, setMapping] = useState<Record<string, string>>(() => {
@@ -513,7 +554,8 @@ function ColumnMappingEditor({
               onChange={(e) => setMapping({ ...mapping, [header]: e.target.value })}
               className="rounded-control border border-neutral-200 px-2 py-1 text-xs"
             >
-              <option value="">{t("projectManager.columnIgnored")}</option>
+              <option value="">{t("projectManager.columnAuto")}</option>
+              <option value={IGNORE_COLUMN}>{t("projectManager.columnIgnored")}</option>
               {SYNCABLE_FIELDS.map((f) => (
                 <option key={f} value={f}>
                   {FIELD_LABELS[f]}
@@ -529,9 +571,15 @@ function ColumnMappingEditor({
           className="mt-3"
           disabled={busy}
           onClick={() => {
-            const cleaned: Record<string, SyncableField> = {};
+            // An explicit "Ignore this column" is SAVED, as
+            // `IGNORE_COLUMN`, rather than dropped. Dropping it used to
+            // fall straight back through to the built-in header aliases,
+            // so a column the aliases recognise ("ROOMS") could never
+            // actually be turned off — the choice was in the UI and
+            // unenforceable in the engine.
+            const cleaned: Record<string, ColumnMappingValue> = {};
             for (const [header, field] of Object.entries(mapping)) {
-              if (field) cleaned[header] = field as SyncableField;
+              if (field) cleaned[header] = field as ColumnMappingValue;
             }
             onSave(cleaned);
           }}

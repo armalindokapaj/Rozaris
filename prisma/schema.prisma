@@ -2672,9 +2672,13 @@ model InventorySyncRun {
   /// checked in application code (e.g. Unit.status) rather than the DB.
   status String
 
-  /// sha256 of the raw row payload — PRD §24 step 11 idempotency ("same
-  /// sourceHash -> no database writes"). Null only for pre-idempotency
-  /// runs, which don't exist yet since this ships with the check built in.
+  /// sha256 of the raw row payload — PROVENANCE only ("was this the same
+  /// sheet as last time?"). It deliberately does NOT gate writes: computed
+  /// from the sheet alone, it cannot see whether the units have drifted
+  /// away from it, so using it as a write gate made every sync after a
+  /// hand edit a silent no-op. PRD §24 step 11's idempotency is satisfied
+  /// instead by the engine's per-row diff, which writes only fields that
+  /// actually differ. Null for a run that failed before any rows were read.
   sourceHash String?
 
   rowsRead     Int

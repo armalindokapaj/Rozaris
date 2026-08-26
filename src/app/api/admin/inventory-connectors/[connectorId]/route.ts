@@ -5,7 +5,7 @@ import type { Prisma } from "@/generated/prisma";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { parseSheetRef } from "@/lib/integrations/googleSheets";
-import { SYNCABLE_FIELDS } from "@/lib/integrations/normalization";
+import { COLUMN_MAPPING_VALUES } from "@/lib/integrations/normalization";
 
 const patchConnectorSchema = z.object({
   status: z.enum(["active", "paused", "error"]).optional(),
@@ -15,7 +15,7 @@ const patchConnectorSchema = z.object({
   externalResourceId: z.string().min(1).nullable().optional(),
   /** Replaces the stored mapping wholesale; `{}` clears every override
    * and falls back to the built-in header aliases. */
-  columnMapping: z.record(z.string(), z.enum(SYNCABLE_FIELDS)).optional(),
+  columnMapping: z.record(z.string(), z.enum(COLUMN_MAPPING_VALUES)).optional(),
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ connectorId: string }> }) {

@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Download, Plus, Search, Trash2, X, Pencil, Layers } from "lucide-react";
+import { Check, Download, Plus, Search, Sheet, Trash2, X, Pencil, Layers } from "lucide-react";
+import { useInventoryConnector } from "@/hooks/useInventoryConnector";
 import { useProjectUnits } from "@/hooks/useProjectUnits";
 import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
-import { buildSheetTemplateCsv } from "@/lib/integrations/googleSheets";
+import { buildInventoryWorkbook } from "@/lib/integrations/xlsx";
 import { UNIT_ORIENTATIONS, type Project, type Unit, type UnitOrientation } from "@/lib/types";
 import { Badge, Btn, EmptyState, ErrorNote, Panel, SectionHeader, Stat, inputClass, narrowInputClass } from "./kit";
 
@@ -66,6 +67,12 @@ export function ProjectInventorySection({ project }: { project: Project }) {
   const priceFmt = usePriceFormat();
   const { units: liveUnits, error, refresh, createUnit, updateUnit, deleteUnit } = useProjectUnits(project.id);
   const units = liveUnits ?? project.units;
+  /* Whether this project's inventory is externally managed. Nothing
+   * outside the Sheet Sync tab used to know, so an admin could carefully
+   * reprice a floor here with no hint that the next sync would put it all
+   * back — the single most expensive thing this feature can do to someone
+   * silently. */
+  const { connector } = useInventoryConnector(project.id);
 
   const [query, setQuery] = useState("");
   const [buildingFilter, setBuildingFilter] = useState("");
@@ -164,11 +171,17 @@ export function ProjectInventorySection({ project }: { project: Project }) {
     }
   }
 
-  function exportCsv() {
-    // Exactly the columns the Google Sheets connector reads back, so an
-    // export can be pasted straight into a sheet and become the sync
-    // source with no re-shaping.
-    const csv = buildSheetTemplateCsv(
+  /**
+   * Exactly the columns the Google Sheets connector reads back, so an
+   * export can go straight into a sheet and become the sync source with no
+   * re-shaping — and as `.xlsx`, not CSV, for the same reason the Sheet
+   * Sync starter sheet is (see `lib/integrations/xlsx.ts`): a comma-
+   * separated file lands in a SINGLE column in Excel under every locale
+   * whose list separator is `;`, which is all of the ones this is sold
+   * into. Exports the filtered/sorted rows on screen, not the whole table.
+   */
+  async function exportSheet() {
+    const stream = buildInventoryWorkbook(
       visible.map((u) => ({
         code: u.code,
         area: u.area,
@@ -177,12 +190,14 @@ export function ProjectInventorySection({ project }: { project: Project }) {
         bathrooms: u.bathrooms,
         floor: u.floor,
         status: u.status,
-      }))
+      })),
+      project.name
     );
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const blob = await new Response(stream).blob();
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${project.slug}-units.csv`;
+    a.download = `${project.slug}-units.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -212,7 +227,7 @@ export function ProjectInventorySection({ project }: { project: Project }) {
         description={t("projectManager.inventoryDescription")}
         actions={
           <>
-            <Btn onClick={exportCsv} disabled={visible.length === 0}>
+            <Btn onClick={() => void exportSheet()} disabled={visible.length === 0}>
               <Download className="h-3.5 w-3.5" />
               {t("projectManager.exportCsv")}
             </Btn>
@@ -237,6 +252,24 @@ export function ProjectInventorySection({ project }: { project: Project }) {
           })}
         />
       </div>
+
+      {/* Shown for ANY linked connector, including one currently in error:
+          a sheet that failed to fetch this morning still owns these fields
+          and will still overwrite them once its sharing setting is fixed.
+          Hiding the warning exactly when the connector looks broken is
+          hiding it exactly when a hand edit is most likely. */}
+      {connector && (
+        <p className="flex flex-wrap items-center gap-2 rounded-control border border-brand-200 bg-brand-50 px-3 py-2 text-[11px] leading-relaxed text-brand-800">
+          <Sheet className="h-3.5 w-3.5 shrink-0" />
+          <span>{t("projectManager.sheetLinkedNote")}</span>
+          <a
+            href={`/admin/projects/${project.id}?section=sheetSync`}
+            className="font-semibold underline hover:text-brand-900"
+          >
+            {t("projectManager.sheetLinkedOpen")}
+          </a>
+        </p>
+      )}
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {bulkError && <ErrorNote>{bulkError}</ErrorNote>}

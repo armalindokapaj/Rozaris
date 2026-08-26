@@ -123,8 +123,29 @@ export function useModelEditor(projectId: string, activeVersion: DetailVersionRo
 
   function setLink(meshName: string, unitId: string | null) {
     setLinks((prev) => {
-      const withoutMesh = prev.filter((l) => l.meshName !== meshName);
-      return unitId ? [...withoutMesh, { meshName, unitId, mappingStatus: "mapped" }] : withoutMesh;
+      // Evicting by `unitId` as well as by `meshName` is the fix for a real,
+      // reported defect. The mapping is 1:1 — `@@unique([detailModelVersionId,
+      // unitId])` on UnitMeshLinkV2, enforced again in the links PUT — but
+      // this filter only ever dropped the row for the mesh being edited. So
+      // re-pointing a mesh at a unit ANOTHER mesh already held left both rows
+      // in `links`, and `save()` then posted a payload with a duplicate
+      // unitId, which the route rejects wholesale:
+      // "Each unit can only be mapped to one mesh." (400). The admin saw a
+      // cryptic red error on the one action that fixes a crossed mapping,
+      // with the entire save — transform, overrides and links alike — lost.
+      //
+      // Dropping the other row makes the mesh that lost its unit unmapped,
+      // rather than swapping as the Sheet Sync column does. That difference
+      // is deliberate: this panel is mesh-first and shows every mesh at
+      // once, so the freed mesh is visibly sitting there empty and is the
+      // admin's next pick. Silently moving a unit into a row they can see
+      // but did not touch would be the surprising behaviour here.
+      const withoutConflicts = prev.filter(
+        (l) => l.meshName !== meshName && (unitId === null || l.unitId !== unitId)
+      );
+      return unitId
+        ? [...withoutConflicts, { meshName, unitId, mappingStatus: "mapped" }]
+        : withoutConflicts;
     });
     setDirty(true);
   }

@@ -5,7 +5,7 @@ import type { Prisma } from "@/generated/prisma";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { parseSheetRef } from "@/lib/integrations/googleSheets";
-import { SYNCABLE_FIELDS } from "@/lib/integrations/normalization";
+import { COLUMN_MAPPING_VALUES } from "@/lib/integrations/normalization";
 
 const createConnectorSchema = z.object({
   projectId: z.string().min(1),
@@ -17,7 +17,7 @@ const createConnectorSchema = z.object({
   externalResourceId: z.string().min(1).optional(),
   /** Sheet-header -> `Unit` field overrides, for a sheet whose columns
    * aren't named anything the built-in alias table recognises. */
-  columnMapping: z.record(z.string(), z.enum(SYNCABLE_FIELDS)).optional(),
+  columnMapping: z.record(z.string(), z.enum(COLUMN_MAPPING_VALUES)).optional(),
 });
 
 /**

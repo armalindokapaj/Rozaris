@@ -85,6 +85,13 @@ export async function PATCH(
     entityType: "Unit",
     entityId: unit.id,
     entityLabel: unit.code,
+    // `projectId` in metadata is what makes this edit visible in the
+    // project's Activity tab: `/api/admin/audit-log?projectId=` matches on
+    // `entityType:"Project"` OR `metadata.projectId`, and a Unit row is
+    // neither unless it says so. Without it every hand edit — including
+    // every cell of the Sheet Sync grid — was audited into a log nothing
+    // in the Project Manager could surface.
+    metadata: { projectId },
     previousState: existing,
     newState: unit,
   });
@@ -126,6 +133,7 @@ export async function DELETE(
     entityType: "Unit",
     entityId: unitId,
     entityLabel: existing.code,
+    metadata: { projectId },
     previousState: existing,
   });
 

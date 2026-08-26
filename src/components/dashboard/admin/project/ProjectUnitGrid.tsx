@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Check, Loader2, Search } from "lucide-react";
+import { AlertCircle, Boxes, Check, Loader2, Search } from "lucide-react";
+import { useUnitBlocks } from "@/hooks/useUnitBlocks";
 import { useT } from "@/lib/i18n/useT";
 import {
   FIELD_HEADER_ALIASES,
@@ -38,6 +39,18 @@ import { Btn, EmptyState, ErrorNote, Panel, narrowInputClass } from "./kit";
  * before/after snapshot, one inventory-revision bump. Editing 42 cells
  * across 6 rows is 6 requests and 6 readable audit entries, not 42 of
  * each.
+ *
+ * The 3D BLOCK column is the one column that is NOT a `Unit` field. It
+ * binds the row to a `Unit_*` node of the project's Units GLB
+ * (`UnitMeshLinkV2`), which is a different table, a different endpoint, and
+ * 1:1 across rows — assigning a block another unit holds swaps the two. It
+ * therefore deliberately sits OUTSIDE `FIELDS`/`COLUMNS` and outside every
+ * function below that assumes "a cell is a column of the Unit row"
+ * (`parseCell`, `buildPatch`, `pruneNoops`, the paste matrix): it owns its
+ * own state in `useUnitBlocks` and writes on change. It is rendered here,
+ * rather than in a panel of its own, because the question it answers —
+ * "which apartment is this block?" — is only answerable next to that
+ * apartment's floor, area and price.
  *
  * INVARIANT, and the single thing to not "simplify" away: **drafts are
  * never derived from `units`.** `useProjectUnits` re-runs `load()` on a
@@ -81,6 +94,11 @@ const SAVED_BADGE_MS = 2000;
 /** One GET per editing burst, so the section's shared `units` (the starter
  * CSV, the dry-run diff) isn't up to 30s stale after an edit. */
 const SETTLE_MS = 1200;
+/** Debounce before a 3D BLOCK change is committed. Shorter than
+ * `DEBOUNCE_MS` — this is a discrete pick from a short list, not typing —
+ * but long enough to absorb a run of `change` events from arrow-keying a
+ * closed <select>. */
+const BLOCK_COMMIT_MS = 400;
 
 /** A cell the user has touched. `value` is ALWAYS the raw string typed —
  * never a number. `Number("") === 0`, and the route rejects `price: 0`
@@ -219,9 +237,132 @@ function problemFor(units: Unit[], drafts: Drafts, unitId: string, field: Field,
   return parsed.ok ? null : parsed.messageKey;
 }
 
+/** One row's 3D BLOCK cell. Split out because it is the only cell in the
+ * grid whose value lives outside `drafts` — bundling it into the main
+ * render body would put a second, differently-shaped source of truth inside
+ * the loop that reads `drafts`, which is exactly the confusion this column
+ * is kept away from. */
+function UnitBlockCell({
+  unit,
+  blocks,
+  codeById,
+  locked,
+  rowIndex,
+  colIndex,
+  onEnter,
+}: {
+  unit: Unit;
+  blocks: ReturnType<typeof useUnitBlocks>;
+  /** Every unit's code, so an option can name the row it would swap with. */
+  codeById: Map<string, string>;
+  locked?: boolean;
+  rowIndex: number;
+  colIndex: number;
+  onEnter: (nextRow: number) => void;
+}) {
+  const { t } = useT();
+  const target = blocks.target;
+  const saved = blocks.meshFor(unit.id);
+  const saving = blocks.savingUnitIds.has(unit.id);
+
+  /** What the <select> shows while a change is still settling. Every commit
+   * here is a swap PATCH plus an audit row, and — the reason this is
+   * debounced at all, the same one the STATUS column documents — on
+   * Windows, Linux and Firefox the arrow keys change a CLOSED <select> in
+   * place and fire `change` for every option they pass. Writing on each of
+   * those would walk a unit through two or three bogus swaps, each one
+   * dragging a second unit with it and each one audit-logged, on the way to
+   * the option the admin actually wanted. */
+  const [pending, setPending] = useState<string | null>(null);
+  const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (commitTimer.current) clearTimeout(commitTimer.current);
+  }, []);
+
+  const commit = useCallback(
+    (value: string) => {
+      if (commitTimer.current) clearTimeout(commitTimer.current);
+      setPending(value);
+      commitTimer.current = setTimeout(() => {
+        commitTimer.current = null;
+        // Clearing `pending` is left to the response: dropping it the
+        // moment the request starts would repaint the OLD value for the
+        // width of the round trip, which reads as the change being rejected.
+        void blocks.assign(unit.id, value || null).finally(() => setPending(null));
+      }, BLOCK_COMMIT_MS);
+    },
+    [blocks, unit.id]
+  );
+
+  if (!target) return null;
+  const current = pending ?? saved;
+
+  /** Who else holds each block — the "(A-003)" suffix that makes a swap
+   * predictable BEFORE it happens rather than a surprise after. */
+  const holderCodes = new Map<string, string>();
+  for (const block of target.blocks) {
+    if (block.unitId && block.unitId !== unit.id) holderCodes.set(block.meshName, block.unitId);
+  }
+
+  const isOrphan = current !== null && !target.blocks.some((b) => b.meshName === current);
+
+  return (
+    <div className="flex items-center gap-1">
+      <select
+        data-cell={`${rowIndex}:${colIndex}`}
+        aria-label={`${unit.code} — ${t("projectManager.blockColumn")}`}
+        // NOT disabled while saving: a swap is slow enough (a transaction,
+        // a document refresh and an audit write) that locking the control
+        // would swallow a correction typed straight after a mistake.
+        disabled={locked}
+        value={current ?? ""}
+        title={
+          isOrphan
+            ? t("projectManager.blockOrphan", { mesh: current ?? "", file: target.version.fileName })
+            : undefined
+        }
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onEnter(rowIndex + (e.shiftKey ? -1 : 1));
+          }
+        }}
+        onChange={(e) => commit(e.target.value)}
+        className={[
+          "w-full rounded-control border px-1.5 py-1 text-xs",
+          isOrphan
+            ? "border-danger bg-danger/5 text-danger"
+            : current
+              ? "border-transparent bg-transparent text-neutral-900 hover:border-neutral-200 focus:bg-white"
+              : "border-transparent bg-transparent text-neutral-400 hover:border-neutral-200 focus:bg-white",
+        ].join(" ")}
+      >
+        <option value="">{t("projectManager.blockNone")}</option>
+        {/* A stored name this GLB has no node for still has to be
+            selectable-and-visible, or the <select> would silently fall back
+            to "—" and read as if the unit were simply unmapped. */}
+        {isOrphan && current && <option value={current}>{current}</option>}
+        {target.blocks.map((block) => {
+          const heldBy = holderCodes.get(block.meshName);
+          return (
+            <option key={block.meshName} value={block.meshName}>
+              {block.meshName}
+              {heldBy ? ` — ${codeById.get(heldBy) ?? "?"}` : ""}
+            </option>
+          );
+        })}
+      </select>
+      {(saving || pending !== null) && (
+        <Loader2 className="h-3 w-3 shrink-0 animate-spin text-neutral-400" />
+      )}
+    </div>
+  );
+}
+
 export function ProjectUnitGrid({
   projectId,
   units,
+  locked,
   onServerChanged,
   onDirtyChange,
 }: {
@@ -230,12 +371,19 @@ export function ProjectUnitGrid({
    * never swapped for the mockData/Zustand copy (whose ids differ, which
    * would orphan every draft mid-edit). */
   units: Unit[];
+  /** True while a sheet sync is writing these very rows. The interlock has
+   * to run both ways: the section already refuses to sync while the grid
+   * is dirty, but without this the grid stayed fully editable *during* a
+   * sync, so an edit made mid-run raced the engine over the same fields
+   * with no defined winner. */
+  locked?: boolean;
   /** The section's own `useProjectUnits.refresh` — called once per editing
    * burst, not once per save. */
   onServerChanged: () => void;
   onDirtyChange: (dirtyCells: number) => void;
 }) {
   const { t } = useT();
+  const blocks = useUnitBlocks(projectId);
 
   const [drafts, setDrafts] = useState<Drafts>({});
   const [rowStatus, setRowStatus] = useState<Record<string, RowStatus>>({});
@@ -841,6 +989,36 @@ export function ProjectUnitGrid({
   );
   const savingCount = useMemo(() => Object.values(rowStatus).filter((s) => s === "saving").length, [rowStatus]);
 
+  const codeById = useMemo(() => new Map(units.map((u) => [u.id, u.code] as const)), [units]);
+
+  /** Real units with no block in the GLB, and blocks with no unit. Both are
+   * exactly what the publish gate refuses a `role: units` slot for
+   * (`versions/[versionId]/publish/route.ts`), so showing them here — where
+   * they can be fixed — is the difference between a 422 an admin can act on
+   * and one they can only read. */
+  const blockGaps = useMemo(() => {
+    if (!blocks.target) return null;
+    const unmappedBlocks = blocks.target.blocks.filter((b) => !b.unitId).map((b) => b.meshName);
+    const mapped = new Set([
+      ...blocks.target.blocks.filter((b) => b.unitId).map((b) => b.unitId as string),
+      ...blocks.target.orphanLinks.map((l) => l.unitId),
+    ]);
+    const unmappedUnits = units.filter((u) => !mapped.has(u.id)).map((u) => u.code);
+    return unmappedBlocks.length || unmappedUnits.length ? { unmappedBlocks, unmappedUnits } : null;
+  }, [blocks.target, units]);
+
+  /** Throw away every unsaved cell. Without this, a single cell the server
+   * would reject (a cleared price, a typo'd code) stayed dirty forever and
+   * therefore held "Preview changes" and "Sync now" disabled — with the
+   * only way out being to find that cell and press Escape on it. */
+  const discardAll = useCallback(() => {
+    for (const timer of timers.current.values()) clearTimeout(timer);
+    timers.current.clear();
+    writeDrafts({});
+    setRowStatus({});
+    setRowError({});
+  }, [writeDrafts]);
+
   /** Every cell that currently won't be sent, and why. The red border and
    * the `title` tooltip between them cover a mouse user and a screen-reader
    * user; a sighted admin driving this from the keyboard would otherwise
@@ -929,6 +1107,80 @@ export function ProjectUnitGrid({
         </div>
       )}
 
+      {locked && (
+        <p className="mb-3 rounded-control border border-brand-200 bg-brand-50 px-3 py-2 text-[11px] font-medium text-brand-700">
+          {t("projectManager.gridSyncingLock")}
+        </p>
+      )}
+
+      {blocks.error && (
+        <div className="mb-3">
+          <ErrorNote>
+            {blocks.error}
+            <Btn className="ml-2 py-1" onClick={blocks.refresh}>
+              {t("projectManager.gridRetry")}
+            </Btn>
+          </ErrorNote>
+        </div>
+      )}
+
+      {blocks.target && (
+        <div className="mb-3 flex flex-wrap items-start gap-2 rounded-control border border-neutral-200 bg-neutral-50 px-3 py-2 text-[11px] leading-relaxed text-neutral-500">
+          <Boxes className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-400" />
+          <div className="space-y-1">
+            <p>
+              {t("projectManager.blockNote", {
+                slot: blocks.target.slot.name,
+                file: blocks.target.version.fileName,
+                version: blocks.target.version.version,
+              })}{" "}
+              {/* Said outright rather than left to be discovered: on a
+                  published version this column is editing what the public
+                  viewer is serving right now, with no publish step. */}
+              {blocks.target.version.publicationStatus === "published"
+                ? t("projectManager.blockLiveNote")
+                : blocks.target.version.publicationStatus === "archived"
+                  ? // Reachable when every version in the slot has been
+                    // unpublished. Editing stays allowed — refusing would
+                    // recreate the dead end this column exists to remove,
+                    // and nothing is public in that state — but it changes
+                    // what a rollback to this version would restore, which
+                    // is worth saying out loud.
+                    t("projectManager.blockArchivedNote")
+                  : t("projectManager.blockDraftNote")}
+            </p>
+            {blocks.target.version.publicationStatus === "published" &&
+              blocks.target.compiledReleaseCount > 0 && (
+                <p className="text-amber-700">
+                  {t("projectManager.blockStaleReleases", {
+                    count: blocks.target.compiledReleaseCount,
+                  })}
+                </p>
+              )}
+            {blocks.target.newerDraftVersion !== null && (
+              <p className="text-amber-700">
+                {t("projectManager.blockNewerDraft", { version: blocks.target.newerDraftVersion })}
+              </p>
+            )}
+            {blockGaps && (
+              <p className="text-amber-700">
+                {blockGaps.unmappedBlocks.length > 0 &&
+                  t("projectManager.blockUnmappedBlocks", {
+                    count: blockGaps.unmappedBlocks.length,
+                    names: blockGaps.unmappedBlocks.slice(0, 5).join(", "),
+                  })}
+                {blockGaps.unmappedBlocks.length > 0 && blockGaps.unmappedUnits.length > 0 && " "}
+                {blockGaps.unmappedUnits.length > 0 &&
+                  t("projectManager.blockUnmappedUnits", {
+                    count: blockGaps.unmappedUnits.length,
+                    codes: blockGaps.unmappedUnits.slice(0, 5).join(", "),
+                  })}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {invalidCells.length > 0 && (
         <div className="mb-3 rounded-control border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
           <ul className="space-y-0.5">
@@ -948,6 +1200,9 @@ export function ProjectUnitGrid({
           <span className="flex items-center gap-1.5 text-amber-600">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
             {t("projectManager.gridUnsaved", { count: dirtyCount })}
+            <button onClick={discardAll} className="font-semibold underline hover:text-amber-700">
+              {t("projectManager.gridDiscard", { count: dirtyCount })}
+            </button>
           </span>
         ) : savingCount > 0 ? (
           <span className="flex items-center gap-1.5">
@@ -972,7 +1227,13 @@ export function ProjectUnitGrid({
               otherwise a right-aligned header lines up with the cell's edge
               while its right-aligned value lines up with a narrower input
               inside it, and the column visibly disagrees with itself. */}
-          <table className="w-full min-w-[760px] table-fixed text-xs">
+          <table
+            className={
+              blocks.target
+                ? "w-full min-w-[904px] table-fixed text-xs"
+                : "w-full min-w-[760px] table-fixed text-xs"
+            }
+          >
             <thead>
               <tr>
                 {COLUMNS.map((column) => (
@@ -989,6 +1250,14 @@ export function ProjectUnitGrid({
                     {FIELD_HEADER_ALIASES[column.field][0]}
                   </th>
                 ))}
+                {blocks.target && (
+                  <th
+                    title={t("projectManager.blockColumnHelp", { file: blocks.target.version.fileName })}
+                    className={`${th} sticky top-0 z-10 w-36 bg-neutral-50 shadow-[inset_0_-1px_0_0_var(--color-neutral-200)]`}
+                  >
+                    {t("projectManager.blockColumn")}
+                  </th>
+                )}
                 <th
                   className={`${th} sticky top-0 z-10 w-10 bg-neutral-50 shadow-[inset_0_-1px_0_0_var(--color-neutral-200)]`}
                 >
@@ -1021,6 +1290,7 @@ export function ProjectUnitGrid({
                         // built to be driven from the keyboard.
                         "aria-describedby": problem ? problemId : undefined,
                         title: problem ? t(problem) : undefined,
+                        disabled: locked,
                         onPaste: (e: React.ClipboardEvent) => onCellPaste(e, rowIndex, colIndex),
                         onKeyDown: (e: React.KeyboardEvent) =>
                           onCellKeyDown(e, unit.id, column.field, rowIndex, colIndex),
@@ -1085,6 +1355,23 @@ export function ProjectUnitGrid({
                         </td>
                       );
                     })}
+                    {blocks.target && (
+                      <td className={td}>
+                        <UnitBlockCell
+                          unit={unit}
+                          blocks={blocks}
+                          codeById={codeById}
+                          locked={locked}
+                          // Keeps Tab/Enter reaching this cell as the row's
+                          // last stop: `focusCell` finds cells by
+                          // `data-cell="row:col"`, and COLUMNS.length is
+                          // exactly the next free column index.
+                          rowIndex={rowIndex}
+                          colIndex={COLUMNS.length}
+                          onEnter={(next) => focusCell(next, COLUMNS.length)}
+                        />
+                      </td>
+                    )}
                     <td className={`${td} text-right`}>
                       {status === "saving" ? (
                         <Loader2 className="ml-auto h-3 w-3 animate-spin text-neutral-400" />

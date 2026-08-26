@@ -95,6 +95,7 @@ export async function POST(
     entityType: "Unit",
     entityId: unit.id,
     entityLabel: `${project.name} · ${unit.code}`,
+    metadata: { projectId },
   });
 
   // Real notification producer (Account & Profile System PRD v1.0 §5.3 —

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { SyncRowChange, SyncRowError } from "@/lib/integrations/inventorySync";
-import type { SyncableField } from "@/lib/integrations/normalization";
+import type { ColumnMappingValue, SyncableField } from "@/lib/integrations/normalization";
 
 export interface InventoryConnector {
   id: string;
@@ -11,7 +11,7 @@ export interface InventoryConnector {
   status: "active" | "paused" | "error";
   externalResourceId: string | null;
   configuration: { gid?: string } | null;
-  columnMapping: Record<string, SyncableField> | null;
+  columnMapping: Record<string, ColumnMappingValue> | null;
   lastSyncAt: string | null;
   lastSuccessfulSyncAt: string | null;
   createdAt: string;
@@ -123,7 +123,7 @@ export function useInventoryConnector(projectId: string) {
   );
 
   const update = useCallback(
-    async (patch: { sheetUrl?: string; status?: string; columnMapping?: Record<string, SyncableField> }) => {
+    async (patch: { sheetUrl?: string; status?: string; columnMapping?: Record<string, ColumnMappingValue> }) => {
       if (!connector) return { ok: false, error: "No connector." };
       const result = await call(`/api/admin/inventory-connectors/${connector.id}`, {
         method: "PATCH",

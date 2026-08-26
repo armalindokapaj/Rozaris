@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { Prisma } from "@/generated/prisma";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logApiError } from "@/lib/apiErrorLog";
 import { runInventorySync } from "@/lib/integrations/inventorySync";
@@ -76,6 +77,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
         ignored: parsedSheet.ignored,
       };
     } catch (err) {
+      const reason = err instanceof Error ? err.message : "Sheet fetch failed.";
       // A failed run is a connector-health fact worth persisting; a failed
       // dry run is the admin actively debugging their sheet and shouldn't
       // flip the stored status on them mid-edit.
@@ -84,6 +86,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
           where: { id: connectorId },
           data: { status: "error", lastSyncAt: new Date() },
         });
+        // ...and the reason has to be recorded somewhere durable. Setting
+        // the badge to red without writing a run row left "Needs
+        // attention" on screen with the sync history immediately below it
+        // showing nothing at all — the one place an admin would look to
+        // find out what went wrong was the one place guaranteed to be
+        // silent about it.
+        await prisma.inventorySyncRun.create({
+          data: {
+            connectorId,
+            status: "error",
+            rowsRead: 0,
+            rowsChanged: 0,
+            rowsRejected: 0,
+            errors: [{ code: "\u2014", reason }] as unknown as Prisma.InputJsonValue,
+            startedAt: new Date(),
+            finishedAt: new Date(),
+          },
+        });
+        await logApiError(`/api/admin/inventory-connectors/${connectorId}/sync`, err, actor);
       }
       // 422, not 502, when the sheet downloaded fine and simply isn't
       // shaped like inventory — the fix is a header row (or a column
@@ -98,10 +119,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
           { status: 422 }
         );
       }
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : "Sheet fetch failed." },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: reason }, { status: 502 });
     }
   } else {
     // type: api — no real external integration target defined yet, see

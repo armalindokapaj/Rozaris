@@ -1,6 +1,5 @@
 import {
   FIELD_HEADER_ALIASES,
-  SYNCABLE_FIELDS,
   matchHeaderToField,
   parseNumericCell,
   parseStatusCell,
@@ -118,13 +117,73 @@ export function sheetEditUrl(sheetId: string, gid = "0"): string {
  * implemented — this environment has no Google Cloud credential to build
  * or test that against.
  */
+/** How long to wait on Google before giving up with a readable message. */
+const SHEET_FETCH_TIMEOUT_MS = 15_000;
+/** Hard ceiling on the CSV we will pull into memory. A real inventory
+ * sheet is tens of kilobytes; anything past this is the wrong tab (or the
+ * wrong file), and buffering it whole would be the failure rather than
+ * revealing one. Roughly 100k rows of this shape. */
+const SHEET_MAX_BYTES = 8 * 1024 * 1024;
+/** Ceiling on rows handed to the engine, mirroring the manual connector's
+ * own `max(2000)` — which until now applied only to inline `rows`, so the
+ * Google path was the one with no bound at all. */
+export const SHEET_MAX_ROWS = 5000;
+
+/** `res.text()` with a byte budget: streams and stops as soon as the cap
+ * is passed, so an accidental 2 GB export fails fast instead of taking the
+ * function down with it. */
+async function readCapped(res: Response): Promise<string> {
+  const body = res.body;
+  if (!body) return "";
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > SHEET_MAX_BYTES) {
+        throw new Error(
+          `That sheet is larger than ${Math.round(SHEET_MAX_BYTES / (1024 * 1024))} MB. Point the connector at the tab holding the unit list rather than the whole workbook.`
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8").decode(merged);
+}
+
 export async function fetchGoogleSheet(
   sheetId: string,
   gid = "0",
   columnMapping?: Record<string, string> | null
 ): Promise<SheetParseResult> {
   const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/export?format=csv&gid=${encodeURIComponent(gid)}`;
-  const res = await fetch(url, { cache: "no-store" });
+  // Bounded on purpose. This runs inside a serverless request an admin is
+  // waiting on: without a signal, a Google endpoint that accepts the
+  // connection and then stalls holds the function until the platform kills
+  // it, and the admin gets a blank failure with no message.
+  let res: Response;
+  try {
+    res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(SHEET_FETCH_TIMEOUT_MS) });
+  } catch (err) {
+    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      throw new Error(
+        `Google did not answer within ${Math.round(SHEET_FETCH_TIMEOUT_MS / 1000)}s. The sheet may be very large, or Google may be having trouble — try again.`
+      );
+    }
+    throw new Error(err instanceof Error ? `Could not reach Google Sheets: ${err.message}` : "Could not reach Google Sheets.");
+  }
   if (!res.ok) {
     throw new Error(
       `Could not fetch the Google Sheet (HTTP ${res.status}). Is it shared as "Anyone with the link can view"?`
@@ -138,17 +197,8 @@ export async function fetchGoogleSheet(
     // with zero parseable rows.
     throw new Error('This Google Sheet is not publicly viewable — share it as "Anyone with the link can view" and retry.');
   }
-  const csv = await res.text();
+  const csv = await readCapped(res);
   return parseInventoryCsv(csv, columnMapping);
-}
-
-/** Back-compat shape for callers that only want the rows. */
-export async function fetchGoogleSheetRows(
-  sheetId: string,
-  gid = "0",
-  columnMapping?: Record<string, string> | null
-): Promise<RawInventoryRow[]> {
-  return (await fetchGoogleSheet(sheetId, gid, columnMapping)).rows;
 }
 
 /**
@@ -164,6 +214,21 @@ export async function fetchGoogleSheetRows(
  * "set it to zero" — the difference matters enormously on a price column
  * where a developer has filled in only the 4 units they re-priced today.
  */
+/** How far down to look for the header row before giving up. Generous
+ * enough for a title + a blank + a subtitle, small enough that a sheet
+ * with no header at all still fails fast. */
+const HEADER_SCAN_ROWS = 10;
+
+/** The first row that names a unit-code column, or 0 if none does. */
+function findHeaderRow(lines: string[][], columnMapping?: Record<string, string> | null): number {
+  const limit = Math.min(lines.length, HEADER_SCAN_ROWS);
+  for (let i = 0; i < limit; i += 1) {
+    const hasCode = lines[i].some((cell) => matchHeaderToField(cell.trim(), columnMapping) === "code");
+    if (hasCode) return i;
+  }
+  return 0;
+}
+
 export function parseInventoryCsv(
   csv: string,
   columnMapping?: Record<string, string> | null
@@ -173,7 +238,15 @@ export function parseInventoryCsv(
     return { rows: [], headers: [], recognized: {}, ignored: [] };
   }
 
-  const headers = lines[0].map((h) => h.trim());
+  // The header row is not always row 0. Real developer sheets routinely
+  // open with a title ("TOWER VLORA — SHITJE 2026"), a blank spacer, or a
+  // merged banner, and assuming row 0 made every one of those unreadable —
+  // with the mapping editor, offered as the fix, showing the cells of the
+  // TITLE row, so it could not fix it either. Take the first row within
+  // the first few that actually names a unit-code column; fall back to row
+  // 0 so the "no unit column" error still describes what the admin sees.
+  const headerRowIndex = findHeaderRow(lines, columnMapping);
+  const headers = lines[headerRowIndex].map((h) => h.trim());
   const recognized: Record<string, SyncableField> = {};
   const ignored: string[] = [];
   /** column index -> field. Built once, not per row. */
@@ -203,7 +276,7 @@ export function parseInventoryCsv(
   }
 
   const rows: RawInventoryRow[] = [];
-  for (const cells of lines.slice(1)) {
+  for (const cells of lines.slice(headerRowIndex + 1)) {
     const row: RawInventoryRow = {};
     for (const [index, field] of fieldByIndex) {
       const cell = (cells[index] ?? "").trim();
@@ -211,7 +284,14 @@ export function parseInventoryCsv(
       if (field === "code") {
         row.code = cell;
       } else if (field === "status") {
-        row.status = parseStatusCell(cell);
+        // A punctuation-only status ("-", "—", "n/a" dashes) is a
+        // placeholder, not a value. `parseStatusCell` returns null for it;
+        // assigning that null made zod reject the ENTIRE row, so one dash
+        // in the status column threw away that unit's price and area edits
+        // too. Absent means "leave this field alone", which is what the
+        // developer meant by typing a dash.
+        const status = parseStatusCell(cell);
+        if (status !== null) row.status = status;
       } else {
         const n = parseNumericCell(cell);
         // A non-numeric cell in a numeric column stays on the row as the
@@ -224,38 +304,10 @@ export function parseInventoryCsv(
     // sheets) is skipped, not reported as a missing-code error.
     if (Object.keys(row).length === 0) continue;
     rows.push(row);
+    if (rows.length >= SHEET_MAX_ROWS) break;
   }
 
   return { rows, headers, recognized, ignored };
-}
-
-/**
- * The starter sheet an admin hands the developer — this project's real,
- * current inventory, in exactly the columns the sync reads back. Beats
- * "here are the column names, go build it": the developer opens a file
- * that already matches their tower and edits numbers in place, so unit
- * codes can't drift out of sync with the ones the match step needs.
- */
-export function buildSheetTemplateCsv(
-  units: {
-    code: string;
-    area: number;
-    price: number;
-    bedrooms: number;
-    bathrooms: number;
-    floor: number;
-    status: string;
-  }[]
-): string {
-  const header = SYNCABLE_FIELDS.map((f) => FIELD_HEADER_ALIASES[f][0]);
-  const body = units.map((u) =>
-    SYNCABLE_FIELDS.map((f) => csvCell(String(u[f as keyof typeof u] ?? ""))).join(",")
-  );
-  return [header.join(","), ...body].join("\r\n");
-}
-
-function csvCell(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
 /**

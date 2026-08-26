@@ -65,8 +65,11 @@ export interface SyncResult {
  * 8-9 (sync run + audit) — always, even on a run that changed nothing.
  * 10 (invalidate inventory cache) — implicit: revision bump IS the cache
  *    invalidation signal the public `/inventory` endpoint's ETag reads.
- * 11 (idempotency) — same `sourceHash` as the connector's last successful
- *    run short-circuits before touching a single Unit row.
+ * 11 (idempotency) — falls out of the per-row diff, not out of a hash: a
+ *    sheet identical to what is already stored produces zero field
+ *    changes and therefore zero writes. `sourceHash` is recorded on each
+ *    run as provenance only; it deliberately does NOT gate the write (see
+ *    the note in the body for what that cost).
  *
  * `dryRun` runs steps 3-4 and the change DETECTION half of 5-6, then stops
  * — no Unit write, no revision bump, no sync-run row, no audit entry. It
@@ -93,45 +96,23 @@ export async function runInventorySync(
   const startedAt = new Date();
   const sourceHash = createHash("sha256").update(JSON.stringify(rows)).digest("hex");
 
-  // Idempotency (step 11) is a real-run concern only — a dry run must
-  // always recompute and show the diff, even when the sheet is byte-for-
-  // byte what it was at the last sync (that's the normal case when an
-  // admin opens the panel to check).
-  if (!dryRun) {
-    const lastGoodRun = await prisma.inventorySyncRun.findFirst({
-      where: { connectorId, status: { in: ["success", "partial"] } },
-      orderBy: { startedAt: "desc" },
-    });
-    if (lastGoodRun && lastGoodRun.sourceHash === sourceHash) {
-      const run = await prisma.inventorySyncRun.create({
-        data: {
-          connectorId,
-          status: "success",
-          sourceHash,
-          rowsRead: rows.length,
-          rowsChanged: 0,
-          rowsRejected: 0,
-          startedAt,
-          finishedAt: new Date(),
-        },
-      });
-      await prisma.inventoryConnector.update({
-        where: { id: connectorId },
-        data: { lastSyncAt: new Date(), lastSuccessfulSyncAt: new Date(), status: "active" },
-      });
-      return {
-        syncRunId: run.id,
-        dryRun: false,
-        status: "success",
-        rowsRead: rows.length,
-        rowsChanged: 0,
-        rowsRejected: 0,
-        rowsUnchanged: rows.length,
-        errors: [],
-        changes: [],
-      };
-    }
-  }
+  // NO source-hash short-circuit. `sourceHash` is still recorded on the
+  // run below as provenance ("was this the same sheet as last time?"), but
+  // it must never gate the WRITE, because it is computed from the sheet
+  // alone and therefore cannot see the thing that actually matters: whether
+  // the units have drifted away from it. Every path that edits a Unit
+  // outside the sheet — the grid in this very section, the Inventory table,
+  // the bulk reprice — desynchronised the DB without changing the hash, and
+  // from then on "Sync now" and "Apply changes" reported a cheerful
+  // "success, 0 changed" while writing nothing at all, forever. The preview
+  // (computed against real Unit rows) and the real run (gated on the hash)
+  // disagreed by construction.
+  //
+  // Nothing is lost by dropping it: the expensive step, fetching the CSV,
+  // already happened in the route before this function is entered, and the
+  // per-row diff below is what actually makes a sync idempotent — an
+  // unchanged sheet produces zero field changes, so zero `unit.update`
+  // calls and no revision bump. Pressing "Sync now" twice was already safe.
 
   const units = await prisma.unit.findMany({ where: { projectId: connector.projectId, deletedAt: null } });
   // Matched case-insensitively and whitespace-trimmed: "a-101" typed into
@@ -151,68 +132,121 @@ export async function runInventorySync(
   let rowsUnchanged = 0;
   const seenCodes = new Set<string>();
 
-  for (const raw of rows) {
-    const parsed = inventoryRowSchema.safeParse(raw);
-    if (!parsed.success) {
-      const codeGuess = typeof raw.code === "string" ? raw.code : "?";
-      const issue = parsed.error.issues[0];
-      const field = issue?.path?.[0];
-      errors.push({
-        code: codeGuess,
-        reason: field && field !== "code" ? `${String(field)}: ${issue.message}` : (issue?.message ?? "Invalid row."),
-      });
-      continue;
+  // A real run writes unit-by-unit rather than inside one transaction: a
+  // 500-row sheet in a single interactive transaction would hold a
+  // Postgres connection for the whole run and hit the transaction timeout
+  // long before the sheet ran out. The cost of that choice is that a
+  // failure halfway leaves the rows before it already written — so the one
+  // thing that must not ALSO fail is saying so. Without this catch a
+  // mid-loop throw propagated straight out and the run left no sync-run
+  // row, no audit entry and no revision bump: real writes that nothing in
+  // the app could see, explain, or even know had happened.
+  try {
+    for (const raw of rows) {
+      const parsed = inventoryRowSchema.safeParse(raw);
+      if (!parsed.success) {
+        const codeGuess = typeof raw.code === "string" ? raw.code : "?";
+        const issue = parsed.error.issues[0];
+        const field = issue?.path?.[0];
+        errors.push({
+          code: codeGuess,
+          reason: field && field !== "code" ? `${String(field)}: ${issue.message}` : (issue?.message ?? "Invalid row."),
+        });
+        continue;
+      }
+
+      const key = parsed.data.code.trim().toLowerCase();
+      if (seenCodes.has(key)) {
+        // A duplicated unit code inside one sheet is a data-entry mistake
+        // with two different intents behind it — last-write-wins would
+        // apply whichever row happened to be lower in the file. Reject the
+        // repeat and say so.
+        errors.push({ code: parsed.data.code, reason: "Duplicate row — this unit code appears more than once in the sheet." });
+        continue;
+      }
+      seenCodes.add(key);
+
+      const unit = unitByCode.get(key);
+      if (!unit) {
+        errors.push({ code: parsed.data.code, reason: `No unit with code "${parsed.data.code}" in this project.` });
+        continue;
+      }
+
+      const patch: Record<string, number | string> = {};
+      const rowChanges: SyncFieldChange[] = [];
+      for (const field of WRITABLE_FIELDS) {
+        const next = parsed.data[field];
+        if (next === undefined) continue; // column absent, or cell blank
+        const current = unit[field] as number | string;
+        if (next === current) continue;
+        patch[field] = next;
+        rowChanges.push({ field, from: current ?? null, to: next });
+      }
+
+      if (rowChanges.length === 0) {
+        rowsUnchanged++;
+        continue;
+      }
+
+      changes.push({ code: unit.code, unitId: unit.id, changes: rowChanges });
+
+      if (!dryRun) {
+        await prisma.unit.update({
+          where: { id: unit.id },
+          // `revision` is Unit's optimistic-concurrency counter (PRD §57),
+          // inert until now — the sync engine is its first real writer, so
+          // an external sheet overwriting a value an admin edited in the
+          // console a second earlier is at least visible after the fact.
+          data: { ...patch, revision: { increment: 1 } },
+        });
+      }
     }
-
-    const key = parsed.data.code.trim().toLowerCase();
-    if (seenCodes.has(key)) {
-      // A duplicated unit code inside one sheet is a data-entry mistake
-      // with two different intents behind it — last-write-wins would
-      // apply whichever row happened to be lower in the file. Reject the
-      // repeat and say so.
-      errors.push({ code: parsed.data.code, reason: "Duplicate row — this unit code appears more than once in the sheet." });
-      continue;
-    }
-    seenCodes.add(key);
-
-    const unit = unitByCode.get(key);
-    if (!unit) {
-      errors.push({ code: parsed.data.code, reason: `No unit with code "${parsed.data.code}" in this project.` });
-      continue;
-    }
-
-    const patch: Record<string, number | string> = {};
-    const rowChanges: SyncFieldChange[] = [];
-    for (const field of WRITABLE_FIELDS) {
-      const next = parsed.data[field];
-      if (next === undefined) continue; // column absent, or cell blank
-      const current = unit[field] as number | string;
-      if (next === current) continue;
-      patch[field] = next;
-      rowChanges.push({ field, from: current ?? null, to: next });
-    }
-
-    if (rowChanges.length === 0) {
-      rowsUnchanged++;
-      continue;
-    }
-
-    changes.push({ code: unit.code, unitId: unit.id, changes: rowChanges });
-
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : "Unknown error.";
     if (!dryRun) {
-      await prisma.unit.update({
-        where: { id: unit.id },
-        // `revision` is Unit's optimistic-concurrency counter (PRD §57),
-        // inert until now — the sync engine is its first real writer, so
-        // an external sheet overwriting a value an admin edited in the
-        // console a second earlier is at least visible after the fact.
-        data: { ...patch, revision: { increment: 1 } },
+      if (changes.length > 0) await bumpInventoryRevision(connector.projectId);
+      await prisma.inventorySyncRun.create({
+        data: {
+          connectorId,
+          status: "error",
+          sourceHash,
+          rowsRead: rows.length,
+          rowsChanged: changes.length,
+          rowsRejected: errors.length,
+          errors: [
+            ...errors,
+            { code: "\u2014", reason: `Sync stopped part-way after ${changes.length} unit(s): ${reason}` },
+          ] as unknown as Prisma.InputJsonValue,
+          startedAt,
+          finishedAt: new Date(),
+        },
+      });
+      await prisma.inventoryConnector.update({
+        where: { id: connectorId },
+        data: { lastSyncAt: new Date(), status: "error" },
+      });
+      await logAuditEvent({
+        actor,
+        action: "Inventory sync failed",
+        entityType: "InventoryConnector",
+        entityId: connectorId,
+        entityLabel: `${connector.type} sync`,
+        metadata: { projectId: connector.projectId, rowsWrittenBeforeFailure: changes.length, reason },
       });
     }
+    throw err;
   }
 
   const rowsChanged = changes.length;
-  const status: SyncResult["status"] = errors.length === 0 ? "success" : rowsChanged > 0 ? "partial" : "error";
+  // "partial" whenever some rows were rejected, regardless of whether the
+  // survivors happened to change anything. Keying this off `rowsChanged`
+  // meant a sheet that was already fully applied, but still carried one
+  // row for a unit that does not exist, came back as "error" and badged the
+  // whole connector red — a permanent red light for a sheet that is
+  // working. A run that got this far READ the sheet successfully; only the
+  // fetch/parse step can fail the connector, and that is handled by the
+  // route.
+  const status: SyncResult["status"] = errors.length === 0 ? "success" : "partial";
 
   if (dryRun) {
     return {
@@ -250,11 +284,14 @@ export async function runInventorySync(
     where: { id: connectorId },
     data: {
       lastSyncAt: new Date(),
-      ...(status !== "error" ? { lastSuccessfulSyncAt: new Date() } : {}),
-      // Clear a previous `error` state on a run that worked, not just set
-      // one on a run that didn't — otherwise a connector that failed once
-      // (bad share setting, since fixed) reads as broken forever.
-      status: status === "error" ? "error" : "active",
+      lastSuccessfulSyncAt: new Date(),
+      // Reaching this line means the sheet was fetched, parsed and applied,
+      // so the CONNECTOR is healthy even if some of its rows were not —
+      // per-row rejections belong in the run record, which carries them.
+      // Setting `active` unconditionally here is also what clears a
+      // previous `error` state: a connector that failed once on a share
+      // setting since fixed must not read as broken forever.
+      status: "active",
     },
   });
 
