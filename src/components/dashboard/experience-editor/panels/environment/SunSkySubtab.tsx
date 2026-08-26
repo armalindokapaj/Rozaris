@@ -96,8 +96,11 @@ export function SunSkySubtab({ configEditor }: { configEditor: UseProjectConfigE
             />
             <ToggleRow label="Viewer Time Control" checked={draft.viewerTimeControlEnabled} onChange={(v) => update({ viewerTimeControlEnabled: v })} hint="Whether visitors get a live time slider (vs. a fixed Default Time)" />
             <SliderRow label="Viewer Time" value={draft.viewerTimeHours} min={0} max={24} step={0.25} suffix="h" onChange={(v) => update({ viewerTimeHours: v })} />
-            <SliderRow label="Start Time" value={draft.viewerTimeStartHours} min={0} max={24} step={0.5} suffix="h" onChange={(v) => update({ viewerTimeStartHours: v })} />
-            <SliderRow label="End Time" value={draft.viewerTimeEndHours} min={0} max={24} step={0.5} suffix="h" onChange={(v) => update({ viewerTimeEndHours: v })} />
+            {/* Bounded against each other, not 0-24 independently: these two
+                now drive the public viewer's scrub range directly, and an
+                inverted window would leave visitors a dead slider. */}
+            <SliderRow label="Start Time" value={draft.viewerTimeStartHours} min={0} max={draft.viewerTimeEndHours} step={0.5} suffix="h" onChange={(v) => update({ viewerTimeStartHours: v })} />
+            <SliderRow label="End Time" value={draft.viewerTimeEndHours} min={draft.viewerTimeStartHours} max={24} step={0.5} suffix="h" onChange={(v) => update({ viewerTimeEndHours: v })} />
             <SliderRow label="Time Step" value={draft.viewerTimeStepMinutes} min={1} max={120} step={1} suffix="min" onChange={(v) => update({ viewerTimeStepMinutes: v })} />
             <SliderRow label="North Offset" value={draft.northOffsetDeg} min={-180} max={180} step={1} suffix="°" onChange={(v) => update({ northOffsetDeg: v })} />
           </GroupCard>

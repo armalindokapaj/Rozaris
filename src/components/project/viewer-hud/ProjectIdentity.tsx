@@ -8,6 +8,16 @@ import Link from "next/link";
  * back to /search, since that's real existing navigation, not something
  * this PRD asked to remove.
  *
+ * The wordmark + divider used to be `hidden sm:block`, i.e. desktop-only;
+ * they now render at every width (direct instruction, 2026-08-26: the logo
+ * belongs in the viewer's top-left corner on mobile exactly as it is on
+ * desktop). Mobile gets `text-xs` rather than the desktop `text-sm` — the
+ * same one-step scale-down the two text lines below already use (13px/11px
+ * vs 14px/12px), which both keeps the wordmark under the project name in
+ * weight per this PRD's "must never dominate the project" rule and buys
+ * back ~10px for the `truncate`d developer · city line, the tightest thing
+ * in this plate on a narrow phone.
+ *
  * Fixed `h-12` (direct design feedback, 2026-08-17) — this is the
  * reference height every other piece of viewer chrome now matches:
  * NorthCompass, ViewerUtilities, and ViewerNavigation. Previously this
@@ -28,11 +38,11 @@ export function ProjectIdentity({
     <div className="viewer-glass flex h-12 min-w-0 items-center gap-2.5 rounded-panel px-3.5 sm:gap-3 sm:px-4">
       <Link
         href="/search"
-        className="hidden shrink-0 font-serif text-sm tracking-[0.14em] text-white transition-colors hover:text-white/70 sm:block"
+        className="shrink-0 font-serif text-xs tracking-[0.14em] text-white transition-colors hover:text-white/70 sm:text-sm"
       >
         ROZARIS
       </Link>
-      <span className="hidden h-5 w-px shrink-0 bg-white/15 sm:block" aria-hidden="true" />
+      <span className="h-5 w-px shrink-0 bg-white/15" aria-hidden="true" />
       <div className="min-w-0">
         <p className="truncate text-[13px] font-semibold leading-tight text-white sm:text-sm">{projectName}</p>
         <p className="truncate text-[11px] leading-tight text-white/60 sm:text-xs">

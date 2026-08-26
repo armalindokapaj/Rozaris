@@ -66,6 +66,24 @@ const COMPACT_WIDTH_MOBILE = 256;
 const COMPACT_WIDTH_DESKTOP = 288;
 const EXPANDED_WIDTH = 384;
 
+/** Floor of the expanded state's width, for the case where the floor rail
+ * (below) has eaten so much of a very narrow viewport that what is left
+ * could no longer hold the detail pane's own content — a 3-up facts grid
+ * and a 2-up footer. Below this the card takes the room anyway and lets
+ * the rail sit behind its left edge, because an unreadable card is the
+ * worse of the two failures. */
+const EXPANDED_WIDTH_MIN = 268;
+
+/** The card's three states, in the order the eye meets them. All three are
+ * the SAME shell — see the morph in the layout effect below.
+ *
+ * All three also share the shell's own `rounded-panel`, which is why nothing
+ * here animates a corner radius: the retracted state is a header-height bar in
+ * the header's own corner, so it wears the header's corners (2026-08-26 direct
+ * instruction: "Exit Floor tab corners make it like Top Bar Corners. Not that
+ * much Radius"). It is deliberately NOT `--radius-pill`. */
+type CardMode = "compact" | "detail" | "exit";
+
 /** The viewer chrome's own edge inset, not a number of this card's own:
  * ViewerHUD's `<header>` is `p-3 pt-[max(0.75rem,env(safe-area-inset-top))]
  * … sm:p-4`, and the bottom dock strip mirrors it exactly. Used for the
@@ -101,17 +119,30 @@ export function UnitPreviewCard({
   project,
   unit,
   expanded,
+  retracted,
   floorSectionName,
   floorSectionActive,
   onViewInFloor,
+  onExitFloor,
+  exitFloorLabel,
+  exitFloorTitle,
   onClose,
   onExpand,
   onCollapse,
 }: {
   project: Project;
-  unit: Unit;
+  /** `null` in the retracted state reached from the floor rail — the visitor
+   * cut a floor open without ever picking a unit, so there is no unit to
+   * describe. The two unit panes render empty in that case; only the exit
+   * pill is visible, and its label comes from the section, not from here. */
+  unit: Unit | null;
   /** Detail state — driven by ProjectViewerRuntime's `fullDetailOpen`. */
   expanded: boolean;
+  /** Retracted state: the card was dismissed while the floor cut IT applied
+   * was still on the building, so instead of vanishing it collapses into an
+   * "Exit Floor" pill that keeps the way out on screen. Set by
+   * ProjectViewerRuntime, which is what actually owns the cut. */
+  retracted: boolean;
   /** The name of the Section that cuts this unit's floor open, or null if
    * this project has none for it — see `src/lib/floorSections.ts`. Null
    * hides the "View in Floor" button entirely rather than showing a dead
@@ -123,6 +154,15 @@ export function UnitPreviewCard({
    * the state it toggles lives in the runtime, not here. */
   floorSectionActive: boolean;
   onViewInFloor: () => void;
+  /** Pressing the retracted pill — drops the cut, which also unmounts this
+   * card (the pill exists only for as long as there is a cut to exit). */
+  onExitFloor: () => void;
+  /** The retracted pill's own label and tooltip, both already localized.
+   * Derived from the ACTIVE SECTION rather than from `unit`, because the pill
+   * outlives any selection: a floor cut opened from the rail has no unit at
+   * all. Null only when nothing is cut, i.e. when the pill cannot show. */
+  exitFloorLabel: string | null;
+  exitFloorTitle: string | null;
   onClose: () => void;
   onExpand: () => void;
   onCollapse: () => void;
@@ -136,20 +176,24 @@ export function UnitPreviewCard({
   const compare = useAppStore((s) => s.compare);
   const addCompare = useAppStore((s) => s.addCompare);
   const removeCompareAt = useAppStore((s) => s.removeCompareAt);
-  const compareIndex = compare.findIndex((c) => c.kind === "unit" && c.entity.id === unit.id);
+  const compareIndex = unit ? compare.findIndex((c) => c.kind === "unit" && c.entity.id === unit.id) : -1;
   const inCompare = compareIndex !== -1;
   const [designLeadSent, setDesignLeadSent] = useState(false);
-  const eligibleForDesign = project.status === "under_construction" && unit.type === "residential";
+  const eligibleForDesign = project.status === "under_construction" && unit?.type === "residential";
 
   const shellRef = useRef<HTMLDivElement>(null);
   const compactRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLDivElement>(null);
+  const exitRef = useRef<HTMLDivElement>(null);
 
-  // Real measured heights of the two panes, and how much room the viewport
+  // Real measured boxes of the three panes, and how much room the viewport
   // actually leaves below the card's fixed top offset. Both are needed before
-  // the shell can be given an explicit height — which it must have, since
-  // `height: auto` is not a tweenable value.
-  const [paneHeights, setPaneHeights] = useState({ compact: 0, detail: 0 });
+  // the shell can be given an explicit width/height — which it must have,
+  // since `auto` is not a tweenable value. Only the exit pill contributes a
+  // width: the other two are laid out at widths this component chooses, while
+  // the pill is as wide as its own label happens to be (and "Dil nga Kati"
+  // is not "Exit Floor" — see the "rozaris-viewer-locale-width-deltas" note).
+  const [paneBoxes, setPaneBoxes] = useState({ compact: 0, detail: 0, exitW: 0, exitH: 0 });
   const [limits, setLimits] = useState({
     compactWidth: COMPACT_WIDTH_DESKTOP,
     maxWidth: EXPANDED_WIDTH,
@@ -181,12 +225,31 @@ export function UnitPreviewCard({
     const dockHeight =
       dock?.getBoundingClientRect().height ||
       (window.innerWidth < 1024 ? DOCK_HEIGHT_MOBILE_STANDARD + 2 : DOCK_HEIGHT_DESKTOP);
+    // Where the card is allowed to start. On a phone the expanded state is
+    // wide enough to reach the left edge of the viewport, and the floor rail
+    // lives there — so a unit opened to detail used to bury the floor stack
+    // it had just been picked out of (2026-08-26 direct instruction: "it
+    // should be left space to view the floors on the left"). The rail's live
+    // right edge is measured rather than assumed: its width is content-driven
+    // (a building picker above it, a heading whose Albanian and English
+    // labels differ — see the "rozaris-viewer-locale-width-deltas" note), it
+    // is anchored to the workspace wrapper that the units list narrows rather
+    // than to the viewport, and it is absent entirely on a project with no
+    // sections, where the card should keep the full width it has today.
+    const rail = document.querySelector<HTMLElement>("[data-viewer-floor-rail]");
+    const railRight = rail ? rail.getBoundingClientRect().right : 0;
+    // `right` rather than a gutter constant: the shell is anchored by CSS
+    // that already resolves `env(safe-area-inset-right)`, and — like its
+    // `top` — that edge does not depend on the width being computed here,
+    // so reading it back cannot feed into itself.
+    const { right } = shell.getBoundingClientRect();
+    const widthBudget = railRight > 0 ? right - railRight - gutter : window.innerWidth - gutter * 2;
     setLimits({
       compactWidth: Math.min(
         narrow ? COMPACT_WIDTH_MOBILE : COMPACT_WIDTH_DESKTOP,
         window.innerWidth - gutter * 2
       ),
-      maxWidth: Math.min(EXPANDED_WIDTH, window.innerWidth - gutter * 2),
+      maxWidth: Math.min(EXPANDED_WIDTH, Math.max(EXPANDED_WIDTH_MIN, widthBudget)),
       maxHeight: Math.max(240, window.innerHeight - top - dockHeight - gutter * 2),
     });
   }, []);
@@ -194,19 +257,38 @@ export function UnitPreviewCard({
   useLayoutEffect(() => {
     measureLimits();
     window.addEventListener("resize", measureLimits);
-    return () => window.removeEventListener("resize", measureLimits);
+    // The rail can change width without the window doing anything — the
+    // building picker appearing, a locale swap relabelling its heading — and
+    // the card's own budget is derived from it, so follow it directly.
+    const rail = document.querySelector<HTMLElement>("[data-viewer-floor-rail]");
+    const observer = rail ? new ResizeObserver(measureLimits) : null;
+    if (rail && observer) observer.observe(rail);
+    return () => {
+      window.removeEventListener("resize", measureLimits);
+      observer?.disconnect();
+    };
   }, [measureLimits]);
 
   useLayoutEffect(() => {
     const compact = compactRef.current;
     const detail = detailRef.current;
-    if (!compact || !detail) return;
+    const exit = exitRef.current;
+    if (!compact || !detail || !exit) return;
     const sync = () =>
-      setPaneHeights((prev) =>
-        prev.compact === compact.offsetHeight && prev.detail === detail.offsetHeight
+      setPaneBoxes((prev) => {
+        const next = {
+          compact: compact.offsetHeight,
+          detail: detail.offsetHeight,
+          exitW: exit.offsetWidth,
+          exitH: exit.offsetHeight,
+        };
+        return prev.compact === next.compact &&
+          prev.detail === next.detail &&
+          prev.exitW === next.exitW &&
+          prev.exitH === next.exitH
           ? prev
-          : { compact: compact.offsetHeight, detail: detail.offsetHeight }
-      );
+          : next;
+      });
     sync();
     // Covers everything that changes a pane's height without a prop change of
     // its own: a media tab swap, a status chip growing in Albanian, the
@@ -214,23 +296,31 @@ export function UnitPreviewCard({
     const observer = new ResizeObserver(sync);
     observer.observe(compact);
     observer.observe(detail);
+    observer.observe(exit);
     return () => observer.disconnect();
   }, []);
 
   const compactWidth = limits.compactWidth;
-  const targetWidth = expanded ? limits.maxWidth : compactWidth;
-  const targetHeight = expanded
-    ? Math.min(paneHeights.detail, limits.maxHeight)
-    : paneHeights.compact;
+  const mode: CardMode = retracted ? "exit" : expanded ? "detail" : "compact";
+  const targetWidth =
+    mode === "exit" ? paneBoxes.exitW : mode === "detail" ? limits.maxWidth : compactWidth;
+  const targetHeight =
+    mode === "exit"
+      ? paneBoxes.exitH
+      : mode === "detail"
+        ? Math.min(paneBoxes.detail, limits.maxHeight)
+        : paneBoxes.compact;
 
   const firstRun = useRef(true);
-  const prevExpanded = useRef(expanded);
+  const prevMode = useRef<CardMode>(mode);
 
   useLayoutEffect(() => {
     const shell = shellRef.current;
     const compact = compactRef.current;
     const detail = detailRef.current;
-    if (!shell || !compact || !detail || !targetHeight) return;
+    const exit = exitRef.current;
+    if (!shell || !compact || !detail || !exit || !targetHeight || !targetWidth) return;
+    const panes: Record<CardMode, HTMLDivElement> = { compact, detail, exit };
 
     // First paint: no morph to run, just place the shell and play the card's
     // own entrance. (Ran with `targetHeight === 0` on the very first pass, so
@@ -238,8 +328,9 @@ export function UnitPreviewCard({
     if (firstRun.current) {
       firstRun.current = false;
       gsap.set(shell, { width: targetWidth, height: targetHeight });
-      gsap.set(compact, { autoAlpha: expanded ? 0 : 1 });
-      gsap.set(detail, { autoAlpha: expanded ? 1 : 0 });
+      (Object.keys(panes) as CardMode[]).forEach((m) =>
+        gsap.set(panes[m], { autoAlpha: m === mode ? 1 : 0, scale: 1, y: 0 })
+      );
       gsap.fromTo(
         shell,
         { autoAlpha: 0, y: -8, scale: 0.96 },
@@ -254,26 +345,52 @@ export function UnitPreviewCard({
       return;
     }
 
-    const modeChanged = prevExpanded.current !== expanded;
-    prevExpanded.current = expanded;
+    const from = prevMode.current;
+    prevMode.current = mode;
 
     // Not a state change — a pane simply got taller/shorter (media tab, window
-    // resize). Follow it without replaying the cross-fade.
-    if (!modeChanged) {
-      const tween = gsap.to(shell, {
-        width: targetWidth,
-        height: targetHeight,
-        duration: reducedMotion ? 0.001 : 0.2,
-        ease: "power2.out",
-      });
+    // resize, or the unit arriving while the card sits retracted). Follow the
+    // box without replaying the cross-fade...
+    if (from === mode) {
+      const settle = reducedMotion ? 0.001 : 0.2;
+      const tween = gsap.timeline();
+      tween.to(
+        shell,
+        { width: targetWidth, height: targetHeight, duration: settle, ease: "power2.out" },
+        0
+      );
+      // ...but DO restate which pane is the visible one, because this branch is
+      // also where a HALF-FINISHED morph lands. A pane whose height settles in
+      // the same frame the mode changed re-runs this effect, and the cleanup
+      // below has already killed the cross-fade that was in flight. Found live
+      // going pill → card (the compact pane has no measurable height until the
+      // unit arrives, so its 0 → 144 lands exactly there): the shell grew to
+      // full card size while the compact pane stayed `visibility: hidden`
+      // behind a pill frozen at 0.82 opacity. These tweens are no-ops whenever
+      // the morph did finish, which is the common case.
+      (Object.keys(panes) as CardMode[]).forEach((m) =>
+        tween.to(
+          panes[m],
+          { autoAlpha: m === mode ? 1 : 0, scale: 1, y: 0, duration: settle, ease: "power2.out" },
+          0
+        )
+      );
       return () => {
         tween.kill();
       };
     }
 
-    const duration = reducedMotion ? 0.001 : 0.42;
-    const outgoing = expanded ? compact : detail;
-    const incoming = expanded ? detail : compact;
+    // The retract is the biggest distance the shell ever travels — a 384px
+    // detail card down to a ~150px pill — so it gets a little longer to do it
+    // and a tighter grip on the incoming pill: the pill scales UP into place
+    // from the corner both panes are pinned to (`origin-top-right`), which is
+    // what makes the pill read as the card's own remains rather than a new
+    // chip appearing where the card used to be.
+    const toExit = mode === "exit";
+    const fromExit = from === "exit";
+    const duration = reducedMotion ? 0.001 : toExit || fromExit ? 0.5 : 0.42;
+    const outgoing = panes[from];
+    const incoming = panes[mode];
     const timeline = gsap.timeline();
     timeline
       .to(shell, { width: targetWidth, height: targetHeight, duration, ease: "power3.inOut" }, 0)
@@ -283,17 +400,58 @@ export function UnitPreviewCard({
       // was an empty white box — which reads as a flash, not a morph. The
       // incoming pane now starts while the outgoing one is still legible, so
       // there is always content in the box.
-      .to(outgoing, { autoAlpha: 0, duration: duration * 0.5, ease: "power1.out" }, 0)
+      .to(
+        outgoing,
+        {
+          autoAlpha: 0,
+          scale: toExit ? 0.94 : 1,
+          duration: duration * (toExit ? 0.42 : 0.5),
+          ease: "power1.out",
+        },
+        0
+      )
       .fromTo(
         incoming,
-        { autoAlpha: 0, y: expanded ? 10 : -6 },
-        { autoAlpha: 1, y: 0, duration: duration * 0.85, ease: "power2.out" },
-        duration * 0.15
+        { autoAlpha: 0, scale: toExit ? 0.82 : 1, y: toExit || fromExit ? 0 : mode === "detail" ? 10 : -6 },
+        {
+          autoAlpha: 1,
+          scale: 1,
+          y: 0,
+          duration: duration * 0.85,
+          // No `back`/elastic ease anywhere here: the shell is
+          // `overflow-hidden`, so anything that overshoots past scale 1 gets
+          // its edges sliced by the very box it is animating inside.
+          ease: "power3.out",
+        },
+        duration * (toExit ? 0.3 : 0.15)
       );
     return () => {
       timeline.kill();
     };
-  }, [expanded, targetWidth, targetHeight, reducedMotion]);
+  }, [mode, targetWidth, targetHeight, reducedMotion]);
+
+  // Pressing the pill drops the cut, and dropping the cut unmounts this card
+  // — so the fade has to finish BEFORE the state change, not after it. Guarded
+  // by a ref rather than state: a second tap during the 0.22s would otherwise
+  // start a second tween on an element the first one is already clearing.
+  const exitingRef = useRef(false);
+  const handleExitPress = useCallback(() => {
+    if (exitingRef.current) return;
+    exitingRef.current = true;
+    const shell = shellRef.current;
+    if (!shell || reducedMotion) {
+      onExitFloor();
+      return;
+    }
+    gsap.to(shell, {
+      autoAlpha: 0,
+      scale: 0.9,
+      y: -6,
+      duration: 0.22,
+      ease: "power2.in",
+      onComplete: onExitFloor,
+    });
+  }, [onExitFloor, reducedMotion]);
 
   // Escape steps back out of the detail state rather than closing the card
   // outright — the same one-step-back the collapse button gives.
@@ -306,31 +464,31 @@ export function UnitPreviewCard({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [expanded, onCollapse]);
 
-  const statusChip = (
+  const statusChip = (u: Unit) => (
     <span
       className={cn(
         "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize",
-        unit.status === "available" && "bg-emerald-400/15 text-emerald-300",
-        unit.status === "reserved" && "bg-amber-400/15 text-amber-300",
-        unit.status === "sold" && "bg-white/10 text-white/55"
+        u.status === "available" && "bg-emerald-400/15 text-emerald-300",
+        u.status === "reserved" && "bg-amber-400/15 text-amber-300",
+        u.status === "sold" && "bg-white/10 text-white/55"
       )}
     >
-      {t(STATUS_LABEL_KEY[unit.status])}
+      {t(STATUS_LABEL_KEY[u.status])}
     </span>
   );
 
-  const specRow = (
+  const specRow = (u: Unit) => (
     <div className="flex items-center gap-2.5 text-[11px] text-white/55 sm:gap-3 sm:text-xs">
       <span className="flex items-center gap-1">
-        <BedDouble className="h-3.5 w-3.5" /> {unit.bedrooms}
+        <BedDouble className="h-3.5 w-3.5" /> {u.bedrooms}
       </span>
       <span className="flex items-center gap-1">
-        <Bath className="h-3.5 w-3.5" /> {unit.bathrooms}
+        <Bath className="h-3.5 w-3.5" /> {u.bathrooms}
       </span>
       <span className="flex items-center gap-1">
-        <Ruler className="h-3.5 w-3.5" /> {unit.area} m²
+        <Ruler className="h-3.5 w-3.5" /> {u.area} m²
       </span>
-      <span className="ml-auto">{statusChip}</span>
+      <span className="ml-auto">{statusChip(u)}</span>
     </div>
   );
 
@@ -359,19 +517,19 @@ export function UnitPreviewCard({
     </button>
   );
 
-  const compareButton = (className: string, withLabel: boolean) => (
+  const compareButton = (u: Unit, className: string, withLabel: boolean) => (
     <button
       onClick={() =>
         inCompare
           ? removeCompareAt(compareIndex)
           : addCompare({
               kind: "unit",
-              entity: unit,
+              entity: u,
               projectName: project.name,
               projectSlug: project.slug,
             })
       }
-      disabled={unit.status === "sold"}
+      disabled={u.status === "sold"}
       aria-label={inCompare ? t("listing.inCompare") : t("nav.compare")}
       aria-pressed={inCompare}
       className={className}
@@ -394,8 +552,11 @@ export function UnitPreviewCard({
   return (
     <div
       ref={shellRef}
-      role="dialog"
-      aria-label={unit.code}
+      // Retracted it is a single button, not a surface holding content — so
+      // it stops claiming to be a dialog, and the button inside carries its
+      // own name.
+      role={retracted ? undefined : "dialog"}
+      aria-label={retracted ? undefined : unit?.code}
       // Pinned to the top-right corner immediately under the header row
       // (direct design feedback, 2026-08-24, mobile) — and expressed in the
       // header's *own* insets rather than numbers of its own, so the card
@@ -428,9 +589,14 @@ export function UnitPreviewCard({
           from the anchor the preview already occupied — nothing jumps. */}
       <div
         ref={compactRef}
-        className="absolute right-0 top-0 p-3 sm:p-4"
+        className="absolute right-0 top-0 origin-top-right p-3 sm:p-4"
         style={{ width: compactWidth }}
       >
+        {/* Contents, not the wrapper: the wrapper carries the ref the measure
+            effect observes, and a pane that unmounted when `unit` went null
+            would take its own height measurement with it mid-morph. */}
+        {unit && (
+        <>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45 sm:text-[11px] sm:tracking-wide">
@@ -445,7 +611,7 @@ export function UnitPreviewCard({
           <div className="-mr-1 -mt-0.5">{closeButton}</div>
         </div>
 
-        <div className="mt-2 sm:mt-2.5">{specRow}</div>
+        <div className="mt-2 sm:mt-2.5">{specRow(unit)}</div>
 
         {/* Two actions, both about *seeing* this unit — Save and Compare
             moved out (2026-08-25 direct instruction) and now live only in
@@ -485,9 +651,16 @@ export function UnitPreviewCard({
             <ChevronRight className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
           </button>
         </div>
+        </>
+        )}
       </div>
 
-      <div ref={detailRef} className="absolute right-0 top-0" style={{ width: limits.maxWidth }}>
+      <div
+        ref={detailRef}
+        className="absolute right-0 top-0 origin-top-right"
+        style={{ width: limits.maxWidth }}
+      >
+        {unit && (
         <div className="flex flex-col" style={{ maxHeight: limits.maxHeight }}>
           {/* Header intentionally repeats the preview's own eyebrow/price/spec
               geometry — it's the anchor that makes the morph read as growth. */}
@@ -513,7 +686,7 @@ export function UnitPreviewCard({
                 {closeButton}
               </div>
             </div>
-            <div className="mt-2">{specRow}</div>
+            <div className="mt-2">{specRow(unit)}</div>
           </div>
 
           <div className="scroll-none min-h-0 flex-1 overflow-y-auto px-3.5 pb-3 pt-3">
@@ -570,6 +743,7 @@ export function UnitPreviewCard({
           <div className="flex shrink-0 items-center gap-2 border-t border-white/10 px-3.5 py-2.5">
             {saveButton(wideButtonClass, true)}
             {compareButton(
+              unit,
               cn(
                 wideButtonClass,
                 inCompare && "border-brand-400/60 bg-brand-500/25 text-white hover:bg-brand-500/25"
@@ -578,6 +752,43 @@ export function UnitPreviewCard({
             )}
           </div>
         </div>
+        )}
+      </div>
+
+      {/* The retracted state. Dismissing a card whose "View in Floor" is what
+          sliced the building open used to take the only nearby way back out
+          with it — the floor stayed cut and the control that cut it was gone
+          (2026-08-26 direct instruction: "when clicking outside and the popup
+          goes away, in fact the popup should become 'exit floor'"). It is a
+          pane of this same shell rather than a separate chip somewhere else
+          precisely so the transition can be the container transform the other
+          two states already use: the card visibly *becomes* the pill.
+
+          `w-max` because this is the one pane whose width the shell takes
+          from the pane rather than the other way round — the shell is sized to
+          whatever the label measures. */}
+      <div ref={exitRef} className="absolute right-0 top-0 w-max origin-top-right">
+        <button
+          type="button"
+          onClick={handleExitPress}
+          title={exitFloorTitle ?? undefined}
+          // `h-12` — the fixed height ProjectIdentity, NorthCompass and
+          // ViewerUtilities all share (2026-08-26 direct instruction: "'exit
+          // Floor' height should be the same as top bar"). The pill sits one
+          // gutter under that row in the same corner, so anything else read
+          // as a near-miss rather than a deliberately smaller thing.
+          className="flex h-12 items-center gap-1.5 whitespace-nowrap px-4 text-[13px] font-semibold text-white"
+        >
+          <Layers className="h-4 w-4 shrink-0 text-brand-300" />
+          <span>{t("unit.exitFloorView")}</span>
+          {exitFloorLabel && (
+            <>
+              <span className="text-white/45">·</span>
+              <span className="text-white/60">{exitFloorLabel}</span>
+            </>
+          )}
+          <X className="ml-0.5 h-4 w-4 shrink-0 text-white/45" />
+        </button>
       </div>
     </div>
   );

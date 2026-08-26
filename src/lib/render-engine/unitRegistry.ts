@@ -13,8 +13,50 @@ import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeome
 import type { Unit, UnitMeshLink, UnitsConfig } from "@/lib/types";
 import { unitSelectedFillColorNumber, unitSelectedOutlineColorNumber, unitStatusColorNumber } from "@/lib/unitStatusVisuals";
 import { cleanGlbNodeName } from "@/lib/glbNodeName";
+import { clipSegmentsToPlanes, planesSignature } from "./sections";
 
 const UNIT_NODE_PATTERN = /^Unit_/i;
+
+/** A fat-line material with three.js' own clipping switched OFF, because
+ * for a fat line three's clipping is not merely imprecise — it is
+ * evaluated at the wrong point entirely, and its verdict is all-or-nothing
+ * for the whole outline.
+ *
+ * `ClippingNode` (hardware clip-distances and the fragment-discard
+ * fallback alike) tests `positionView` = `modelViewMatrix * position`. For
+ * `LineSegments2` the `position` attribute is only a unit-quad template —
+ * the real endpoints live in `instanceStart`/`instanceEnd` — so the test
+ * effectively runs on the outline's own ORIGIN. Both failure modes were
+ * reproduced in a real browser on tower-vlora: with the origin inside the
+ * section volume the whole outline survives a cut untouched (the reported
+ * "section does not cut the selected unit"), and with it outside — unit
+ * A-002's mesh origin sits at y=57.14, a Floor 7 cut at y=57.1 — the
+ * entire outline vanishes instead, including the two-thirds of it that is
+ * below the cut.
+ *
+ * So the GPU is taken out of the decision completely and
+ * `clipUnitOutlinesToSection` does the cut on the CPU, exactly. Both
+ * overrides put the builder in the same state it would be in with no
+ * clipping context at all, which is a state three already handles on every
+ * frame — this is not a shortcut around clipping, it is the whole
+ * mechanism moved somewhere it can be correct.
+ *
+ * ⚠️ If a three.js upgrade ever renames these two NodeMaterial hooks, the
+ * override silently stops applying and the symptom returns — the outline
+ * either survives cuts whole or disappears at them. Check here first. */
+class UnclippedLine2NodeMaterial extends THREE.Line2NodeMaterial {
+  setupClipping(): ReturnType<THREE.Line2NodeMaterial["setupClipping"]> {
+    // three's own "no clipping context" return value; typed non-null
+    // upstream, actually nullable in the implementation.
+    return null as unknown as ReturnType<THREE.Line2NodeMaterial["setupClipping"]>;
+  }
+
+  setupHardwareClipping(builder: Parameters<THREE.Line2NodeMaterial["setupHardwareClipping"]>[0]): void {
+    // Exactly what three's own implementation does before it decides
+    // whether clip-distances apply — it just never gets to say yes.
+    (builder as unknown as { hardwareClipping: boolean }).hardwareClipping = false;
+  }
+}
 
 /** Units Blocks & POI Layer PRD §10 — the runtime, per-unit record the
  * engine builds once a GLB (or several) is loaded and unit links are
@@ -376,8 +418,13 @@ export function applyUnitBoxAppearance(
           // rather than kept alive by the outline.
           const edges = new THREE.EdgesGeometry(mesh.geometry);
           const geometry = new LineSegmentsGeometry().fromEdgesGeometry(edges);
+          // Kept so `clipUnitOutlinesToSection` below can re-derive the
+          // outline from the FULL edge set every time the active section
+          // moves, instead of progressively clipping an already-clipped
+          // one (which could only ever shrink).
+          const basePositions = Array.from(edges.attributes.position.array as ArrayLike<number>);
           edges.dispose();
-          const material = new THREE.Line2NodeMaterial({ color: outlineColor });
+          const material = new UnclippedLine2NodeMaterial({ color: outlineColor });
           material.linewidth = linewidth;
           material.depthTest = depthTest;
           // The fat-line quads are camera-facing strips, not the mesh's
@@ -390,6 +437,7 @@ export function applyUnitBoxAppearance(
           // See collectMeshes — this tag is what keeps the outline out of
           // its own parent unit's mesh list.
           outline.userData.isUnitOutline = true;
+          outline.userData.basePositions = basePositions;
           // Unit boxes are transparent overlays drawn after the opaque
           // scene; the outline has to follow its own mesh rather than be
           // sorted independently by distance.
@@ -408,6 +456,80 @@ export function applyUnitBoxAppearance(
   }
 
   return raycastTargets;
+}
+
+/** Sections + fat lines: re-derives every live selection outline from its
+ * full edge set, clipped on the CPU to the active section's volume.
+ *
+ * The GPU cannot do this one (see `clipSegmentsToPlanes`' own doc comment
+ * for the three.js mechanics and the browser-reproduced symptom): a
+ * `LineSegments2` inside a ClippingGroup is clipped as if it sat at its
+ * object's origin, so a selected unit standing above a Floor section kept
+ * a whole purple box floating over the cut while the block it traces was
+ * correctly sliced.
+ *
+ * Runs after `applyUnitSelectionScale`, deliberately — the "pop" moves the
+ * unit root, and clipping has to be measured against where the outline
+ * actually ends up, not where it was before the pop. `planes` is null when
+ * nothing should be clipped at all; `NO_ACTIVE_SECTION_PLANES` also works
+ * and is a no-op by construction, but null skips the work entirely.
+ *
+ * Cheap enough for a slider drag: only the selected unit has outlines at
+ * all, each a box's worth of edges, and a signature guard skips frames
+ * where the section hasn't actually moved. */
+export function clipUnitOutlinesToSection(
+  outlineByMesh: Map<THREE.Mesh, LineSegments2>,
+  planes: THREE.Plane[] | null
+) {
+  const sectionSignature = planes ? planesSignature(planes) : "none";
+  const worldPoint = new THREE.Vector3();
+  for (const [mesh, outline] of outlineByMesh) {
+    const base = outline.userData.basePositions as number[] | undefined;
+    if (!base) continue;
+    // The unit's own world transform is part of the signature, not just the
+    // section's: a Building-transform drag or the selection "pop" moves the
+    // outline through a stationary cut plane, and a section-only signature
+    // would happily leave it clipped where it used to be.
+    mesh.updateWorldMatrix(true, false);
+    const signature = `${sectionSignature}#${mesh.matrixWorld.elements.join(",")}`;
+    if (outline.userData.clipSignature === signature) continue;
+    outline.userData.clipSignature = signature;
+
+    if (!planes) {
+      // setPositions recomputes the geometry's own bounds for us.
+      outline.geometry.setPositions(base);
+      outline.visible = true;
+      continue;
+    }
+
+    // The outline is parented to the mesh it traces, so its geometry is in
+    // that mesh's local space while the section's planes are world-space:
+    // out to world for the clip, back to local for the buffer.
+    const toWorld = mesh.matrixWorld;
+    const toLocal = toWorld.clone().invert();
+    const world: number[] = new Array(base.length);
+    for (let i = 0; i + 2 < base.length; i += 3) {
+      worldPoint.set(base[i], base[i + 1], base[i + 2]).applyMatrix4(toWorld);
+      world[i] = worldPoint.x;
+      world[i + 1] = worldPoint.y;
+      world[i + 2] = worldPoint.z;
+    }
+    const clipped = clipSegmentsToPlanes(world, planes);
+    if (clipped.length === 0) {
+      // Entirely outside the cut — an empty instanced buffer is not worth
+      // handing to the GPU, and hiding is exactly the right result.
+      outline.visible = false;
+      continue;
+    }
+    for (let i = 0; i + 2 < clipped.length; i += 3) {
+      worldPoint.set(clipped[i], clipped[i + 1], clipped[i + 2]).applyMatrix4(toLocal);
+      clipped[i] = worldPoint.x;
+      clipped[i + 1] = worldPoint.y;
+      clipped[i + 2] = worldPoint.z;
+    }
+    outline.geometry.setPositions(clipped);
+    outline.visible = true;
+  }
 }
 
 /** The original local `position`/`scale` of every unit root currently

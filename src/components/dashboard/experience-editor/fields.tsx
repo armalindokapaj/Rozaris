@@ -49,6 +49,15 @@ function positionToValue(position: number, stops: number[], step: number): numbe
   return Number((Math.round(raw / step) * step).toFixed(6));
 }
 
+/** Decimals the readout needs to tell two neighbouring steps apart. A
+ * fixed 2dp rendered a 0.005-stepped slider as "0.01" for both 0.005 and
+ * 0.010, so half its positions looked identical; floored at 2 so every
+ * coarser slider keeps the readout it has always had. */
+function stepDecimals(step: number): number {
+  const fraction = String(step).split(".")[1] ?? "";
+  return Math.max(2, fraction.length);
+}
+
 type SliderRowProps = {
   label: string;
   value: number;
@@ -77,7 +86,7 @@ export function SliderRow(props: SliderRowProps) {
   const min = props.stops === undefined ? props.min : props.stops[0];
   const positionSteps = stops ? positionStepCount(stops, step) : 0;
   const max = props.stops === undefined ? props.max : props.stops[props.stops.length - 1];
-  const formatted = Number.isInteger(step) ? String(value) : value.toFixed(2);
+  const formatted = Number.isInteger(step) ? String(value) : value.toFixed(stepDecimals(step));
   return (
     <label className={cn("block", disabled && "opacity-40")}>
       <div className="mb-1 flex items-center justify-between text-[11px]">

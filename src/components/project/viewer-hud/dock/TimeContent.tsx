@@ -6,7 +6,7 @@ import { Check, ChevronDown, Moon, RotateCcw, Sun, Sunrise, Sunset, X } from "lu
 import { useT } from "@/lib/i18n/useT";
 import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
 import { clamp, cn } from "@/lib/utils";
-import type { SunTimePreset, SunTimeline } from "@/lib/sunPosition";
+import type { SunTimePreset } from "@/lib/sunPosition";
 import { DOCK_MORPH_TIMING } from "../layoutState";
 import { DockPopover } from "./DockPopover";
 
@@ -68,7 +68,6 @@ export const TimeContent = forwardRef<
     interactive: boolean;
     timeHours: number;
     bounds: { startHours: number; endHours: number; stepMinutes: number };
-    timeline: SunTimeline;
     presets: SunTimePreset[];
     activePresetId: SunTimePreset["id"] | null;
     canReset: boolean;
@@ -95,7 +94,6 @@ export const TimeContent = forwardRef<
     interactive,
     timeHours,
     bounds,
-    timeline,
     presets,
     activePresetId,
     canReset,
@@ -247,17 +245,35 @@ export const TimeContent = forwardRef<
     </div>
   );
 
+  // Where the handle actually is. Solid white against the track ends'
+  // white/40-to-brand pair so the live value reads as the answer and the
+  // bounds as scale marks. Desktop leads with it; mobile drops it into
+  // the left half of the existing top row (which was `justify-end` with
+  // nothing on the left) rather than adding a third row — that row's
+  // height is the whole dock's shared 72px, see the note below it.
+  const liveTimeReadout = (
+    <span className="shrink-0 text-sm font-semibold tabular-nums text-white">{formatHM(timeHours)}</span>
+  );
+
+  // The two readouts flanking the track label the track's own ends —
+  // Sun Path → Start Time/End Time — not sunrise/sunset, which is what
+  // they showed until 2026-08-27. Those are different numbers (an admin
+  // who sets 06:00-20:00 saw "03:11" and "18:10" on a June day in
+  // Albania) and labelling a slider with values it cannot reach was the
+  // bug. Sunrise/sunset are still offered, as presets.
   if (isDesktop) {
     return (
       <div ref={ref} className="flex h-full w-full items-center gap-3 px-3.5 sm:px-4">
+        {liveTimeReadout}
+        <span className="h-6 w-px shrink-0 bg-white/10" aria-hidden="true" />
         <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums text-white/70">
           <Sunrise className="h-4 w-4 shrink-0" aria-hidden="true" />
-          {timeline.sunriseHour != null ? formatHM(timeline.sunriseHour) : "—"}
+          {formatHM(bounds.startHours)}
         </span>
         {sliderTrack}
         <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums text-brand-400">
           <Sun className="h-4 w-4 shrink-0 fill-brand-400/40" aria-hidden="true" />
-          {timeline.sunsetHour != null ? formatHM(timeline.sunsetHour) : "—"}
+          {formatHM(bounds.endHours)}
         </span>
         <span className="h-6 w-px shrink-0 bg-white/10" aria-hidden="true" />
         {presetTrigger}
@@ -277,7 +293,8 @@ export const TimeContent = forwardRef<
   // `getBoundingClientRect()` after, not just eyeballed.
   return (
     <div ref={ref} className="flex w-full flex-col gap-1.5 px-4 py-2">
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex items-center justify-between gap-2">
+        {liveTimeReadout}
         {presetTrigger}
         <button
           type="button"
@@ -290,9 +307,9 @@ export const TimeContent = forwardRef<
         {closeButton}
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="shrink-0 text-[10px] text-white/40">{timeline.sunriseHour != null ? formatHM(timeline.sunriseHour) : "—"}</span>
+        <span className="shrink-0 text-[10px] text-white/40">{formatHM(bounds.startHours)}</span>
         {sliderTrack}
-        <span className="shrink-0 text-[10px] text-white/40">{timeline.sunsetHour != null ? formatHM(timeline.sunsetHour) : "—"}</span>
+        <span className="shrink-0 text-[10px] text-white/40">{formatHM(bounds.endHours)}</span>
       </div>
       {!interactive && <p className="text-[11px] text-white/35">{t("sunTime.readOnlyHint")}</p>}
     </div>

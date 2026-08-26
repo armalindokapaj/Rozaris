@@ -21,7 +21,7 @@ import {
   type UnitFilterState,
 } from "@/components/project/units-workspace/unitFilters";
 import { computeSunTimeline, geographicSunPosition, sunPositionForAnchors, sunTimelinePresets, type SunTimePreset } from "@/lib/sunPosition";
-import { resolveFloorSection } from "@/lib/floorSections";
+import { parseSectionFloorNumber, resolveFloorSection } from "@/lib/floorSections";
 import { buildFloorRail, type FloorRailEntry } from "@/lib/floorRail";
 import { makeFloorId } from "@/lib/units";
 import { FloorRail } from "@/components/project/viewer-hud/FloorRail";
@@ -32,10 +32,6 @@ import { UnitPreviewCard } from "@/components/project/UnitPreviewCard";
 import type { ProjectViewerRuntimeBootstrap, ViewerChannel } from "@/lib/viewer/runtimeTypes";
 import { applyViewerQuality, applyViewerQualityToLighting, applyViewerQualityToRendering } from "@/lib/viewerQuality";
 
-/** Sun & Time PRD — the public viewer's scrub range is a fixed constant
- * (direct instruction, 2026-08-17: "Time will always be from 06:00 to
- * 21:00"), not the admin-configurable `viewerTimeStartHours`/
- * `viewerTimeEndHours` fields — see `sunTimeBounds` below for why. */
 /** How much of the frame a unit's block has to already occupy for a list
  * selection to leave the camera where it is — its bounding-sphere angular
  * radius as a fraction of the vertical half-FOV, so 0.1 is a block about a
@@ -53,8 +49,9 @@ const MIN_ONSCREEN_UNIT_COVERAGE = 0.1;
  * centre. */
 const MOBILE_REVEAL_SCREEN_BIAS = 0.45;
 
-const PUBLIC_VIEWER_TIME_START_HOURS = 6;
-const PUBLIC_VIEWER_TIME_END_HOURS = 21;
+/** Narrowest scrub window the time slider is still draggable in. Only
+ * reached if an admin sets Start Time and End Time to the same hour. */
+const MIN_SUN_TIME_WINDOW_HOURS = 1;
 
 /**
  * Multi-Channel Publishing PRD Phase 4 — this is `ArchVizClient`, moved
@@ -305,7 +302,44 @@ export function ProjectViewerRuntime({
         : null,
     [floorSectionsAvailable, viewerConfig.sections, selectedUnit]
   );
+  /** The same lookup for a unit that is only an id — the one a selection
+   * handler has in hand before `selectedUnitId` has been written, which the
+   * memo above cannot answer for. */
+  const resolveSectionForUnitId = useCallback(
+    (unitId: string | null) => {
+      if (!unitId || !floorSectionsAvailable) return null;
+      const unit = units.find((u) => u.id === unitId) ?? null;
+      return unit ? resolveFloorSection(viewerConfig.sections, unit) : null;
+    },
+    [units, floorSectionsAvailable, viewerConfig.sections]
+  );
   const [activeFloorSectionId, setActiveFloorSectionId] = useState<string | null>(null);
+  /** The section currently clipping the scene, as a whole record — the exit
+   * pill's label comes from it rather than from any unit, which is the point:
+   * a cut opened from the floor rail has no selected unit at all (2026-08-26
+   * direct instruction: "keep showing 'Exit Floor' tab even when the user is
+   * clicking only the Floors tab on the left"). */
+  const activeFloorSection = useMemo(
+    () => viewerConfig.sections.find((sec) => sec.id === activeFloorSectionId) ?? null,
+    [viewerConfig.sections, activeFloorSectionId]
+  );
+  /**
+   * Whether the retracted "Exit Floor" pill is showing.
+   *
+   * Pure derivation, not state: the pill is simply "there is a cut, and the
+   * unit card is not on screen to carry its own toggle". That covers both
+   * routes into a cut with one rule — the card dismissed while its cut is
+   * still applied (where the shell morphs down into the pill, see
+   * UnitPreviewCard's `CardMode`), and the floor rail used on its own, where
+   * the pill is the whole card the visitor ever sees.
+   *
+   * Mutually exclusive with the card ON PURPOSE: both are anchored to the same
+   * top-right corner, so showing them together would overlap them. The one
+   * state where a cut is applied *and* the card is up *and* the card cannot
+   * undo it — a unit whose floor has no section authored — is what
+   * `dropFloorCutIfUncontrolled` below still exists to resolve.
+   */
+  const floorExitOpen = !!activeFloorSectionId && !unitCardOpen;
 
   /**
    * `frameUnitIds` is what separates the rail's click from the card's
@@ -370,6 +404,13 @@ export function ProjectViewerRuntime({
     applyFloorSection(section.id === activeFloorSectionId ? null : section);
   }, [floorSectionForSelectedUnit, activeFloorSectionId, applyFloorSection]);
 
+  const handleExitFloorFromPill = useCallback(() => applyFloorSection(null), [applyFloorSection]);
+
+  /** The unit the card is describing — nobody, once the card has retracted to
+   * the pill. One component either way, so the shell keeps its React identity
+   * across the retract and the morph has something to morph. */
+  const cardUnit = unitCardOpen ? selectedUnit : null;
+
   // --- The floor rail -------------------------------------------------
   //
   // The floors real inventory stands on, per building, each carrying the
@@ -407,41 +448,77 @@ export function ProjectViewerRuntime({
     [activeFloorSectionId, applyFloorSection, viewerConfig.sections]
   );
 
-  // One invariant, replacing the old "clear the cut whenever the visitor
-  // selects a unit on another floor" rule: a cut may only stay applied
-  // while something on screen can undo it. That used to be the unit card's
-  // button alone — hence the old rule, which existed purely so dismissing
-  // the card could not strand a visitor with a sliced building and no
-  // control. The rail is now that control for the whole Units module, so
-  // inside Units selecting a unit on another floor is free to leave the cut
-  // alone (2026-08-25 decision: only re-clicking the lit floor, or leaving
-  // Units, closes it). Outside Units the old reasoning still holds exactly,
-  // and the card is still the only control.
-  //
-  // Enforced at the two transitions that can actually take the last control
-  // away — a module change, and a change of selected unit — rather than
-  // from an effect watching the result: this codebase's
-  // react-hooks/set-state-in-effect rule rejects the latter, and both call
-  // sites already know the transition is happening.
+  /**
+   * While a cut is applied, the cut FOLLOWS the selection: picking a unit on
+   * another floor moves the cutaway to that unit's own floor rather than
+   * leaving the visitor looking at floor 8 opened up with a floor 6 unit
+   * selected inside it (2026-08-26 direct instruction: "clicking 'View in
+   * Floor' on a unit in Level 8 gives the section of floor 8, clicking a unit
+   * on level 6 then goes to the Floor 6 and the section of the floor 6").
+   *
+   * Strictly a *follow*, never an entry point — it does nothing unless a cut
+   * is already on the building, so an ordinary click on a unit outside
+   * "View in Floor" mode still just selects that unit.
+   *
+   * No `frameUnitIds`: every route into here has already dealt with the
+   * camera. A 3D click lands on a block that is by definition on screen, and
+   * a list selection flies to the unit a few lines further down its own
+   * handler — framing the floor as well would be a second camera move
+   * fighting the first. (A section carrying an admin-authored `cameraPreset`
+   * still honours it, exactly as the card's own button does.)
+   *
+   * Returns whether it took ownership of the cut, so the caller knows to skip
+   * the drop check below.
+   */
+  const followFloorCutToUnit = useCallback(
+    (unitId: string | null) => {
+      if (!activeFloorSectionId || !unitId) return false;
+      const section = resolveSectionForUnitId(unitId);
+      // No section authored for that unit's floor — the cut cannot follow, so
+      // leave it to `dropFloorCutIfUncontrolled` to decide whether it may
+      // stay. Same floor is a no-op rather than a re-apply: re-running
+      // `applyFloorSection` would re-fire the section's camera preset and jump
+      // the view on every click within one open floor.
+      if (!section || section.id === activeFloorSectionId) return false;
+      applyFloorSection(section);
+      return true;
+    },
+    [activeFloorSectionId, resolveSectionForUnitId, applyFloorSection]
+  );
+
+  /**
+   * The one hole the exit pill does not plug: a cut is applied, the unit card
+   * IS on screen (so the pill is suppressed — they share a corner), and that
+   * card cannot undo the cut because no section is authored for its unit's
+   * floor. `followFloorCutToUnit` above has already handled every case where
+   * the cut CAN move; this is what is left when it cannot.
+   *
+   * Inside Units the rail is still on screen and owns the cut, so nothing is
+   * stranded there either. Enforced at the two transitions that can actually
+   * take the last control away — a module change and a change of selected
+   * unit — rather than from an effect watching the result: this codebase's
+   * react-hooks/set-state-in-effect rule rejects the latter, and both call
+   * sites already know the transition is happening.
+   */
   const dropFloorCutIfUncontrolled = useCallback(
     (nextModule: ActiveModule, nextUnitId: string | null) => {
       if (!activeFloorSectionId) return;
+      // Mirrors `unitCardOpen`'s own condition against the unit this
+      // transition is *about to* select, which is exactly what the derived
+      // `floorExitOpen` cannot answer yet: no card means the pill, and the
+      // pill is a control.
+      const cardWillBeOpen =
+        !!nextUnitId && viewerConfig.viewerUI.showUnitInfo !== false && !unitListSurfaceOpen;
+      if (!cardWillBeOpen) return; // the exit pill is on screen and owns it
       if (nextModule === "units") return; // the rail is on screen and owns it
-      const nextUnit = nextUnitId ? units.find((u) => u.id === nextUnitId) ?? null : null;
-      const cardSection =
-        nextUnit && floorSectionsAvailable ? resolveFloorSection(viewerConfig.sections, nextUnit) : null;
-      const cardCanUndo =
-        !!cardSection &&
-        cardSection.id === activeFloorSectionId &&
-        viewerConfig.viewerUI.showUnitInfo !== false;
-      if (cardCanUndo) return;
+      const cardSection = resolveSectionForUnitId(nextUnitId);
+      if (cardSection?.id === activeFloorSectionId) return; // the card's own button
       applyFloorSection(null);
     },
     [
       activeFloorSectionId,
-      units,
-      floorSectionsAvailable,
-      viewerConfig.sections,
+      unitListSurfaceOpen,
+      resolveSectionForUnitId,
       viewerConfig.viewerUI.showUnitInfo,
       applyFloorSection,
     ]
@@ -449,6 +526,9 @@ export function ProjectViewerRuntime({
 
   const handleActiveModuleChange = useCallback(
     (module: ActiveModule) => {
+      // The pill is module-agnostic chrome in the top-right corner, so it
+      // carries the cut across a module change the way the rail carries it
+      // within Units — nothing is ever left cut with no way out.
       dropFloorCutIfUncontrolled(module, selectedUnitId);
       setActiveModule(module);
       setUnitsListOpen((prev) => (module === "units" ? prev : false));
@@ -482,6 +562,22 @@ export function ProjectViewerRuntime({
     [project]
   );
   const { t } = useT();
+
+  /** The pill's label, read off the cut itself. `parseSectionFloorNumber` is
+   * the same parse that links sections to floors everywhere else; a section
+   * whose name declares no floor falls back to the name an admin gave it,
+   * which is still the truest description available of what is cut open. */
+  const exitFloorNumber = activeFloorSection ? parseSectionFloorNumber(activeFloorSection.name) : null;
+  const exitFloorLabel = activeFloorSection
+    ? exitFloorNumber == null
+      ? activeFloorSection.name
+      : t("unit.floorLabel", { n: exitFloorNumber })
+    : null;
+  const exitFloorTitle = activeFloorSection
+    ? exitFloorNumber == null
+      ? t("unit.exitFloorView")
+      : t("unit.exitFloorViewTitle", { n: exitFloorNumber })
+    : null;
 
   // Sun & Time PRD §29 "Persistence" / §40 "State Architecture" — lives
   // here (not inside ViewerHUD/SunTimeWorkspace) for the same reason
@@ -517,23 +613,27 @@ export function ProjectViewerRuntime({
     return computeSunTimeline(elevationAt);
   }, [viewerConfig.solarPathMode, viewerConfig.geoLatitude, viewerConfig.geoLongitude, viewerConfig.solarAnchors, effectiveSunDate]);
   const sunTimePresets = useMemo(() => sunTimelinePresets(sunTimeline), [sunTimeline]);
-  // Direct instruction, 2026-08-17: "Time will always be from 06:00 to
-  // 21:00 for the users to edit" — the public viewer's scrub range is now
-  // a fixed constant, not the admin's per-project `viewerTimeStartHours`/
-  // `viewerTimeEndHours` (same "stop reading a DB field, flag it, don't
-  // delete it" pattern as `chromeDimmed` replacing `viewerConfig.
-  // autoRotate` above: the Experience Editor's Sun & Time start/end
-  // fields still exist and still save, an admin's saved value just isn't
-  // consulted by this component any more). `stepMinutes` wasn't part of
-  // the instruction, so it stays admin-configurable.
-  const sunTimeBounds = useMemo(
-    () => ({
-      startHours: PUBLIC_VIEWER_TIME_START_HOURS,
-      endHours: PUBLIC_VIEWER_TIME_END_HOURS,
+  // The scrub range is the admin's own Sun Path → Start Time/End Time
+  // again. It spent a while pinned to a hardcoded 06:00-21:00 (direct
+  // instruction, 2026-08-17) while those two fields still showed and
+  // still saved in the Experience Editor, so the editor was promising a
+  // window the viewer ignored — visible even on an untouched project,
+  // whose 6→20 default disagreed with the 6→21 constant. Reversed by
+  // direct instruction, 2026-08-27: the editor is the source of truth.
+  const sunTimeBounds = useMemo(() => {
+    // Start/End are two independent fields with no cross-validation in
+    // the editor or the PATCH schema, so an inverted (14→5) or collapsed
+    // (12→12) window is authorable — and a `<input type="range">` whose
+    // max is below its min renders as a dead zero-width slider. Harmless
+    // while the range was a constant; load-bearing now that it is not.
+    const lo = Math.min(viewerConfig.viewerTimeStartHours, viewerConfig.viewerTimeEndHours);
+    const hi = Math.max(viewerConfig.viewerTimeStartHours, viewerConfig.viewerTimeEndHours);
+    return {
+      startHours: lo,
+      endHours: Math.max(hi, lo + MIN_SUN_TIME_WINDOW_HOURS),
       stepMinutes: viewerConfig.viewerTimeStepMinutes,
-    }),
-    [viewerConfig.viewerTimeStepMinutes]
-  );
+    };
+  }, [viewerConfig.viewerTimeStartHours, viewerConfig.viewerTimeEndHours, viewerConfig.viewerTimeStepMinutes]);
 
   const handleSunTimeChange = useCallback((hours: number) => {
     setLiveSunTimeHours(hours);
@@ -1035,7 +1135,10 @@ export function ProjectViewerRuntime({
   // honest one-line note on the surface the visitor is looking at, rather
   // than a camera that silently refuses to move.
   const handleSelectUnit = useCallback((unitId: string | null) => {
-    dropFloorCutIfUncontrolled(activeModule, unitId);
+    // Dismissing to `null` never needs to do anything about the cut: with no
+    // unit selected the card is off screen, so `floorExitOpen` is true by
+    // derivation and the pill is already the control.
+    if (!followFloorCutToUnit(unitId)) dropFloorCutIfUncontrolled(activeModule, unitId);
     setSelectedUnitId(unitId);
     resetDetailOnDismiss(unitId);
     const viewer = viewerRef.current;
@@ -1087,7 +1190,13 @@ export function ProjectViewerRuntime({
     if (!(view.poiAuthored && viewer?.focusUnit(unitId))) {
       viewer?.revealUnit(unitId, isDesktop ? 0 : MOBILE_REVEAL_SCREEN_BIAS);
     }
-  }, [isDesktop, activeModule, dropFloorCutIfUncontrolled, resetDetailOnDismiss]);
+  }, [
+    isDesktop,
+    activeModule,
+    followFloorCutToUnit,
+    dropFloorCutIfUncontrolled,
+    resetDetailOnDismiss,
+  ]);
 
   // Units Blocks & POI Layer PRD §19-20 — the real "3D → List/Panel" half:
   // a genuine click on a unit block (RenderEngine already distinguishes
@@ -1105,11 +1214,19 @@ export function ProjectViewerRuntime({
   // the instant visual feedback), so re-issuing `setSelectedUnit` here
   // would only force a redundant registry rebuild.
   const handleUnitClickIn3D = useCallback((unitId: string | null) => {
-    dropFloorCutIfUncontrolled(activeModule, unitId);
+    // Same rule as `handleSelectUnit` — this is the "clicking outside" path
+    // (the engine reports a click on empty space as a null hit), and it is the
+    // one the retract instruction was written about.
+    if (!followFloorCutToUnit(unitId)) dropFloorCutIfUncontrolled(activeModule, unitId);
     setSelectedUnitId(unitId);
     resetDetailOnDismiss(unitId);
     setUnmappedUnitId(null);
-  }, [activeModule, dropFloorCutIfUncontrolled, resetDetailOnDismiss]);
+  }, [
+    activeModule,
+    followFloorCutToUnit,
+    dropFloorCutIfUncontrolled,
+    resetDetailOnDismiss,
+  ]);
 
   return (
     <div
@@ -1187,7 +1304,13 @@ export function ProjectViewerRuntime({
                 sections to cut with: without them every row would be a
                 dead number, which is worse than no rail at all. */}
             {activeModule === "units" && floorSectionsAvailable && (
-              <div className="pointer-events-none absolute left-3 top-1/2 z-30 -translate-y-1/2 pl-[env(safe-area-inset-left)] sm:left-4">
+              <div
+                // Measured by UnitPreviewCard, which reserves the room to the
+                // right of this rail so its expanded state can never grow
+                // across the floor numbers on a phone.
+                data-viewer-floor-rail
+                className="pointer-events-none absolute left-3 top-1/2 z-30 -translate-y-1/2 pl-[env(safe-area-inset-left)] sm:left-4"
+              >
                 <FloorRail
                   buildings={floorRailBuildings}
                   activeSectionId={activeFloorSectionId}
@@ -1287,19 +1410,26 @@ export function ProjectViewerRuntime({
         onClose={() => setUnitPanelOpen(false)}
         onSelectUnit={(u) => handleSelectUnit(u.id)}
       />
-      {unitCardOpen && selectedUnit && (
-        // One card in two states, not two components — "View Unit" morphs this
-        // same shell open in place (see UnitPreviewCard's own doc comment) so
-        // it can never unmount mid-animation.
+      {(cardUnit || floorExitOpen) && (
+        // One card in THREE states, not three components — "View Unit" morphs
+        // this same shell open in place and a dismissal that would strand a
+        // floor cut morphs it down to a pill (see UnitPreviewCard's own doc
+        // comment), so it can never unmount mid-animation. `floorExitOpen`
+        // alone mounts it straight into the pill state, which is what a cut
+        // opened from the floor rail — with no unit ever selected — needs.
         <UnitPreviewCard
           project={project}
-          unit={selectedUnit}
+          unit={cardUnit}
           expanded={fullDetailOpen}
+          retracted={!unitCardOpen}
           floorSectionName={floorSectionForSelectedUnit?.name ?? null}
           floorSectionActive={
             !!floorSectionForSelectedUnit && floorSectionForSelectedUnit.id === activeFloorSectionId
           }
           onViewInFloor={handleToggleFloorSection}
+          onExitFloor={handleExitFloorFromPill}
+          exitFloorLabel={exitFloorLabel}
+          exitFloorTitle={exitFloorTitle}
           // `handleSelectUnit(null)`, not a bare `setSelectedUnitId(null)`:
           // the latter cleared React's selection but left the engine's, so
           // dismissing the card left the block outlined and at selected

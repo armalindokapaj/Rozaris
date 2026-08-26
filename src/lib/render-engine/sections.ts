@@ -131,6 +131,82 @@ export function buildSectionCapGeometry(section: Section): THREE.BufferGeometry 
   return geometry;
 }
 
+/** Clips a flat array of world-space line-segment endpoints (6 floats per
+ * segment: x1,y1,z1, x2,y2,z2) to the convex volume `planes` describes,
+ * keeping only the parts where EVERY plane's signed distance is >= 0 —
+ * the same "AND of half-spaces" rule buildSectionPlanes' own doc comment
+ * describes, evaluated on the CPU instead of in a shader.
+ *
+ * This exists because the GPU can't do it for fat lines. `LineSegments2`
+ * (the selected-unit outline) draws each segment as an instanced
+ * screen-facing quad whose real endpoints live in the `instanceStart`/
+ * `instanceEnd` attributes, while the `position` attribute is only a
+ * unit-quad template. three.js's clipping node — hardware clip-distances
+ * and the fragment-discard fallback alike — evaluates the planes against
+ * `positionView`, i.e. `modelViewMatrix * position`, which for a fat line
+ * is that template, not the segment. So every fat line inside a
+ * ClippingGroup is clipped as if it sat at its object's origin: the
+ * outline survives a cut whole while the mesh it traces is correctly
+ * sliced (reproduced in a real browser — a selected unit above a Floor
+ * section kept a complete purple box hovering over the cut plan).
+ * Verified against three r185's Position.js/ClippingNode.js; the
+ * `material.vertexNode` reconstruction path three provides for custom
+ * vertex shaders doesn't help, since hardware clipping still reads the
+ * vertex-stage `positionView`.
+ *
+ * Segments fully outside the volume are dropped; segments crossing it are
+ * shortened to the crossing points. */
+export function clipSegmentsToPlanes(positions: ArrayLike<number>, planes: THREE.Plane[]): number[] {
+  const out: number[] = [];
+  const p1 = new THREE.Vector3();
+  const p2 = new THREE.Vector3();
+  for (let i = 0; i + 5 < positions.length; i += 6) {
+    p1.set(positions[i], positions[i + 1], positions[i + 2]);
+    p2.set(positions[i + 3], positions[i + 4], positions[i + 5]);
+    let tMin = 0;
+    let tMax = 1;
+    let dropped = false;
+    for (const plane of planes) {
+      const d1 = plane.distanceToPoint(p1);
+      const d2 = plane.distanceToPoint(p2);
+      const delta = d2 - d1;
+      if (Math.abs(delta) < 1e-9) {
+        // Parallel to this plane — the whole segment is on one side of it.
+        if (d1 < 0) {
+          dropped = true;
+          break;
+        }
+        continue;
+      }
+      const t = -d1 / delta;
+      if (delta > 0) tMin = Math.max(tMin, t);
+      else tMax = Math.min(tMax, t);
+      if (tMin > tMax) {
+        dropped = true;
+        break;
+      }
+    }
+    if (dropped) continue;
+    out.push(
+      p1.x + (p2.x - p1.x) * tMin,
+      p1.y + (p2.y - p1.y) * tMin,
+      p1.z + (p2.z - p1.z) * tMin,
+      p1.x + (p2.x - p1.x) * tMax,
+      p1.y + (p2.y - p1.y) * tMax,
+      p1.z + (p2.z - p1.z) * tMax
+    );
+  }
+  return out;
+}
+
+/** Compact identity of a plane set — lets a caller skip re-clipping
+ * geometry on a frame where the active section hasn't actually moved. */
+export function planesSignature(planes: THREE.Plane[]): string {
+  return planes
+    .map((p) => `${p.normal.x.toFixed(4)},${p.normal.y.toFixed(4)},${p.normal.z.toFixed(4)},${p.constant.toFixed(4)}`)
+    .join("|");
+}
+
 export function sectionFromDragPoints(
   p1: THREE.Vector3,
   p2: THREE.Vector3,

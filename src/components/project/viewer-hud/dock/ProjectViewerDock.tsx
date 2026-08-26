@@ -422,7 +422,6 @@ export function ProjectViewerDock({
         interactive={sunTimeInteractive}
         timeHours={viewerTimeHours}
         bounds={sunTimeBounds ?? { startHours: 6, endHours: 21, stepMinutes: 15 }}
-        timeline={sunTimeline ?? { sunriseHour: null, sunsetHour: null, solarNoonHour: 12, alwaysUp: false, alwaysDown: false }}
         presets={sunTimePresets ?? []}
         activePresetId={activeSunPreset}
         canReset={sunTimeCanReset}

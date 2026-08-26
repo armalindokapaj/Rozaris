@@ -36,6 +36,7 @@ import {
   applyUnitSelectionScale,
   buildUnitRegistry,
   clearUnitSelectionScale,
+  clipUnitOutlinesToSection,
   disposeUnitBoxAppearanceCaches,
   findUnitRootObjects,
   type UnitRuntimeEntry,
@@ -636,6 +637,13 @@ export class RenderEngine {
   private clippingGroup: THREE.ClippingGroup | null = null;
   private sectionHelperGroup: THREE.Group | null = null;
   private activeSectionId: string | null = null;
+  /** The exact planes `activateSection` last handed to `clippingGroup`,
+   * kept because the selection outline has to be clipped on the CPU
+   * against the same volume (see clipUnitOutlinesToSection). Null when no
+   * section is active — the clippingGroup still holds the fixed 6 no-op
+   * planes in that state, but null lets the outline pass skip its work
+   * instead of clipping against a volume that removes nothing. */
+  private activeSectionPlanes: THREE.Plane[] | null = null;
   private sectionFillClippingGroup: THREE.ClippingGroup | null = null;
   private sectionFillMaterial: THREE.MeshBasicMaterial | null = null;
   private sectionIndicatorMaterial: THREE.MeshBasicMaterial | null = null;
@@ -1684,6 +1692,10 @@ export class RenderEngine {
         );
       }
     }
+    // After the pop, never before it — a freshly built outline has to be
+    // cut against where its unit actually ends up. See
+    // clipUnitOutlinesToSection.
+    clipUnitOutlinesToSection(this.unitOutlineByMesh, this.activeSectionPlanes);
     this.applyUnitVisibility();
   }
 
@@ -2295,10 +2307,14 @@ export class RenderEngine {
    * the aid without asking. */
   activateSection(section: Section | null, options?: { showIndicator?: boolean }) {
     this.activeSectionId = section?.id ?? null;
+    this.activeSectionPlanes = section ? buildSectionPlanes(section) : null;
     if (this.clippingGroup) {
-      this.clippingGroup.clippingPlanes = section ? buildSectionPlanes(section) : NO_ACTIVE_SECTION_PLANES;
+      this.clippingGroup.clippingPlanes = this.activeSectionPlanes ?? NO_ACTIVE_SECTION_PLANES;
     }
     this.rebuildSectionCap(section, options?.showIndicator !== false);
+    // Fat lines can't be clipped by the GPU at all — the selected unit's
+    // outline is cut here instead. See clipUnitOutlinesToSection.
+    clipUnitOutlinesToSection(this.unitOutlineByMesh, this.activeSectionPlanes);
   }
 
   getActiveSectionId(): string | null {
@@ -3386,6 +3402,7 @@ export class RenderEngine {
     this.sectionHelperGroup = null;
     this.activeSectionId = null;
     this.sectionFillClippingGroup = null;
+    this.activeSectionPlanes = null;
     this.sectionFillMaterial?.dispose();
     this.sectionFillMaterial = null;
     this.sectionIndicatorMaterial?.dispose();

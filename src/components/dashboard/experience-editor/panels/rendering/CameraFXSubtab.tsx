@@ -134,7 +134,7 @@ export function CameraFXSubtab({ configEditor }: { configEditor: UseProjectConfi
           label="Intensity"
           value={draft.motionBlurIntensity}
           min={0}
-          max={2}
+          max={0.5}
           step={0.05}
           disabled={!motionBlurOn}
           onChange={(v) => update({ motionBlurIntensity: v })}

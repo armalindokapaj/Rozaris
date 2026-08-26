@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, type Dispatch, type SetStateAction } from "react";
-import type { SunTimePreset, SunTimeline } from "@/lib/sunPosition";
+import type { SunTimePreset } from "@/lib/sunPosition";
 import type { CameraPreset, Unit } from "@/lib/types";
 import type { UnitFilterState } from "../../units-workspace/unitFilters";
 import type { ActiveModule } from "../types";
@@ -52,7 +52,6 @@ export const DockContent = forwardRef<
     interactive: boolean;
     timeHours: number;
     bounds: { startHours: number; endHours: number; stepMinutes: number };
-    timeline: SunTimeline;
     presets: SunTimePreset[];
     activePresetId: SunTimePreset["id"] | null;
     canReset: boolean;
@@ -89,7 +88,6 @@ export const DockContent = forwardRef<
     interactive,
     timeHours,
     bounds,
-    timeline,
     presets,
     activePresetId,
     canReset,
@@ -122,7 +120,6 @@ export const DockContent = forwardRef<
         interactive={interactive}
         timeHours={timeHours}
         bounds={bounds}
-        timeline={timeline}
         presets={presets}
         activePresetId={activePresetId}
         canReset={canReset}

@@ -29,14 +29,27 @@ function toRad(deg: number) {
 /** Converts elevation/azimuth into a unit direction vector in Three.js's
  * Y-up space (X=east, Y=up, Z=south) — scaled by the caller for a
  * DirectionalLight's `.position` (a directional light's position only
- * encodes direction toward the target, not a real distance). */
+ * encodes direction toward the target, not a real distance).
+ *
+ * `z` is NEGATED because `azimuthDeg` is measured clockwise from north
+ * (see `SunPosition`) while +Z here is south: azimuth 0 has to land on
+ * -Z. Until 2026-08-27 it was `+cos(az)`, which is not a rotation of the
+ * right answer but a REFLECTION of it across the east-west axis — east
+ * and west stayed correct while north and south swapped, so the sun rose
+ * in the east and set in the west but crossed the northern half of the
+ * sky. At Vlorë (41.3°N) on 21 June the old code put the sun on the north
+ * side from 07:00 to 15:00; every northern-hemisphere day is meant to be
+ * south the whole way. Reflections also reverse the sense of rotation,
+ * which is what made it read as "the sun rotates the wrong way" while
+ * scrubbing time, and why no `northOffsetDeg` value could ever fix it —
+ * an offset rotates the arc, it cannot un-mirror it. */
 export function sunDirectionVector(pos: Pick<SunPosition, "elevationDeg" | "azimuthDeg">): { x: number; y: number; z: number } {
   const elevRad = toRad(pos.elevationDeg);
   const azRad = toRad(pos.azimuthDeg);
   return {
     x: Math.cos(elevRad) * Math.sin(azRad),
     y: Math.sin(elevRad),
-    z: Math.cos(elevRad) * Math.cos(azRad),
+    z: -Math.cos(elevRad) * Math.cos(azRad),
   };
 }
 

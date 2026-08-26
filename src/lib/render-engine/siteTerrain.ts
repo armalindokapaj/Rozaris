@@ -388,16 +388,15 @@ function sampleHeight(grid: { data: Float32Array; width: number; height: number 
  * laid out east = +X, north = -Z: the standard right-handed ENU-to-three
  * mapping, and NOT mirrored.
  *
- * Note this is 180 deg out of phase with the engine's own sun azimuth
- * convention, where `sunDirectionVector` puts azimuth 0 at +Z. That is a
- * pre-existing inconsistency between the engine's two conventions
- * (`SunPosition.azimuthDeg` documents "0 = north" while
- * `sunDirectionVector` documents the frame as "Z=south"; both cannot
- * hold). It is deliberately NOT silently corrected here, because doing so
- * would move the sun for every existing project. The admin resolves it
- * with the Map panel's "Match sun to real north" action, which writes the
- * offset into `northOffsetDeg` — the field that already exists for
- * exactly this purpose.
+ * The engine's sun agrees with this frame as of 2026-08-27. It used not
+ * to: `sunDirectionVector` put azimuth 0 at +Z, contradicting
+ * `SunPosition.azimuthDeg`'s own "0 = north". That was described here as
+ * a 180 deg phase difference resolvable by `northOffsetDeg`, but it was
+ * actually a reflection across the east-west axis, and no offset can
+ * cancel a reflection — see `sunDirectionVector`'s own note. Any project
+ * carrying a `northOffsetDeg` that was dialled in against the old
+ * mirrored sun needs re-running through the Map panel's "Match sun to
+ * real north".
  */
 export async function buildSiteTerrain(req: SiteTerrainRequest): Promise<SiteTerrainResult | null> {
   const bounds = siteBounds(req.latitude, req.longitude, req.radiusM);
