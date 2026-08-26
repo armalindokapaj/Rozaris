@@ -5,21 +5,26 @@ import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEdito
 
 /**
  * Rendering → Camera FX (PRD §27-30) — Bloom, Lens Flare, Depth of Field,
- * Motion Blur. Bloom/DOF reuse pre-existing Project3DConfig fields (they
- * pre-date the v2 rebuild); Lens Flare/Motion Blur are new (Phase 4).
+ * Distance Blur, Motion Blur. Bloom/DOF reuse pre-existing Project3DConfig
+ * fields (they pre-date the v2 rebuild); Lens Flare/Motion Blur are new
+ * (Phase 4); Distance Blur is the far-field-only counterpart to DOF.
  */
 export function CameraFXSubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const bloomOn = draft.bloomEnabled;
   const dofOn = draft.depthOfFieldEnabled;
   const motionBlurOn = draft.motionBlurEnabled;
+  const distanceBlurOn = draft.distanceBlurEnabled;
 
   return (
     <div className="space-y-3">
       <SectionHeading>Bloom</SectionHeading>
       <GroupCard>
         <ToggleRow label="Bloom" checked={bloomOn} onChange={(v) => update({ bloomEnabled: v })} />
-        <SliderRow label="Strength" value={draft.bloomStrength} min={0} max={3} step={0.05} disabled={!bloomOn} onChange={(v) => update({ bloomStrength: v })} />
+        {/* 0-0.1, not the old 0-3: every usable bloom strength lives in the
+            bottom 3% of that range, so a 0.05 step moved the scene from
+            "off" to "blown out" in one keypress. */}
+        <SliderRow label="Strength" value={draft.bloomStrength} min={0} max={0.1} step={0.005} disabled={!bloomOn} onChange={(v) => update({ bloomStrength: v })} />
         <SliderRow label="Radius" value={draft.bloomRadius} min={0} max={1} step={0.05} disabled={!bloomOn} onChange={(v) => update({ bloomRadius: v })} />
       </GroupCard>
 
@@ -70,6 +75,55 @@ export function CameraFXSubtab({ configEditor }: { configEditor: UseProjectConfi
           step={0.1}
           disabled={!dofOn}
           onChange={(v) => update({ depthOfFieldBokehScale: v })}
+        />
+      </GroupCard>
+
+      <SectionHeading>Distance Blur</SectionHeading>
+      <GroupCard>
+        <ToggleRow
+          label="Distance Blur"
+          checked={distanceBlurOn}
+          onChange={(v) => update({ distanceBlurEnabled: v })}
+          hint="Softens everything past a set distance. Unlike Depth of Field, the building never blurs — however far the visitor orbits out."
+        />
+        <SliderRow
+          label="Sharp Until"
+          value={draft.distanceBlurStartM}
+          min={0}
+          max={1000}
+          step={5}
+          suffix="m"
+          disabled={!distanceBlurOn}
+          onChange={(v) => update({ distanceBlurStartM: v })}
+        />
+        <SliderRow
+          label="Fully Blurred At"
+          value={draft.distanceBlurFullM}
+          min={0}
+          max={2000}
+          step={10}
+          suffix="m"
+          disabled={!distanceBlurOn}
+          onChange={(v) => update({ distanceBlurFullM: v })}
+        />
+        <SliderRow
+          label="Amount"
+          value={draft.distanceBlurAmount}
+          min={0}
+          max={1}
+          step={0.05}
+          disabled={!distanceBlurOn}
+          onChange={(v) => update({ distanceBlurAmount: v })}
+        />
+        <SliderRow
+          label="Radius"
+          value={draft.distanceBlurRadius}
+          min={0}
+          max={8}
+          step={0.25}
+          suffix="px"
+          disabled={!distanceBlurOn}
+          onChange={(v) => update({ distanceBlurRadius: v })}
         />
       </GroupCard>
 

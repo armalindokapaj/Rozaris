@@ -224,6 +224,11 @@ export const DEFAULT_RENDERING_CONFIG: RenderingConfig = {
   depthOfFieldEnabled: false,
   depthOfFieldFocalLength: 10,
   depthOfFieldBokehScale: 1,
+  distanceBlurEnabled: false,
+  distanceBlurStartM: 150,
+  distanceBlurFullM: 400,
+  distanceBlurAmount: 0.9,
+  distanceBlurRadius: 2,
   cameraAutoFocusEnabled: true,
   motionBlurEnabled: false,
   motionBlurIntensity: 1,
@@ -1241,6 +1246,21 @@ export class RenderEngine {
     // manual distance that would drift out of sync as a visitor orbits.
     if (this.scenePostPipeline?.dofFocusDistance && this.renderingConfig.cameraAutoFocusEnabled) {
       this.scenePostPipeline.dofFocusDistance.value = camera.position.distanceTo(controls.target);
+    }
+    // Distance Blur's mask is anchored to the BUILDING, not the camera, so
+    // it needs the live content bounds — which move on every (re)load
+    // (frameLoadedContent) while the post pipeline only ever rebuilds on a
+    // change of WHICH effects are active. Written here for the same reason
+    // the focus distance above is: cheapest possible way to stay correct.
+    // Deliberately the content bounds and not `controls.target` — the
+    // target follows panning, which would drag the sharp region off the
+    // building the moment a visitor panned.
+    const blurAnchor = this.scenePostPipeline?.distanceBlurAnchor;
+    if (blurAnchor) {
+      const center = blurAnchor.center.value as THREE.Vector3;
+      if (this.contentBounds) center.copy(this.contentBounds.center);
+      else center.set(0, 0, 0);
+      blurAnchor.buildingRadius.value = this.boundingRadius;
     }
     if (this.scenePostPipeline) this.scenePostPipeline.pipeline.render();
     else renderer.render(scene, camera);

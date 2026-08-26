@@ -1,9 +1,10 @@
 import * as THREE from "three/webgpu";
-import { convertToTexture, int, metalness, mrt, normalView, output, pass, roughness, texture3D, uniform, vec3, vec4, velocity } from "three/tsl";
+import { convertToTexture, float, getViewPosition, int, metalness, mix, mrt, normalView, output, pass, roughness, smoothstep, texture3D, uniform, uv, vec3, vec4, velocity } from "three/tsl";
 import { ao } from "three/examples/jsm/tsl/display/GTAONode.js";
 import { ssgi } from "three/examples/jsm/tsl/display/SSGINode.js";
 import { godrays } from "three/examples/jsm/tsl/display/GodraysNode.js";
 import { bilateralBlur } from "three/examples/jsm/tsl/display/BilateralBlurNode.js";
+import { gaussianBlur } from "three/examples/jsm/tsl/display/GaussianBlurNode.js";
 import { ssr } from "three/examples/jsm/tsl/display/SSRNode.js";
 import { traa } from "three/examples/jsm/tsl/display/TRAANode.js";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
@@ -50,6 +51,17 @@ import { getLutResource } from "./lut";
  *    uniform RenderEngine.ts updates every frame from the real camera-to-
  *    orbit-target distance (real auto-focus, not a manual distance that
  *    would drift as a visitor orbits), gated by `cameraAutoFocusEnabled`.
+ * 3b. Distance Blur (depth-masked `gaussianBlur`) — a SEPARATE stage from
+ *    Depth of Field, not a mode of it. `dof()`'s circle-of-confusion is
+ *    symmetric around one focus plane, and this app auto-focuses that plane
+ *    on the live camera-to-orbit-target distance, so it can't express "the
+ *    building stays sharp, everything past N metres goes soft" — pull back
+ *    and the whole frame blurs. This stage masks a blurred copy of the
+ *    chain by absolute view distance instead, so the near field is never
+ *    touched at any orbit distance. Runs AFTER TRAA (blurring before
+ *    temporal reprojection would feed the history buffer already-soft
+ *    pixels and smear the sharp foreground into them) and BEFORE Bloom, so
+ *    softened distant highlights bloom softly too.
  * 4. Bloom (real `BloomNode`, already-existing fields reused) — Lens
  *    Flare (`LensflareNode`) reads Bloom's own bright-pass texture as its
  *    light source per the node's own doc comment ("requires that you
@@ -96,6 +108,14 @@ export interface ScenePostPipeline {
    * real camera-to-orbit-target distance into this every frame (real
    * auto-focus). Null when Depth of Field isn't structurally active. */
   dofFocusDistance: UniformNode | null;
+  /** Live per-frame handles for Distance Blur's building-anchored mask —
+   * RenderEngine.ts writes the CURRENT content centre and bounding radius
+   * into these every frame, the same way it writes `dofFocusDistance`.
+   * They can't be baked at build time: a Replace-model / newly-finished
+   * GLB load moves both (frameLoadedContent()), and a pipeline rebuild is
+   * only triggered by WHICH effects are active, never by content changing.
+   * Null when Distance Blur isn't structurally active. */
+  distanceBlurAnchor: { center: UniformNode; buildingRadius: UniformNode } | null;
   update: (lighting: LightingConfig, rendering: RenderingConfig) => void;
   dispose: () => void;
 }
@@ -115,11 +135,21 @@ export function computeScenePostSignature(lighting: LightingConfig, rendering: R
     rendering.ssrEnabled ? 1 : 0,
     rendering.antialiasEnabled ? 1 : 0,
     rendering.depthOfFieldEnabled ? 1 : 0,
+    rendering.distanceBlurEnabled ? 1 : 0,
     rendering.bloomEnabled ? 1 : 0,
     rendering.bloomEnabled && rendering.lensFlareEnabled ? 1 : 0,
     rendering.motionBlurEnabled ? 1 : 0,
     lutReady ? `lut:${rendering.lutPreset}` : 0,
   ].join("|");
+}
+
+/** `smoothstep(edge0, edge1, x)` is undefined when the two edges meet, and
+ * an admin dragging "Blur starts at" past "Fully blurred at" is a normal
+ * thing to do mid-authoring — not an error state to reject. Nudging the far
+ * edge instead degrades gracefully to a hard-ish cutoff at that distance,
+ * which is a legitimate look, rather than producing NaN pixels. */
+function resolveDistanceBlurFull(rendering: RenderingConfig): number {
+  return Math.max(rendering.distanceBlurFullM, rendering.distanceBlurStartM + 0.5);
 }
 
 export function buildScenePostPipeline(
@@ -136,12 +166,13 @@ export function buildScenePostPipeline(
   const needsSSR = rendering.ssrEnabled;
   const needsTRAA = rendering.antialiasEnabled;
   const needsDOF = rendering.depthOfFieldEnabled;
+  const needsDistanceBlur = rendering.distanceBlurEnabled;
   const needsBloom = rendering.bloomEnabled;
   const needsLensFlare = needsBloom && rendering.lensFlareEnabled;
   const needsMotionBlur = rendering.motionBlurEnabled;
   const lutResource = rendering.lutEnabled ? getLutResource(rendering.lutPreset) : null;
   const needsLut = lutResource != null;
-  if (!needsGI && !needsContact && !needsVolumetric && !needsSSR && !needsTRAA && !needsDOF && !needsBloom && !needsMotionBlur && !needsLut) {
+  if (!needsGI && !needsContact && !needsVolumetric && !needsSSR && !needsTRAA && !needsDOF && !needsDistanceBlur && !needsBloom && !needsMotionBlur && !needsLut) {
     return null;
   }
 
@@ -245,6 +276,87 @@ export function buildScenePostPipeline(
     chain = textureNodeOf(traaNode);
   }
 
+  // --- Rendering tab: Camera FX — Distance Blur ---
+  // Placed here deliberately: AFTER TRAA (feeding already-soft pixels into
+  // the temporal history buffer smears the sharp foreground into them on
+  // the next frame) and BEFORE Depth of Field/Bloom, so when both blur
+  // stages are on they compose in the physically sensible order and
+  // softened distant highlights bloom softly rather than as hard points.
+  //
+  // The mask is built from the SAME viewZ buffer DepthOfFieldNode reads —
+  // distance along the camera's look direction, in real world units — so
+  // `startM`/`fullM` are honest metres on every project. This is exactly
+  // what Depth of Field cannot express here: `dof()`'s circle-of-confusion
+  // is `smoothstep(0, focalLength, |viewZ - focus|)`, symmetric about the
+  // focus plane, and RenderEngine.ts auto-focuses that plane on the live
+  // camera-to-orbit-target distance — so orbiting out pushes the focus
+  // plane out with the camera and the building softens along with the
+  // background. A one-sided smoothstep on absolute distance never touches
+  // the near field at any orbit distance.
+  let distanceBlurNode: ReturnType<typeof gaussianBlur> | null = null;
+  // Real uniforms, not baked constants — same trap this file's Lens
+  // Flare/Motion Blur/LUT comment below documents: none of these four are
+  // part of computeScenePostSignature(), so without live uniform handles
+  // dragging their sliders after the pipeline is built would do nothing.
+  // The kernel WIDTH (sigma) is the one thing that must stay a JS constant
+  // — GaussianBlurNode unrolls `3 + 2 * sigma` taps at shader-build time,
+  // so exposing it would recompile the shader on every slider tick (the
+  // ~12s Section-activate freeze this codebase already had to fix once).
+  // `radius` scales the tap SPACING instead, which is a live uniform, and
+  // covers the same artistic range without a rebuild.
+  // Held by REFERENCE to the camera's own live matrices (the exact trick
+  // GodraysNode uses) — three already rewrites these objects in place every
+  // frame, so there is nothing to copy per frame here. The built-in
+  // `cameraWorldMatrix`/`cameraProjectionMatrixInverse` TSL nodes can't be
+  // used: inside a post pass the bound camera is the internal full-screen
+  // quad's orthographic one, not the scene camera.
+  const cameraWorldMatrix = uniform(camera.matrixWorld);
+  const cameraProjectionInverse = uniform(camera.projectionMatrixInverse);
+  const distanceBlurCenter = uniform(new THREE.Vector3());
+  const distanceBlurBuildingRadius = uniform(0);
+  const distanceBlurStart = uniform(rendering.distanceBlurStartM);
+  const distanceBlurFull = uniform(resolveDistanceBlurFull(rendering));
+  const distanceBlurAmount = uniform(rendering.distanceBlurAmount);
+  const distanceBlurRadius = uniform(rendering.distanceBlurRadius);
+  if (needsDistanceBlur) {
+    // One materialization of the chain so far, read twice (blurred + sharp)
+    // rather than re-evaluating the whole upstream graph for each. A no-op
+    // when `chain` is already a texture node (convertToTexture passes those
+    // straight through), which it is whenever TRAA ran.
+    const base = convertToTexture(chain);
+    distanceBlurNode = gaussianBlur(base, distanceBlurRadius, 4, { resolutionScale: 0.5 });
+
+    // Per-pixel WORLD position, then its distance to the building — not to
+    // the camera. Measuring from the camera was tried first and is wrong
+    // for this feature: a project's own start framing already sits well
+    // past 150m out on a tall tower (cameraStartDistanceMultiplier x
+    // boundingRadius, then offset diagonally), so a camera-relative
+    // threshold put the BUILDING inside its own blur band — verified
+    // live, the tower went soft while the ask was for the exact opposite.
+    // Anchoring to the content centre instead makes "sharp within N
+    // metres of the building" hold at every orbit distance, which is the
+    // whole point of this stage over Depth of Field.
+    //
+    // Reconstructed from viewZ rather than from the raw depth texture on
+    // purpose: `getViewPosition` reads a raw depth-buffer value, which is
+    // encoded differently when Rendering -> `logarithmicDepthEnabled` is
+    // on, whereas PassNode's viewZ is already linear world units either
+    // way. So getViewPosition is used ONLY to get a point on this pixel's
+    // view ray (any fixed depth does — the ray is what's wanted, not the
+    // hit), and that ray is then rescaled to the real viewZ.
+    const rayPoint = getViewPosition(uv(), float(0.5), cameraProjectionInverse);
+    const viewPosition = rayPoint.mul(scenePass.getViewZNode().div(rayPoint.z));
+    const worldPosition = cameraWorldMatrix.mul(viewPosition);
+    // Measured from the building's bounding SPHERE, not its centre, so
+    // "Sharp Until 150 m" reads as 150m of clear surroundings on a villa
+    // and on a 40-storey tower alike — and so the building itself is
+    // always <= 0 here, i.e. never blurred, by construction rather than
+    // by an admin picking a big enough number.
+    const distanceFromBuilding = worldPosition.distance(distanceBlurCenter).sub(distanceBlurBuildingRadius).max(0);
+    const blurMask = smoothstep(distanceBlurStart, distanceBlurFull, distanceFromBuilding).mul(distanceBlurAmount);
+    chain = vec4(mix(base.rgb, textureNodeOf(distanceBlurNode).rgb, blurMask), base.a);
+  }
+
   // --- Rendering tab: Camera FX — Depth of Field ---
   let dofNode: ReturnType<typeof dof> | null = null;
   let dofFocusDistance: UniformNode | null = null;
@@ -324,6 +436,10 @@ export function buildScenePostPipeline(
       ssrNode.intensity.value = renderingCfg.ssrIntensity;
       ssrNode.quality.value = renderingCfg.ssrQuality;
     }
+    distanceBlurStart.value = renderingCfg.distanceBlurStartM;
+    distanceBlurFull.value = resolveDistanceBlurFull(renderingCfg);
+    distanceBlurAmount.value = renderingCfg.distanceBlurAmount;
+    distanceBlurRadius.value = renderingCfg.distanceBlurRadius;
     if (dofFocalLength) dofFocalLength.value = renderingCfg.depthOfFieldFocalLength;
     if (dofBokehScale) dofBokehScale.value = renderingCfg.depthOfFieldBokehScale;
     if (bloomNode) {
@@ -349,9 +465,16 @@ export function buildScenePostPipeline(
     ssrNode?.dispose();
     traaNode?.dispose();
     dofNode?.dispose();
+    distanceBlurNode?.dispose();
     bloomNode?.dispose();
     lensflareNode?.dispose();
   }
 
-  return { pipeline, dofFocusDistance, update, dispose };
+  return {
+    pipeline,
+    dofFocusDistance,
+    distanceBlurAnchor: needsDistanceBlur ? { center: distanceBlurCenter, buildingRadius: distanceBlurBuildingRadius } : null,
+    update,
+    dispose,
+  };
 }

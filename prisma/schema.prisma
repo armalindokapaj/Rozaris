@@ -1494,6 +1494,28 @@ model Project3DConfig {
   depthOfFieldFocalLength Float   @default(10)
   depthOfFieldBokehScale  Float   @default(1)
 
+  /// Distance Blur (aerial/far-field blur) — a depth-masked gaussian blur
+  /// that softens everything past `distanceBlurStartM`, so a project reads
+  /// as "the building, sharp, sitting in a soft surround" no matter how far
+  /// out a visitor orbits. Deliberately NOT Depth of Field: `dof()` builds a
+  /// SYMMETRIC circle-of-confusion around one focus plane, so it blurs the
+  /// near field too, and this app drives its focus from the live
+  /// camera-to-orbit-target distance — pull back and the whole frame goes
+  /// soft. These two are metres from the camera along its look direction
+  /// (the same viewZ the DOF node reads), never a multiplier, so the same
+  /// numbers mean the same thing on every project regardless of GLB size.
+  /// `Amount` caps the blend so distant context can be softened without
+  /// being erased; `Radius` scales the blur kernel's tap spacing (a live
+  /// uniform — the kernel WIDTH itself is baked into the shader and is
+  /// deliberately not admin-exposed, same "never recompile a shader on a
+  /// slider drag" rule Sections/Clouds/Motion Blur already follow).
+  /// Off by default: zero behaviour change for any existing project.
+  distanceBlurEnabled     Boolean @default(false)
+  distanceBlurStartM      Float   @default(150)
+  distanceBlurFullM       Float   @default(400)
+  distanceBlurAmount      Float   @default(0.9)
+  distanceBlurRadius      Float   @default(2)
+
   /// Real logarithmic depth buffer (`webgpu_camera_logarithmicdepthbuffer.html`
   /// parity) — `logarithmicDepthBuffer: true` passed to the WebGPURenderer
   /// constructor, reducing z-fighting at this app's scale (camera far

@@ -86,6 +86,7 @@ interface QualityCaps {
   gi: boolean;
   volumetricLighting: boolean;
   depthOfField: boolean;
+  distanceBlur: boolean;
   motionBlur: boolean;
   contactShadows: boolean;
   csm: boolean;
@@ -101,6 +102,12 @@ function capsFor(level: Exclude<ViewerQualityLevel, "auto">): QualityCaps {
     gi: rank >= LEVEL_RANK.max,
     volumetricLighting: rank >= LEVEL_RANK.max,
     depthOfField: rank >= LEVEL_RANK.high,
+    // One separable half-res gaussian + a mix, vs. DOF's six full render
+    // targets and 80 bokeh taps — genuinely cheaper, so it survives a tier
+    // longer. It also carries more of a project's authored look than DOF
+    // does (it is what keeps a large site from reading as clutter), which
+    // is the same reasoning that keeps bloom/LUT alive down to Medium.
+    distanceBlur: rank >= LEVEL_RANK.medium,
     motionBlur: rank >= LEVEL_RANK.high,
     contactShadows: rank >= LEVEL_RANK.medium,
     csm: rank >= LEVEL_RANK.medium,
@@ -131,6 +138,7 @@ export function applyViewerQualityToRendering(level: ViewerQualityLevel, config:
     bloomEnabled: config.bloomEnabled && caps.bloom,
     lensFlareEnabled: config.lensFlareEnabled && caps.lensFlare,
     depthOfFieldEnabled: config.depthOfFieldEnabled && caps.depthOfField,
+    distanceBlurEnabled: config.distanceBlurEnabled && caps.distanceBlur,
     motionBlurEnabled: config.motionBlurEnabled && caps.motionBlur,
     lutEnabled: config.lutEnabled && caps.lut,
   };

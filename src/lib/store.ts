@@ -234,6 +234,14 @@ export const defaultProject3DConfig: Project3DConfig = {
   depthOfFieldEnabled: false,
   depthOfFieldFocalLength: 10,
   depthOfFieldBokehScale: 1,
+  // Distance Blur — off by default. Start/Full are absolute metres from
+  // the camera, not multipliers, so these two numbers mean the same thing
+  // on every project regardless of GLB size.
+  distanceBlurEnabled: false,
+  distanceBlurStartM: 150,
+  distanceBlurFullM: 400,
+  distanceBlurAmount: 0.9,
+  distanceBlurRadius: 2,
   logarithmicDepthEnabled: false,
   // Loading-screen reveal — on by default, see types.ts's own field doc
   // comment for why.

@@ -381,6 +381,12 @@ const patchSchema = z.object({
   depthOfFieldEnabled: z.boolean().optional(),
   depthOfFieldFocalLength: z.number().min(0.1).max(200).optional(),
   depthOfFieldBokehScale: z.number().min(0).max(5).optional(),
+  // Distance Blur — depth-masked far-field blur, absolute metres.
+  distanceBlurEnabled: z.boolean().optional(),
+  distanceBlurStartM: z.number().min(0).max(5000).optional(),
+  distanceBlurFullM: z.number().min(0).max(10000).optional(),
+  distanceBlurAmount: z.number().min(0).max(1).optional(),
+  distanceBlurRadius: z.number().min(0).max(8).optional(),
   // Experience Editor v2, Lighting tab (PRD §14-21).
   sunLightEnabled: z.boolean().optional(),
   sunTemperatureK: z.number().int().min(1000).max(40000).optional(),

@@ -716,6 +716,26 @@ export interface Project3DConfig {
   depthOfFieldFocalLength: number;
   depthOfFieldBokehScale: number;
 
+  /** Distance Blur (aerial/far-field blur) — a depth-masked gaussian blur
+   * over everything past `distanceBlurStartM`, reaching full strength at
+   * `distanceBlurFullM`. Deliberately NOT Depth of Field: `dof()`'s
+   * circle-of-confusion is SYMMETRIC around one focus plane (it blurs the
+   * near field too), and this app auto-focuses it on the live
+   * camera-to-orbit-target distance, so pulling back softens the whole
+   * frame — building included. These are absolute metres from the camera
+   * along its look direction (the same viewZ buffer the DOF node reads),
+   * never a multiplier of the project's bounding radius, so the same
+   * numbers mean the same thing on every project. `amount` caps the blend
+   * (distant context softened, not erased); `radius` scales the kernel's
+   * tap spacing as a live uniform — the kernel width itself is baked into
+   * the shader and stays fixed, so dragging this never recompiles.
+   * Off by default: zero behavior change for any existing project. */
+  distanceBlurEnabled: boolean;
+  distanceBlurStartM: number;
+  distanceBlurFullM: number;
+  distanceBlurAmount: number;
+  distanceBlurRadius: number;
+
   /** Real logarithmic depth buffer
    * (`webgpu_camera_logarithmicdepthbuffer.html` parity) — passed to the
    * `WebGPURenderer` constructor, reducing z-fighting at distance. A
@@ -1002,6 +1022,11 @@ export type RenderingConfig = Pick<
   | "depthOfFieldEnabled"
   | "depthOfFieldFocalLength"
   | "depthOfFieldBokehScale"
+  | "distanceBlurEnabled"
+  | "distanceBlurStartM"
+  | "distanceBlurFullM"
+  | "distanceBlurAmount"
+  | "distanceBlurRadius"
   | "cameraAutoFocusEnabled"
   | "motionBlurEnabled"
   | "motionBlurIntensity"
