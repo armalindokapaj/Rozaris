@@ -163,7 +163,34 @@ export function buildScenePostPipeline(
   const needsGI = lighting.giEnabled;
   const needsContact = lighting.contactShadowsEnabled;
   const needsVolumetric = lighting.volumetricLightingEnabled && lighting.sunShaftsEnabled;
-  const needsSSR = rendering.ssrEnabled;
+  // Reflections are WebGPU-only, and not as a quality choice — three's own
+  // `SSRNode` cannot compile on the WebGL2 backend. Its non-stochastic ray
+  // march emits `max( int( trunc( ... ) ), 1.0 )` (SSRNode.js's `totalStep`),
+  // which WGSL accepts and GLSL ES 3.00 does not: there is no int/float
+  // overload of `max`, so the fragment shader fails to compile, the whole
+  // post-processing program fails to link, and every subsequent frame draws
+  // with an invalid program. The visible result is a dark viewer — reported
+  // 2026-08-27 as "Time, Sun, Environment doesn't work correctly in Mobile
+  // in my iPhone, it's dark", reproduced in real WebKit with `navigator.gpu`
+  // removed, which is exactly an iPhone on iOS 18 or older (WebGPU only
+  // ships in Safari 26 / iOS 26). Desktop Chrome and a desktop browser's
+  // mobile-emulation mode both have WebGPU, which is why neither ever
+  // showed it.
+  //
+  // Dropped rather than substituted: SSR's other branch (`stochastic: true`)
+  // does compile, but its own docs call it noisy without a temporal or
+  // spatial denoiser downstream, and this is already the degraded
+  // fallback path on the weakest hardware — the honest fallback is no
+  // screen-space reflections, not bad ones. Nothing else here needs a
+  // guard; every other node in this chain was verified to compile on the
+  // WebGL2 backend (`npm run test:webgl2-fallback`).
+  // `Backend` does not declare the flag in three's own types even though
+  // three's own internals branch on it (`renderer.backend.isWebGPUBackend
+  // === true` appears verbatim in three.webgpu.js) — hence the cast rather
+  // than a UA sniff or a second `navigator.gpu` probe, which would both be
+  // guesses about a decision the renderer has already made.
+  const isWebGPUBackend = (renderer.backend as unknown as { isWebGPUBackend?: boolean })?.isWebGPUBackend === true;
+  const needsSSR = rendering.ssrEnabled && isWebGPUBackend;
   const needsTRAA = rendering.antialiasEnabled;
   const needsDOF = rendering.depthOfFieldEnabled;
   const needsDistanceBlur = rendering.distanceBlurEnabled;
