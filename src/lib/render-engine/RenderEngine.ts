@@ -3,6 +3,7 @@ import mapboxgl from "mapbox-gl";
 import { StudioBasemapLayer } from "./StudioBasemapLayer";
 import type { BasemapAnchor } from "./basemapCameraSync";
 import { buildSiteTerrain, type SiteTerrainResult } from "./siteTerrain";
+import { isSlotCutBySections } from "./sectionScope";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -554,6 +555,14 @@ export interface DetailModelEntry {
    * the same as every pre-existing slot before this PRD's migration ran. */
   slotRole?: DetailModelSlotRole;
   transformParentSlotId?: string | null;
+  /** The slot's admin-facing name. Read by exactly one render-path rule —
+   * whether an active Section is allowed to cut this slot, see
+   * render-engine/sectionScope.ts — because the Scene tab's slot strip
+   * has no role picker, so every site slot an admin creates by hand is
+   * `role: "custom"` and its NAME is the only signal of what it is.
+   * Optional for the same reason `slotRole` is: an un-updated caller just
+   * gets the pre-rule behaviour (cut like everything else). */
+  slotName?: string;
 }
 
 export interface MountParams {
@@ -716,6 +725,17 @@ export class RenderEngine {
   // engine (real production bug fixes already baked into sections.ts —
   // see its own doc comments), not re-derived from scratch.
   private clippingGroup: THREE.ClippingGroup | null = null;
+  /** Sibling of clippingGroup for the loaded roots a Section must NOT cut
+   * — site-context GLBs, see render-engine/sectionScope.ts for the rule
+   * and the bug that motivated it. A plain THREE.Group directly under
+   * `scene` at identity, exactly like `siteGroup` (the Map tab's terrain,
+   * excluded from clipping for the same reason since it shipped), so
+   * moving a root between the two groups is a pure reparent with no
+   * transform bookkeeping. Everything else about such a root is
+   * unchanged: it is still in `modelRootsBySlot`/`loadedRoots`, so
+   * bounds, raycasting, materials, node overrides and the Scene Explorer
+   * all behave identically. */
+  private unclippedModelGroup: THREE.Group | null = null;
   private sectionHelperGroup: THREE.Group | null = null;
   private activeSectionId: string | null = null;
   /** The exact planes `activateSection` last handed to `clippingGroup`,
@@ -1003,6 +1023,10 @@ export class RenderEngine {
     clippingGroup.clippingPlanes = NO_ACTIVE_SECTION_PLANES;
     scene.add(clippingGroup);
     this.clippingGroup = clippingGroup;
+    const unclippedModelGroup = new THREE.Group();
+    unclippedModelGroup.name = "RZ_UnclippedModels";
+    scene.add(unclippedModelGroup);
+    this.unclippedModelGroup = unclippedModelGroup;
     const sectionHelperGroup = new THREE.Group();
     sectionHelperGroup.name = "RZ_SectionHelpers";
     scene.add(sectionHelperGroup);
@@ -1736,26 +1760,41 @@ export class RenderEngine {
     const scene = this.scene;
     const loader = this.loader;
     const clippingGroup = this.clippingGroup;
-    if (!scene || !loader || !clippingGroup) return;
+    const unclippedModelGroup = this.unclippedModelGroup;
+    if (!scene || !loader || !clippingGroup || !unclippedModelGroup) return;
     const token = ++this.syncToken;
+
+    /** Which of the two sibling groups a slot's root belongs under — see
+     * `unclippedModelGroup`'s own field doc comment. Read on EVERY sync,
+     * including the cheap path, so renaming a slot to "Site 7" takes
+     * effect on the next sync rather than needing a GLB reload. */
+    const groupFor = (entry: DetailModelEntry) =>
+      isSlotCutBySections(entry) ? clippingGroup : unclippedModelGroup;
 
     const wantedSlotIds = new Set(entries.filter((e) => e.model.enabled !== false).map((e) => e.slotId));
     for (const [slotId, root] of this.modelRootsBySlot) {
       if (!wantedSlotIds.has(slotId)) {
-        clippingGroup.remove(root);
+        // removeFromParent(), not clippingGroup.remove() — a site slot's
+        // root lives under unclippedModelGroup instead, and removing it
+        // from the wrong parent is a silent no-op that leaks the model
+        // into the scene forever.
+        root.removeFromParent();
         this.modelRootsBySlot.delete(slotId);
         this.loadedGlbUrlBySlot.delete(slotId);
       }
     }
 
     let loadedSomethingNew = false;
-    for (const { slotId, model } of entries) {
+    for (const entry of entries) {
+      const { slotId, model } = entry;
       if (model.enabled === false) continue;
       const existingRoot = this.modelRootsBySlot.get(slotId);
       const existingUrl = this.loadedGlbUrlBySlot.get(slotId);
+      const parentGroup = groupFor(entry);
 
       if (existingRoot && existingUrl === model.glbUrl) {
         // Cheap path — same GLB, just re-apply state.
+        if (existingRoot.parent !== parentGroup) parentGroup.add(existingRoot);
         this.applyTransform(existingRoot, model);
         existingRoot.visible = model.visible !== false;
         existingRoot.traverse((child) => {
@@ -1773,7 +1812,7 @@ export class RenderEngine {
       try {
         const gltf = await loader.loadAsync(model.glbUrl);
         if (token !== this.syncToken) return; // superseded by a newer syncModels() call
-        if (existingRoot) clippingGroup.remove(existingRoot);
+        if (existingRoot) existingRoot.removeFromParent();
         const root = gltf.scene;
         this.applyTransform(root, model);
         root.visible = model.visible !== false;
@@ -1785,7 +1824,7 @@ export class RenderEngine {
         });
         this.applyNodeOverrides(root, model);
         applyTransmittedShadows(root, this.lightingConfig);
-        clippingGroup.add(root);
+        parentGroup.add(root);
         this.modelRootsBySlot.set(slotId, root);
         this.loadedGlbUrlBySlot.set(slotId, model.glbUrl);
         loadedSomethingNew = true;
@@ -3673,6 +3712,7 @@ export class RenderEngine {
     this.idleDrone.reset();
     this.contentBounds = null;
     this.clippingGroup = null;
+    this.unclippedModelGroup = null;
     this.sectionHelperGroup = null;
     this.activeSectionId = null;
     this.sectionFillClippingGroup = null;

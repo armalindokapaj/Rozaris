@@ -164,6 +164,7 @@ export function ExperienceEditor({
           units: units ?? undefined,
           statusPreviewEnabled,
           slotRole: slot.role,
+          slotName: slot.name,
           transformParentSlotId: slot.transformParentSlotId,
         },
       ];

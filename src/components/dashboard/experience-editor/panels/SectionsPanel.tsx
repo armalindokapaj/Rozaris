@@ -8,6 +8,7 @@ import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEdito
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import { SECTION_FOOTPRINT_MAX_M, SECTION_HEIGHT_STOPS_M, SECTION_MAX_DIMENSION_M } from "@/lib/render-engine/sections";
 import { parseSectionFloorNumber } from "@/lib/floorSections";
+import { SECTION_SITE_EXEMPT_HINT } from "@/lib/render-engine/sectionScope";
 
 /**
  * Sections tab (PRD §34-36) — real clip + cap via THREE.ClippingGroup
@@ -109,6 +110,14 @@ export function SectionsPanel({
           (its number is a counter, not a storey).
         </p>
       )}
+
+      {/* The site-context exemption is invisible in the viewport until an
+          admin cuts a section and wonders why the surroundings survived —
+          say it here, next to where sections are authored. Rule and copy
+          both live in render-engine/sectionScope.ts. */}
+      <p className="rounded-md border border-neutral-800 bg-neutral-900/60 p-2 text-[10px] leading-relaxed text-neutral-400">
+        {SECTION_SITE_EXEMPT_HINT}
+      </p>
 
       <SectionHeading>Presets</SectionHeading>
       {sections.length === 0 && <p className="p-2 text-center text-xs text-neutral-600">No sections saved yet.</p>}
