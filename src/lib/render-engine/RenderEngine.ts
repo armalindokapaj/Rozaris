@@ -423,8 +423,47 @@ const MOBILE_VIEWPORT_BREAKPOINT = 768;
  * ability to reallocate swap chain/render targets. */
 const RESIZE_THROTTLE_MS = 90;
 
+/** How often `samplePerfStats` reports, in frames. Also the divisor for
+ * the per-frame draw-call delta, so the two cannot drift apart. */
+const PERF_SAMPLE_EVERY_N_FRAMES = 20;
+
+/** What the renderer actually resolved to on THIS device, published for
+ * `ViewerDiagnostics` (`?diag=1`). Written once per mount and then only on
+ * a context-loss event — this is a report, not engine state, and nothing
+ * in the render path reads it back.
+ *
+ * It exists because "it's dark on my iPhone, fine on desktop" is not
+ * answerable from a desktop: the two devices resolve a different backend
+ * (WebGPU vs WebGL2), a different GPU, different limits, and iOS drops GL
+ * contexts under memory pressure with no visible error at all. Guessing
+ * across that gap cost a full day; asking the device costs one URL. */
+export interface RendererFacts {
+  backend: "webgpu" | "webgl2";
+  /** `navigator.gpu` present at all — separates "this browser has no
+   * WebGPU" (every iPhone before iOS 26) from "it has it but the adapter
+   * request failed". */
+  webgpuAvailable: boolean;
+  glRenderer: string | null;
+  maxTextureSize: number | null;
+  drawingBufferPx: { width: number; height: number } | null;
+  pixelRatio: number;
+  /** Non-zero means the GPU dropped this canvas mid-session — the one
+   * failure mode that renders a permanently black viewer with nothing in
+   * the console. */
+  contextLostCount: number;
+}
+
 export interface RenderEngineCallbacks {
   onWebglFail: () => void;
+  /** The GPU dropped the canvas AFTER a successful start (iOS Safari does
+   * this under memory pressure, and on tab backgrounding). Distinct from
+   * `onWebglFail`, which only ever fires if the renderer cannot be built
+   * in the first place — before this existed, a loss after mount left a
+   * black canvas, no error, and no way for the visitor to know anything
+   * had gone wrong. Optional: predates every existing caller. */
+  onContextLost?: () => void;
+  /** Published once the backend is known, for `?diag=1`. */
+  onRendererFacts?: (facts: RendererFacts) => void;
   /** "Map" tab — progress/outcome of a site build, so the Map panel can
    * show a real state instead of a silent nothing while tiles download.
    * Optional: every existing caller predates the site feature. `ready`
@@ -740,6 +779,11 @@ export class RenderEngine {
    * always looks low-res" in practice. `dprCap`/`renderScale` themselves
    * stay admin-controlled and untouched here. */
   private isMobileViewport = false;
+  /** See `watchForContextLoss`. Cumulative for the life of the engine. */
+  private contextLostCount = 0;
+  /** `renderer.info.render.calls` at the previous perf sample — see
+   * `samplePerfStats`. `null` until the first sample. */
+  private lastDrawCallMark: number | null = null;
 
   // Camera tab (PRD §37).
   private cameraConfig: CameraConfig = DEFAULT_CAMERA_CONFIG;
@@ -1288,18 +1332,38 @@ export class RenderEngine {
   }
 
   /** See renderFrame()'s own call site — promoted from a mount()-local
-   * closure to a method for the same reason renderFrame() itself was. */
+   * closure to a method for the same reason renderFrame() itself was.
+   *
+   * `drawCalls` is a real PER-FRAME figure, derived as a delta. It has to
+   * be: this engine renders through a `THREE.RenderPipeline`
+   * (`scenePostPipeline.pipeline.render()`), and on that path
+   * `renderer.info.render.calls` is never reset between frames the way a
+   * plain `renderer.render()` resets it — it just accumulates for the
+   * life of the renderer. Reading it raw (which this did until
+   * 2026-08-27) reported a number that climbed forever: ~25,000 "draw
+   * calls" after a few seconds on a scene of fifteen meshes, which reads
+   * as a catastrophic performance problem and is really about 28 draws a
+   * frame. `triangles` needs no such treatment — three writes that one
+   * per frame. Resetting `info` here instead would have been the other
+   * option, but that is renderer-wide state other code may read. */
   private samplePerfStats() {
     const renderer = this.renderer;
     if (!this.showPerfStats || !renderer) return;
     this.perfSampleCounter += 1;
-    if (this.perfSampleCounter % 20 !== 0) return;
+    if (this.perfSampleCounter % PERF_SAMPLE_EVERY_N_FRAMES !== 0) return;
     const frames = this.frameTimes;
     const avgFrameMs = frames.length ? frames.reduce((a, b) => a + b, 0) / frames.length : 0;
+    const callsNow = renderer.info.render.calls;
+    // First sample after enabling has no previous mark to subtract, and
+    // the counter may already be far into a session — report 0 rather
+    // than the whole accumulated history divided by 20.
+    const drawCalls =
+      this.lastDrawCallMark == null ? 0 : Math.max(0, Math.round((callsNow - this.lastDrawCallMark) / PERF_SAMPLE_EVERY_N_FRAMES));
+    this.lastDrawCallMark = callsNow;
     this.callbacks.onPerfStats({
       fps: avgFrameMs > 0 ? Math.round(1000 / avgFrameMs) : 0,
       frameTimeMs: Math.round(avgFrameMs * 10) / 10,
-      drawCalls: renderer.info.render.calls,
+      drawCalls,
       triangles: renderer.info.render.triangles,
       textures: renderer.info.memory.textures,
       dpr: renderer.getPixelRatio(),
@@ -1370,7 +1434,69 @@ export class RenderEngine {
     renderer.toneMapping = TONE_MAPPING_MAP[this.renderingConfig.toneMapping];
     renderer.toneMappingExposure = this.renderingConfig.exposure;
     this.renderer = renderer;
+    this.watchForContextLoss(renderer);
+    this.publishRendererFacts(renderer);
     return renderer;
+  }
+
+  /** iOS Safari drops a WebGL/WebGPU context under memory pressure and on
+   * some tab-backgrounding transitions. Nothing here used to listen, so
+   * that arrived as a permanently black canvas: no exception, no console
+   * error, no `onWebglFail` (which only covers construction). Every frame
+   * after the loss is a no-op, and the viewer looks "dark" with no other
+   * symptom — the single most misleading failure this renderer has.
+   *
+   * `preventDefault()` on the loss event is what makes a restore possible
+   * at all per the WebGL spec; the engine does not attempt to rebuild
+   * itself here, it reports, and the surface above decides what to show. */
+  private watchForContextLoss(renderer: THREE.WebGPURenderer) {
+    const canvas = renderer.domElement;
+    canvas.addEventListener("webglcontextlost", (event) => {
+      event.preventDefault();
+      this.contextLostCount += 1;
+      this.publishRendererFacts(renderer);
+      this.callbacks.onContextLost?.();
+    });
+    // WebGPU has its own, entirely separate loss channel — a lost
+    // `GPUDevice` never fires `webglcontextlost`.
+    const device = (renderer.backend as unknown as { device?: { lost?: Promise<unknown> } })?.device;
+    device?.lost
+      ?.then(() => {
+        this.contextLostCount += 1;
+        this.publishRendererFacts(renderer);
+        this.callbacks.onContextLost?.();
+      })
+      .catch(() => {});
+  }
+
+  /** See `RendererFacts` — a report for `?diag=1`, never read back. The
+   * GL strings come from a throwaway context rather than the live one so
+   * this cannot disturb the renderer's own state, and are simply absent
+   * under WebGPU, which exposes no equivalent. */
+  private publishRendererFacts(renderer: THREE.WebGPURenderer) {
+    if (!this.callbacks.onRendererFacts) return;
+    const backend = (renderer.backend as unknown as { isWebGPUBackend?: boolean })?.isWebGPUBackend === true ? "webgpu" : "webgl2";
+    let glRenderer: string | null = null;
+    let maxTextureSize: number | null = null;
+    if (backend === "webgl2") {
+      const gl = renderer.domElement.getContext("webgl2") as WebGL2RenderingContext | null;
+      if (gl) {
+        const info = gl.getExtension("WEBGL_debug_renderer_info");
+        glRenderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : null;
+        maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
+      }
+    }
+    const size = new THREE.Vector2();
+    renderer.getDrawingBufferSize(size);
+    this.callbacks.onRendererFacts({
+      backend,
+      webgpuAvailable: typeof navigator !== "undefined" && "gpu" in navigator && (navigator as Navigator & { gpu?: unknown }).gpu != null,
+      glRenderer,
+      maxTextureSize,
+      drawingBufferPx: { width: Math.round(size.x), height: Math.round(size.y) },
+      pixelRatio: renderer.getPixelRatio(),
+      contextLostCount: this.contextLostCount,
+    });
   }
 
   /** The default mount path — unchanged from before this method existed,

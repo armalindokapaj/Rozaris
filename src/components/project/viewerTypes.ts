@@ -135,6 +135,11 @@ export interface ThreeProjectViewerProps {
    * renders no site. */
   siteConfig?: SiteRuntimeConfig;
   onSiteStatus?: RenderEngineCallbacks["onSiteStatus"];
+  /** `?diag=1` — what the renderer resolved to on this device, and a real
+   * post-mount context loss. Both optional: only `ViewerDiagnostics` reads
+   * them, and every other caller predates them. See `RendererFacts`. */
+  onRendererFacts?: RenderEngineCallbacks["onRendererFacts"];
+  onContextLost?: RenderEngineCallbacks["onContextLost"];
   /** §19-20 — real 3D-click/hover on a unit block. Optional: the editor's
    * own live-preview viewport doesn't need to wire these (it drives
    * selection from the Units tab's own list instead). */

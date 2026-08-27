@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { SquareStack } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
@@ -9,6 +9,8 @@ import { useViewerPreferences } from "@/hooks/useViewerPreferences";
 import { use3DAssetCache } from "@/hooks/use3DAssetCache";
 import { useT } from "@/lib/i18n/useT";
 import { ThreeProjectViewer, type ThreeProjectViewerHandle } from "@/components/project/ThreeProjectViewer";
+import { ViewerDiagnostics } from "@/components/project/ViewerDiagnostics";
+import type { RendererFacts } from "@/lib/render-engine/RenderEngine";
 import { ViewerHUD } from "@/components/project/viewer-hud/ViewerHUD";
 import { getViewerLayoutState } from "@/components/project/viewer-hud/layoutState";
 import type { ActiveModule } from "@/components/project/viewer-hud/types";
@@ -94,6 +96,26 @@ export function ProjectViewerRuntime({
 
   const mainRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<ThreeProjectViewerHandle>(null);
+
+  // `?diag=1` — the on-device report (see `ViewerDiagnostics`). Read
+  // straight off `window.location` rather than `useSearchParams()`
+  // deliberately: this component is shared by `/project/[slug]` and the
+  // white-label `/embed/[publicKey]`, and `useSearchParams` opts the whole
+  // subtree into a Suspense boundary requirement it does not otherwise
+  // have. Read once, in an effect, so the server and the first client
+  // render agree and nothing hydrates mismatched.
+  // `useSyncExternalStore` rather than an effect: the value is client-only
+  // but never changes after load, and this is the one hook that expresses
+  // exactly that — a server snapshot of `false` (so the markup matches)
+  // and a client snapshot read from the real URL, with no setState-in-an-
+  // effect and no hydration mismatch.
+  const diagOpen = useSyncExternalStore(
+    () => () => {},
+    () => new URLSearchParams(window.location.search).get("diag") === "1",
+    () => false
+  );
+  const [rendererFacts, setRendererFacts] = useState<RendererFacts | null>(null);
+  const [diagStats, setDiagStats] = useState<Parameters<NonNullable<Parameters<typeof ThreeProjectViewer>[0]["onPerfStats"]>>[0]>(null);
   const [unitPanelOpen, setUnitPanelOpen] = useState(false);
   // Units Blocks & POI Layer PRD §20 — "one selectedUnitId state, not two
   // independently-set pieces." Real Unit object is derived below once
@@ -1442,8 +1464,24 @@ export function ProjectViewerRuntime({
               siteConfig={siteConfig}
               onUnitClick={handleUnitClickIn3D}
               onReady={handleReady}
+              onRendererFacts={setRendererFacts}
+              // `showPerfStats` is the real gate — the engine samples
+              // nothing while it is false, so no visitor pays for this.
+              // `onPerfStats` is passed unconditionally on purpose:
+              // `ThreeProjectViewer` builds the engine's callback object
+              // ONCE at mount and closes over whatever this prop was in
+              // that render (the same first-render-capture hazard its
+              // `onUnitClick`/`onSiteStatus` refs already exist for), so
+              // a conditional `undefined` here would be frozen in as
+              // undefined and no sample would ever arrive — which is
+              // exactly what the first version of this panel showed:
+              // every performance row stuck on "—". A `useState` setter
+              // has a stable identity, so passing it always is free.
+              showPerfStats={diagOpen}
+              onPerfStats={setDiagStats}
               className="relative h-full w-full"
             />
+            {diagOpen && <ViewerDiagnostics facts={rendererFacts} stats={diagStats} />}
           </div>
         )}
         {(

@@ -1,6 +1,18 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Baked into the client bundle at build time so a page can report which
+  // build it is actually running — see `/api/build-id` and
+  // `ViewerDiagnostics`. This exists because the viewer's Service Worker
+  // (`public/sw-3d-cache.js`) serves `/_next/static/` cache-first and the
+  // page document stale-while-revalidate, so a phone can legitimately be
+  // running a deploy or two behind while its config comes from the live
+  // API — a combination that is invisible from any other machine, and
+  // that "it works on my desktop" can never rule out. `VERCEL_GIT_COMMIT_
+  // SHA` is set by Vercel on every build; locally it is simply "dev".
+  env: {
+    NEXT_PUBLIC_BUILD_SHA: process.env.VERCEL_GIT_COMMIT_SHA ?? "dev",
+  },
   // Real production bug fix (2026-08-14) — `sharp` is already on Next's
   // own default-externalized list, but that only protects a *direct*
   // import of `sharp` itself. Ours is transitive, several packages deep

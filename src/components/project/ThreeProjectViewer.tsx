@@ -19,12 +19,21 @@ export type { ThreeProjectViewerHandle, ThreeProjectViewerProps } from "./viewer
  */
 export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProjectViewerProps>(
   function ThreeProjectViewer(
-    { detailModels, className, showPerfStats, onPerfStats, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, unitsConfig, siteConfig, onUnitClick, onUnitHover, onReady, onSiteStatus },
+    { detailModels, className, showPerfStats, onPerfStats, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, unitsConfig, siteConfig, onUnitClick, onUnitHover, onReady, onSiteStatus, onRendererFacts, onContextLost },
     ref
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<RenderEngine | null>(null);
     const [webglFailed, setWebglFailed] = useState(false);
+    /** A context lost AFTER a successful start — see
+     * `RenderEngine.watchForContextLoss`. Kept separate from
+     * `webglFailed` because the two need different words: one device
+     * cannot run the viewer at all, the other was running it and the GPU
+     * took the canvas away (iOS Safari does this under memory pressure).
+     * Until this existed the second case rendered a black rectangle and
+     * said nothing, which is exactly how it gets reported as "it's
+     * dark". */
+    const [contextLost, setContextLost] = useState(false);
     const readyFiredRef = useRef(false);
     // Callback props change identity every render in most callers (inline
     // arrow functions) — read through a ref inside the mount-time engine
@@ -34,6 +43,10 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
     onUnitClickRef.current = onUnitClick;
     const onUnitHoverRef = useRef(onUnitHover);
     const onSiteStatusRef = useRef(onSiteStatus);
+    const onRendererFactsRef = useRef(onRendererFacts);
+    const onContextLostRef = useRef(onContextLost);
+    onRendererFactsRef.current = onRendererFacts;
+    onContextLostRef.current = onContextLost;
     onUnitHoverRef.current = onUnitHover;
     onSiteStatusRef.current = onSiteStatus;
     // Multi-Channel Publishing PRD Phase 5 fix (2026-08-18) — read through
@@ -86,6 +99,11 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
       let cancelled = false;
       const engine = new RenderEngine({
         onWebglFail: () => setWebglFailed(true),
+        onContextLost: () => {
+          setContextLost(true);
+          onContextLostRef.current?.();
+        },
+        onRendererFacts: (facts) => onRendererFactsRef.current?.(facts),
         onPerfStats: (stats) => onPerfStats?.(stats),
         onUnitClick: (unitId) => onUnitClickRef.current?.(unitId),
         onUnitHover: (unitId) => onUnitHoverRef.current?.(unitId),
@@ -209,6 +227,18 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
         {webglFailed && (
           <div className="flex h-full w-full items-center justify-center bg-neutral-900 text-sm text-white/60">
             This device can&apos;t display the 3D viewer.
+          </div>
+        )}
+        {contextLost && !webglFailed && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-neutral-900/95 p-6 text-center text-sm text-white/70">
+            <p>The 3D view was interrupted by this device&apos;s graphics driver.</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="rounded-control border border-white/20 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/10"
+            >
+              Reload
+            </button>
           </div>
         )}
       </div>
