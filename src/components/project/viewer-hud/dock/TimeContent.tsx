@@ -37,6 +37,20 @@ const PRESET_ICON: Record<SunTimePreset["id"], typeof Sun> = {
   evening: Moon,
 };
 
+/** Half the rendered width of `.rz-range-single`'s thumb — the distance
+ * its CENTRE is inset from each end of the track, because a native range
+ * thumb's centre only travels from `thumbWidth / 2` to
+ * `trackWidth − thumbWidth / 2`, never 0 → full width. `fillPercent`
+ * below measures 0-100% of the container instead, so without this
+ * correction the fill and the thumb diverge by up to 8px at each end
+ * (~4.5% of a ~180px mobile track) — visible precisely where the user is
+ * aiming. 8 and not 10: the thumb's 2px border does not widen it, WebKit
+ * lays that pseudo-element out border-box. Measured against a real
+ * Chromium, not derived — `npm run test:time-slider` asserts both this
+ * constant and the resulting fill terminus. Keep in sync with
+ * `.rz-range-single::-webkit-slider-thumb` in `globals.css`. */
+const SLIDER_THUMB_INSET_PX = 8;
+
 /**
  * Morphing Bottom Dock PRD §8-9 "Time Dock" — desktop:
  * `03:11 ──●── 18:10   Golden Hour ▾   ×`, one row, fits the dock's shared
@@ -148,7 +162,10 @@ export const TimeContent = forwardRef<
   const sliderTrack = (
     <div className="relative flex h-5 flex-1 items-center">
       <div className="pointer-events-none absolute inset-x-0 h-1.5 overflow-hidden rounded-full bg-white/10">
-        <div className="h-full rounded-full bg-brand-400" style={{ width: `${fillPercent}%`, opacity: interactive ? 1 : 0.35 }} />
+        <div
+          className="h-full rounded-full bg-brand-400"
+          style={{ width: `calc(${fillPercent}% + ${(1 - fillPercent / 100) * SLIDER_THUMB_INSET_PX}px - ${(fillPercent / 100) * SLIDER_THUMB_INSET_PX}px)`, opacity: interactive ? 1 : 0.35 }}
+        />
       </div>
       <input
         type="range"
