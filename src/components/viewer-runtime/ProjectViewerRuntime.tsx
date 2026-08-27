@@ -1233,7 +1233,16 @@ export function ProjectViewerRuntime({
       id="main-content"
       ref={mainRef}
       data-viewer-channel={channel}
-      className="relative flex h-dvh w-full overflow-hidden bg-neutral-900"
+      // `shrink-0` matters: <body> is a flex column, and a flex item's
+      // default `flex-shrink: 1` + `min-height: auto` means ANY sibling
+      // with real height squeezes this root below the `h-dvh` it asks
+      // for — which lifts the dock off the bottom of the screen and
+      // exposes body's own background beneath it. Nothing does that
+      // today (this is body's last child, and the overlays around it in
+      // the root layout render null or fixed), but the failure is
+      // silent, device-specific and exactly the shape of the iOS report
+      // that `html:has([data-viewer-channel])` in globals.css fixes.
+      className="relative flex h-dvh w-full shrink-0 overflow-hidden bg-neutral-900"
     >
       {/* Units Search Mode PRD §3-5 — a real structural viewport column,
           not an overlay/modal: it's a flex sibling of the 3D viewport

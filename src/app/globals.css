@@ -172,6 +172,36 @@ body {
   overscroll-behavior-y: none;
 }
 
+/* Project Viewer and /embed only — the two routes whose root really is one
+   non-scrolling screen (`h-dvh` on ProjectViewerRuntime's root, which is
+   also what carries `data-viewer-channel`).
+
+   The rule above is the problem it fixes. On iOS Safari a percentage
+   height on <html> resolves against the LARGE viewport — the screen as it
+   would be with the browser toolbars retracted — while `dvh` tracks the
+   viewport as it is right now. On page load the toolbars ARE shown, so
+   `height: 100%` makes the document about a toolbar's worth taller than
+   anything visible, and the whole document becomes scrollable by that
+   much. Nobody notices on a page that scrolls anyway. On the viewer it is
+   the reported bug: reload, Safari restores a scroll offset, and the
+   viewer (only `100dvh` tall) rides up with `body`'s own #f7f7f8
+   background showing beneath the dock — which is why the dock reads as
+   "too high" and why a second reload, landing at scroll 0, looks correct.
+
+   Pinning both to the dynamic viewport makes the document exactly as tall
+   as the visible area, so there is no overflow left to scroll and no
+   offset to restore. `overflow: hidden` is belt-and-braces for the same
+   reason. Scoped by `:has()` rather than applied globally because every
+   other page on the site is a normal scrolling document and must keep
+   `height: 100%`; the attribute is server-rendered, so this matches on the
+   first paint, not after hydration. */
+html:has([data-viewer-channel]),
+body:has([data-viewer-channel]) {
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
 /* The site Header is sticky at h-16 (64px). Without this, hash-anchor
    navigation (native <a href="#id"> and Next's Link scrollIntoView) lands
    targets right at the viewport top, hidden behind the header. */
