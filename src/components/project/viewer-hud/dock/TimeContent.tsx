@@ -159,7 +159,7 @@ export const TimeContent = forwardRef<
         onChange={handleSliderInput}
         disabled={!interactive}
         aria-label={t("sunTime.title")}
-        className="rz-range-thumb disabled:cursor-not-allowed"
+        className="rz-range-single disabled:cursor-not-allowed"
       />
     </div>
   );

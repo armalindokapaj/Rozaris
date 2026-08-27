@@ -591,6 +591,96 @@ body {
   outline-offset: 2px;
 }
 
+/* Single-thumb range slider (viewer dock — Time). Visually identical to
+   .rz-range-thumb above, but the input itself stays hit-testable.
+   .rz-range-thumb's `pointer-events: none` is load-bearing for the
+   DUAL-thumb case only: two <input type="range"> are absolutely stacked
+   there, and without it the upper one swallows every event meant for the
+   lower. With a single input there is nothing underneath to protect, and
+   inheriting that workaround cost Time both of its touch gestures —
+   tap-to-seek hit the inert wrapper div, and drag only started on the
+   16px thumb pseudo-element. Do NOT "simplify" this by deleting
+   `pointer-events: none` from .rz-range-thumb instead: the dual-thumb
+   sliders (Units → Surface, /search price+area filters) break silently
+   and only under drag, so it survives a click-through QA pass.
+   Height is a 28px TOUCH BAND sitting over the 6px visual track — the
+   maximum that still clears the mobile dock's controls row 2px above it
+   (see TimeContent.tsx's own mobile row math); do not raise it toward
+   44px without re-planning DOCK_HEIGHT_MOBILE_STANDARD. */
+.rz-range-single {
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  transform: translateY(-50%);
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  /* A horizontal drag with any vertical component must never be handed to
+     the UA as a pan mid-gesture. Safe here: this input lives in a fixed,
+     non-scrolling bottom dock over a full-viewport canvas, so there is no
+     scroll gesture to preserve. */
+  touch-action: none;
+}
+.rz-range-single::-webkit-slider-runnable-track {
+  -webkit-appearance: none;
+  background: transparent;
+  height: 28px;
+}
+.rz-range-single::-moz-range-track {
+  background: transparent;
+  height: 28px;
+  border: none;
+}
+.rz-range-single::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: white;
+  border: 2px solid var(--color-brand-500);
+  box-shadow: var(--shadow-1);
+  cursor: grab;
+  /* Centres the thumb in the taller runnable track: (28 − 16) / 2. The
+     2px border does NOT add to that 16 — WebKit lays this pseudo-element
+     out border-box, so the thumb renders 16px, not 20. Measured against a
+     real Chromium rather than reasoned about: the thumb centre lands 8px
+     from each end of the track and 13.5px down the 28px band. See
+     scripts/test-time-slider-touch.ts §4, `npm run test:time-slider`. */
+  margin-top: 6px;
+}
+.rz-range-single::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: white;
+  border: 2px solid var(--color-brand-500);
+  box-shadow: var(--shadow-1);
+  cursor: grab;
+}
+.rz-range-single:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+.rz-range-single:active::-moz-range-thumb {
+  cursor: grabbing;
+}
+.rz-range-single:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
+.rz-range-single:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
+/* Restores the old swallow-nothing behaviour exactly where it IS wanted:
+   a read-only viewer (`sunTimeInteractive === false`) must not eat taps
+   that belong to the dock beneath it. */
+.rz-range-single:disabled {
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
