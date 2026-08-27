@@ -20,6 +20,7 @@
     "test:floor-rail": "tsx scripts/test-floor-rail-magnify.ts",
     "db:normalize-map-models": "tsx scripts/normalize-map-models-for-mapbox.ts",
     "test:time-slider": "tsx scripts/test-time-slider-touch.ts",
+    "test:sun-time-snap": "tsx scripts/test-sun-time-snap.ts",
     "test:viewer-viewport": "tsx scripts/test-viewer-viewport.ts"
   },
   "prisma": {

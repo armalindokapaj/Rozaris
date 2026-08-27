@@ -20,7 +20,7 @@ import {
   filterUnits,
   type UnitFilterState,
 } from "@/components/project/units-workspace/unitFilters";
-import { computeSunTimeline, geographicSunPosition, sunPositionForAnchors, sunTimelinePresets, type SunTimePreset } from "@/lib/sunPosition";
+import { computeSunTimeline, geographicSunPosition, snapSunTimeHours, snapSunTimePresets, sunPositionForAnchors, sunTimelinePresets, type SunTimePreset, type SunTimeWindow } from "@/lib/sunPosition";
 import { parseSectionFloorNumber, resolveFloorSection } from "@/lib/floorSections";
 import { buildFloorRail, type FloorRailEntry } from "@/lib/floorRail";
 import { makeFloorId } from "@/lib/units";
@@ -590,7 +590,6 @@ export function ProjectViewerRuntime({
   const [liveSunTimeHours, setLiveSunTimeHours] = useState<number | null>(null);
   const [liveSunDate, setLiveSunDate] = useState<string | null>(null);
   const [activeSunPreset, setActiveSunPreset] = useState<SunTimePreset["id"] | null>(null);
-  const effectiveSunTimeHours = liveSunTimeHours ?? viewerConfig.viewerTimeHours;
   const effectiveSunDate = liveSunDate ?? viewerConfig.simulationDate;
   // §9's own gate: an admin has to opt a project into BOTH a time-driven
   // sun ("solarControllerEnabled") AND public scrubbing of it
@@ -600,6 +599,54 @@ export function ProjectViewerRuntime({
   // today, so the common case renders the real panel read-only rather
   // than hiding it — see this session's own scoping decision.
   const sunTimeInteractive = viewerConfig.solarControllerEnabled && viewerConfig.viewerTimeControlEnabled;
+
+  // The scrub range is the admin's own Sun Path → Start Time/End Time
+  // again. It spent a while pinned to a hardcoded 06:00-21:00 (direct
+  // instruction, 2026-08-17) while those two fields still showed and
+  // still saved in the Experience Editor, so the editor was promising a
+  // window the viewer ignored — visible even on an untouched project,
+  // whose 6→20 default disagreed with the 6→21 constant. Reversed by
+  // direct instruction, 2026-08-27: the editor is the source of truth.
+  //
+  // Reduced to whole hours here, once, so that every later consumer —
+  // the slider's own `min`/`max`/`step`, the two end readouts, the live
+  // readout, the presets, and the sun the engine actually renders — is
+  // reading the same grid (direct instruction, 2026-08-27: "snap the
+  // time in hours"). Everything downstream snaps through
+  // `snapSunTimeHours`; nothing re-derives a grid of its own.
+  const sunTimeWindow = useMemo<SunTimeWindow>(() => {
+    // Start/End are two independent fields with no cross-validation in
+    // the editor or the PATCH schema, so an inverted (14→5) or collapsed
+    // (12→12) window is authorable — and a `<input type="range">` whose
+    // max is below its min renders as a dead zero-width slider. Harmless
+    // while the range was a constant; load-bearing now that it is not.
+    const lo = Math.min(viewerConfig.viewerTimeStartHours, viewerConfig.viewerTimeEndHours);
+    const hi = Math.max(viewerConfig.viewerTimeStartHours, viewerConfig.viewerTimeEndHours);
+    const startHours = Math.min(Math.max(Math.round(lo), 0), 23);
+    // The admin's Time Step is stored in minutes and is free-form (1-120);
+    // anything under an hour becomes an hour rather than being ignored,
+    // so a coarser authored step (2h, 3h) still means something.
+    const stepHours = Math.max(1, Math.round(viewerConfig.viewerTimeStepMinutes / 60));
+    // Land End on the grid rather than just rounding it: a max that is not
+    // an integral number of steps above min is simply unreachable in a
+    // native range input (the thumb stops at the last valid step while the
+    // track still runs to the end), which would put the fill and the thumb
+    // a whole step apart at the right-hand end. Rounding down keeps the
+    // slider inside the authored window; the `MIN_..._WINDOW` floor keeps
+    // it draggable when the window is narrower than one step.
+    const spanHours = Math.max(stepHours, MIN_SUN_TIME_WINDOW_HOURS, Math.floor((Math.round(hi) - startHours) / stepHours) * stepHours);
+    return { startHours, endHours: Math.min(24, startHours + spanHours), stepHours };
+  }, [viewerConfig.viewerTimeStartHours, viewerConfig.viewerTimeEndHours, viewerConfig.viewerTimeStepMinutes]);
+
+  // Snapped only where the visitor can actually scrub. A project with the
+  // time control switched off renders a fixed, admin-authored sun (Sun &
+  // Sky → "Viewer Time", authorable to the quarter-hour) and its scrub
+  // window is inert — snapping there would silently re-light published
+  // scenes whose default sits off the hour, or outside a window nobody
+  // can reach anyway, to fix a bar nobody can drag.
+  const effectiveSunTimeHours = sunTimeInteractive
+    ? snapSunTimeHours(liveSunTimeHours ?? viewerConfig.viewerTimeHours, sunTimeWindow)
+    : liveSunTimeHours ?? viewerConfig.viewerTimeHours;
 
   // §10/§21-22 — real sunrise/sunset/solar-noon + the presets derived from
   // them, computed identically whether the admin picked "geographic" (real
@@ -612,34 +659,30 @@ export function ProjectViewerRuntime({
         : (h: number) => sunPositionForAnchors(h, viewerConfig.solarAnchors).elevationDeg;
     return computeSunTimeline(elevationAt);
   }, [viewerConfig.solarPathMode, viewerConfig.geoLatitude, viewerConfig.geoLongitude, viewerConfig.solarAnchors, effectiveSunDate]);
-  const sunTimePresets = useMemo(() => sunTimelinePresets(sunTimeline), [sunTimeline]);
-  // The scrub range is the admin's own Sun Path → Start Time/End Time
-  // again. It spent a while pinned to a hardcoded 06:00-21:00 (direct
-  // instruction, 2026-08-17) while those two fields still showed and
-  // still saved in the Experience Editor, so the editor was promising a
-  // window the viewer ignored — visible even on an untouched project,
-  // whose 6→20 default disagreed with the 6→21 constant. Reversed by
-  // direct instruction, 2026-08-27: the editor is the source of truth.
-  const sunTimeBounds = useMemo(() => {
-    // Start/End are two independent fields with no cross-validation in
-    // the editor or the PATCH schema, so an inverted (14→5) or collapsed
-    // (12→12) window is authorable — and a `<input type="range">` whose
-    // max is below its min renders as a dead zero-width slider. Harmless
-    // while the range was a constant; load-bearing now that it is not.
-    const lo = Math.min(viewerConfig.viewerTimeStartHours, viewerConfig.viewerTimeEndHours);
-    const hi = Math.max(viewerConfig.viewerTimeStartHours, viewerConfig.viewerTimeEndHours);
-    return {
-      startHours: lo,
-      endHours: Math.max(hi, lo + MIN_SUN_TIME_WINDOW_HOURS),
-      stepMinutes: viewerConfig.viewerTimeStepMinutes,
-    };
-  }, [viewerConfig.viewerTimeStartHours, viewerConfig.viewerTimeEndHours, viewerConfig.viewerTimeStepMinutes]);
+  // Snapped onto the scrub window, not raw — see `snapSunTimePresets`.
+  const sunTimePresets = useMemo(() => snapSunTimePresets(sunTimelinePresets(sunTimeline), sunTimeWindow), [sunTimeline, sunTimeWindow]);
+  // What the dock's Time module takes: the same window, in the shape its
+  // props already speak (`stepMinutes`, straight onto the range input's
+  // own `step`).
+  const sunTimeBounds = useMemo(
+    () => ({ startHours: sunTimeWindow.startHours, endHours: sunTimeWindow.endHours, stepMinutes: sunTimeWindow.stepHours * 60 }),
+    [sunTimeWindow]
+  );
 
-  const handleSunTimeChange = useCallback((hours: number) => {
-    setLiveSunTimeHours(hours);
-    setActiveSunPreset(null);
-    viewerRef.current?.resetIdleTimer(); // Idle Drone Camera PRD §47 — scrubbing Time counts as interaction
-  }, []);
+  // Snapped on the way in, so the hour grid holds for every writer at
+  // once — the slider, keyboard arrows on it, and the per-frame values
+  // `TimeContent`'s preset tween drives through here. That tween then
+  // reads as a stepped hour-by-hour travel to its target rather than a
+  // continuous slide, which is the point: one time-state, all of it on
+  // the hour.
+  const handleSunTimeChange = useCallback(
+    (hours: number) => {
+      setLiveSunTimeHours(snapSunTimeHours(hours, sunTimeWindow));
+      setActiveSunPreset(null);
+      viewerRef.current?.resetIdleTimer(); // Idle Drone Camera PRD §47 — scrubbing Time counts as interaction
+    },
+    [sunTimeWindow]
+  );
   // `handleSunDateChange` (the live-date-override write path, PRD §29) was
   // removed as dead code alongside SunTimeWorkspace's own date picker
   // (direct design feedback, 2026-08-17: "Date to be removed") — no UI
@@ -648,11 +691,16 @@ export function ProjectViewerRuntime({
   // them) — only the setter's own trigger is gone, so a future date
   // control can call `setLiveSunDate` directly without rebuilding
   // anything here.
-  const handleSunPresetSelect = useCallback((preset: SunTimePreset) => {
-    setLiveSunTimeHours(preset.hour);
-    setActiveSunPreset(preset.id);
-    viewerRef.current?.resetIdleTimer();
-  }, []);
+  const handleSunPresetSelect = useCallback(
+    (preset: SunTimePreset) => {
+      // `sunTimePresets` hands out already-snapped hours; snapping again
+      // costs nothing and means this stays correct for any other caller.
+      setLiveSunTimeHours(snapSunTimeHours(preset.hour, sunTimeWindow));
+      setActiveSunPreset(preset.id);
+      viewerRef.current?.resetIdleTimer();
+    },
+    [sunTimeWindow]
+  );
   const handleSunTimeReset = useCallback(() => {
     setLiveSunTimeHours(null);
     setLiveSunDate(null);

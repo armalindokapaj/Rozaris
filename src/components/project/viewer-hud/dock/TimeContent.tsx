@@ -185,7 +185,12 @@ export const TimeContent = forwardRef<
   const presetTriggerLabel = activePreset ? t(PRESET_LABEL_KEY[activePreset.id]) : t("sunTime.presets");
 
   const presetPopoverList = (
-    <div className="flex min-w-[152px] flex-col gap-0.5" role="menu" aria-label={t("sunTime.presets")}>
+    // Wider than the 152px it was before this row grew a time column, and
+    // `whitespace-nowrap` on the label besides: "Ora e Artë" (Golden Hour)
+    // wrapped to two lines at 152px, and Albanian is the default locale —
+    // see the "viewer locale width deltas" note. 196px clears the widest
+    // label plus the time plus the active row's check mark.
+    <div className="flex min-w-[196px] flex-col gap-0.5" role="menu" aria-label={t("sunTime.presets")}>
       {presets.map((preset) => {
         const isActive = activePresetId === preset.id;
         const PresetIcon = PRESET_ICON[preset.id];
@@ -203,7 +208,14 @@ export const TimeContent = forwardRef<
             )}
           >
             <PresetIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span className="flex-1">{t(PRESET_LABEL_KEY[preset.id])}</span>
+            <span className="flex-1 whitespace-nowrap">{t(PRESET_LABEL_KEY[preset.id])}</span>
+            {/* The hour it actually lands on. Presets are derived from the
+                day's real sun (sunrise + 2h, sunset − 45min…) and then
+                snapped into this project's own scrub window, so "Morning"
+                is not a fixed clock time and is worth showing — it also
+                makes it obvious that picking one leaves the time on the
+                hour, like everything else on this bar. */}
+            <span className={cn("shrink-0 tabular-nums", isActive ? "text-brand-400/70" : "text-white/40")}>{formatHM(preset.hour)}</span>
             {isActive && <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
           </button>
         );

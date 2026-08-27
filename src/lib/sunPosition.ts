@@ -287,3 +287,59 @@ export function sunTimelinePresets(timeline: SunTimeline): SunTimePreset[] {
   }
   return presets;
 }
+
+/** The viewer's own scrub window, already reduced to whole hours — see
+ * `ProjectViewerRuntime`'s `sunTimeWindow` for where the admin's
+ * Start/End/Step land on this shape. `stepHours` is the grid the two
+ * helpers below snap onto, and the grid is anchored at `startHours`
+ * (never at midnight) because that is what a native `<input type="range">`
+ * does with its own `min`/`step` — anchoring anywhere else would let the
+ * two disagree by a fraction of a step. */
+export interface SunTimeWindow {
+  startHours: number;
+  endHours: number;
+  stepHours: number;
+}
+
+/** Clamp `hours` into the window, then snap it to the window's hour grid.
+ * The viewer's time bar reads whole hours (direct instruction,
+ * 2026-08-27), and clamping is what keeps the readout, the slider thumb
+ * and the sun itself telling the same story: the readout is free-form
+ * text, but the thumb can only sit between `min` and `max`, so an
+ * out-of-window time used to park the thumb at one end while the label
+ * said something else. */
+export function snapSunTimeHours(hours: number, window: SunTimeWindow): number {
+  const step = Math.max(1, Math.round(window.stepHours));
+  const clamped = Math.min(Math.max(hours, window.startHours), window.endHours);
+  const snapped = window.startHours + Math.round((clamped - window.startHours) / step) * step;
+  return Math.min(Math.max(snapped, window.startHours), window.endHours);
+}
+
+/** `sunTimelinePresets` above answers "when is morning?" astronomically —
+ * a real, fractional, unbounded hour (Tirana on 21 June: morning 05:11,
+ * noon 10:40, golden hour 17:25). This answers the different question the
+ * viewer's Time dock actually asks: "which stop on THIS slider is
+ * morning?" Two things happen here:
+ *
+ *  1. Each preset is clamped into the admin's scrub window and snapped to
+ *     its hour grid. Before this, picking Morning on a project whose
+ *     window starts at 06:00 drove the sun to 05:11 — outside the window
+ *     the admin authored, with the thumb stuck at the left end and the
+ *     readout disagreeing with it.
+ *  2. Presets that collapse onto the same stop are de-duplicated, keeping
+ *     whichever one's true time is nearest that stop. A 05:00-14:00
+ *     window would otherwise offer both "Golden Hour" and "Evening" at
+ *     14:00 — two labels, one identical sun.
+ *
+ * Order is preserved (morning → noon → golden hour → evening); `noon`
+ * always survives, so the result is never empty. */
+export function snapSunTimePresets(presets: SunTimePreset[], window: SunTimeWindow): SunTimePreset[] {
+  const byStop = new Map<number, { preset: SunTimePreset; drift: number; order: number }>();
+  presets.forEach((preset, order) => {
+    const hour = snapSunTimeHours(preset.hour, window);
+    const drift = Math.abs(preset.hour - hour);
+    const held = byStop.get(hour);
+    if (!held || drift < held.drift) byStop.set(hour, { preset: { id: preset.id, hour }, drift, order });
+  });
+  return [...byStop.values()].sort((a, b) => a.order - b.order).map((entry) => entry.preset);
+}

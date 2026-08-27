@@ -98,10 +98,20 @@ export function SunSkySubtab({ configEditor }: { configEditor: UseProjectConfigE
             <SliderRow label="Viewer Time" value={draft.viewerTimeHours} min={0} max={24} step={0.25} suffix="h" onChange={(v) => update({ viewerTimeHours: v })} />
             {/* Bounded against each other, not 0-24 independently: these two
                 now drive the public viewer's scrub range directly, and an
-                inverted window would leave visitors a dead slider. */}
-            <SliderRow label="Start Time" value={draft.viewerTimeStartHours} min={0} max={draft.viewerTimeEndHours} step={0.5} suffix="h" onChange={(v) => update({ viewerTimeStartHours: v })} />
-            <SliderRow label="End Time" value={draft.viewerTimeEndHours} min={draft.viewerTimeStartHours} max={24} step={0.5} suffix="h" onChange={(v) => update({ viewerTimeEndHours: v })} />
-            <SliderRow label="Time Step" value={draft.viewerTimeStepMinutes} min={1} max={120} step={1} suffix="min" onChange={(v) => update({ viewerTimeStepMinutes: v })} />
+                inverted window would leave visitors a dead slider.
+
+                Whole hours, and displayed rounded even when an older row
+                holds a half hour: the viewer's time bar snaps to the hour
+                (2026-08-27), so a 6.5 authored here would be shown to
+                visitors as 07:00 anyway — rounding in the editor too keeps
+                these fields honest about what actually ships rather than
+                promising a granularity the viewer discards. Same reason
+                Time Step is in hours here while the column behind it stays
+                minutes: the viewer reads it as `round(minutes / 60)`, min
+                one hour. */}
+            <SliderRow label="Start Time" value={Math.round(draft.viewerTimeStartHours)} min={0} max={Math.round(draft.viewerTimeEndHours)} step={1} suffix="h" onChange={(v) => update({ viewerTimeStartHours: v })} />
+            <SliderRow label="End Time" value={Math.round(draft.viewerTimeEndHours)} min={Math.round(draft.viewerTimeStartHours)} max={24} step={1} suffix="h" onChange={(v) => update({ viewerTimeEndHours: v })} />
+            <SliderRow label="Time Step" value={Math.max(1, Math.round(draft.viewerTimeStepMinutes / 60))} min={1} max={6} step={1} suffix="h" onChange={(v) => update({ viewerTimeStepMinutes: v * 60 })} />
             <SliderRow label="North Offset" value={draft.northOffsetDeg} min={-180} max={180} step={1} suffix="°" onChange={(v) => update({ northOffsetDeg: v })} />
           </GroupCard>
 
