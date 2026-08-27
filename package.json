@@ -18,7 +18,8 @@
     "test:sections": "tsx scripts/test-sections.ts",
     "test:unit-facets": "tsx scripts/test-unit-facets.ts",
     "test:floor-rail": "tsx scripts/test-floor-rail-magnify.ts",
-    "db:normalize-map-models": "tsx scripts/normalize-map-models-for-mapbox.ts"
+    "db:normalize-map-models": "tsx scripts/normalize-map-models-for-mapbox.ts",
+    "test:time-slider": "tsx scripts/test-time-slider-touch.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
