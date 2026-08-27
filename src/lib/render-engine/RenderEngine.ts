@@ -147,6 +147,13 @@ function resolveFogColor(config: EnvironmentConfig): string {
   return config.fogMatchesSky ? FOG_SKY_HORIZON_COLOR : config.fogColor;
 }
 
+/** Read-only shared vectors, so the Sun & Time write path (applySunState)
+ * allocates nothing per tick — it runs once per input event during a scrub
+ * and once per animation frame through a preset tween. Never mutated; both
+ * uses copy FROM them. */
+const WORLD_ORIGIN = new THREE.Vector3(0, 0, 0);
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
 /** Rendering → Color's tone-mapping curve picker (PRD §31) — every real
  * THREE.*ToneMapping constant, keyed by Project3DConfig.toneMapping's own
  * string union. Plain renderer properties (this + toneMappingExposure),
@@ -823,6 +830,10 @@ export class RenderEngine {
    * setEnvironmentConfig() call, never independently. */
   private sunDirection = new THREE.Vector3(0, 1, 0);
   private sunDistance = 200;
+  /** Gates the Sun & Time scrub fast path in setEnvironmentConfig — it may
+   * only ever run AFTER one real full pass has applied every non-sun
+   * uniform and the meshes exist to carry them. */
+  private hasAppliedEnvironmentConfigOnce = false;
   private environmentRebuildTimer: ReturnType<typeof setTimeout> | null = null;
   /** environmentRefreshEnabled's "off" state (PRD §9) means the real PMREM
    * capture never re-runs after this first successful one — tracked so
@@ -2740,21 +2751,65 @@ export class RenderEngine {
     this.siteResult = null;
   }
 
+  /** Every Sun & Time tick arrives here: the viewer dock's Time slider and
+   * its preset tween both drive React state, which rebuilds
+   * `environmentConfig` and lands on this method once per input event /
+   * animation frame. A scrub only ever changes `viewerTimeHours` (and, if a
+   * date override is ever reintroduced, `simulationDate`), so a tick that
+   * changes nothing else skips straight to the sun writes instead of
+   * re-applying every sky, backdrop, water, cloud and ground uniform and
+   * re-testing the ground's geometry — work whose result is identical to
+   * what is already on the GPU. Every other caller, and the first call of
+   * all, still takes the full path unchanged; the diff decides, so nothing
+   * has to remember to opt in. */
   setEnvironmentConfig(config: EnvironmentConfig) {
+    if (this.isSunTimeOnlyChange(config)) {
+      this.environmentConfig = config;
+      this.applySunState(config);
+      this.scheduleEnvironmentRebuild(config, false);
+      return;
+    }
     this.applyEnvironmentConfig(config, false);
   }
 
-  private applyEnvironmentConfig(config: EnvironmentConfig, immediateRebuild: boolean) {
-    this.environmentConfig = config;
-    const { sun, ambient, scene, skyMesh, waterMesh, groundMesh, cloudSystem } = this;
-    if (!sun || !ambient || !scene) return;
+  /** True only when `next` differs from the config already applied in
+   * `viewerTimeHours`/`simulationDate` and in NOTHING else. Diffs the whole
+   * key set rather than a hand-listed subset, so a field added to
+   * EnvironmentConfig later cannot silently start being skipped — an
+   * unrecognised change falls back to the full path, which is the safe
+   * direction. Object-valued fields (`solarAnchors`) compare by identity:
+   * they come from a stable `viewerConfig` memo, so a scrub leaves them
+   * identical, and a false negative only costs one full pass. */
+  private isSunTimeOnlyChange(next: EnvironmentConfig): boolean {
+    if (!this.hasAppliedEnvironmentConfigOnce) return false;
+    const prev = this.environmentConfig;
+    if (prev === next) return false;
+    const keys = Object.keys(next) as (keyof EnvironmentConfig)[];
+    if (keys.length !== Object.keys(prev).length) return false;
+    let sawSunTimeChange = false;
+    for (const key of keys) {
+      if (Object.is(prev[key], next[key])) continue;
+      if (key !== "viewerTimeHours" && key !== "simulationDate") return false;
+      sawSunTimeChange = true;
+    }
+    return sawSunTimeChange;
+  }
+
+  /** PRD §10's ONE Global Sun Vector and everything that reads it directly.
+   * Extracted so the full path and the scrub fast path above cannot drift:
+   * a new sun-driven uniform added here is picked up by both. Anything that
+   * merely *reads* `this.sunDirection` every frame (FogSystem, CloudSystem
+   * — see updatePerFrameEnvironment) needs nothing here. */
+  private applySunState(config: EnvironmentConfig) {
+    const { sun, ambient, skyMesh, waterMesh } = this;
+    if (!sun || !ambient) return;
 
     const sunPos = this.resolveGlobalSunVector(config);
     const dir = sunDirectionVector(sunPos);
     this.sunDirection.set(dir.x, dir.y, dir.z);
 
     const distance = this.sunDistance;
-    const center = this.contentBounds?.center ?? new THREE.Vector3();
+    const center = this.contentBounds?.center ?? WORLD_ORIGIN;
     sun.position.set(center.x + dir.x * distance, center.y + Math.max(dir.y, 0.05) * distance, center.z + dir.z * distance);
     sun.target.position.copy(center);
 
@@ -2771,6 +2826,23 @@ export class RenderEngine {
       : config.manualSunIntensity;
     ambient.intensity = isNight ? 0.08 : 0.15;
 
+    if (skyMesh) skyMesh.sunPosition.value.copy(this.sunDirection);
+    if (waterMesh) {
+      const reflectSun = config.waterSunReflectionEnabled;
+      waterMesh.sunDirection.value.copy(reflectSun ? this.sunDirection : WORLD_UP);
+      waterMesh.sunColor.value.setHex(reflectSun ? sunColorForElevation(sunPos.elevationDeg) : 0x000000);
+    }
+    if (this.groundSunDirectionUniform) this.groundSunDirectionUniform.value.copy(this.sunDirection);
+  }
+
+  private applyEnvironmentConfig(config: EnvironmentConfig, immediateRebuild: boolean) {
+    this.environmentConfig = config;
+    const { scene, skyMesh, waterMesh, groundMesh, cloudSystem } = this;
+    if (!this.sun || !this.ambient || !scene) return;
+
+    this.applySunState(config);
+    this.hasAppliedEnvironmentConfigOnce = true;
+
     const isMobileTier = this.isMobileQualityTier();
     const useRealCloudLayer = config.cloudsEnabled && !isMobileTier;
 
@@ -2779,7 +2851,6 @@ export class RenderEngine {
       skyMesh.rayleigh.value = config.skyRayleigh;
       skyMesh.mieCoefficient.value = config.skyMieCoefficient;
       skyMesh.mieDirectionalG.value = config.skyMieDirectionalG;
-      skyMesh.sunPosition.value.copy(this.sunDirection);
       skyMesh.showSunDisc.value = config.sunDiscEnabled ? 1 : 0;
       skyMesh.visible = config.skyEnabled;
       // The real raymarched Clouds layer is the primary system whenever
@@ -2834,9 +2905,6 @@ export class RenderEngine {
     if (waterMesh) {
       waterMesh.visible = config.waterEnabled;
       waterMesh.position.y = config.waterHeight;
-      const reflectSun = config.waterSunReflectionEnabled;
-      waterMesh.sunDirection.value.copy(reflectSun ? this.sunDirection : new THREE.Vector3(0, 1, 0));
-      waterMesh.sunColor.value.setHex(reflectSun ? sunColorForElevation(sunPos.elevationDeg) : 0x000000);
       waterMesh.waterColor.value.set(config.waterColor);
       waterMesh.size.value = config.waterSize;
       const wavesActive = config.waterWavesEnabled && config.waterNormalMapEnabled;
@@ -2875,7 +2943,6 @@ export class RenderEngine {
     if (this.groundCloudScaleUniform) this.groundCloudScaleUniform.value = Math.max(0.0001, config.cloudScale);
     if (this.groundCloudCoverageUniform) this.groundCloudCoverageUniform.value = config.cloudCoverage;
     if (this.groundCloudWindUniform) this.groundCloudWindUniform.value.copy(this.cloudSystem?.getWindOffset() ?? new THREE.Vector2());
-    if (this.groundSunDirectionUniform) this.groundSunDirectionUniform.value.copy(this.sunDirection);
 
     this.scheduleEnvironmentRebuild(config, immediateRebuild);
   }
