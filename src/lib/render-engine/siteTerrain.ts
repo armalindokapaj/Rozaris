@@ -276,6 +276,20 @@ async function buildImageryTexture(
   const outCtx = out.getContext("2d");
   if (!outCtx) return null;
   outCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, out.width, out.height);
+  // Release the stitch canvas the moment its pixels have been copied out.
+  //
+  // This matters on iOS specifically. Canvas backing store there is a
+  // scarce, PAGE-WIDE budget rather than ordinary garbage, and it is not
+  // reclaimed promptly just because a canvas fell out of scope — WebKit
+  // frees it when the element is collected, which can be long after the
+  // next large allocation has already been refused. This module allocates
+  // the biggest canvases in the app (up to 4096 px square before the crop)
+  // and, until this, held the full-size stitch AND its crop alive at once,
+  // twice over (imagery + DEM), on top of a WebGPU scene. Zeroing the
+  // dimensions drops the backing store immediately and is the documented
+  // way to do it. Safe by construction: neither canvas is read again below.
+  canvas.width = 0;
+  canvas.height = 0;
 
   const texture = new THREE.CanvasTexture(out);
   // Aerial imagery is authored in sRGB; leaving it in linear space is the
@@ -346,6 +360,10 @@ async function buildHeightGrid(
   const cropW = Math.max(2, Math.round((bottomRight.x - topLeft.x) * tilePx));
   const cropH = Math.max(2, Math.round((bottomRight.y - topLeft.y) * tilePx));
   const pixels = ctx.getImageData(cropX, cropY, cropW, cropH).data;
+  // Same reasoning as the imagery stitch above — the heights have been
+  // copied into `pixels`, so the canvas is dead weight from here on.
+  canvas.width = 0;
+  canvas.height = 0;
 
   const data = new Float32Array(cropW * cropH);
   for (let i = 0; i < cropW * cropH; i++) {

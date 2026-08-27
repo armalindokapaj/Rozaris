@@ -134,6 +134,10 @@ export function ProjectViewerRuntime({
     [effectOverridesParam]
   );
   const [rendererFacts, setRendererFacts] = useState<RendererFacts | null>(null);
+  // Site-terrain outcome, for `?diag=1` only. The public viewer had no
+  // handler for this at all, so a site that failed to build was invisible
+  // here — see the `reason` note on RenderEngine's own onSiteStatus type.
+  const [siteStatus, setSiteStatus] = useState<string>("—");
   const [diagStats, setDiagStats] = useState<Parameters<NonNullable<Parameters<typeof ThreeProjectViewer>[0]["onPerfStats"]>>[0]>(null);
   const [unitPanelOpen, setUnitPanelOpen] = useState(false);
   // Units Blocks & POI Layer PRD §20 — "one selectedUnitId state, not two
@@ -1484,6 +1488,15 @@ export function ProjectViewerRuntime({
               onUnitClick={handleUnitClickIn3D}
               onReady={handleReady}
               onRendererFacts={setRendererFacts}
+              onSiteStatus={(status) =>
+                setSiteStatus(
+                  status.state === "ready"
+                    ? `ready (${Math.round(status.centreElevationM)}m)`
+                    : status.state === "failed"
+                      ? `failed — ${status.reason ?? "unknown"}`
+                      : "loading…"
+                )
+              }
               // `showPerfStats` is the real gate — the engine samples
               // nothing while it is false, so no visitor pays for this.
               // `onPerfStats` is passed unconditionally on purpose:
@@ -1500,7 +1513,7 @@ export function ProjectViewerRuntime({
               onPerfStats={setDiagStats}
               className="relative h-full w-full"
             />
-            {diagOpen && <ViewerDiagnostics facts={rendererFacts} stats={diagStats} />}
+            {diagOpen && <ViewerDiagnostics facts={rendererFacts} stats={diagStats} site={siteStatus} />}
           </div>
         )}
         {(

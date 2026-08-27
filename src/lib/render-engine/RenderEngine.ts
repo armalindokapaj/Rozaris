@@ -494,7 +494,15 @@ export interface RenderEngineCallbacks {
   onSiteStatus?: (
     status:
       | { state: "loading" }
-      | { state: "failed" }
+      // `reason` carries whatever actually went wrong. It exists because
+      // this failure is otherwise completely silent: the site build is
+      // wrapped in a bare `catch` and a scene that simply has no ground in
+      // it looks, on a phone, exactly like a lighting bug — two fewer draw
+      // calls and a black horizon, with nothing in any console to say the
+      // terrain was ever attempted. Optional: a `null` result is a real
+      // outcome too (every tile 404'd, or imagery is off), and that has no
+      // exception to report.
+      | { state: "failed"; reason?: string }
       | { state: "ready"; centreElevationM: number; reliefM: { min: number; max: number } }
   ) => void;
   onPerfStats: (
@@ -2832,6 +2840,7 @@ export class RenderEngine {
     this.callbacks.onSiteStatus?.({ state: "loading" });
 
     let result: SiteTerrainResult | null = null;
+    let siteFailureReason: string | undefined;
     try {
       result = await buildSiteTerrain({
         latitude: config.latitude as number,
@@ -2842,8 +2851,12 @@ export class RenderEngine {
         accessToken,
         signal: controller.signal,
       });
-    } catch {
+    } catch (error) {
+      // Deliberately still swallowed as far as the SCENE is concerned — a
+      // site that cannot be built must never take the viewer down with it
+      // — but no longer swallowed as far as the REPORT is concerned.
       result = null;
+      siteFailureReason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     }
 
     // A newer request (or an unmount) superseded this one while tiles were
@@ -2854,7 +2867,7 @@ export class RenderEngine {
       return;
     }
     if (!result) {
-      this.callbacks.onSiteStatus?.({ state: "failed" });
+      this.callbacks.onSiteStatus?.({ state: "failed", reason: siteFailureReason ?? "no tiles returned" });
       return;
     }
 

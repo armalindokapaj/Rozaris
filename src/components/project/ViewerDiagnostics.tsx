@@ -33,8 +33,14 @@ import { BISECTABLE_EFFECTS, formatEffectOverrides, parseEffectOverrides, type E
 export function ViewerDiagnostics({
   facts,
   stats,
+  site,
 }: {
   facts: RendererFacts | null;
+  /** Site-terrain build outcome. A missing site is worth its own row: it
+   * costs two draw calls and a handful of textures, and what is left is a
+   * black horizon that reads as a lighting failure rather than as absent
+   * ground. */
+  site: string;
   stats: { fps: number; frameTimeMs: number; drawCalls: number; triangles: number; textures: number; dpr: number } | null;
 }) {
   const [serverSha, setServerSha] = useState<string | null>(null);
@@ -142,6 +148,7 @@ export function ViewerDiagnostics({
       <Row label="fps" value={stats ? `${stats.fps} (${stats.frameTimeMs}ms)` : "—"} bad={!!stats && stats.fps > 0 && stats.fps < 20} />
       <Row label="draws / tris" value={stats ? `${stats.drawCalls} / ${stats.triangles.toLocaleString()}` : "—"} />
       <Row label="textures" value={stats ? String(stats.textures) : "—"} />
+      <Row label="site terrain" value={site} bad={site.startsWith("failed")} />
       {facts && facts.gpuErrors.length > 0 && (
         <div className="mt-1.5 border-t border-white/10 pt-1.5">
           <div className="text-white/45">gpu errors</div>
