@@ -24,7 +24,8 @@
     "test:webgl2-fallback": "tsx scripts/test-webgl2-fallback.ts",
     "test:old-browser": "tsx scripts/test-old-browser.ts",
     "test:viewer-viewport": "tsx scripts/test-viewer-viewport.ts",
-    "test:effect-overrides": "tsx scripts/test-effect-overrides.ts"
+    "test:effect-overrides": "tsx scripts/test-effect-overrides.ts",
+    "test:outline-clip": "tsx scripts/test-unit-outline-clip.ts"
   },
   "browserslist": [
     "chrome >= 100",

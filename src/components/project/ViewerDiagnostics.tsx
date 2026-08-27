@@ -41,7 +41,15 @@ export function ViewerDiagnostics({
    * black horizon that reads as a lighting failure rather than as absent
    * ground. */
   site: string;
-  stats: { fps: number; frameTimeMs: number; drawCalls: number; triangles: number; textures: number; dpr: number } | null;
+  stats: {
+    fps: number;
+    frameTimeMs: number;
+    drawCalls: number;
+    triangles: number;
+    textures: number;
+    dpr: number;
+    outlineClip: string;
+  } | null;
 }) {
   const [serverSha, setServerSha] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
@@ -149,6 +157,12 @@ export function ViewerDiagnostics({
       <Row label="draws / tris" value={stats ? `${stats.drawCalls} / ${stats.triangles.toLocaleString()}` : "—"} />
       <Row label="textures" value={stats ? String(stats.textures) : "—"} />
       <Row label="site terrain" value={site} bad={site.startsWith("failed")} />
+      {/* `n/m segs cut` while a section is cutting a selected unit, and
+        * `— k outside` if any of those segments is still poking through the
+        * cut. That second half is the whole point: a device where the CPU
+        * clip silently did not run is pixel-for-pixel identical to one
+        * running a build that never had the fix. See clipUnitOutlinesState. */}
+      <Row label="outline clip" value={stats?.outlineClip ?? "—"} bad={(stats?.outlineClip ?? "").includes("outside")} />
       {facts && facts.gpuErrors.length > 0 && (
         <div className="mt-1.5 border-t border-white/10 pt-1.5">
           <div className="text-white/45">gpu errors</div>

@@ -36,6 +36,7 @@ import {
   applyUnitSelectionScale,
   buildUnitRegistry,
   clearUnitSelectionScale,
+  clipUnitOutlinesState,
   clipUnitOutlinesToSection,
   disposeUnitBoxAppearanceCaches,
   findUnitRootObjects,
@@ -513,6 +514,11 @@ export interface RenderEngineCallbacks {
       triangles: number;
       textures: number;
       dpr: number;
+      /** What the CPU-side selection-outline clip is currently doing — see
+       * clipUnitOutlinesState. Reported alongside the frame stats rather
+       * than with the renderer facts because, unlike those, it changes with
+       * every selection and every cut. */
+      outlineClip: string;
     } | null
   ) => void;
   /** Units Blocks & POI Layer PRD §19-20 — the "3D → List" half of the
@@ -1355,6 +1361,26 @@ export class RenderEngine {
       else center.set(0, 0, 0);
       blurAnchor.buildingRadius.value = this.boundingRadius;
     }
+    // Sections + fat lines, cut on the CPU — every frame, deliberately.
+    //
+    // three.js cannot clip a `LineSegments2` at all (the whole story is in
+    // clipSegmentsToPlanes' doc comment), so the selected unit's outline is
+    // cut here instead. This used to be two hand-placed calls — one in
+    // activateSection(), one at the end of refreshUnitRegistryAndAppearance()
+    // — which is correct only for as long as those two are the ONLY moments
+    // the answer can change. They are not: the building's own transform can
+    // land after either of them, a slot can finish loading late, and a
+    // re-mount re-runs the two in whichever order React happens to schedule
+    // them. Every one of those leaves the outline holding its un-cut edge
+    // set while the block it traces is sliced correctly — the exact symptom
+    // this fix exists to remove, reported again on 2026-08-27 from a device
+    // that could not be reproduced here.
+    //
+    // A frame is the only moment that is guaranteed to come after all of
+    // them, so the invariant lives here now and there is no ordering left to
+    // get wrong. It costs a Map size check on every frame that has nothing
+    // selected, and a 16-float matrix compare on the frames that do.
+    clipUnitOutlinesToSection(this.unitOutlineByMesh, this.activeSectionPlanes);
     if (this.scenePostPipeline) this.scenePostPipeline.pipeline.render();
     else renderer.render(scene, camera);
     this.cameraHelper?.update();
@@ -1397,6 +1423,7 @@ export class RenderEngine {
       triangles: renderer.info.render.triangles,
       textures: renderer.info.memory.textures,
       dpr: renderer.getPixelRatio(),
+      outlineClip: clipUnitOutlinesState(this.unitOutlineByMesh, this.activeSectionPlanes),
     });
   }
 
@@ -1881,10 +1908,8 @@ export class RenderEngine {
         );
       }
     }
-    // After the pop, never before it — a freshly built outline has to be
-    // cut against where its unit actually ends up. See
-    // clipUnitOutlinesToSection.
-    clipUnitOutlinesToSection(this.unitOutlineByMesh, this.activeSectionPlanes);
+    // The selection outline is cut to the active section by renderFrame(),
+    // not here — see that call site for why it has to be the frame loop.
     this.applyUnitVisibility();
   }
 
@@ -2501,9 +2526,8 @@ export class RenderEngine {
       this.clippingGroup.clippingPlanes = this.activeSectionPlanes ?? NO_ACTIVE_SECTION_PLANES;
     }
     this.rebuildSectionCap(section, options?.showIndicator !== false);
-    // Fat lines can't be clipped by the GPU at all — the selected unit's
-    // outline is cut here instead. See clipUnitOutlinesToSection.
-    clipUnitOutlinesToSection(this.unitOutlineByMesh, this.activeSectionPlanes);
+    // The selected unit's outline is a fat line, which the GPU cannot clip
+    // at all; renderFrame() cuts it on the CPU on the next frame.
   }
 
   getActiveSectionId(): string | null {

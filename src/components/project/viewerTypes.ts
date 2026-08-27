@@ -172,6 +172,9 @@ export interface ThreeProjectViewerProps {
       triangles: number;
       textures: number;
       dpr: number;
+      /** What the CPU-side selection-outline clip is doing right now —
+       * `?diag=1` prints it. See clipUnitOutlinesState. */
+      outlineClip: string;
     } | null
   ) => void;
   /** Front Page PRD §12 (First Load Sequence, Stage 2) — fires once, the

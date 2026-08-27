@@ -458,6 +458,64 @@ export function applyUnitBoxAppearance(
   return raycastTargets;
 }
 
+interface ClipState {
+  section: string;
+  matrix: number[];
+}
+
+function matrixMatches(elements: number[], matrix: THREE.Matrix4): boolean {
+  const live = matrix.elements;
+  for (let i = 0; i < 16; i++) if (elements[i] !== live[i]) return false;
+  return true;
+}
+
+/** One line describing what the outline clip is currently doing, for the
+ * `?diag=1` panel.
+ *
+ * This is the one piece of the Sections/fat-line fix that cannot be checked
+ * from another machine: the cut runs on the CPU, so a device where it
+ * silently did not run looks — pixel for pixel — like a device running a
+ * build that never had the fix at all. Two reports of "the section doesn't
+ * cut the selected unit" have now come from devices that could not be
+ * reproduced here, and both times the only way to tell those apart was to
+ * get the numbers off the device.
+ *
+ * So this does not just count segments, it CHECKS them: every endpoint the
+ * outline is currently drawing is re-tested against the live planes, and
+ * anything still outside the volume is reported. A count alone would not
+ * do — `38/38 segs cut` is perfectly correct for a unit that sits entirely
+ * inside the cut volume, and reading that as a failure would send the next
+ * session chasing a bug that isn't there. */
+export function clipUnitOutlinesState(
+  outlineByMesh: Map<THREE.Mesh, LineSegments2>,
+  planes: THREE.Plane[] | null
+): string {
+  if (outlineByMesh.size === 0) return planes ? "cut, no selection" : "no selection";
+  let base = 0;
+  let live = 0;
+  let outside = 0;
+  const worldPoint = new THREE.Vector3();
+  for (const [mesh, outline] of outlineByMesh) {
+    base += ((outline.userData.basePositions as number[] | undefined)?.length ?? 0) / 6;
+    const attribute = outline.geometry.attributes.instanceStart as THREE.InterleavedBufferAttribute | undefined;
+    if (!attribute) continue;
+    live += attribute.count;
+    if (!planes || !outline.visible) continue;
+    const points = attribute.data.array;
+    mesh.updateWorldMatrix(true, false);
+    for (let i = 0; i + 2 < points.length; i += 3) {
+      worldPoint.set(points[i], points[i + 1], points[i + 2]).applyMatrix4(mesh.matrixWorld);
+      // The same epsilon slack clipSegmentsToPlanes' own parallel-segment
+      // test uses, widened for the float32 round trip through the buffer:
+      // an endpoint the clipper placed exactly ON a plane must not read
+      // back as a violation.
+      if (planes.some((plane) => plane.distanceToPoint(worldPoint) < -1e-3)) outside++;
+    }
+  }
+  if (!planes) return `${live} segs, no cut`;
+  return `${live}/${base} segs cut${outside > 0 ? ` — ${outside} outside` : ""}`;
+}
+
 /** Sections + fat lines: re-derives every live selection outline from its
  * full edge set, clipped on the CPU to the active section's volume.
  *
@@ -474,26 +532,37 @@ export function applyUnitBoxAppearance(
  * nothing should be clipped at all; `NO_ACTIVE_SECTION_PLANES` also works
  * and is a no-op by construction, but null skips the work entirely.
  *
- * Cheap enough for a slider drag: only the selected unit has outlines at
- * all, each a box's worth of edges, and a signature guard skips frames
- * where the section hasn't actually moved. */
+ * Called from RenderEngine.renderFrame(), every frame, ON PURPOSE — see
+ * that call site. Cheap enough for it: the map is empty unless something
+ * is selected, and past the guard below the work is one box's worth of
+ * edges. `clipUnitOutlinesState` reports what it last did, which is what
+ * the `?diag=1` panel prints. */
 export function clipUnitOutlinesToSection(
   outlineByMesh: Map<THREE.Mesh, LineSegments2>,
   planes: THREE.Plane[] | null
 ) {
+  if (outlineByMesh.size === 0) return;
   const sectionSignature = planes ? planesSignature(planes) : "none";
   const worldPoint = new THREE.Vector3();
   for (const [mesh, outline] of outlineByMesh) {
     const base = outline.userData.basePositions as number[] | undefined;
     if (!base) continue;
-    // The unit's own world transform is part of the signature, not just the
+    // The unit's own world transform is part of the guard, not just the
     // section's: a Building-transform drag or the selection "pop" moves the
-    // outline through a stationary cut plane, and a section-only signature
+    // outline through a stationary cut plane, and a section-only check
     // would happily leave it clipped where it used to be.
+    //
+    // Compared element by element rather than joined into a string,
+    // because this now runs on every frame and a 16-number `join(",")`
+    // per frame is real garbage for a guard that almost always says "no
+    // change".
     mesh.updateWorldMatrix(true, false);
-    const signature = `${sectionSignature}#${mesh.matrixWorld.elements.join(",")}`;
-    if (outline.userData.clipSignature === signature) continue;
-    outline.userData.clipSignature = signature;
+    const state = outline.userData.clipState as ClipState | undefined;
+    if (state && state.section === sectionSignature && matrixMatches(state.matrix, mesh.matrixWorld)) continue;
+    outline.userData.clipState = {
+      section: sectionSignature,
+      matrix: [...mesh.matrixWorld.elements],
+    } satisfies ClipState;
 
     if (!planes) {
       // setPositions recomputes the geometry's own bounds for us.
