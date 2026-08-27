@@ -23,7 +23,8 @@
     "test:sun-time-snap": "tsx scripts/test-sun-time-snap.ts",
     "test:webgl2-fallback": "tsx scripts/test-webgl2-fallback.ts",
     "test:old-browser": "tsx scripts/test-old-browser.ts",
-    "test:viewer-viewport": "tsx scripts/test-viewer-viewport.ts"
+    "test:viewer-viewport": "tsx scripts/test-viewer-viewport.ts",
+    "test:effect-overrides": "tsx scripts/test-effect-overrides.ts"
   },
   "browserslist": [
     "chrome >= 100",

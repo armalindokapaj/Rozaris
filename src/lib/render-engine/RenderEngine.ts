@@ -427,6 +427,10 @@ const RESIZE_THROTTLE_MS = 90;
  * the per-frame draw-call delta, so the two cannot drift apart. */
 const PERF_SAMPLE_EVERY_N_FRAMES = 20;
 
+/** Enough to identify a failing pipeline, few enough that a pass failing
+ * every frame cannot grow this without bound. */
+const MAX_REPORTED_GPU_ERRORS = 6;
+
 /** What the renderer actually resolved to on THIS device, published for
  * `ViewerDiagnostics` (`?diag=1`). Written once per mount and then only on
  * a context-loss event — this is a report, not engine state, and nothing
@@ -451,6 +455,23 @@ export interface RendererFacts {
    * failure mode that renders a permanently black viewer with nothing in
    * the console. */
   contextLostCount: number;
+  /** WebGPU validation/out-of-memory errors, as reported by the device
+   * itself.
+   *
+   * This is the channel that made the "dark on iPhone" reports so hard to
+   * act on. A WebGPU pipeline that fails validation does NOT throw, does
+   * NOT reject a promise and does NOT reach `console.error` on its own —
+   * it surfaces on `GPUDevice.onuncapturederror`, and rendering carries on
+   * at a full frame rate afterwards, drawing with whatever the failed pass
+   * left behind. Chrome mirrors these into DevTools, which is why the same
+   * build can look healthy on a desktop; Safari does not, and a phone has
+   * no console to mirror them into anyway. Nothing in this app listened
+   * here until now, so the single most diagnostic message the GPU can send
+   * was being dropped on the floor on exactly the devices that needed it.
+   *
+   * Capped and de-duplicated — a failing pipeline re-reports every frame,
+   * and 60 copies a second of one message is not a report. */
+  gpuErrors: string[];
 }
 
 export interface RenderEngineCallbacks {
@@ -781,6 +802,7 @@ export class RenderEngine {
   private isMobileViewport = false;
   /** See `watchForContextLoss`. Cumulative for the life of the engine. */
   private contextLostCount = 0;
+  private readonly gpuErrors: string[] = [];
   /** `renderer.info.render.calls` at the previous perf sample — see
    * `samplePerfStats`. `null` until the first sample. */
   private lastDrawCallMark: number | null = null;
@@ -1451,6 +1473,7 @@ export class RenderEngine {
    * itself here, it reports, and the surface above decides what to show. */
   private watchForContextLoss(renderer: THREE.WebGPURenderer) {
     const canvas = renderer.domElement;
+    this.watchForDeviceErrors(renderer);
     canvas.addEventListener("webglcontextlost", (event) => {
       event.preventDefault();
       this.contextLostCount += 1;
@@ -1467,6 +1490,26 @@ export class RenderEngine {
         this.callbacks.onContextLost?.();
       })
       .catch(() => {});
+  }
+
+  /** Listens on the WebGPU device's own error channel — see
+   * `RendererFacts.gpuErrors` for why this matters more than it looks.
+   *
+   * `onuncapturederror` is additive-safe here because nothing else in the
+   * app (or in three) installs a handler on it; if that ever changes this
+   * has to become an `addEventListener`, which the spec also allows. */
+  private watchForDeviceErrors(renderer: THREE.WebGPURenderer) {
+    const device = (renderer.backend as unknown as {
+      device?: { onuncapturederror?: ((event: { error?: { message?: string } }) => void) | null };
+    })?.device;
+    if (!device) return;
+    device.onuncapturederror = (event) => {
+      const message = String(event?.error?.message ?? "unknown GPU error").split("\n")[0].slice(0, 200);
+      if (this.gpuErrors.includes(message)) return;
+      if (this.gpuErrors.length >= MAX_REPORTED_GPU_ERRORS) return;
+      this.gpuErrors.push(message);
+      this.publishRendererFacts(renderer);
+    };
   }
 
   /** See `RendererFacts` — a report for `?diag=1`, never read back. The
@@ -1496,6 +1539,7 @@ export class RenderEngine {
       drawingBufferPx: { width: Math.round(size.x), height: Math.round(size.y) },
       pixelRatio: renderer.getPixelRatio(),
       contextLostCount: this.contextLostCount,
+      gpuErrors: [...this.gpuErrors],
     });
   }
 

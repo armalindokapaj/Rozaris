@@ -33,6 +33,7 @@ import { UnitDiscoveryPanel } from "@/components/project/UnitDiscoveryPanel";
 import { UnitPreviewCard } from "@/components/project/UnitPreviewCard";
 import type { ProjectViewerRuntimeBootstrap, ViewerChannel } from "@/lib/viewer/runtimeTypes";
 import { applyViewerQuality, applyViewerQualityToLighting, applyViewerQualityToRendering } from "@/lib/viewerQuality";
+import { applyEffectOverridesToLighting, applyEffectOverridesToRendering, parseEffectOverrides } from "@/lib/viewerEffectOverrides";
 
 /** How much of the frame a unit's block has to already occupy for a list
  * selection to leave the camera where it is — its bounding-sphere angular
@@ -113,6 +114,24 @@ export function ProjectViewerRuntime({
     () => () => {},
     () => new URLSearchParams(window.location.search).get("diag") === "1",
     () => false
+  );
+  // `?fx=` — which screen-space passes this load has been asked to skip.
+  // Same store-less snapshot as `diagOpen` above: the URL cannot change
+  // without a navigation, so there is nothing to subscribe to, and the
+  // server snapshot is "" so the first client render matches.
+  //
+  // The SNAPSHOT is the raw string, and the parse happens in a memo below
+  // — deliberately, not incidentally: useSyncExternalStore compares
+  // snapshots with Object.is, so returning a freshly-built Set from
+  // getSnapshot would compare unequal on every render and spin forever.
+  const effectOverridesParam = useSyncExternalStore(
+    () => () => {},
+    () => new URLSearchParams(window.location.search).get("fx") ?? "",
+    () => ""
+  );
+  const effectOverrides = useMemo(
+    () => parseEffectOverrides(effectOverridesParam ? `?fx=${effectOverridesParam}` : ""),
+    [effectOverridesParam]
   );
   const [rendererFacts, setRendererFacts] = useState<RendererFacts | null>(null);
   const [diagStats, setDiagStats] = useState<Parameters<NonNullable<Parameters<typeof ThreeProjectViewer>[0]["onPerfStats"]>>[0]>(null);
@@ -902,7 +921,7 @@ export function ProjectViewerRuntime({
 
   const lightingConfig = useMemo(
     () =>
-      applyViewerQualityToLighting(viewerQuality, {
+      applyEffectOverridesToLighting(effectOverrides, applyViewerQualityToLighting(viewerQuality, {
         sunLightEnabled: viewerConfig.sunLightEnabled,
         sunTemperatureK: viewerConfig.sunTemperatureK,
         autoSunIntensityEnabled: viewerConfig.autoSunIntensityEnabled,
@@ -948,13 +967,13 @@ export function ProjectViewerRuntime({
         volumetricDensity: viewerConfig.volumetricDensity,
         volumetricMaxDensity: viewerConfig.volumetricMaxDensity,
         volumetricDistanceAtten: viewerConfig.volumetricDistanceAtten,
-      }),
-    [viewerConfig, viewerQuality]
+      })),
+    [viewerConfig, viewerQuality, effectOverrides]
   );
 
   const renderingConfig = useMemo(
     () =>
-      applyViewerQualityToRendering(viewerQuality, {
+      applyEffectOverridesToRendering(effectOverrides, applyViewerQualityToRendering(viewerQuality, {
         ssrEnabled: viewerConfig.ssrEnabled,
         ssrIntensity: viewerConfig.ssrIntensity,
         ssrMaxDistance: viewerConfig.ssrMaxDistance,
@@ -982,8 +1001,8 @@ export function ProjectViewerRuntime({
         lutEnabled: viewerConfig.lutEnabled,
         lutPreset: viewerConfig.lutPreset,
         lutIntensity: viewerConfig.lutIntensity,
-      }),
-    [viewerConfig, viewerQuality]
+      })),
+    [viewerConfig, viewerQuality, effectOverrides]
   );
 
   // Units Blocks & POI Layer PRD — real appearance + master POI camera

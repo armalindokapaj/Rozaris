@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { RendererFacts } from "@/lib/render-engine/RenderEngine";
+import { BISECTABLE_EFFECTS, formatEffectOverrides, parseEffectOverrides, type EffectName } from "@/lib/viewerEffectOverrides";
 
 /**
  * On-screen device report, shown only when the URL carries `?diag=1`.
@@ -76,6 +77,47 @@ export function ViewerDiagnostics({
     window.location.replace(window.location.pathname + "?diag=1&fresh=" + Date.now());
   }
 
+  // Which passes this load is already skipping, read from the same URL
+  // the runtime reads. Parsed here rather than passed down as a prop so
+  // the panel stays self-contained — it is the only consumer.
+  const disabled = useSyncExternalStore(
+    () => () => {},
+    () => window.location.search,
+    () => ""
+  );
+  const disabledSet = parseEffectOverrides(disabled);
+  const allOff = BISECTABLE_EFFECTS.every((name) => disabledSet.has(name));
+
+  /** Same page, same `?diag=1`, different `fx` — a plain link so a tap on
+   * a phone is a real navigation and the pipeline is rebuilt from scratch,
+   * which is what makes the comparison trustworthy. */
+  function hrefFor(next: Set<EffectName>): string {
+    const params = new URLSearchParams(disabled);
+    params.set("diag", "1");
+    const value = formatEffectOverrides(next);
+    if (value) params.set("fx", value);
+    else params.delete("fx");
+    return `${window.location.pathname}?${params.toString()}`;
+  }
+
+  function bisectLink(name: EffectName) {
+    const isOff = disabledSet.has(name);
+    const next = new Set(disabledSet);
+    if (isOff) next.delete(name);
+    else next.add(name);
+    return (
+      <a
+        key={name}
+        href={hrefFor(next)}
+        className={`pointer-events-auto rounded border px-1.5 py-0.5 ${
+          isOff ? "border-amber-300/60 bg-amber-300/15 text-amber-200" : "border-white/20 text-white/80"
+        }`}
+      >
+        {name}
+      </a>
+    );
+  }
+
   const stale = serverSha != null && serverSha !== "unreachable" && serverSha !== clientSha;
   const short = (sha: string) => (sha === "dev" || sha === "unreachable" ? sha : sha.slice(0, 7));
 
@@ -100,6 +142,34 @@ export function ViewerDiagnostics({
       <Row label="fps" value={stats ? `${stats.fps} (${stats.frameTimeMs}ms)` : "—"} bad={!!stats && stats.fps > 0 && stats.fps < 20} />
       <Row label="draws / tris" value={stats ? `${stats.drawCalls} / ${stats.triangles.toLocaleString()}` : "—"} />
       <Row label="textures" value={stats ? String(stats.textures) : "—"} />
+      {facts && facts.gpuErrors.length > 0 && (
+        <div className="mt-1.5 border-t border-white/10 pt-1.5">
+          <div className="text-white/45">gpu errors</div>
+          {facts.gpuErrors.map((message) => (
+            <p key={message} className="mt-0.5 max-w-[240px] whitespace-normal break-words text-amber-300">
+              {message}
+            </p>
+          ))}
+        </div>
+      )}
+      <div className="my-1.5 h-px bg-white/10" />
+      <div className="mb-1 text-white/45">turn a pass off</div>
+      <div className="flex flex-wrap gap-1">
+        {BISECTABLE_EFFECTS.slice(0, 4).map((name) => bisectLink(name))}
+        <a
+          href={hrefFor(new Set(BISECTABLE_EFFECTS))}
+          className={`pointer-events-auto rounded border px-1.5 py-0.5 ${
+            allOff ? "border-amber-300/60 bg-amber-300/15 text-amber-200" : "border-white/20 text-white/80"
+          }`}
+        >
+          all off
+        </a>
+        {disabledSet.size > 0 && (
+          <a href={hrefFor(new Set())} className="pointer-events-auto rounded border border-white/20 px-1.5 py-0.5 text-white/80">
+            reset
+          </a>
+        )}
+      </div>
       <div className="my-1.5 h-px bg-white/10" />
       <Row label="build (this page)" value={short(clientSha)} />
       <Row label="build (server)" value={serverSha ? short(serverSha) : "…"} bad={stale} />
