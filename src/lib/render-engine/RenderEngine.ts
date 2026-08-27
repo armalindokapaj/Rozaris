@@ -364,6 +364,11 @@ export type CameraConfig = Pick<
   | "idleDroneVerticalCycles"
   | "idleDronePhaseOffsetDeg"
   | "idleDroneSmoothness"
+  // Shots (PRD §38) — the saved-viewpoint list is carried on the Camera
+  // config purely so the FIRST entry (the "Opening Shot") can be the
+  // camera the viewer opens on; every other use of it (the Views menu,
+  // the editor's Shots tab) goes through flyToPreset() imperatively.
+  | "cameraPresets"
 >;
 
 const DEFAULT_CAMERA_CONFIG: CameraConfig = {
@@ -397,6 +402,7 @@ const DEFAULT_CAMERA_CONFIG: CameraConfig = {
   idleDroneVerticalCycles: 2,
   idleDronePhaseOffsetDeg: 0,
   idleDroneSmoothness: 0.88,
+  cameraPresets: [],
 };
 
 /**
@@ -981,6 +987,14 @@ export class RenderEngine {
   private scenePostSignature: string | null = null;
 
   private hasFramedOnce = false;
+  /** Shots (PRD §38) — the Opening Shot (`cameraPresets[0]`) is applied
+   * exactly once per mount, and only if the visitor hasn't already taken
+   * the camera somewhere themselves. Two latches rather than one because
+   * the config and the GLB arrive independently (either can be last), so
+   * the apply is attempted from both `frameLoadedContent()` and
+   * `setCameraConfig()`. */
+  private hasAppliedOpeningShot = false;
+  private hasUserMovedCamera = false;
   private contentBounds: { min: THREE.Vector3; max: THREE.Vector3; center: THREE.Vector3; size: THREE.Vector3 } | null = null;
   private cameraHelper: THREE.CameraHelper | null = null;
   private cameraTransition: {
@@ -1173,6 +1187,9 @@ export class RenderEngine {
     // sample-count reduction all land with their own Phase 2-4 features).
     controls.addEventListener("start", () => {
       this.cameraTransition = null;
+      // Shots (PRD §38) — a late-arriving config must never yank the
+      // camera out from under a visitor who is already orbiting.
+      this.hasUserMovedCamera = true;
       // Idle Drone Camera PRD §17 — every real orbit/pan/zoom/touch/wheel
       // gesture is exactly this event; stops the drone immediately with
       // no animate-back (idleDrone.notifyInteraction's own doc comment).
@@ -2634,6 +2651,38 @@ export class RenderEngine {
       this.sun.shadow.camera.updateProjectionMatrix();
       this.csmSystem?.updateFrustums();
     }
+
+    // Shots (PRD §38) — content is loaded, so the Opening Shot can be
+    // honoured now if the config is already in (it usually is; the
+    // `setCameraConfig` call site covers the other ordering).
+    this.maybeApplyOpeningShot();
+  }
+
+  /** Shots (PRD §38) — places the camera on the Opening Shot
+   * (`cameraPresets[0]`, the starred entry in the editor's Shots tab)
+   * instead of the generic `cameraStartDistanceMultiplier` framing
+   * `frameLoadedContent()` computes. Instant, not a `flyToPreset()`
+   * transition: this IS the first frame the visitor sees, so there is
+   * nothing to fly *from*. No-ops (leaving the latch down, so a later
+   * call can still succeed) until content has actually been framed and a
+   * shot actually exists — the published config and the GLB arrive
+   * independently. */
+  private maybeApplyOpeningShot() {
+    const { camera, controls } = this;
+    if (!camera || !controls) return;
+    if (this.hasAppliedOpeningShot || this.hasUserMovedCamera || !this.hasFramedOnce) return;
+    const opening = this.cameraConfig.cameraPresets?.[0];
+    if (!opening) return;
+    this.hasAppliedOpeningShot = true;
+    camera.position.set(opening.position.x, opening.position.y, opening.position.z);
+    controls.target.set(opening.target.x, opening.target.y, opening.target.z);
+    camera.fov = opening.fov;
+    camera.updateProjectionMatrix();
+    controls.update();
+    // Same reason flyToPreset() does it: the shot is an explicit framing,
+    // so the idle clock restarts from here rather than from whenever the
+    // engine happened to finish loading.
+    this.idleDrone.notifyInteraction(performance.now());
   }
 
   /** Reframes the camera on the currently loaded content — resets the
@@ -2681,6 +2730,10 @@ export class RenderEngine {
   setCameraConfig(config: CameraConfig) {
     this.cameraConfig = config;
     this.applyCameraConfig(config);
+    // Shots (PRD §38) — covers the ordering where the config lands AFTER
+    // the model has already been framed (a slow /api/project-3d-config
+    // against a cached GLB); a no-op on every later slider tick.
+    this.maybeApplyOpeningShot();
   }
 
   private applyCameraConfig(config: CameraConfig) {

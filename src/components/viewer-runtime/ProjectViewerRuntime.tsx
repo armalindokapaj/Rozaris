@@ -808,6 +808,11 @@ export function ProjectViewerRuntime({
       idleDroneVerticalCycles: viewerConfig.idleDroneVerticalCycles,
       idleDronePhaseOffsetDeg: viewerConfig.idleDronePhaseOffsetDeg,
       idleDroneSmoothness: viewerConfig.idleDroneSmoothness,
+      // Shots (PRD §38) — the engine reads only `[0]` (the Opening Shot)
+      // out of this, to open the viewer on the admin's saved framing
+      // instead of the generic start-distance one. The Views menu keeps
+      // driving every other shot through flyToPreset().
+      cameraPresets: viewerConfig.cameraPresets,
     }),
     [viewerConfig, chromeDimmed]
   );

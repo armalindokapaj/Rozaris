@@ -257,6 +257,9 @@ export function ExperienceEditor({
       idleDroneVerticalCycles: configEditor.draft.idleDroneVerticalCycles,
       idleDronePhaseOffsetDeg: configEditor.draft.idleDronePhaseOffsetDeg,
       idleDroneSmoothness: configEditor.draft.idleDroneSmoothness,
+      // Shots (PRD §38) — so the editor viewport opens on the same
+      // Opening Shot a visitor gets (see RenderEngine.maybeApplyOpeningShot).
+      cameraPresets: configEditor.draft.cameraPresets,
     }),
     [configEditor.draft]
   );
