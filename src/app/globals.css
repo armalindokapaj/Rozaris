@@ -173,7 +173,7 @@ body {
 }
 
 /* Project Viewer and /embed only — the two routes whose root really is one
-   non-scrolling screen (`h-dvh` on ProjectViewerRuntime's root, which is
+   non-scrolling screen (`.h-viewport` on ProjectViewerRuntime's root, which is
    also what carries `data-viewer-channel`).
 
    The rule above is the problem it fixes. On iOS Safari a percentage
@@ -197,9 +197,99 @@ body {
    first paint, not after hydration. */
 html:has([data-viewer-channel]),
 body:has([data-viewer-channel]) {
+  /* See `.h-viewport` below for the `@supports` fallback that covers
+     browsers without `dvh` — a plain `height: 100vh` fallback line here
+     would be deleted by Lightning CSS before it ever reached one. */
   height: 100dvh;
   min-height: 100dvh;
   overflow: hidden;
+}
+
+/* Viewport-height utilities WITH A FALLBACK, and the reason they exist
+   instead of Tailwind's own `h-dvh`/`min-h-dvh`.
+
+   Tailwind compiles `h-dvh` to a single `height: 100dvh`. A browser that
+   does not know the `dvh` unit treats that declaration as invalid and
+   drops it, leaving the element at `height: auto` — and the Project
+   Viewer's root is a `shrink-0` flex item whose children are all
+   absolutely positioned, so `auto` resolves to ZERO. The result is not a
+   slightly-wrong height, it is a completely blank viewer: canvas 393x0,
+   drawing buffer 746x0, no HUD, no dock, no floor rail, and not one error
+   in any console.
+
+   `dvh` shipped in Chrome 108 (Dec 2022) and Safari 15.4. Anything older —
+   which is most of what "an older Android phone" means in practice — got a
+   blank page. Measured, not theorised: reproduced in a real Chromium 101 at
+   a Pixel 5 viewport, where the viewer root computed to exactly `0px` while
+   `CSS.supports("height", "100dvh")` returned false. Reported as "in older
+   Android, section floor does not work" — the floor rail was one of the
+   many things that simply were not there.
+
+   Why `@supports` and not the ordinary two-declaration fallback
+   (`height: 100vh; height: 100dvh;`): Tailwind v4 compiles this file with
+   Lightning CSS, which sees that every browser in the project's target set
+   supports `dvh` and DELETES the `100vh` line as redundant. Verified by
+   reading the emitted stylesheet — the pair really does come out the other
+   side as `height: 100dvh` alone, so the classic pattern is not merely
+   redundant here, it is silently removed. A `@supports not (...)` block
+   survives, and every browser too old for `dvh` is far newer than
+   `@supports` itself (Chrome 28). Unlayered on purpose so it outranks the
+   layered utility above; the query makes sure it only ever applies where
+   `dvh` is genuinely missing. */
+@layer utilities {
+  .h-viewport {
+    height: 100dvh;
+  }
+
+  .min-h-viewport {
+    min-height: 100dvh;
+  }
+}
+
+/* Tailwind v4 compiles `translate-x-*`/`translate-y-*` to the INDEPENDENT
+   `translate:` property (Chrome 104, Aug 2022), not to `transform`. Below
+   that the declaration is invalid, `transform` computes to `none`, and the
+   element simply is not moved.
+
+   That is not cosmetic here. The Project Viewer's floor rail is positioned
+   `absolute top-1/2 -translate-y-1/2`, i.e. its centering depends entirely
+   on that one declaration — measured on a real Chromium 101 at a Pixel 5
+   viewport, the rail lands 86px low, exactly half its own 173px height,
+   which drops its lowest floors behind the mobile units sheet where they
+   cannot be tapped. Same class of failure as the `dvh` one below, same
+   report: "in older Android, section floor does not work".
+
+   Every Tailwind translate utility funnels through the same two custom
+   properties, so one rule rebuilds all of them as a real `transform`. It
+   is guarded by `@supports`, so on any browser that has `translate:` this
+   block does not exist at all — and on the browsers where it does apply,
+   the thing it overrides is `transform: none`, so it can only improve
+   matters. Inline styles still win, which is what keeps GSAP's own
+   transform animations (the dock morph, the rail's glyph magnification)
+   in charge where they run. */
+@supports not (translate: 0 0) {
+  [class*="translate-"] {
+    transform: translate(var(--tw-translate-x, 0), var(--tw-translate-y, 0));
+  }
+}
+
+@supports not (height: 1dvh) {
+  .h-viewport {
+    height: 100vh;
+  }
+
+  .min-h-viewport {
+    min-height: 100vh;
+  }
+
+  /* The document-level pin has the same problem, for browsers new enough
+     to match `:has()` (Chrome 105) but too old for `dvh` (Chrome 108) —
+     a three-version window, but the failure there is the same blank page. */
+  html:has([data-viewer-channel]),
+  body:has([data-viewer-channel]) {
+    height: 100vh;
+    min-height: 100vh;
+  }
 }
 
 /* The site Header is sticky at h-16 (64px). Without this, hash-anchor

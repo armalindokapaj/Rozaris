@@ -80,7 +80,13 @@ export function ViewerDiagnostics({
   const short = (sha: string) => (sha === "dev" || sha === "unreachable" ? sha : sha.slice(0, 7));
 
   return (
-    <div className="pointer-events-auto fixed left-2 top-2 z-[100] max-w-[calc(100vw-1rem)] rounded-lg border border-white/15 bg-black/85 p-3 font-mono text-[11px] leading-relaxed text-white/85 backdrop-blur">
+    // `pointer-events-none` on the panel itself, re-enabled only on the one
+    // button: this is an overlay on top of a viewer whose own controls
+    // (the floor rail, the top-left project chip) live exactly here on a
+    // phone. A panel that swallows taps would break the very feature
+    // someone opened it to debug — caught by a Playwright run whose click
+    // on "Kati 8" was intercepted by this div.
+    <div className="pointer-events-none fixed left-2 top-2 z-[100] max-w-[calc(100vw-1rem)] rounded-lg border border-white/15 bg-black/85 p-3 font-mono text-[11px] leading-relaxed text-white/85 backdrop-blur">
       <div className="mb-1.5 font-sans text-xs font-semibold text-white">Viewer diagnostics</div>
       <Row label="backend" value={facts ? facts.backend : "…starting"} bad={facts?.backend === "webgl2"} />
       <Row label="navigator.gpu" value={facts ? (facts.webgpuAvailable ? "present" : "absent") : "…"} bad={facts?.webgpuAvailable === false} />
@@ -107,7 +113,7 @@ export function ViewerDiagnostics({
         type="button"
         onClick={hardReset}
         disabled={resetting}
-        className="mt-2 w-full rounded border border-white/20 px-2 py-1.5 font-sans text-[11px] font-medium text-white hover:bg-white/10 disabled:opacity-50"
+        className="pointer-events-auto mt-2 w-full rounded border border-white/20 px-2 py-1.5 font-sans text-[11px] font-medium text-white hover:bg-white/10 disabled:opacity-50"
       >
         {resetting ? "Resetting…" : "Reset cache & reload"}
       </button>

@@ -491,7 +491,7 @@ export function ExperienceEditor({
   }
 
   return (
-    <div className="flex h-dvh w-full flex-col overflow-hidden bg-neutral-950">
+    <div className="flex h-viewport w-full flex-col overflow-hidden bg-neutral-950">
       <EditorTopBar
         projectName={project.name}
         activeTab={activeTab}

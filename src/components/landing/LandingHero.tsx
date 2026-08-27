@@ -72,7 +72,7 @@ export function LandingHero() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col">
+    <div className="relative flex min-h-viewport flex-col">
       {/* Top Bar + Menu are static everywhere in the app — this is the
           exact same shared `<Header/>` (and the `<MobileNav/>` it renders
           internally) every other page uses, not a landing-specific
