@@ -11,14 +11,6 @@ const createCredentialSchema = z.object({
   expiresAt: z.coerce.date().optional(),
 });
 
-/**
- * Multi-Channel Publishing PRD Phase 10, §50 — self-service (Owner/Org
- * Admin only, same `requireOrgRole()` gate Business Teams already uses),
- * not admin-managed like Phase 9's `ProjectMembership` — a developer's own
- * CRM-integration credential is exactly the kind of thing PRD §13
- * "ownership structure" puts squarely on their side ("their... leads"),
- * not something Rozaris admin should be a bottleneck for.
- */
 export async function GET() {
   const gate = await requireOrgRole();
   if (gate instanceof NextResponse) return gate;
@@ -37,17 +29,11 @@ export async function GET() {
       expiresAt: true,
       revokedAt: true,
       createdAt: true,
-      // keyHash deliberately excluded — never leaves the server, not even
-      // to the owner who created it.
     },
   });
   return NextResponse.json(credentials);
 }
 
-/** The plaintext key is returned exactly once, in this response — never
- * persisted, never retrievable again (PRD §50 "Never store plain keys").
- * A publisher that loses it has to revoke and issue a new one, same as
- * every real API-key product. */
 export async function POST(request: Request) {
   const gate = await requireOrgRole();
   if (gate instanceof NextResponse) return gate;
@@ -92,6 +78,6 @@ export async function POST(request: Request) {
     scopes: credential.scopes,
     expiresAt: credential.expiresAt,
     createdAt: credential.createdAt,
-    key, // one-time reveal
+    key,
   });
 }

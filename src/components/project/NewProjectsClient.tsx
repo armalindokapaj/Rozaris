@@ -27,8 +27,6 @@ const SETTING_LABEL_KEY: Record<ProjectSetting, string> = {
   residential_complex: "newProjectsPage.settingResidentialComplex",
 };
 
-// Only the property types relevant to new-development browsing (not the
-// full catalog used by the resale FiltersForm, e.g. no land/commercial).
 const FILTERABLE_PROPERTY_TYPES: PropertyType[] = ["apartment", "studio", "villa"];
 
 type PriceBucketId = "0-150k" | "150k-300k" | "300k-1m";
@@ -46,8 +44,6 @@ function toggle<T>(arr: T[], value: T): T[] {
   return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
 }
 
-/** Click-to-open popup filter (City, Price Range) — distinct from the
- * always-visible pill filters, for options with more items than fit inline. */
 function PopoverFilter({
   label,
   activeCount,
@@ -88,9 +84,6 @@ function PopoverFilter({
   );
 }
 
-/** Plain-text sort trigger matching the results panel's SortDropdown —
- * local to this list (New Projects has its own filtered set, not the
- * search page's shared `filters.sort`). */
 function SortMenu({
   value,
   onChange,
@@ -172,8 +165,6 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
   const [propertyTypes, setPropertyTypes] = useState<PropertyType[]>([]);
   const [priceBuckets, setPriceBuckets] = useState<PriceBucketId[]>([]);
   const [sort, setSort] = useState<NewProjectsSort>("newest");
-  // Mobile-only: the filter body is a click-to-show accordion, collapsed by
-  // default. On desktop (lg+) it's always shown regardless of this state.
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const cityOptions = useMemo(
@@ -197,8 +188,6 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
           return true;
         })
         .sort((a, b) => {
-          // Premium projects are always prioritized first, here as
-          // everywhere else — the chosen sort only orders within that.
           const premiumDiff = Number(b.premium) - Number(a.premium);
           if (premiumDiff !== 0) return premiumDiff;
           if (sort === "price_asc" || sort === "price_desc") {
@@ -215,16 +204,11 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
     cities.length + settings.length + propertyTypes.length + priceBuckets.length;
 
   return (
-    // Same p-4 outer spacing as the Front Page's row container, so the left
-    // panel sits the exact same distance from the header and viewport edge
-    // as the Front Page's left filters panel.
     <div className="px-4 py-4 pb-20 lg:p-4">
       <MobileBottomTabBar />
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        {/* Left panel: page intro + all filters, self-contained and sticky —
-            doesn't intervene with the right panel's results at all. Same
-            glass-panel shell, header treatment, and width as the Front
-            Page's left filters panel for visual consistency. */}
+        {                                                                    
+                                                                }
         <aside className="glass-panel shrink-0 overflow-hidden rounded-panel lg:sticky lg:top-20 lg:w-72">
           <button
             type="button"
@@ -352,7 +336,7 @@ export function NewProjectsClient({ projects }: { projects: Project[] }) {
           </div>
         </aside>
 
-        {/* Right panel: results only. */}
+        {                                }
         <div className="min-w-0 flex-1">
           <div className="mb-3 flex items-center justify-between gap-2">
             <p className="text-sm text-neutral-500">

@@ -2,13 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 
-/**
- * User Activity Timeline — every AuditLog row this user was the actor for
- * ("who changed what, when"), plus the rows recorded *against* their own
- * User entity (account status/permission changes done *to* them). Two
- * separate lists rather than one merged feed: "what they did" and "what
- * was done to them" are different questions an admin asks.
- */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ userId: string }> }

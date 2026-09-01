@@ -3,16 +3,6 @@
 import { GroupCard, SectionHeading, SliderRow, ToggleRow } from "../../fields";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 
-/**
- * Lighting → Volumetric Lighting (PRD §21) — Sun Shafts use the real
- * vendored `GodraysNode` (screen-space raymarched godrays from the Global
- * Sun Vector, depth-occluded, bilateral-blurred + depth-aware-composited —
- * the exact recipe the node's own doc comment shows). "Artificial Light
- * Volumes" is a real, deliberately simplified per-light effect (each
- * ArtificialLight's own `volumetricEnabled` toggle on the Artificial
- * Lights tab) rather than a second raymarch system — not a fake toggle,
- * just an honestly smaller technique than Sun Shafts.
- */
 export function VolumetricLightingSubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const on = draft.volumetricLightingEnabled;

@@ -9,13 +9,6 @@ import { CITY_CENTER } from "@/lib/mockData";
 import { useT } from "@/lib/i18n/useT";
 import { typeLabelKey, type LocationRow } from "./LocationsTab";
 
-/** Combines every drawn Polygon feature into one geometry — a single
- * shape stays a plain `Polygon` (what mapbox-gl-draw itself produces);
- * more than one (a neighborhood drawn as two separate areas) becomes a
- * `MultiPolygon`, whose `coordinates` is just each Polygon's own
- * `coordinates` array collected together. Ignores any non-Polygon
- * geometry a stray click in the wrong draw mode could produce — this tool
- * only ever exposes the polygon tool, so that shouldn't normally happen. */
 function combineDrawnFeatures(features: Feature[]): Geometry | null {
   const polygons = features.filter(
     (f): f is Feature<import("geojson").Polygon> => f.geometry.type === "Polygon"
@@ -25,19 +18,6 @@ function combineDrawnFeatures(features: Feature[]): Geometry | null {
   return { type: "MultiPolygon", coordinates: polygons.map((f) => f.geometry.coordinates) };
 }
 
-/**
- * "So later I can draw it myself in mapbox" — a real Mapbox GL Draw
- * surface for `Location.boundaryGeometry` (a GeoJSON `Polygon`/
- * `MultiPolygon` column that's existed since the Canonical Location
- * System's first migration but had no writer or UI until now — see the
- * schema-header note above `Location` in prisma/schema.prisma). Pick a
- * location, draw/edit its real shape with the polygon tool, Save.
- *
- * `boundaryGeometry` isn't consumed anywhere yet (no map-filtering or
- * point-in-boundary validation reads it) — this is purely the authoring
- * tool the schema comment always described as "someday", built ahead of
- * that need so an admin can start drawing real shapes now.
- */
 export function LocationBoundaryEditor({
   locations,
   onSaved,
@@ -58,8 +38,6 @@ export function LocationBoundaryEditor({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  // Map + Draw control — created once, independent of which location is
-  // selected (mirrors LocationPicker.tsx's own mount-once map effect).
   useEffect(() => {
     if (!containerRef.current || !token || mapRef.current) return;
     mapboxgl.accessToken = token;
@@ -94,11 +72,6 @@ export function LocationBoundaryEditor({
     };
   }, [token]);
 
-  // Loads the selected location's real boundary (`GET
-  // /api/admin/locations/[id]` — the list route only ever sends a
-  // `hasBoundary` flag, not the geometry itself) and recenters the map on
-  // it. Guarded on `ready` so this can't race the map/Draw control still
-  // initializing on the very first selection.
   useEffect(() => {
     if (!selectedId || !ready || !mapRef.current || !drawRef.current) return;
     let cancelled = false;

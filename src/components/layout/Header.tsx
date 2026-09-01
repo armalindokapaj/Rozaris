@@ -37,8 +37,6 @@ function ResourceRow({
   icon: typeof User;
   label: string;
   onClick: () => void;
-  /** "Become a Buyer" reads as the featured entry — brand-tinted badge/text
-   * instead of neutral, same distinction the old list made with color alone. */
   highlighted?: boolean;
 }) {
   return (

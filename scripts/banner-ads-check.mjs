@@ -10,10 +10,9 @@ console.log("ad slot text count (real slides only counted visually, DOM has deco
 
 await page.screenshot({ path: `${SCRATCH}/banner-ads-1.png` });
 
-// swipe through a full loop
 for (let i = 0; i < 6; i++) {
   await page.evaluate(() => {
-    const el = document.querySelectorAll("div.-mx-5.flex.snap-x")[1]; // second such track = ad banner
+    const el = document.querySelectorAll("div.-mx-5.flex.snap-x")[1];                                 
     if (!el) return;
     const cardWidth = el.scrollWidth / el.children.length;
     el.scrollLeft += cardWidth;

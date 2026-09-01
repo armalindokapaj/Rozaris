@@ -21,8 +21,6 @@ function ReportStat({ label, value, footnote }: { label: string; value: string; 
   );
 }
 
-/** Reports tab — real Postgres aggregates (`GET /api/admin/reports-summary`),
- * replacing four numbers that used to be hardcoded literals. */
 export function ReportsTab() {
   const { t } = useT();
   const [data, setData] = useState<ReportsSummary | null>(null);

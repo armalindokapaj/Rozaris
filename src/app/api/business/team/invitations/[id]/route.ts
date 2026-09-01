@@ -3,8 +3,6 @@ import { prisma } from "@/lib/db";
 import { requireOrgRole } from "@/lib/publisherAuth";
 import { logAuditEvent } from "@/lib/audit";
 
-/** Owner/Org Admin revoking a pending invitation they sent — distinct from
- * the invitee declining it (`DELETE /api/account/invitations/[id]`). */
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireOrgRole();
   if (gate instanceof NextResponse) return gate;

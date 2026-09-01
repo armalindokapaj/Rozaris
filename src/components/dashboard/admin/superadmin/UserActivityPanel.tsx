@@ -15,10 +15,6 @@ interface AuditRow {
   createdAt: string;
 }
 
-/** One feed list (either "what they did" or "what was done to them") —
- * hoisted to a real top-level component rather than defined inline inside
- * `UserActivityPanel` (a function component declared during another
- * component's render loses its identity every re-render). */
 function ActivityFeed({ rows, emptyKey }: { rows: AuditRow[]; emptyKey: string }) {
   const { t, locale } = useT();
   if (rows.length === 0) return <p className="text-xs text-neutral-400">{t(emptyKey)}</p>;
@@ -40,12 +36,6 @@ function ActivityFeed({ rows, emptyKey }: { rows: AuditRow[]; emptyKey: string }
   );
 }
 
-/** User Activity Timeline — "who changed what, when, from where" for one
- * user, split into what they did (`asActor`) and what was done to their
- * own account (`aboutThem`) — see `.../users/[userId]/activity/route.ts`'s
- * doc comment for why those are kept separate. `ip` is real when present
- * (captured by newer write routes' `logAuditEvent` calls) — older rows
- * simply don't have one, shown as "—" rather than guessed. */
 export function UserActivityPanel() {
   const { t } = useT();
   const [userId, setUserId] = useState("");

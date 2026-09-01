@@ -11,16 +11,6 @@ import type { Locale } from "@/lib/types";
 
 const STEPS = ["Import", "Validate", "Configure", "Preview", "Publish"] as const;
 
-/**
- * Global header — tab nav, workflow stepper, undo/redo, Save/Draft,
- * Version History. Rebuilt per PRD spec (Experience Editor v2, 2026-08-15):
- * a genuinely new component, not restyled from the old EditorHeader.tsx.
- * Stepper is visual-only for now (no real validation/QA gating yet — that's
- * the Publish tab's own later-phase scope, PRD §42). Undo/redo are
- * disabled placeholders: Phase 0 has no editable state that needs undoing
- * yet (the preserved upload section manages its own server-round-trip
- * actions directly, same as before).
- */
 export function EditorTopBar({
   projectName,
   activeTab,
@@ -39,12 +29,8 @@ export function EditorTopBar({
   locale: Locale;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
-  const currentStepIndex = 2; // "Configure" — the only step Phase 0 actually implements
+  const currentStepIndex = 2;
 
-  // Camera/Shots/(eventually Sections/Interaction/Performance) live on
-  // Project3DConfig, a separate always-editable singleton row — not
-  // gated by detail.canEditDetail (that's specifically the versioned GLB
-  // draft/publish lifecycle). One combined Save button covers both.
   const anyDirty = modelEditor.dirty || configEditor.dirty;
   const anySaving = modelEditor.saving || configEditor.saving;
   const modelSaveBlocked = modelEditor.dirty && !detail.canEditDetail;
@@ -114,15 +100,8 @@ export function EditorTopBar({
           >
             {detail.activeVersion?.publicationStatus === "published" ? "Live" : "Draft"}
           </span>
-          {/* Silent-failure guard: when the active slot's version is
-            * published, `handleSave` below drops the model half of the
-            * edit (unit links, transform, material overrides) on the
-            * floor and only writes the always-editable config half. The
-            * Save button's own `title` explains that — but ONLY while
-            * configEditor is clean; the moment any config field is also
-            * dirty the button goes fully enabled and a click looks like a
-            * successful save while the unit mapping quietly never
-            * persists. This says so on screen, in both cases. */}
+          {                                                          
+                                                                 }
           {modelSaveBlocked && (
             <span
               title="Unit links, transform and material overrides belong to the model version, and a published version is read-only. Switch to a draft version of this slot (or upload a replacement) to save them."
@@ -161,16 +140,8 @@ export function EditorTopBar({
         </div>
       </div>
 
-      {/* Own dedicated full-width row, always shown — real desktop-
-       * responsive fix: the tab nav used to live inline in the row above,
-       * sharing space with the ROZARIS branding and the Undo/Redo/
-       * History/Save/Help/Settings cluster, so on any desktop window
-       * narrower than ~1450px real tabs (Performance/Publish, at minimum)
-       * were pushed clean off the visible edge with no scroll affordance
-       * a real admin would notice. A dedicated row has the full window
-       * width to itself, comfortably fitting all of EDITOR_TABS down to
-       * ~960px; `overflow-x-auto` stays as a genuine fallback below that,
-       * not the primary mechanism. */}
+      {                                                             
+                                      }
       <nav className="flex min-w-0 items-center gap-0.5 overflow-x-auto border-t border-neutral-900 px-4 py-1.5">
         {EDITOR_TABS.map((tab) => (
           <button

@@ -3,10 +3,6 @@ import { prisma } from "@/lib/db";
 import { requireOrgRole } from "@/lib/publisherAuth";
 import { logAuditEvent } from "@/lib/audit";
 
-/** Revoke, never hard-delete — same "keep the trace, cut the access"
- * shape as `ProjectPublishTarget` suspension (PRD §60 "Do not delete
- * anything"). `requireApiCredential()` already refuses any credential
- * with `revokedAt` set. */
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireOrgRole();
   if (gate instanceof NextResponse) return gate;

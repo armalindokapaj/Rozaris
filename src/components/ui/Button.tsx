@@ -1,26 +1,6 @@
 import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
-/**
- * Canonical button styling for the public site (everything outside
- * /admin and the 3D Configurator/Viewer, which keep their own bespoke
- * chrome). Before this existed, every CTA across Landing/Search/Listing/
- * Developers/etc. hand-rolled its own Tailwind className blob — heights,
- * paddings, font sizes and even radii (rounded-control vs rounded-xl vs
- * no radius at all) all drifted independently. `buttonVariants` is the
- * single source of truth for that combination; use it directly (e.g. on a
- * `next/link`) when the trigger can't be a real `<button>`, otherwise
- * render `<Button>`.
- *
- * Variants map to existing token usage rather than inventing new ones:
- *  - primary   — bg-brand-500, the default "do the main thing" action.
- *  - accent    — bg-accent, reserved for the landing hero's single
- *                highest-priority CTA (see globals.css's --color-accent
- *                comment) — do not use for ordinary buttons.
- *  - secondary — bordered neutral surface, for the second action in a pair.
- *  - ghost     — no border/fill, for low-emphasis inline actions.
- *  - danger    — destructive actions (sign out, delete, remove).
- */
 export type ButtonVariant = "primary" | "accent" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
 

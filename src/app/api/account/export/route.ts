@@ -3,20 +3,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { logAuditEvent } from "@/lib/audit";
 
-/**
- * Account & Profile System PRD v1.0 §10.2 "Data export — Provide a
- * user-accessible request/process." Real and synchronous — a personal
- * account's own data is small enough to assemble and return directly as a
- * downloadable JSON file, no async job/email-delivery pipeline needed.
- * Every domain this session's Account & Profile System phases made real:
- * profile, preferences, saved items/searches, follows, recently viewed,
- * notifications, consent, organization membership, and (if the account
- * owns one) its Publisher/organization row. Never includes another
- * account's data or admin-only fields (adminScopes, superAdmin, internal
- * verification review notes are the requester's own, which is fine —
- * §9.4 "internal risk/moderation notes" restricts OTHER users seeing it,
- * not the subject themselves).
- */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {

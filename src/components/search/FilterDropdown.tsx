@@ -5,13 +5,6 @@ import { useDropdown } from "@/hooks/useDropdown";
 import { DropdownPanel } from "@/components/ui/Dropdown";
 import { cn } from "@/lib/utils";
 
-/**
- * A single minimal pill in the top filter bar (Search page, FR desktop) —
- * collapsed by default, expanding into a popover panel only once clicked.
- * Only one of these is meant to be open at a time per bar; each instance
- * manages its own open state and closes on an outside click, so stacking
- * several in a row "just works" without a shared controller.
- */
 export function FilterDropdown({
   label,
   active = false,
@@ -21,7 +14,6 @@ export function FilterDropdown({
   children,
 }: {
   label: React.ReactNode;
-  /** Highlights the pill to show a non-default value is set. */
   active?: boolean;
   panelClassName?: string;
   className?: string;

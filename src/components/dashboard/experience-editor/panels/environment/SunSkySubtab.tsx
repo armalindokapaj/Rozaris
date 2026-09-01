@@ -7,18 +7,8 @@ import { ColorRow, GroupCard, SectionHeading, SelectRow, SliderRow, ToggleRow } 
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 import type { SolarAnchor } from "@/lib/types";
 
-// Keep in sync with /api/blob/upload's own `panoramas/` size cap.
 const MAX_BACKDROP_BYTES = 45 * 1024 * 1024;
 
-/**
- * Environment → Sun & Sky (PRD §8-10) — the "ROZARIS Manual Time + Sun
- * System" / "ONE Global Sun". `solarControllerEnabled` off (default) keeps
- * every project's old direct elevation/azimuth sliders exactly as they
- * were; on, elevation/azimuth are DERIVED from Viewer Time + a Solar Path
- * instead (Manual anchors, edited below, or a real Geographic lat/lon/
- * date calculation — src/lib/sunPosition.ts). Sky's own turbidity/
- * rayleigh/mie/exposure knobs are unchanged from before this pass.
- */
 export function SunSkySubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const [uploading, setUploading] = useState(false);
@@ -96,19 +86,9 @@ export function SunSkySubtab({ configEditor }: { configEditor: UseProjectConfigE
             />
             <ToggleRow label="Viewer Time Control" checked={draft.viewerTimeControlEnabled} onChange={(v) => update({ viewerTimeControlEnabled: v })} hint="Whether visitors get a live time slider (vs. a fixed Default Time)" />
             <SliderRow label="Viewer Time" value={draft.viewerTimeHours} min={0} max={24} step={0.25} suffix="h" onChange={(v) => update({ viewerTimeHours: v })} />
-            {/* Bounded against each other, not 0-24 independently: these two
-                now drive the public viewer's scrub range directly, and an
-                inverted window would leave visitors a dead slider.
+            {                                                                
 
-                Whole hours, and displayed rounded even when an older row
-                holds a half hour: the viewer's time bar snaps to the hour
-                (2026-08-27), so a 6.5 authored here would be shown to
-                visitors as 07:00 anyway — rounding in the editor too keeps
-                these fields honest about what actually ships rather than
-                promising a granularity the viewer discards. Same reason
-                Time Step is in hours here while the column behind it stays
-                minutes: the viewer reads it as `round(minutes / 60)`, min
-                one hour. */}
+                            }
             <SliderRow label="Start Time" value={Math.round(draft.viewerTimeStartHours)} min={0} max={Math.round(draft.viewerTimeEndHours)} step={1} suffix="h" onChange={(v) => update({ viewerTimeStartHours: v })} />
             <SliderRow label="End Time" value={Math.round(draft.viewerTimeEndHours)} min={Math.round(draft.viewerTimeStartHours)} max={24} step={1} suffix="h" onChange={(v) => update({ viewerTimeEndHours: v })} />
             <SliderRow label="Time Step" value={Math.max(1, Math.round(draft.viewerTimeStepMinutes / 60))} min={1} max={6} step={1} suffix="h" onChange={(v) => update({ viewerTimeStepMinutes: v * 60 })} />

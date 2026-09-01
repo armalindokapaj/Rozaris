@@ -2,18 +2,8 @@ import Link from "next/link";
 import { Camera, Link2, PlayCircle } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 
-// lucide-react ships no brand/logo icons (dropped for trademark reasons) —
-// these are generic stand-ins (camera/link/play), not real social handles,
-// since ROZARIS has no actual Instagram/LinkedIn/YouTube accounts yet.
 const SOCIAL_ICONS = [Camera, Link2, PlayCircle];
 
-/**
- * Shared site footer for content/document-flow pages (Developers directory,
- * Help). Deliberately NOT mounted globally in the (site) layout — pages
- * like Search, the 3D project viewer, Admin, and the dashboards are
- * fixed-height app shells (`h-full` flex columns) that a footer would
- * break; those keep their own bottom chrome instead.
- */
 export function Footer() {
   const { t } = useT();
   const year = new Date().getFullYear();

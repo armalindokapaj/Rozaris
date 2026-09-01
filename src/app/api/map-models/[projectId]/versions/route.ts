@@ -5,11 +5,6 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { fetchAndValidateGlb, type GlbValidationResult } from "@/lib/glbValidate";
 import { logAuditEvent } from "@/lib/audit";
 
-// One real building Admin picked to remove, with its footprint geometry
-// captured once at pick time (see BuildingHider.ts's class doc comment for
-// why it's captured rather than re-queried later). `footprint` is
-// arbitrary GeoJSON (Polygon | MultiPolygon | null) — not worth a strict
-// geometry schema for this.
 const hiddenBuildingSchema = z.object({
   lng: z.number(),
   lat: z.number(),
@@ -18,43 +13,23 @@ const hiddenBuildingSchema = z.object({
 });
 
 const createSchema = z.object({
-  // Optional as of "save location before uploading a model" — omitting all
-  // three creates a pure-placement draft (see MapModelVersion's own doc
-  // comment); the model itself can be attached later via the PATCH route.
   glbUrl: z.string().url().optional(),
   fileName: z.string().min(1).optional(),
   fileSize: z.number().int().positive().optional(),
   scale: z.number().positive().max(1000).default(1),
   rotationDeg: z.number().default(0),
   altitudeOffset: z.number().default(0),
-  // ONE LOCATION — accepted for backwards compatibility with older
-  // clients and then DELIBERATELY IGNORED: a version's anchor is the
-  // project's own coordinates, never an independently-authored offset.
-  // See src/lib/projectLocation.ts for why (three surfaces used to author
-  // the same site and drift apart). Moving the model in the 3D Map
-  // Control moves the PROJECT, through
-  // `PATCH /api/admin/projects/[projectId]/location`.
   longitude: z.number().optional(),
   latitude: z.number().optional(),
   hideBaseBuilding: z.boolean().default(false),
   hiddenBuildings: z.array(hiddenBuildingSchema).default([]),
 });
 
-/**
- * Version history for a project's Mapbox Map Model
- * (PRD_Admin_Mapbox_GLB §18 "Versioning"). GET is public (Admin's
- * MapModelEditor version-history list); POST (create a draft from an
- * already-uploaded Blob URL, running server-side validation) requires the
- * real admin session — src/lib/adminAuth.ts.
- */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  // deletedAt: null — a soft-deleted (discarded) draft is gone from the
-  // editor's own version-history list, restorable only via the Super
-  // Admin Recycle Bin, not this list.
   const versions = await prisma.mapModelVersion.findMany({
     where: { projectId, deletedAt: null },
     orderBy: { version: "desc" },
@@ -83,16 +58,9 @@ export async function POST(
     );
   }
 
-  // No file yet (placement-only draft) — nothing to validate; "ready"
-  // matches what an already-valid version reads as, so the Publish button
-  // isn't blocked just for having no model.
   const validation: GlbValidationResult = parsed.data.glbUrl
     ? await fetchAndValidateGlb(parsed.data.glbUrl, "mapModel")
     : { status: "ready", issues: [], triangleCount: null, meshCount: null, materialCount: null, textureCount: null, unitNodeNames: [], sceneManifest: [] };
-  // Deliberately NOT filtering deletedAt here — the (projectId, version)
-  // unique index still counts soft-deleted rows, so the next version
-  // number must be computed from every version ever created or a restored
-  // draft could collide with a new upload.
   const last = await prisma.mapModelVersion.findFirst({
     where: { projectId },
     orderBy: { version: "desc" },
@@ -112,10 +80,6 @@ export async function POST(
       meshCount: validation.meshCount,
       materialCount: validation.materialCount,
       textureCount: validation.textureCount,
-      // Always the project's own coordinates — see `createSchema`'s
-      // comment on latitude/longitude above. MapView.tsx and
-      // MapModelMapPreview.tsx keep reading these columns; they just can
-      // no longer disagree with the project record.
       latitude: project.lat,
       longitude: project.lng,
       heading: parsed.data.rotationDeg,

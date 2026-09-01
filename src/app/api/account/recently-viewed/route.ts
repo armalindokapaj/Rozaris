@@ -5,8 +5,6 @@ import { prisma } from "@/lib/db";
 
 const MAX_ENTRIES = 24;
 
-/** §4 "Recently Viewed — Private browsing history with clear deletion
- * controls" — real `RecentlyViewedEntry` rows, newest first, capped. */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -26,8 +24,6 @@ const bodySchema = z.object({
   entityId: z.string().min(1),
 });
 
-/** Upserts one entry to "now", then trims the account down to
- * `MAX_ENTRIES` — same bound the old client-only slice enforced. */
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -56,8 +52,6 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-/** No query params clears the whole history; `kind`+`entityId` removes one
- * entry. */
 export async function DELETE(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {

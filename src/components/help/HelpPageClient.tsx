@@ -24,9 +24,6 @@ const CONTACT_EMAIL = "hello@rozaris.al";
 
 type Topic = "3d" | "listings" | "publishers";
 
-// Real content only — no fabricated taxonomy/counts. Each FAQ entry maps to
-// exactly one topic; "All Topics" is just their union, so the sidebar
-// counts always match what's actually shown below.
 const FAQ_ITEMS: { key: string; topic: Topic }[] = [
   { key: "map", topic: "3d" },
   { key: "faq1", topic: "3d" },
@@ -48,9 +45,6 @@ const TOPIC_LABEL_KEY: Record<Topic, string> = {
   publishers: "helpPage.topicPublishers",
 };
 
-// "map" reuses the old standalone 3D-map explainer's copy as a 6th FAQ
-// entry (mapTitle as the question, mapBody as the answer) rather than
-// keeping it as a separate section — one FAQ list, one topic taxonomy.
 function questionKey(key: string) {
   return key === "map" ? "helpPage.mapTitle" : `helpPage.${key}Q`;
 }
@@ -65,8 +59,6 @@ export function HelpPageClient() {
   const [topic, setTopic] = useState<Topic | "all">("all");
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // The "⌘K" hint next to the search field is real — Cmd/Ctrl+K focuses it
-  // from anywhere on the page.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -78,13 +70,6 @@ export function HelpPageClient() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Next's default Link scroll behavior only resets to the top when the
-  // incoming page isn't already "visible" in the viewport — with the
-  // sticky Header persisting across navigation, that check almost always
-  // passes, so arriving here from a scrolled position on another page left
-  // this page rendered mid-scroll instead of at the top. Take scroll
-  // position into our own hands on mount: honor a real #id in the URL
-  // (offset for the sticky header), otherwise force the top.
   useEffect(() => {
     const hash = window.location.hash.slice(1);
     const target = hash ? document.getElementById(hash) : null;

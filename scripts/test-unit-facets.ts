@@ -1,14 +1,3 @@
-/**
- * `unitFacets` (units-workspace/unitFilters.ts) — the derivation behind
- * "show only whats in units" (2026-08-25). Run with `npm run test:unit-facets`.
- *
- * Worth a standalone test rather than browser-only checking: the rules are
- * pure and total, but the seeded project only exercises a couple of them
- * (its viewer units are all one status, one building), so the interesting
- * cases — a stranded selection, an empty project, three statuses — have no
- * real data to reach them. Same plain tsx script shape `test-sections.ts`
- * already established.
- */
 import { unitFacets, DEFAULT_UNIT_FILTERS, type UnitFilterState } from "@/components/project/units-workspace/unitFilters";
 import type { Unit } from "@/lib/types";
 

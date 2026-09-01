@@ -15,16 +15,6 @@ interface Bucket {
   rentCount: number;
 }
 
-/**
- * Market Data Engine (PRD_ROZARIS_Admin §12) — real €/m² by location,
- * computed on the fly from completed `Transaction` rows (not a fabricated
- * or hand-entered number). Reads as genuinely empty right after the
- * platform's content wipe (see the "Rozaris Platform Audit" memory) —
- * that's honest, the alternative would be inventing figures. `€/m²` needs
- * both a real price (`Transaction.price`) and a real area
- * (`Property.area`); a transaction missing either, or flagged
- * `excludedFromStats`, is skipped.
- */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;
@@ -93,8 +83,6 @@ export async function GET() {
         saleCount: b.saleCount,
         rentAvgPerSqm: b.rentCount > 0 ? b.rentSum / b.rentCount : null,
         rentCount: b.rentCount,
-        // Real "12 month change" only when both windows have data —
-        // otherwise null, shown as "not enough data" rather than 0%.
         twelveMonthChangePercent:
           saleAvg != null && saleAvgPrior != null && saleAvgPrior > 0
             ? ((saleAvg - saleAvgPrior) / saleAvgPrior) * 100

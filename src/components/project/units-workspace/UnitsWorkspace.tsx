@@ -12,60 +12,8 @@ import { UnitSearchView, UNITS_PAGE_SIZE } from "./UnitSearchView";
 import { UnitDetailView } from "./UnitDetailView";
 import type { UnitFilterState } from "./unitFilters";
 
-/** PRD §4 — "Recommended desktop width: 360–420px... large displays ~28–
- * 32% max viewport width." Fixed for Phase 1 rather than the responsive
- * vw-clamped version — real search/filter content (Phase 2) is what
- * actually needs to know its available width precisely; the empty shell
- * doesn't, and a fixed value keeps the resize choreography below
- * (ResizeObserver-driven, see the module doc comment) simple to reason
- * about for this first pass. */
 const PANEL_WIDTH = 380;
 
-/**
- * Units Search Mode PRD (2026-08-16) — real content: Phase 2 (search/
- * filter/sort/list, `UnitSearchView`, over real Postgres units — see
- * `units` prop) and Phase 4 (`UnitDetailView`, swapped in on row click)
- * both live in this same panel container, matching the Unit Detail PRD's
- * own §1 rule ("never a second or middle panel") — this component owns
- * `selectedUnit` and branches both the header (UNITS vs "← Back to
- * Search") and the body between the two views. Phase 3's list→3D half
- * (`onSelectUnitIn3D`, called on every select/back/close) is real too —
- * see RenderEngine.setSelectedUnit's own doc comment for what it does and
- * why it's a safe no-op on a project with no real unit mesh links yet.
- * The 3D→list half (clicking a unit's mesh in the viewport) isn't built —
- * no raycasting/pointer-picking exists anywhere in RenderEngine yet, a
- * real new system rather than plumbing, flagged rather than faked.
- *
- * `units` comes from the parent (ProjectViewerRuntime's own useProjectUnits call)
- * rather than being fetched here — it's also fed into `detailModelEntries`
- * for the 3D scene's own unit-status boxes, so one fetch serves both.
- *
- * Favorites live here (not inside UnitSearchView) so the heart state
- * stays in sync between the list and a unit's own detail view — local
- * component state, not the app's global Saved-listings store: real Unit
- * rows from this project aren't Listing records that store would
- * recognize.
- *
- * `filters` is now a controlled prop (Units Bar redesign, 2026-08-17) —
- * owned by ProjectViewerRuntime, not this component, so the new floating
- * UnitsBar (a sibling of this panel, rendered inside ViewerHUD) can share
- * and mutate the exact same filter state. `viewMode`/`visibleCount` stay
- * local; nothing outside this panel needs them yet.
- *
- * Two-layer slide (PRD §5 Step 1, `translateX(-100%) → 0`, 400–550ms):
- * the *outer* div's `width` is what's actually tweened 0→380px — a real
- * layout-affecting animation, deliberately, because it's a flex sibling
- * of the 3D viewport wrapper in ProjectViewerRuntime, so every frame of this
- * tween reflows that sibling narrower, which RenderEngine's own
- * ResizeObserver (already in place, unrelated to this PRD) picks up on
- * its own — camera aspect, renderer size, and post-processing all follow
- * automatically. No new RenderEngine code needed for PRD §5 Step 2's
- * "renderer updates width/aspect/projection/post-processing" requirement.
- * The *inner* div stays a constant `PANEL_WIDTH` and is what actually
- * gets `translateX`-slid — keeps panel content from visibly reflowing/
- * squishing while the outer clip window is mid-grow, so the visual read
- * stays "sliding in from off-screen" rather than "wiping into view".
- */
 export function UnitsWorkspace({
   open,
   onClose,
@@ -79,15 +27,8 @@ export function UnitsWorkspace({
   open: boolean;
   onClose: () => void;
   units: Unit[];
-  /** Controlled, shared with the 3D scene and the UnitPreviewCard — see
-   * ProjectViewerRuntime's own `handleSelectUnit`. Was local state here,
-   * which is precisely why a 3D click never marked a row and a row click
-   * never opened the card. */
   selectedUnitId: string | null;
   onSelectUnit: (unitId: string | null) => void;
-  /** The selected unit has no resolvable block in the loaded GLB, so the
-   * camera could not frame it — surfaced as one honest line rather than a
-   * silently motionless viewport. */
   unmappedUnitId: string | null;
   filters: UnitFilterState;
   onFiltersChange: Dispatch<SetStateAction<UnitFilterState>>;
@@ -96,23 +37,11 @@ export function UnitsWorkspace({
   const reducedMotion = useEffectiveReducedMotion();
   const outerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
-  // `detailOpen` is a *view* flag, not a second selection: which unit the
-  // detail view shows is always the shared `selectedUnitId` below. Keeping
-  // the two apart is what lets a 3D block click mark the matching row in
-  // place — the visitor keeps their scroll position and sees which row it
-  // was — instead of yanking the whole panel over to a detail view they
-  // didn't ask for.
   const [detailOpen, setDetailOpen] = useState(false);
   const selectedUnit = useMemo(() => units.find((u) => u.id === selectedUnitId) ?? null, [units, selectedUnitId]);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  // Search/sort/view state — stays local (survives UnitSearchView
-  // unmounting when a unit is selected, see UnitSearchView's own doc
-  // comment); `filters` itself is a controlled prop now, shared with
-  // UnitsBar (see this component's own doc comment).
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [visibleCount, setVisibleCount] = useState(UNITS_PAGE_SIZE);
-  // More / Settings Menu PRD §11-12 — Currency reuses the real platform
-  // preference (useAppStore); Area Units is viewer-local (useViewerPreferences).
   const displayCurrency = useAppStore((s) => s.currency);
   const eurToAllRate = useAppStore((s) => s.eurToAllRate);
   const { areaUnit } = useViewerPreferences();
@@ -123,16 +52,6 @@ export function UnitsWorkspace({
     if (!outer || !inner) return;
     const dur = reducedMotion ? 0.001 : open ? 0.48 : 0.4;
     const ease = open ? "power2.out" : "power2.in";
-    // Opening only waits (2026-08-18 direct instruction: "the dock folds
-    // from the sides to the middle... after the dock fades with a 250ms
-    // time then the 'filter list panel' slides from the left") — the
-    // dock's own fold-out (ViewerHUD.tsx's `navRef` effect) takes exactly
-    // 250ms with no delay of its own, so this panel starting 250ms late is
-    // what makes the two read as one sequenced handoff rather than two
-    // things happening at once. Closing has no delay (starts the instant
-    // `open` goes false) — the dock's own restore is what waits on *this*
-    // animation's duration instead (see that effect's own doc comment for
-    // why 0.4s, not 0.25s, is what it waits for).
     const delay = open && !reducedMotion ? 0.25 : 0;
     const tl = gsap.timeline({ delay });
     tl.to(outer, { width: open ? PANEL_WIDTH : 0, duration: dur, ease }, 0).to(
@@ -159,11 +78,6 @@ export function UnitsWorkspace({
     setDetailOpen(true);
   }
 
-  // Deliberately does NOT clear the selection any more. Going back to the
-  // list used to drop the 3D highlight and the camera framing along with
-  // the detail view, so a visitor who wanted to keep looking at the unit
-  // while scanning its neighbours lost it. Now the block stays lit, the
-  // row stays marked, and only the view changes.
   function handleBackToSearch() {
     setDetailOpen(false);
   }
@@ -184,13 +98,6 @@ export function UnitsWorkspace({
       <div
         ref={innerRef}
         className="viewer-glass absolute inset-y-0 left-0 flex h-full flex-col"
-        // `.viewer-glass`'s border is declared unlayered (see globals.css)
-        // specifically so it beats same-specificity Tailwind utilities —
-        // which means Tailwind border-*-0 classes can't zero out 3 of its
-        // 4 sides here; only an inline style outranks it. Left edge is the
-        // screen edge and top/bottom are full-height, so only the right
-        // edge (PRD §4's "subtle separator between Units UI and Viewer")
-        // should actually show a border.
         style={{
           width: PANEL_WIDTH,
           transform: "translateX(-100%)",
@@ -199,11 +106,8 @@ export function UnitsWorkspace({
           borderLeft: 0,
         }}
       >
-        {/* PRD §10 — "UNITS  ×" for the search view; Unit Detail PRD §1's
-            same panel gets its own "← Back to Search" header instead once
-            a unit is selected, per that PRD's own rule of never opening a
-            second panel. `×` always fully closes Units mode (§31: same as
-            clicking the Units nav icon again). */}
+        {                                                                 
+                                                  }
         <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3.5">
           {detailOpen && selectedUnit ? (
             <button

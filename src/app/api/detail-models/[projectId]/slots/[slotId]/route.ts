@@ -7,10 +7,6 @@ import { logAuditEvent } from "@/lib/audit";
 
 const patchSlotSchema = z.object({
   name: z.string().min(1).max(60).optional(),
-  // Units Blocks & POI Layer PRD §2/§3 — lets the (future) Units tab
-  // correct role/alignment after creation, e.g. if a slot was created
-  // before its intended Building parent existed. Both optional so the
-  // existing rename-only callers are unaffected.
   role: z.enum(["building", "units", "surroundings", "context", "custom"]).optional(),
   transformParentSlotId: z.string().nullable().optional(),
 });
@@ -33,9 +29,6 @@ export async function PATCH(
     return NextResponse.json({ error: "Slot not found." }, { status: 404 });
   }
 
-  // A transform parent must be a real slot in the SAME project (and not
-  // the slot itself — a self-reference would make every downstream
-  // transform-inheritance read loop forever).
   if (parsed.data.transformParentSlotId) {
     if (parsed.data.transformParentSlotId === slotId) {
       return NextResponse.json({ error: "A slot can't inherit its own transform." }, { status: 400 });
@@ -67,15 +60,6 @@ export async function PATCH(
   return NextResponse.json(updated);
 }
 
-/**
- * Permanently deletes a slot, every version underneath it (Prisma relation
- * `onDelete: Cascade` also removes their `UnitMeshLinkV2` rows), and their
- * stored blobs — same best-effort blob cleanup as the single-version
- * DELETE route. Refuses to delete a project's last remaining slot: a
- * project must always have somewhere to hang a detail model, matching
- * every existing project's real "Building" slot never having been
- * optional before this feature existed.
- */
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ projectId: string; slotId: string }> }

@@ -9,10 +9,6 @@ const linksSchema = z.array(
   z.object({
     meshName: z.string().min(1),
     unitId: z.string().min(1),
-    // Units Blocks & POI Layer PRD §7/§15 — optional so existing callers
-    // that only ever sent {meshName, unitId} (e.g. a not-yet-updated
-    // client) keep working; the DB default (0°, enabled, no overrides)
-    // applies when omitted.
     poiYawDeg: z.number().finite().optional(),
     poiEnabled: z.boolean().optional(),
     poiDistanceOverride: z.number().finite().nullable().optional(),
@@ -20,15 +16,6 @@ const linksSchema = z.array(
   })
 );
 
-/**
- * Admin's confirmed Unit_<number> -> Unit mapping for one specific draft
- * version (version-scoped sibling of the legacy, project-scoped
- * src/app/api/detail-models/[projectId]/links/route.ts). PUT replaces the
- * full set for this version — same "admin UI always submits every detected
- * node's current selection" reasoning as the legacy route. Every row
- * submitted here is treated as admin-confirmed ("mapped"), overwriting any
- * "carried"/"needs_review" status a carry-forward row might have had.
- */
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ projectId: string; versionId: string }> }
@@ -53,15 +40,6 @@ export async function PUT(
     );
   }
 
-  // Units Blocks & POI Layer PRD §8 — this route verified the VERSION
-  // belongs to the project but never verified each submitted unitId does.
-  // Before this fix, an admin (or a buggy client) could bind a mesh to a
-  // Unit row from a completely different project — invisible in the UI
-  // (the picker only ever offers this project's own units) but a real
-  // cross-tenant data-integrity hole via a direct API call. Also rejects
-  // the same unitId appearing twice in one payload with a clean 400
-  // instead of letting the DB's new (detailModelVersionId, unitId) unique
-  // constraint surface as an opaque 500.
   const submittedUnitIds = [...new Set(parsed.data.map((l) => l.unitId))];
   if (submittedUnitIds.length !== parsed.data.length) {
     return NextResponse.json({ error: "Each unit can only be mapped to one mesh." }, { status: 400 });
@@ -100,11 +78,6 @@ export async function PUT(
   });
   await refreshExperienceDocument(prisma, projectId, versionId);
 
-  // Every other write route in this directory (upload/publish/rollback/
-  // discard) logs — this one was the one gap, presumably an oversight
-  // rather than a deliberate omission, since a full replace of a version's
-  // unit bindings is exactly the kind of admin action the audit trail
-  // exists to capture.
   await logAuditEvent({
     actor: gate.user?.email ?? gate.user?.name ?? "admin",
     action: "Unit links updated",

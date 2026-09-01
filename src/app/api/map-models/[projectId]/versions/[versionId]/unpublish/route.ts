@@ -3,16 +3,6 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 
-/**
- * Takes the currently-published version off the public map without
- * publishing a replacement — the "Remove model" action. Distinct from
- * DELETE .../versions/[versionId] (which only ever discards an unpublished
- * *draft*, never destroys a published/archived version's row — versions are
- * immutable per PRD_Admin_Mapbox_GLB §18). This just archives it, so
- * `GET /api/map-models/[projectId]` starts returning `null` (no model on
- * the map) while the version stays in history and can still be rolled back
- * to later.
- */
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ projectId: string; versionId: string }> }

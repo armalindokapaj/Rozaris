@@ -4,24 +4,6 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { attachmentHeader } from "@/lib/admin3dAssets";
 import { buildInventoryWorkbook, XLSX_CONTENT_TYPE, type InventoryRowValues } from "@/lib/integrations/xlsx";
 
-/**
- * The Sheet Sync "starter sheet": this project's current inventory as a
- * real `.xlsx`, laid out in exactly the seven columns the Google Sheets
- * connector reads back.
- *
- * `GET /api/admin/projects/[projectId]/inventory-template`
- *
- * Server-side rather than built in the browser for two reasons: the rows
- * are read fresh from Postgres at download time (the client copy can be up
- * to 30s stale, and a starter sheet that disagrees with the DB is worse
- * than no starter sheet), and the browser gets a plain download with a real
- * filename and content type instead of an object URL.
- *
- * Replaces a client-side CSV that arrived in a single column for anyone
- * whose spreadsheet app splits on the locale list separator rather than on
- * commas — see `src/lib/integrations/xlsx.ts` for why `.xlsx` is the format
- * that has no such failure mode.
- */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ projectId: string }> }
@@ -54,9 +36,6 @@ export async function GET(
     status: u.status,
   }));
 
-  // A project with no units still gets a workbook — the header row alone is
-  // the useful artefact when you are setting a sheet up before the
-  // inventory exists, which is exactly when a template is wanted.
   const stream = buildInventoryWorkbook(rows, project.name);
 
   return new Response(stream, {

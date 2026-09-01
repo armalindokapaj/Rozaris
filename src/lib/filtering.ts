@@ -56,7 +56,7 @@ export function matchesListingFilters(listing: Listing, f: FilterState): boolean
 }
 
 export function matchesProjectFilters(project: Project, f: FilterState): boolean {
-  if (f.transaction === "rent") return false; // projects are for-sale inventory in this mock
+  if (f.transaction === "rent") return false;                                                
   if (f.priceMin != null || f.priceMax != null) {
     const prices = project.units.map((u) => u.price);
     const min = Math.min(...prices);
@@ -93,7 +93,6 @@ export function sortEntities<T extends { premium: boolean }>(
     case "area_asc":
       return copy.sort((a, b) => getArea(a) - getArea(b));
     default:
-      // "recommended": premium first, then newest
       return copy.sort((a, b) => {
         if (a.premium !== b.premium) return Number(b.premium) - Number(a.premium);
         return new Date(getDate(b)).getTime() - new Date(getDate(a)).getTime();
@@ -101,27 +100,12 @@ export function sortEntities<T extends { premium: boolean }>(
   }
 }
 
-/**
- * `liveListings` — the real Postgres `Listing` rows fetched by
- * `useLiveListings()` into the store's `liveListings` slice. `liveProjects`
- * — same, but `useLiveProjects()`/`GET /api/projects`. Both `null` while
- * their fetch is still in flight or hasn't been triggered on this page.
- * `projectUnitListingsFrom(liveProjects ?? [])` is the live equivalent of
- * mockData's `projectUnitListings` — synthetic Listings for each live
- * project's available units — combined with `liveListings` here, the one
- * place that combination happens, mirroring the old
- * `mockData.searchableListings` this replaces.
- */
 export function getVisibleListings(
   f: FilterState,
   bounds: MapBounds | null,
   restrictToBounds: boolean,
   liveListings: Listing[] | null,
   liveProjects: Project[] | null,
-  // Search Engine Control's real ranking weights (`GET /api/search-ranking`,
-  // admin-adjustable in Platform Settings → Search) — only used for the
-  // default "recommended" sort; every other sort is a direct field
-  // comparison via `sortEntities` below, unaffected by this.
   rankWeights: SearchRankingWeights = DEFAULT_SEARCH_RANKING_WEIGHTS
 ): Listing[] {
   const searchableListings = [...(liveListings ?? []), ...projectUnitListingsFrom(liveProjects ?? [])];

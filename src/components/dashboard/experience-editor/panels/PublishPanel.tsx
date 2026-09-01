@@ -23,16 +23,6 @@ function CheckRow({ ok, label, detail }: { ok: boolean | "warn"; label: string; 
   );
 }
 
-/**
- * Publish tab (PRD §42) — Preview/Validation/Versions/Publish. The real
- * Publish Gate route (GLB-validation-not-blocked + no-duplicate-unit-
- * bindings) already existed but had no caller until this pass added
- * useDetailModelSlots.handlePublish. Validation checks here read real
- * data (validationStatus, unit-link coverage, broken-link detection
- * against the real live Units list, Shot/Section counts) — Solar Path/
- * Viewer Time/Shader-error checks are honest "N/A — lands with
- * Environment/Rendering phases" rows, not fabricated passes.
- */
 export function PublishPanel({
   project,
   detail,
@@ -57,11 +47,6 @@ export function PublishPanel({
   const hasOpeningShot = configEditor.draft.cameraPresets.length > 0;
   const sectionCount = configEditor.draft.sections.length;
 
-  // Units Blocks & POI Layer PRD §26 — preview the same checks the
-  // publish route itself enforces for a role=units slot, so an admin
-  // sees the problem BEFORE clicking Publish and getting a 422, not
-  // instead of the server-side gate (that stays authoritative — this is
-  // read-only preview off the same live draft state).
   const activeSlot = detail.slots.find((s) => s.id === detail.activeSlotId) ?? null;
   const isUnitsSlot = activeSlot?.role === "units";
   const unitNodeNames = new Set((activeVersion?.sceneManifest ?? []).map((n) => n.name).filter((n) => /^Unit_/i.test(n)));

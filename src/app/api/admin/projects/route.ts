@@ -3,17 +3,6 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { normalizeProject } from "@/lib/projects";
 
-/**
- * Feeds the Admin console's 3D Platform project grid (`Project3DGrid`,
- * `src/app/admin/page.tsx`) — every non-hard-deleted project regardless of
- * `approvalStatus` (pending/active/archived all included), unlike the
- * public `GET /api/projects` (active-only). Admin needs to see and manage
- * a pending or admin-archived project too, not just what's publicly live —
- * same reasoning `GET /api/admin/listings` documents for its own `status`
- * param, except this grid always wants every status at once rather than
- * one at a time (it overlays per-card visibility state from
- * `GET /api/admin/projects/[id]/publication` on top of this base list).
- */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;
@@ -28,12 +17,6 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
   });
 
-  // `approvalStatus`/`createdAt` are admin-only columns `normalizeProject`
-  // deliberately drops (the public `Project` shape has no concept of
-  // "pending review"). The console's project index renders a status
-  // column and filters on it, and doing that previously meant one extra
-  // `/publication` request PER CARD — see `Project3DGrid`'s per-card
-  // fetch, which this makes unnecessary for the list view.
   return NextResponse.json(
     rows.map((row) => ({ ...normalizeProject(row), approvalStatus: row.approvalStatus, createdAt: row.createdAt }))
   );

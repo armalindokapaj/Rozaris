@@ -1,9 +1,5 @@
 import type { LucideIcon } from "lucide-react";
 
-/** Static sponsored-slot creative, generalized from AdBanner — same
- * "sponsor card" idea, different content per instance (bank, insurer,
- * etc). Tall, with a slowly animated visual, standing in for a real
- * animated ad creative. */
 export function SponsorAdCard({
   icon: Icon,
   name,

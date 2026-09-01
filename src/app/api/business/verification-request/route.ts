@@ -3,10 +3,6 @@ import { prisma } from "@/lib/db";
 import { requireOrgRole } from "@/lib/publisherAuth";
 import { logAuditEvent } from "@/lib/audit";
 
-/** §9.1 "Business — Not submitted / Pending / ..." — Owner/Org Admin
- * submitting the organization for admin review. Only meaningful from
- * `not_submitted`/`rejected`/`reverify_required`; a no-op request while
- * already `pending`/`verified` is rejected rather than silently reset. */
 export async function POST() {
   const gate = await requireOrgRole();
   if (gate instanceof NextResponse) return gate;

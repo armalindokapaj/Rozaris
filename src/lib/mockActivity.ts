@@ -1,16 +1,9 @@
-// Demo seed data for the User/Publisher dashboards' Notifications and Leads
-// modules (PRD_User §13, PRD_Business_Publisher §16, PRD_Private_Publisher
-// §8). Nothing here is fetched from or delivered to a real backend — it
-// exists so each dashboard persona has realistic, non-empty content to
-// demonstrate the PRD's information architecture.
-
 import type { LeadItem, LeadSource, LeadStatus, NotificationItem } from "./types";
 import type { AuthState } from "./store";
 
 const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
 
-/** Notifications for a signed-in User (buyer role). */
 export function buyerNotifications(): NotificationItem[] {
   return [
     {
@@ -47,7 +40,6 @@ export function buyerNotifications(): NotificationItem[] {
   ];
 }
 
-/** Notifications for a signed-in Publisher (individual / agency / developer). */
 export function publisherNotifications(orgType: AuthState["orgType"]): NotificationItem[] {
   const shared: NotificationItem[] = [
     {
@@ -93,7 +85,6 @@ function hashSeed(str: string): number {
   return Math.abs(h);
 }
 
-/** Deterministic demo leads against a publisher's real listing/project ids. */
 export function buildDemoLeads(publisherId: string, listingIds: string[], projectIds: string[] = []): LeadItem[] {
   const targets: { listingId?: string; projectId?: string }[] = [
     ...listingIds.slice(0, 4).map((id) => ({ listingId: id })),

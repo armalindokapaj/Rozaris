@@ -8,19 +8,6 @@ import { Button, buttonVariants } from "@/components/ui/Button";
 import { useT } from "@/lib/i18n/useT";
 import { useCredentialsSignIn } from "@/hooks/useCredentialsSignIn";
 
-/**
- * Compact "Join" popover — the header's sole logged-out entry point (top
- * right of the desktop nav). Real Auth.js credentials sign-in (real auth to
- * UI pass — see the "Rozaris Platform Audit" memory), same
- * `useCredentialsSignIn()` the global SignInModal uses, with a Sign Up link
- * into /buyer/signup below it.
- *
- * The full-screen SignInModal (openSignIn()) still exists and still backs
- * every OTHER "sign in required" prompt in the app (save/compare guards on
- * cards, listing detail, etc.) — this popover only replaces the header's
- * own entry point, which used to be a "Sign in" text link + "Create
- * account" pill.
- */
 export function JoinMenu({ variant = "pill" }: { variant?: "pill" | "bare" }) {
   const { open, toggle, close, ref } = useDropdown<HTMLDivElement>();
   const [username, setUsername] = useState("");

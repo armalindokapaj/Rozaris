@@ -3,13 +3,6 @@
 import { useCallback, useMemo, type ChangeEvent } from "react";
 import { clamp } from "@/lib/utils";
 
-/**
- * Piecewise-linear scale: values from `min` to `breakpoint` are spread over
- * `breakpointFraction` of the track width (finer `step`), and the remainder
- * of the domain (`breakpoint` to `max`) fills the rest of the track (coarser
- * `stepAfterBreakpoint`). Without a breakpoint the scale is uniform. Reaching
- * `max` reports `null` (open-ended, e.g. "€300,000+").
- */
 export type SliderScale = {
   min: number;
   max: number;

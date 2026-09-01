@@ -41,16 +41,6 @@ export interface SyncOutcome {
   sheet: { headers: string[]; recognized: Record<string, SyncableField>; ignored: string[] } | null;
 }
 
-/**
- * The project's Google Sheets inventory connector — one per project, since
- * two sheets writing the same units would race with no defined winner (the
- * create route enforces that too).
- *
- * Every mutation returns an error string rather than throwing, because
- * every one of them is a thing an admin does with a link a developer sent
- * them, and "that isn't a Sheets link" / "that sheet isn't shared" are
- * normal outcomes to render inline, not exceptions.
- */
 export function useInventoryConnector(projectId: string) {
   const [connector, setConnector] = useState<InventoryConnector | null>(null);
   const [runs, setRuns] = useState<InventorySyncRun[]>([]);
@@ -79,8 +69,6 @@ export function useInventoryConnector(projectId: string) {
     void load();
   }, [load]);
 
-  /** Shared "call the API, surface its `error` string, refresh" wrapper —
-   * every route in this family answers with `{ error }` on failure. */
   const call = useCallback(
     async (url: string, init: RequestInit): Promise<{ ok: boolean; error?: string; data?: unknown }> => {
       setBusy(true);
@@ -94,9 +82,6 @@ export function useInventoryConnector(projectId: string) {
               : body?.error
                 ? JSON.stringify(body.error)
                 : `Request failed (${res.status}).`;
-          // The body rides along on failure too: a 422 from the sync
-          // route carries the sheet's real headers so the caller can
-          // offer a column mapping instead of just the error text.
           return { ok: false, error: message, data: body };
         }
         return { ok: true, data: body };
@@ -154,8 +139,6 @@ export function useInventoryConnector(projectId: string) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dryRun }),
       });
-      // A real run changes both the connector's own status/timestamps and
-      // its run history; a dry run changes neither, so don't refetch.
       if (result.ok && !dryRun) await load();
       return { ...result, outcome: result.data as SyncOutcome | undefined };
     },

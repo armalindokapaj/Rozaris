@@ -2,23 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 
-/**
- * "Fix the listings and units if they have a problem" — real, on-demand
- * scan (same style as `GET /api/admin/integrity-check`) for `Listing`/
- * `Project` rows whose location doesn't resolve to a real, active
- * `Location` right now. A `Unit` has no location field of its own (it
- * always inherits its Project's — see the schema-header note on
- * `Listing.unitId`), so a "broken unit location" is really its Project's
- * location; nothing extra to scan there.
- *
- * How a row ends up here despite every write path resolving against
- * `Location` at write time (`POST /api/listings`, `POST /api/projects`):
- * an admin later deactivated or deleted the `Location` that row still
- * points at (deactivate deliberately doesn't cascade — see the `[locationId]`
- * route's own doc comment), or the row predates the Canonical Location
- * System (a raw import, or written before `neighborhoodId` validation
- * existed).
- */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

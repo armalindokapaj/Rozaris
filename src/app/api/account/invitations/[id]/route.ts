@@ -3,16 +3,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { logAuditEvent } from "@/lib/audit";
 
-/**
- * §14.4 "Business invitation" flow, continued — accept/decline one
- * invitation addressed to the signed-in account's own email. Accepting
- * creates the real `OrganizationMembership` row and (if needed) flips the
- * account's `role` to "publisher" so `requirePublisherSession()` resolves
- * it on the next request. Deliberately narrow: an account can only ever
- * be affiliated with one organization at a time (owner OR one active
- * membership) — the same constraint `Publisher.ownerUserId @unique`
- * already implies for owners.
- */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user?.id || !session.user.email) {

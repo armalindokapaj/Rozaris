@@ -9,12 +9,6 @@ import { ConstructionTimelineEditor } from "@/components/dashboard/ConstructionT
 import { ConstructionTimelineStrip } from "@/components/project/ConstructionTimelineStrip";
 import type { Project } from "@/lib/types";
 
-/** Business Publisher's Construction management surface
- * (PRD_ROZARIS_User_Types §4 "Construction") — current %, phase and update
- * history per project. Updates "may require Admin approval" per the PRD;
- * this reuses the existing submit→admin-approve ConstructionTimelineRequest
- * flow (ConstructionTimelineEditor / TimelineTab in the Admin console)
- * rather than inventing a second approval mechanism. */
 export function ConstructionTab({ projects }: { projects: Project[] }) {
   const { t } = useT();
   return (

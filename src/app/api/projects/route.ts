@@ -8,15 +8,6 @@ import { getAllProjects, getProjectsByPublisherAnyStatus } from "@/lib/projects.
 import { resolveLocation } from "@/lib/locations";
 import { syncProjectLocationDependents } from "@/lib/projectLocation";
 
-/** Public project catalog — the client-side equivalent of
- * `projects.server.ts`'s `getAllProjects()` for consumers that can't be a
- * server component (SearchBar, MapView, the admin console's own project
- * pickers). No auth gate, same convention as every other public GET in
- * this app (`GET /api/listings`, `GET /api/publishers`).
- *
- * `?publisherId=` switches to that publisher's own projects for their
- * dashboard — any `approvalStatus`, mirroring `GET /api/listings`'s same
- * `?publisherId=` distinction. */
 export async function GET(request: Request) {
   const publisherId = new URL(request.url).searchParams.get("publisherId");
   const projects = publisherId
@@ -48,18 +39,6 @@ const projectSchema = z.object({
   completionLabel: z.string().optional().default(""),
 });
 
-/**
- * Creates/updates a real Postgres row for a project — the public catalog
- * (`GET` above) reads straight from this table now (see the "Rozaris
- * Platform Audit" memory's Projects/Units migration), so this is a real
- * publish action, not just plumbing for the 3D pipeline as the old comment
- * here said.
- *
- * Both real callers (NewProjectModal.tsx, the `/admin/projects/new` wizard)
- * are admin-only surfaces, so this is `requireAdmin()`-gated like every
- * other admin write route (src/lib/adminAuth.ts) — closes the same class
- * of impersonation gap already fixed on `POST /api/listings`.
- */
 export async function POST(request: Request) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;
@@ -78,14 +57,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // `slug` carries its own `@unique` constraint independent of the `id`
-  // this upsert is keyed on — two different projects submitting the same
-  // (client-computed, name-derived) slug previously crashed this route
-  // with an unhandled Prisma P2002, surfaced to the caller as a raw HTML
-  // 500 page instead of JSON. Real bug hit by the MVP admin wizard
-  // (`/admin/projects/new`) on a retry with the same project name after a
-  // page reload — see "rozaris-mvp-admin-project-pipe" memory. Auto-dedupe
-  // instead of crashing: a genuine update (same id) keeps its own slug.
   let { slug } = data;
   const existingBySlug = await prisma.project.findUnique({ where: { slug } });
   if (existingBySlug && existingBySlug.id !== data.id) {
@@ -96,9 +67,6 @@ export async function POST(request: Request) {
     slug = `${data.slug}-${suffix}`;
   }
 
-  // A soft-deleted project must be restored from the Super Admin Recycle
-  // Bin before it can be edited again — an ordinary save must not silently
-  // revive it.
   const existingById = await prisma.project.findUnique({ where: { id: data.id } });
   if (existingById?.deletedAt) {
     return NextResponse.json(
@@ -107,14 +75,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // Canonical Location System — hard validation, same rule `POST
-  // /api/listings` already enforces. Both real callers (NewProjectModal,
-  // EditProjectModal — see MEMORY note "rozaris-controlled-taxonomy-spec")
-  // now derive `neighborhoodId` from a real Location dropdown and `city`
-  // from that selection, so any request reaching this route with an
-  // unresolvable id is either a stale client or a direct API call, not a
-  // legitimate admin edit — reject rather than silently store a
-  // non-canonical location.
   const location = await resolveLocation(data.neighborhoodId);
   if (!location) {
     return NextResponse.json({ error: `Unknown location "${data.neighborhoodId}".` }, { status: 400 });
@@ -128,35 +88,12 @@ export async function POST(request: Request) {
         ...data,
         slug,
         publisherId,
-        // Real bug found live (reported as "a project I saved as a draft
-        // was already published") — every project created through either
-        // real caller (NewProjectModal.tsx, the `/admin/projects/new`
-        // wizard) went straight to `active` on creation, immediately live
-        // on the public platform (search, listings, /project/[slug]) with
-        // zero draft/review window, even though the wizard's own "Status"
-        // field displayed "Draft" the whole time. Starts `pending` now —
-        // out of the public catalog (`PUBLIC_WHERE` in projects.server.ts)
-        // — until an admin explicitly publishes it via `PATCH
-        // /api/admin/projects/[projectId]/publication`. A `pending`
-        // project's slug still resolves in the 3D viewer for its own
-        // creator through `CustomProjectPreview`'s Zustand fallback (see
-        // that component's doc comment) — a real "preview while in draft"
-        // path, not a new one built for this.
         approvalStatus: "pending",
         city: location.cityName,
         locationId: location.id,
       },
     });
 
-    // One location, cascaded — see src/lib/projectLocation.ts. Covers the
-    // units' listings ("unit location follows project location", the same
-    // rule POST /api/listings applies at creation time), every
-    // MapModelVersion's anchor, and the 3D Experience map view, so a
-    // location edited here can't leave the 3D Map Control pointing at the
-    // old spot. Gated on an actual change (not every save — a rename or
-    // hero-image edit shouldn't touch every listing's Property row) and
-    // only for an existing project, since a brand-new one can't have any
-    // Listings, model versions or 3D config yet.
     if (
       existingById &&
       (existingById.neighborhoodId !== project.neighborhoodId ||
@@ -167,12 +104,6 @@ export async function POST(request: Request) {
       await syncProjectLocationDependents(project);
     }
 
-    // Same ISR staleness the publication route now fixes (see its doc
-    // comment) — an edit to an already-`active` project (new hero image,
-    // renamed, etc.) needs its cached `/project/[slug]` and `/projects/[slug]`
-    // pages invalidated too, not just approval-status flips. Revalidate the
-    // old slug as well when a rename changed it, so that stale page doesn't
-    // keep serving the pre-rename content at its old URL.
     revalidatePath(`/project/${project.slug}`);
     revalidatePath(`/projects/${project.slug}`);
     if (existingById && existingById.slug !== project.slug) {

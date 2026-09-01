@@ -1,16 +1,3 @@
-/**
- * `dockMagnification` (src/lib/dockMagnification.ts) — the floor rail's
- * macOS-dock curve, and specifically the rule it exists to guarantee:
- * "affects max 5 floors" (2026-08-25 direct instruction). Run with
- * `npm run test:floor-rail`.
- *
- * Standalone rather than browser-only for the same reason
- * `test-unit-facets.ts` is: the rule is a property of the maths at every
- * pointer position on a rail of any height, and the only project with real
- * inventory has three floors, so no amount of clicking around the live
- * viewer can reach the case that matters. Same plain tsx script shape
- * `test-sections.ts` established.
- */
 import { dockMagnification, DOCK_WINDOW_SLOTS } from "@/lib/dockMagnification";
 
 let pass = 0,
@@ -51,9 +38,6 @@ ok("approaches the edge with ~zero slope (no visible step)",
    `got ${dockMagnification(DOCK_WINDOW_SLOTS - 0.01).toExponential(2)}`);
 
 console.log("\n4. THE RULE — never more than five floors react, at any pointer position");
-// A 40-storey rail, pointer swept in 1/500-of-a-slot steps across the whole
-// stack. Rows sit one slot apart, so this covers every geometric case there
-// is: dead on a row, exactly between two, and everything in between.
 const ROWS = 40;
 let worst = 0;
 let worstAt = 0;
@@ -78,7 +62,6 @@ console.log("\n5. degenerate inputs can't produce a NaN transform");
 ok("NaN distance -> 0", dockMagnification(Number.NaN) === 0);
 ok("Infinity -> 0", dockMagnification(Number.POSITIVE_INFINITY) === 0);
 
-// What the rail actually renders, for the record: scale = 1 + 0.95 × curve.
 const MAX_SCALE = 1.95;
 console.log(
   `\nrendered scales: hovered ×${r3(1 + (MAX_SCALE - 1) * dockMagnification(0))}` +

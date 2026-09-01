@@ -6,21 +6,6 @@ import { cn } from "@/lib/utils";
 import type { DetailModelSlot } from "@/lib/types";
 import type { DetailVersionRow } from "@/hooks/useDetailModelSlots";
 
-/**
- * Scene tab's slot switcher — ported near-verbatim from the pre-rebuild
- * editor's SlotTabStrip.tsx (Multiple Detail-Model Slots pass) as part of
- * "keep the uploading files section the same" (Experience Editor v2
- * rebuild, 2026-08-15). Every project has at least one real slot
- * ("Building"); delete is hidden on a project's last remaining slot,
- * matching the server-side rule.
- *
- * The amber dot (added after "Tower Vlora" shipped 7 slots' worth of
- * uploaded-but-never-published drafts straight into a blocked Distribution
- * release, invisibly) reads `versionsBySlot` — already fetched for every
- * slot up front by useDetailModelSlots, always in sync with every upload/
- * publish/rollback — rather than a separate server round-trip, so it can
- * never drift stale relative to what Publish would actually do.
- */
 export function SlotTabStrip({
   slots,
   activeSlotId,

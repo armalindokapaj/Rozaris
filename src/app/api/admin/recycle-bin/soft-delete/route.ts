@@ -11,13 +11,6 @@ const bodySchema = z.object({
   reason: z.string().optional(),
 });
 
-/**
- * "Soft Delete by default" for the entity types that had no delete route
- * of their own before this pass (Project, Publisher, User, Listing) —
- * Unit/MapModelVersion/DetailModelVersion already got their existing
- * DELETE routes converted to soft-delete in place; this generic route is
- * reused for all 7 rather than N bespoke near-identical files.
- */
 export async function POST(request: Request) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

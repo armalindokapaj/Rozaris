@@ -13,18 +13,9 @@ import type { Unit } from "@/lib/types";
 interface ProjectOption {
   id: string;
   name: string;
-  /** Needed only by the "New unit" form's building picker below — the
-   * admin projects list already returns this (`normalizeProject`), so no
-   * separate fetch. */
   buildings: string[];
 }
 
-/** `GET /api/admin/units`'s shape — every real Unit, whichever project it's
- * under, plus every real (non-deleted) Listing currently advertising it.
- * `listings` is an array rather than a single nullable id: a Unit needs no
- * listing to exist, and nothing stops two listings pointing at the same
- * one (re-listed by a different agency) — both are worth surfacing here,
- * not hidden behind a single "linked" flag. */
 interface AdminUnitRow {
   id: string;
   code: string;
@@ -49,19 +40,6 @@ const UNIT_STATUS_STYLE: Record<string, string> = {
   sold: "bg-neutral-100 text-neutral-500",
 };
 
-/**
- * Admin's platform-wide Listings overview — every real listing regardless
- * of project, who published it, and (once a Listing could optionally
- * belong to a Project) which project it's under, if any. Sits directly
- * below "Projects" in the left nav: the per-project `ProjectListingsPanel`
- * nested in `EditProjectModal` is where a listing is normally managed once
- * it's attached, but a listing that was never put in its project (or one
- * that stands alone on purpose) has nowhere else to be found or fixed —
- * this is that catch-all. Shares `ListingManagePanel` with
- * `ProjectListingsPanel`, so a move made from either surface is
- * immediately visible from the other; both just re-read the same
- * `GET /api/admin/listings?status=all`.
- */
 export function ListingsTab() {
   const { t } = useT();
   const priceFmt = usePriceFormat();
@@ -74,27 +52,10 @@ export function ListingsTab() {
   const [view, setView] = useState<"listings" | "units">("listings");
   const [creating, setCreating] = useState(false);
 
-  // "New listing" from this global tab has no single project to inherit a
-  // publisher/unit scope from (unlike ProjectListingsPanel, which always
-  // has `project.developer.id` and that project's own units on hand) — so
-  // creation here starts with its own small publisher + project picker,
-  // then reuses the same `NewListingForm` every other creation surface
-  // does. Publisher is required (`NewListingForm.publisherId` isn't
-  // optional); project is not.
   const [newListingPublisherId, setNewListingPublisherId] = useState("");
   const [newListingProjectId, setNewListingProjectId] = useState("");
   const [newListingUnitOptions, setNewListingUnitOptions] = useState<{ id: string; code: string }[]>([]);
-  // Publisher and project are picked together on one small screen before
-  // `NewListingForm` itself appears — a separate `ready` flag (rather than
-  // switching the moment a publisher is chosen) so picking publisher first
-  // doesn't yank the project picker away before it's had a chance to be
-  // used, whichever order the admin fills them in.
   const [newListingReady, setNewListingReady] = useState(false);
-  // Same "adjusting state during render" pattern ListingManagePanel's own
-  // unit picker uses (see its `syncedProjectSelection`) — clears stale
-  // options synchronously the moment the project selection itself changes,
-  // so the effect below only ever needs to run when there's a project to
-  // actually query.
   const [syncedNewListingProjectId, setSyncedNewListingProjectId] = useState(newListingProjectId);
   if (newListingProjectId !== syncedNewListingProjectId) {
     setSyncedNewListingProjectId(newListingProjectId);
@@ -138,29 +99,16 @@ export function ListingsTab() {
   const projectNameById = new Map(projects.map((p) => [p.id, p.name]));
   const visible = projectFilter === "unassigned" ? listings.filter((l) => !l.projectId) : listings;
 
-  /** Jumps from a Unit row's linked-listing chip straight to that
-   * listing's own manage panel, so a mismatch spotted while auditing
-   * Units ("why does this unit show sold with no listing?") can be fixed
-   * without hunting for it by hand in the Listings view. */
   function openListingFromUnit(listingId: string) {
     setView("listings");
     setProjectFilter("all");
     setManaging(listingId);
   }
 
-  // Full unit edit, from this platform-wide view — the only Unit edit
-  // surface before this was `ProjectUnitsEditor.tsx`, reachable only from
-  // inside a project's own edit modal. Same `PATCH
-  // /api/projects/[projectId]/units/[unitId]` write path (real audit log +
-  // inventory-revision bump), just a wider field set (type/currency/
-  // transaction included, which that editor's own inline form leaves out).
   type UnitEditDraft = Pick<
     AdminUnitRow,
     "code" | "type" | "buildingName" | "bedrooms" | "bathrooms" | "currency" | "transaction" | "status"
   > & {
-    // "" while the field is mid-edit-and-cleared — see ClearableNumber's
-    // own doc comment for why floor/area/price need this and
-    // bedrooms/bathrooms (a fixed dropdown, always has a real value) don't.
     floor: number | "";
     area: number | "";
     price: number | "";
@@ -239,13 +187,8 @@ export function ListingsTab() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="font-serif text-xl text-neutral-900">{t("admin.listingsMgmtTitle")}</h1>
-          {/* Both subtitles are stacked in the same grid cell (one hidden
-              via `invisible`) instead of swapped in and out, so the
-              paragraph's box always reserves room for whichever text is
-              longer. Otherwise the two subtitles' different lengths could
-              reflow to a different number of lines and change this row's
-              height, nudging the button cluster on the right (it's
-              vertically centered via `items-center`) up or down. */}
+          {                                                               
+                                                                    }
           <p className="grid text-sm text-neutral-500">
             <span className={`col-start-1 row-start-1 ${view === "units" ? "" : "invisible"}`}>
               {t("admin.unitsAuditSubtitle")}
@@ -275,13 +218,8 @@ export function ListingsTab() {
               </button>
             ))}
           </div>
-          {/* Kept mounted (just hidden) rather than conditionally removed
-              when view !== "listings" — this group sits inside a
-              `justify-between` row that's otherwise anchored to the far
-              right, so unmounting it used to shrink the whole button
-              cluster's width and visibly shift the Listings/Units toggle
-              rightward every time "Units" was clicked. `invisible` keeps
-              its reserved width so nothing else in the row moves. */}
+          {                                                               
+                                                                     }
           <div className={`flex gap-1.5 ${view === "listings" ? "" : "invisible"}`} aria-hidden={view !== "listings"}>
             {(["all", "unassigned"] as const).map((f) => (
               <button
@@ -306,12 +244,8 @@ export function ListingsTab() {
             className="flex items-center gap-1.5 rounded-control bg-neutral-900 px-2.5 py-1.5 text-xs font-semibold text-white"
           >
             <Plus className="h-3.5 w-3.5 shrink-0" />
-            {/* "New unit" is shorter than "New listing" — swapping the text
-                directly changed this button's own width, which (since this
-                whole cluster hugs the row's right edge) dragged the
-                Listings/Units toggle sideways every time you clicked
-                between them. Stacking both labels in one grid cell reserves
-                width for the longer one so the button itself never resizes. */}
+            {                                                               
+                                                                               }
             <span className="grid">
               <span className={`col-start-1 row-start-1 whitespace-nowrap ${view === "units" ? "" : "invisible"}`}>
                 {t("admin.newUnit")}
@@ -712,16 +646,6 @@ export function ListingsTab() {
   );
 }
 
-/**
- * Global-Listings-tab counterpart to `ProjectUnitsEditor.tsx`'s own inline
- * "add unit" form — same fields, same `POST /api/projects/[projectId]/units`
- * shape, but this one starts with no project of its own to write into, so
- * it needs its own project picker up front (`Unit.projectId` is required)
- * before the rest of the fields make sense. Not reachable from anywhere
- * project-scoped (project detail's own Units panel stays the normal way
- * to add a unit while working inside one project); this exists so a unit
- * can be created without leaving the platform-wide audit view.
- */
 function NewUnitForm({
   projects,
   onSaved,
@@ -745,9 +669,6 @@ function NewUnitForm({
   const [error, setError] = useState<string | null>(null);
 
   const buildings = projects.find((p) => p.id === projectId)?.buildings ?? [];
-  // The building select needs a real option to sit on — reset to this
-  // project's first building whenever the project changes (including away
-  // from one with no buildings at all, where it clears back to "").
   const [syncedProjectId, setSyncedProjectId] = useState(projectId);
   if (projectId !== syncedProjectId) {
     setSyncedProjectId(projectId);
@@ -909,13 +830,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/** A number input that starts with a sensible non-zero default (floor 1,
- * price 80000, …) but doesn't fight you when you want to replace it: value
- * is `number | ""` so backspacing all the way actually empties the field
- * instead of snapping back to "0" and leaving a digit for the next
- * keystroke to collide with (typing "6" over a stuck "0" landing as "06")
- * — and focusing the field selects its current text, so a single
- * keystroke replaces the whole default instead of inserting into it. */
 function ClearableNumber({
   value,
   onChange,
@@ -940,12 +854,6 @@ function ClearableNumber({
   );
 }
 
-/** Bedrooms/bathrooms as a real dropdown (0/1/2/3/4) rather than a free-
- * typed number field — nothing about "how many bathrooms" benefits from
- * the same clear/retype friction as price or floor. If the current value
- * is already outside 0-4 (an existing unit edited from elsewhere), it's
- * added as its own option rather than silently dropped, so opening the
- * edit panel on a real 5+ bedroom unit never looks like data went missing. */
 function CountSelect({ value, onChange, max = 4 }: { value: number; onChange: (v: number) => void; max?: number }) {
   const options = Array.from({ length: max + 1 }, (_, i) => i);
   if (!options.includes(value)) options.push(value);

@@ -1,41 +1,3 @@
-/**
- * RZ-VIEWER-ANDROID-01 — the Project Viewer on a genuinely OLD browser
- * engine. Run with `npm run test:old-browser` (needs `npm run dev` on :3000).
- *
- * Reported 2026-08-27 as "in older Android, section floor does not work".
- * The floor rail was not broken — nothing was there to break: the viewer's
- * root element computed to ZERO height, so the canvas was 393x0, the HUD
- * was unreachable, and there was not one error in any console.
- *
- * Two independent CSS features were load-bearing and had no fallback:
- *  - `h-dvh` -> `height: 100dvh`. `dvh` is Chrome 108 (Dec 2022). Below it
- *    the declaration is invalid and dropped, and the viewer root — a
- *    `shrink-0` flex item whose children are all absolutely positioned —
- *    falls to `height: auto` = 0.
- *  - `-translate-y-1/2` -> the independent `translate:` property, Chrome
- *    104. Below it the floor rail loses its vertical centering and drops
- *    half its own height, putting its lowest floors behind the mobile
- *    units sheet.
- * Both now have `@supports` fallbacks in globals.css. This test is the
- * thing that would have caught them.
- *
- * Why a downloaded old Chromium rather than a modern one with features
- * switched off: there is no flag that removes `dvh` or `translate:`. The
- * only way to test an old engine is to run one. Playwright 1.20 shipped
- * Chromium 101 (April 2022), which is squarely in "older Android" -- it
- * has no `dvh`, no `translate:`, no `:has()` and no WebGPU, all at once.
- * Install it with:
- *
- *     npx playwright@1.20.0 install chromium
- *
- * It lands in ~/Library/Caches/ms-playwright/chromium-978106 and is driven
- * here by the CURRENT Playwright through `executablePath`. The test skips
- * with a clear message if it is not installed, so CI without it is a skip
- * rather than a red herring.
- *
- * Headed, like every other browser test here — see the "3D headless
- * testing limitation" note.
- */
 import { chromium, devices, type Page } from "playwright";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -50,10 +12,6 @@ function ok(name: string, condition: boolean, detail = "") {
   else { fail++; console.log(`  FAIL ${name}${detail ? `\n       ${detail}` : ""}`); }
 }
 
-/** Fraction of pixels that changed between two screenshots, 0-100. Both
- * decodes are written out longhand: a named function inside a
- * `page.evaluate` body is rewritten by esbuild's `keepNames` to reference
- * a `__name` helper that does not exist in the page. */
 async function pixelDelta(page: Page, a: Buffer, b: Buffer) {
   return page.evaluate(async ([ua, ub]) => {
     const ia = new Image();
@@ -111,7 +69,6 @@ async function run(label: string, executablePath?: string) {
   ok("the canvas has a real drawing buffer", !!layout.canvasBuffer && layout.canvasBuffer.h > 0, JSON.stringify(layout.canvasBuffer));
   ok("no page errors", errors.length === 0, errors.slice(0, 2).join(" | "));
 
-  // The floor rail lives inside the Units module.
   await page.locator('button[aria-label="Njësi"], button[aria-label="Units"]').first().click({ timeout: 30_000 });
   await page.waitForTimeout(2500);
 

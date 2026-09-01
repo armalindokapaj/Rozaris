@@ -4,21 +4,6 @@ import { useEffect, useRef } from "react";
 import { useAppStore } from "@/lib/store";
 import { useStoreHydrated } from "@/hooks/useStoreHydrated";
 
-/**
- * Account & Profile System PRD v1.0 — "User utility" phase. On the
- * transition into a signed-in session, fetches the real Postgres
- * saved/saved-searches/follows/recently-viewed rows and overwrites the
- * Zustand slices with them — same "server is the source of truth once
- * signed in" pattern `AuthSessionSync` already established for `auth`
- * itself. Guest browsing (signed out) keeps using the local-only slices
- * untouched, so nothing here changes anonymous behavior.
- *
- * Deliberately fetch-once-per-sign-in, not on every render: the store's
- * own toggle/add/remove actions (see accountApi.ts) already keep the
- * local slices in sync with the server after this point, so re-fetching
- * here would only be needed to pick up changes made from ANOTHER device —
- * out of scope for this pass.
- */
 export function AccountDataSync() {
   const hydrated = useStoreHydrated();
   const signedIn = useAppStore((s) => s.auth.signedIn);

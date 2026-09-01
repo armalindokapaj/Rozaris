@@ -1,6 +1,5 @@
 import type { Dictionary } from "./en";
 
-// Albanian dictionary — default site language. Key shape must mirror en.ts.
 const sq: Dictionary = {
   common: {
     close: "Mbyll",
@@ -825,15 +824,7 @@ const sq: Dictionary = {
     publisherType: "Lloji i botuesit",
     saveChanges: "Ruaj ndryshimet",
   },
-  // Admin -> Projects -> Project Manager (/admin/projects/[projectId]) —
-  // the full-page ERP record view that replaced EditProjectModal. English
-  // strings in both dictionaries: the Albanian translation pass covers
-  // the public site only, and the admin console is explicitly out of its
-  // scope (see the "rozaris-i18n-albanian-translation-pass" note). The
-  // `useT` lookup falls back to English per key anyway, so these being
-  // identical costs nothing and keeps the two files structurally in sync.
   projectManager: {
-    // --- left rail ---
     groupRecord: "Record",
     groupInventory: "Sales",
     groupReach: "Distribution",
@@ -852,7 +843,6 @@ const sq: Dictionary = {
     navPublishing: "Publishing",
     navActivity: "Activity",
 
-    // --- shell ---
     backToProjects: "All projects",
     headerUnits: "{count} units",
     unsavedChanges: "{count} unsaved change(s)",
@@ -862,7 +852,6 @@ const sq: Dictionary = {
     savedConfirmation: "Project saved",
     viewPublicPage: "View public page",
 
-    // --- project index (Admin -> Projects) ---
     newProject: "New project",
     searchProjects: "Search by project, developer or city…",
     allApprovalStates: "Any state",
@@ -878,7 +867,6 @@ const sq: Dictionary = {
     colEntryPrice: "From",
     colState: "State",
 
-    // --- overview ---
     overviewTitle: "Overview",
     overviewDescription: "The commercial picture, and what is still missing before this development can go live.",
     statInventory: "Inventory",
@@ -907,7 +895,6 @@ const sq: Dictionary = {
     relatedModelSlots: "3D model slots",
     noUnitsWarning: "This project has no units — buyers see an empty development.",
 
-    // --- general ---
     generalTitle: "General",
     generalDescription: "Identity, classification and the copy that appears on the public project page.",
     identityTitle: "Identity",
@@ -926,7 +913,6 @@ const sq: Dictionary = {
     descriptionsTitle: "Descriptions",
     descriptionsDescription: "Both languages are shown to buyers — an empty one falls back to the other.",
 
-    // --- location ---
     locationTitle: "Location",
     locationDescription: "Where this development sits, on the map and in the location taxonomy.",
     canonicalLocationTitle: "Canonical location",
@@ -954,7 +940,6 @@ const sq: Dictionary = {
     mapControlSectionDescription: "The development's site pin and the lightweight 3D model that stands in for it on the public search map.",
     mapControlOpenFullPage: "Open full page",
 
-    // --- media ---
     mediaTitle: "Media",
     mediaDescription: "The hero shot and gallery buyers see. Upload files directly, or paste a URL if the image is already hosted.",
     heroDescription: "The single image used on cards, search results and the top of the project page.",
@@ -977,7 +962,6 @@ const sq: Dictionary = {
     mediaTooLarge: "{name} is over {mb} MB.",
     mediaTypeRejected: "{name} is not a JPEG, PNG, WebP or GIF.",
 
-    // --- buildings & amenities ---
     featuresTitle: "Buildings & Amenities",
     featuresDescription: "The blocks this development is divided into, and the amenities buyers can filter on.",
     buildingsDescription: "Each name here becomes a building a unit can be assigned to.",
@@ -986,7 +970,6 @@ const sq: Dictionary = {
     amenitiesDescription: "Only these amenities are filterable on the public site.",
     unknownAmenitiesTitle: "Stored values that aren't recognised amenities — remove them:",
 
-    // --- inventory ---
     inventoryTitle: "Inventory",
     inventoryDescription: "Every unit in this development. Edit in place, or select rows for bulk changes.",
     addUnit: "Add unit",
@@ -1040,12 +1023,10 @@ const sq: Dictionary = {
     bulkFailed: "Bulk update failed.",
     confirmReprice: "Change the price of {count} unit(s) by {percent}%?",
 
-    // --- sheet sync ---
     sheetSyncTitle: "Google Sheets sync",
     sheetSyncDescription: "Let the developer keep their inventory in their own Google Sheet. Area, price, bedrooms, bathrooms, floor and status are read back onto the units here, matched by unit code.",
     downloadStarterSheet: "Download starter sheet",
 
-    // --- the seven sheet columns, editable in place ---
     gridTitle: "Units",
     gridDescription:
       "The seven columns a linked sheet writes back, plus 3D BLOCK — the header row below, minus 3D BLOCK, is exactly the one your sheet needs. Edit any cell here instead; every change saves itself, there is no Save button.",
@@ -1069,7 +1050,6 @@ const sq: Dictionary = {
     gridSyncBlocked: "Finish or undo your unit edits above before syncing from the sheet.",
     gridHelp:
       "Tab moves across, Enter moves down, Esc undoes a cell. Paste a block copied from a spreadsheet to fill many cells at once. Adding and removing units — and the other unit fields — live in Inventory.",
-    // --- 3D BLOCK column (UnitMeshLinkV2, not a Unit field) ---
     blockColumn: "3D BLOCK",
     blockColumnHelp: "Which block of {file} this unit is, in the 3D viewer.",
     blockNone: "— not in the model —",
@@ -1146,7 +1126,6 @@ const sq: Dictionary = {
     howToStep4: "Give the sheet a header row using these column names (any order, extra columns are ignored):",
     howToColumnsNote: "A blank cell means \"leave this field alone\" — so a sheet with only the units that changed today is fine.",
 
-    // --- team ---
     teamTitle: "Team",
     teamDescription: "Who at the developer can reach this specific project. Company-wide access is managed on the publisher instead.",
     grantAccessTitle: "Grant access",
@@ -1166,7 +1145,6 @@ const sq: Dictionary = {
       analytics_viewer: "Analytics viewer",
     },
 
-    // --- 3D ---
     threeDTitle: "3D Assets",
     threeDDescription: "What this project has in the 3D pipeline. The editors themselves open full-screen.",
     mapControlDescription: "The lightweight model shown on the search map.",
@@ -1184,11 +1162,6 @@ const sq: Dictionary = {
     hasSceneConfig: "Scene configuration saved.",
     noSceneConfig: "No scene configuration yet — open the 3D Experience editor to create one.",
 
-    // --- 3D asset downloads ---
-    // The Project Manager keeps its own copy of these strings rather than
-    // reusing `admin.health3d.files*`: that block is the 3D Health tab's
-    // cross-project file browser and its wording is scoped to a list of
-    // every project, which reads wrong inside one project's record.
     assetsLoading: "Loading model files…",
     assetsError: "Could not load this project's model files.",
     assetsRetry: "Retry",
@@ -1208,7 +1181,6 @@ const sq: Dictionary = {
     assetStatusDraft: "Draft",
     assetStatusArchived: "Archived",
 
-    // --- publishing ---
     publishingTitle: "Publishing",
     publishingDescription: "Whether this development is visible to buyers, and where else it is distributed.",
     visibilityTitle: "Public visibility",
@@ -1234,7 +1206,6 @@ const sq: Dictionary = {
     dangerZoneTitle: "Danger zone",
     dangerZoneDescription: "Moves the whole project — units, listings and 3D assets — to the Recycle Bin. Restorable by a Super Admin.",
 
-    // --- timeline / construction stages ---
     timelineTitle: "Construction timeline",
     timelineDescription: "The build phases buyers see on the project page, plus any progress change the developer has asked you to approve.",
     stagesTitle: "Stages",
@@ -1253,13 +1224,11 @@ const sq: Dictionary = {
       active: "In progress",
       upcoming: "Upcoming",
     },
-    // --- activity ---
     activityTitle: "Activity",
     activityDescription: "Everything that has happened to this project and its units, from the real audit log.",
     noActivity: "Nothing recorded for this project yet.",
     loadMore: "Load more",
 
-    // --- timeline ---
     timelineNote: "Construction-timeline change requests submitted by the developer appear here for review.",
   },
   admin: {
@@ -1467,9 +1436,6 @@ const sq: Dictionary = {
     viewer3DTitle: "Përvoja 3D",
     sceneGroundTitle: "Toka / platforma",
     viewer3DGround: "Toka / platforma",
-    // Ground Platform (Sky/Water/Bloom/Clouds follow-up) — English
-    // placeholders, same "stop adding Albanian for now" reasoning as the
-    // block further down in this file.
     sceneGroundStyle: "Ground style",
     sceneGroundStyleDisc: "Disc (default)",
     sceneGroundStyleInfinite: "Infinite plane",
@@ -1479,7 +1445,6 @@ const sq: Dictionary = {
     sceneGroundFogRadius: "Fog radius from center (0,0,0)",
     sceneGroundFogNote: "Fades the ground to the fog color in a circle around the project's exact center point, not the camera — separate from the atmospheric Fog above.",
     viewer3DAutoRotate: "Rrotullim automatik",
-    // English placeholder, same reasoning as the block comment above.
     viewer3DLoadingReveal: "Loading-screen reveal",
     viewer3DCameraStart: "Distanca fillestare",
     viewer3DCameraMin: "Distanca minimale e zoom-it",
@@ -1520,7 +1485,6 @@ const sq: Dictionary = {
     inventoryFloorFilterActive: "Duke shfaqur {building} · {floor}",
     inventoryNoUnits: "Ende pa njësi.",
     sectionsListTitle: "Seksionet",
-    // NOT TRANSLATED — placeholder English, see the "rozaris-locale-english-only" directive.
     sectionSave: "Save",
     sectionSaving: "Saving…",
     sectionSaved: "Saved",
@@ -1542,18 +1506,10 @@ const sq: Dictionary = {
     sectionDepth: "Thellësia",
     sectionRotation: "Rrotullimi",
     sectionBottomClip: "Preje edhe nën tokë",
-    // Untranslated English placeholder — new key, see
-    // rozaris-locale-english-only memory (hold off on Albanian
-    // translation for new i18n work until told otherwise).
     sectionHeightOnly: "Whole width & depth",
     sectionHeightOnlyNote: "Ignores this section's own width/depth/rotation — cuts (and colors) the entire project at this height, not just the drawn rectangle. The rectangle stays visible here as an editing aid only.",
     sectionFillGapsTitle: "Mbush Boshllëqet",
     sectionFillGapsEnabled: "Mbushi boshllëqet me një ngjyrë",
-    // Real bug fix (2026-08-14): the previous Albanian text described the
-    // old, incorrect "fills the whole rectangle" behavior — corrected to
-    // match sectionFillGapsNote's own updated English (a genuine content
-    // fix, not new translation work, since leaving stale/wrong copy here
-    // would actively mislead rather than just being untranslated).
     sectionFillGapsNote: "Fikur: shfaqet vetëm si udhëzues gjysmë-transparent gjatë redaktimit, i padukshëm për vizitorët. Ndezur: sipërfaqja reale e prerjes mbushet me ngjyrën tënde — vetëm aty ku modeli është prerë faktikisht, jo në gjithë drejtkëndëshin e seksionit.",
     sectionFillColor: "Ngjyra e mbushjes",
     sectionSetCamera: "Cakto Kamerën e Seksionit",
@@ -1593,23 +1549,13 @@ const sq: Dictionary = {
     scenePerformanceTitle: "Performanca",
     performanceShadows: "Hijet",
     performanceAntialiasing: "Antialiasing",
-    // English placeholders, same reasoning as the block comment above.
     performanceShadowSoftness: "Shadow softness",
     performanceLogarithmicDepth: "Logarithmic depth buffer",
     performanceLogarithmicDepthNote: "Reduces z-fighting at distance. Requires reopening the viewer to take effect.",
-    // Sky/Water/Bloom/Clouds "Ocean" tab — replaces the old Lighting tab
-    // entirely (2026-08-14). English placeholders, not real Albanian —
-    // user asked to hold off on Albanian translation work for now (see
-    // the en.ts-only convention this file otherwise follows); these just
-    // keep `sq` structurally complete against `Dictionary` so tsc/build
-    // stay clean.
     oceanSkyTitle: "Sky",
     oceanWaterTitle: "Water",
     oceanBloomTitle: "Bloom",
     oceanCloudsTitle: "Clouds",
-    // Untranslated English placeholders — see rozaris-locale-english-only
-    // memory (sq.ts must stay structurally identical to en.ts, new keys
-    // added here as-is until real Albanian copy is requested).
     skyEnabled: "Sky",
     skyEnabledNote: "The physical sky dome, the scene's atmosphere and its only source of ambient/reflection lighting. Off falls back to a flat neutral backdrop.",
     skySunTitle: "Sun",
@@ -1665,7 +1611,6 @@ const sq: Dictionary = {
     sceneCameraReset: "Rivendos kamerën",
     sceneCameraFovDesktop: "Fusha e shikimit — desktop",
     sceneCameraFovMobile: "Fusha e shikimit — mobile",
-    // English placeholders, same reasoning as the block comment above.
     sceneDofTitle: "Depth of Field",
     sceneDofEnabled: "Depth of field",
     sceneDofFocalLength: "Focal length",
@@ -1752,8 +1697,6 @@ const sq: Dictionary = {
     mapModelDeleteFailed: "Nuk u anulua dot skica — provo përsëri.",
     mapModelNoUpload: "Ende nuk ka model të ngarkuar",
     mapModelLoadError: "Nuk u ngarkua dot ky skedar si model GLB/glTF.",
-    // New key, English placeholder per this codebase's locale policy
-    // (rozaris-locale-english-only) — not yet translated.
     mapModelNoFileYet: "No model yet",
     mapModelNoFileYetHint: "Position saved — add a 3D model whenever it's ready.",
     detailModelTitle: "Model i detajuar (Eksperienca 3D e Projektit)",
@@ -1792,7 +1735,6 @@ const sq: Dictionary = {
     detailModelNoNodes: "Nuk u gjetën kuti \"Unit_<numër>\" në këtë skedar.",
     unitStatusColorsTitle: "Ngjyrat e Statusit",
     unitStatusColorSelected: "Theksimi i zgjedhur",
-    // English placeholders, same reasoning as the block comment above.
     inventoryCausticsTitle: "Unit-Status Caustics",
     causticsEnabled: "Caustics",
     causticsScale: "Scale",
@@ -1812,7 +1754,6 @@ const sq: Dictionary = {
     newProjectTitle: "Projekt i ri",
     newProjectName: "Emri i projektit",
     newProjectNamePlaceholder: "p.sh. Riverside Residence",
-    // Untranslated placeholder — see rozaris-locale-english-only memory.
     newProjectNameOptionalNote: "Leave blank to auto-name it — rename anytime later.",
     newProjectCity: "Qyteti",
     newProjectCityDerived: "Set automatically from the selected neighborhood",
@@ -1832,8 +1773,6 @@ const sq: Dictionary = {
     newProjectPipeStep3: "Konfiguro",
     newProjectDetailGlb: "GLB i ndërtesës së detajuar",
     newProjectDetailGlbPrompt: "Zgjidh një skedar .glb",
-    // Untranslated placeholders below — see rozaris-locale-english-only
-    // memory: new keys stay English until told otherwise.
     newProjectDropHint: "or drag and drop a .glb file here",
     newProjectUploading: "Duke ngarkuar… {percent}%",
     newProjectUploadDone: "U ngarkua — gati për konfigurim.",
@@ -1860,9 +1799,6 @@ const sq: Dictionary = {
     addUnit: "Shto njësi",
     manageUnits: "Njësitë & modeli",
 
-    // Multi-Channel Publishing PRD Phase 7 — untranslated English
-    // placeholders per the "rozaris-locale-english-only" convention (hold
-    // off on Albanian until told otherwise).
     configureDistribution: "Distribution",
     distributionTitle: "Distribution",
     distributionReleasesSectionTitle: "Releases",
@@ -1903,10 +1839,6 @@ const sq: Dictionary = {
     distributionTargetCreateFailed: "Couldn't create the publish target — try again.",
     distributionTargetActionFailed: "That didn't work — try again.",
 
-    // NOT TRANSLATED — placeholder English text only, to satisfy sq.ts's
-    // required key parity with en.ts without doing translation work, per
-    // the "rozaris-locale-english-only" directive (new keys go in en.ts
-    // only until told otherwise). Real Albanian text still needed here.
     projectStatusActive: "Active",
     projectStatusHidden: "Hidden",
     projectStatusPending: "Pending",
@@ -1958,7 +1890,6 @@ const sq: Dictionary = {
     sceneExplorerRoughness: "Ashpërsia",
     sceneExplorerMetalness: "Metalizmi",
     sceneExplorerOpacity: "Opaciteti",
-    // English placeholders, same reasoning as the block comment above.
     sceneExplorerClearcoat: "Clearcoat",
     sceneExplorerClearcoatRoughness: "Clearcoat roughness",
     sceneExplorerIridescence: "Iridescence",
@@ -2162,8 +2093,6 @@ const sq: Dictionary = {
       security: "Siguria",
     },
 
-    // Kalimi i kontrollit/auditimit të Super Admin — panele reale, të
-    // lidhura me bazën e të dhënave, pas skedës "Super Admin".
     superAdmin: {
       restricted: "I kufizuar",
       navRecycleBin: "Koshi i Riciklimit",

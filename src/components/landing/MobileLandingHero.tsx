@@ -30,11 +30,6 @@ const MODES: { id: DiscoveryMode; label: string; icon: typeof Home }[] = [
   { id: "new", label: "New Developments", icon: Building2 },
 ];
 
-// Same brand dot-grid + gradient wash HeroWallpaper paints for desktop
-// (see that file), reproduced as a plain static background here instead
-// of mounting the interactive component: HeroWallpaper is `fixed` (a
-// full-page layer) and tracks `mousemove`, neither of which suits a
-// scoped, touch-only region. Spans the whole page below the header.
 const WALLPAPER_STYLE: CSSProperties = {
   backgroundImage:
     "radial-gradient(circle, color-mix(in srgb, var(--color-brand-500) 22%, transparent) 1px, transparent 1px), linear-gradient(to bottom, var(--color-brand-50), var(--color-neutral-50) 55%, var(--color-brand-50))",
@@ -43,15 +38,6 @@ const WALLPAPER_STYLE: CSSProperties = {
 
 const PRICE_MIN_STEPS = [50000, 100000, 200000, 500000];
 
-/**
- * Custom tap-to-open field, replacing a native `<select>`. Native selects
- * render as the browser's/OS's own uncontrollable picker UI (a big wheel
- * overlay on mobile Safari, an inconsistent inline list elsewhere) — this
- * renders as a plain button + our own absolute-positioned panel instead,
- * so it looks and behaves the same as every other menu in the app
- * (Header's ResourcesDropdown uses the same open-state + useClickOutside
- * shape).
- */
 function FieldDropdown({
   label,
   value,
@@ -106,22 +92,6 @@ function FieldDropdown({
   );
 }
 
-/**
- * Phone-only front page (< lg). No photo hero, no fixed 5-item app nav
- * (that was removed outright — this is a *different* bottom bar: just the
- * 3 tools, pinned below the scrollable search area), heading animates the
- * same word cycle as desktop, and the wallpaper texture backs the whole
- * page below the header — search area and tools bar both float on it.
- * Desktop (`lg:` and up) keeps rendering LandingHero's own markup.
- *
- * No header of its own — Top Bar + Menu are static everywhere in the app
- * (per that rule), so `LandingHero` renders the one shared `<Header/>`
- * above this component instead of this component having its own
- * wordmark+hamburger variant. `h-full` (not `h-dvh`) is deliberate: this
- * now sits inside a flex-1 sibling of that Header, not the whole
- * viewport, so it should fill whatever's left, not re-claim the full
- * screen height and overlap the real header above it.
- */
 export function MobileLandingHero({
   mode,
   onSelectMode,
@@ -139,29 +109,11 @@ export function MobileLandingHero({
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-white lg:hidden">
-      {/* One continuous wallpaper-textured background, from the top of
-          this component (right under the shared Header) down to the very
-          bottom of the screen (behind both the scrollable search area and
-          the tools bar pinned below it). */}
+      {                                                                
+                                            }
       <div className="relative flex min-h-0 flex-1 flex-col" style={WALLPAPER_STYLE}>
-        {/* Scrollable search area, top-aligned close under the header
-            rather than vertically centered — centering left no room for
-            the promo banner below the search card without either card
-            fighting for the same dead space. What used to be bare
-            wallpaper between the card and the pinned tools bar is now the
-            banner's slot. Scrollbar hidden — a classic (non-overlay)
-            browser scrollbar reserves gutter width for `overflow-y-auto`
-            even with nothing to scroll, which read as a permanent empty
-            strip on the right; scrolling itself still works, only the
-            visible track is suppressed. `overflow-x-hidden` is required,
-            not decorative: the promo banner's edge-to-edge card track
-            bleeds past this container's own `px-5` via a negative margin,
-            and per the CSS overflow spec, setting only `overflow-y`
-            computes `overflow-x` to `auto` on the other axis too — without
-            this, that horizontal overflow turned the *entire* search area
-            (not just the banner) into a second, whole-page horizontal
-            scroller, which is exactly the "empty space on the right,
-            everything drags sideways" bug this fixes. */}
+        {                                                             
+                                                         }
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="flex min-h-full flex-col justify-start pt-4">
           <h1 className="text-2xl font-extrabold leading-[1.15] text-neutral-900">
@@ -265,30 +217,16 @@ export function MobileLandingHero({
           </div>
 
           <MobilePromoBanner />
-          {/* Two equal `flex-1` spacers straddling the ad carousel, not a
-              fixed margin — the tools bar below is pinned to the true
-              bottom of the screen (a deliberate earlier decision, see
-              memory), which on most phones leaves leftover vertical space
-              after this short a content column. A fixed top margin alone
-              left that entire leftover pooled into one gap right above the
-              tools bar. These two zero-basis flex items split whatever's
-              left 50/50, so the gap above the ad carousel and the gap
-              below it end up equal on any device, while `MobileBannerAds`'
-              own `my-3.5` still guarantees a minimum gap even when there's
-              no leftover space to split (content tall enough to scroll). */}
+          {                                                               
+                                                                            }
           <div className="flex-1" aria-hidden="true" />
           <MobileBannerAds />
           <div className="flex-1" aria-hidden="true" />
         </div>
         </div>
 
-        {/* Tools bar — pinned to the bottom of the screen (not inline
-            right after the search card, which left a large dead gap
-            above it once the descriptions were dropped), one bar divided
-            into 3 equal segments. Still floats on the same wallpaper
-            texture as the search area above it. Reuses desktop's `tools`
-            content (icon + title only — description doesn't fit a
-            segment this narrow). */}
+        {                                                             
+                                    }
         <div className="shrink-0 px-5 pb-[max(0.9rem,env(safe-area-inset-bottom))]">
           <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_4px_16px_rgba(17,24,39,0.06)]">
             <div className="grid grid-cols-3 divide-x divide-neutral-100">

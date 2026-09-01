@@ -4,18 +4,6 @@ import { requireAdmin, requireSuperAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { refreshExperienceDocument } from "@/lib/experienceDocument";
 
-/**
- * Restores a previously-published (now archived) version back to
- * published — PRD_Admin_3D_Project_Experience §37 "Rollback" (restores
- * model, mapping snapshot, scene/camera/appearance/construction config —
- * this pass's mapping snapshot is the UnitMeshLinkV2 rows already tied to
- * that version, no extra copy needed). Does not touch live inventory data,
- * per §37's explicit rule — nothing here writes to Unit rows.
- *
- * `{"force": true}` (Super Admin control/audit pass) also allows rolling
- * back to a version NOT currently archived — Super Admin only, mandatory
- * `reason`, same pattern as the map-model rollback route.
- */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ projectId: string; versionId: string }> }
@@ -45,8 +33,6 @@ export async function POST(
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
   const now = new Date();
   const updated = await prisma.$transaction(async (tx) => {
-    // Multiple Detail-Model Slots pass — scoped to THIS version's own
-    // slotId (same reasoning as the publish route's identical fix).
     await tx.detailModelVersion.updateMany({
       where: { slotId: version.slotId, publicationStatus: "published" },
       data: { publicationStatus: "archived" },

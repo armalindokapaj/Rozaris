@@ -1,9 +1,3 @@
-/**
- * Decorative line-art building sketch for content-page hero sections
- * (Developers directory, Help). Pure inline SVG, no external asset — a
- * light editorial accent, not literal architecture. `aria-hidden` since it
- * carries no information.
- */
 export function HeroSketch({ className }: { className?: string }) {
   return (
     <svg

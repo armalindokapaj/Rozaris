@@ -14,10 +14,6 @@ interface AdSlot {
   enabled?: boolean;
 }
 
-/** The 4 real placements, in display order — each gets its own section of
- * 3 slot cards. Positions are `${category}_${device}_banner_${n}` (see the
- * admin ads route), so a group's slots are just the rows whose position
- * starts with this prefix. */
 const GROUPS: { prefix: string; categoryKey: string; deviceKey: string }[] = [
   { prefix: "front_page_mobile_banner_", categoryKey: "admin.adsCategoryFrontPage", deviceKey: "admin.adsDeviceMobile" },
   { prefix: "front_page_desktop_banner_", categoryKey: "admin.adsCategoryFrontPage", deviceKey: "admin.adsDeviceDesktop" },
@@ -27,14 +23,6 @@ const GROUPS: { prefix: string; categoryKey: string; deviceKey: string }[] = [
 
 const BANNER_LABEL_KEY: Record<string, string> = { "1": "admin.adsBanner1", "2": "admin.adsBanner2", "3": "admin.adsBanner3" };
 
-/**
- * Admin's "manage all the ads and ad positions" console — 4 placements
- * (Front Page × Mobile/Desktop, Search Page × Mobile/Desktop), 3 fixed
- * slots each, each a real uploaded photo + destination link, plus real
- * impression/click analytics per banner (`AnalyticsEvent`, not a
- * fabricated number). See `MobileBannerAds`/`DesktopBannerAds` for where
- * these actually render.
- */
 export function AdvertisingTab() {
   const { t } = useT();
   const [slots, setSlots] = useState<AdSlot[]>([]);

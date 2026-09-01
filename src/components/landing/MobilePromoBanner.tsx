@@ -11,9 +11,6 @@ import { useT } from "@/lib/i18n/useT";
 import { cn, formatPrice } from "@/lib/utils";
 import type { Project } from "@/lib/types";
 
-/** Cheapest currently-available unit in a project — the "From €X" a promo
- * card leads with, same number the New Projects directory's own cards
- * compute the same way. */
 function fromPrice(project: Project) {
   const available = project.units.filter((u) => u.status === "available");
   const pool = available.length > 0 ? available : project.units;
@@ -50,23 +47,6 @@ function PromoCard({ project }: { project: Project }) {
   );
 }
 
-/**
- * Promo slider between the search card and the tools bar — this session's
- * "banner below the search options" request. Reuses `premium` projects
- * (the same flag New Projects' directory already treats as "featured"),
- * not a separate ad system: real developments, swipeable, snap-to-card,
- * and looping — swiping past the last card wraps to the first instead of
- * stopping dead, and vice versa swiping back before the first.
- *
- * Loop mechanics: a decoy clone of the last card sits before slide 1 and a
- * decoy clone of the first sits after the last real slide (`SLIDES`
- * above). The user can swipe onto a decoy — it looks identical to the real
- * card it clones — but the moment the scroll settles there (debounced,
- * since native scroll-snap fires many scroll events mid-gesture), this
- * jumps the track instantly (no smooth animation, so it's imperceptible)
- * to the matching real slide on the opposite end. Dots always reflect the
- * real 0..N-1 index, never the decoy positions.
- */
 export function MobilePromoBanner() {
   const { t } = useT();
   const trackRef = useRef<HTMLDivElement>(null);
@@ -80,18 +60,10 @@ export function MobilePromoBanner() {
     [liveProjects]
   );
   const LOOPABLE = PROMO_PROJECTS.length > 1;
-  // One clone of the last card prepended, one clone of the first appended
-  // — the standard "infinite" scroll-snap trick. Real cards live at slide
-  // indices [1, PROMO_PROJECTS.length]; index 0 and the last index are
-  // decoys only ever visible mid-swipe, never at rest (see the
-  // scroll-settle snap-back below).
   const SLIDES = LOOPABLE
     ? [PROMO_PROJECTS[PROMO_PROJECTS.length - 1], ...PROMO_PROJECTS, PROMO_PROJECTS[0]]
     : PROMO_PROJECTS;
 
-  // Start on the first real slide (index 1 once decoys are prepended),
-  // not the leading decoy — set with a plain assignment (no smooth
-  // scrolling) so there's nothing to see before the first paint.
   useEffect(() => {
     const el = trackRef.current;
     if (!el || !LOOPABLE) return;
@@ -118,9 +90,9 @@ export function MobilePromoBanner() {
     if (settleTimer.current) clearTimeout(settleTimer.current);
     settleTimer.current = setTimeout(() => {
       if (rawIndex === 0) {
-        el.scrollLeft = cardWidth * PROMO_PROJECTS.length; // land on the real last card
+        el.scrollLeft = cardWidth * PROMO_PROJECTS.length;
       } else if (rawIndex === SLIDES.length - 1) {
-        el.scrollLeft = cardWidth; // land on the real first card
+        el.scrollLeft = cardWidth;
       }
     }, 120);
   };

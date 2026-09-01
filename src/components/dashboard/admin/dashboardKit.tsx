@@ -3,23 +3,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useT } from "@/lib/i18n/useT";
 
-/** Generic "fetch one JSON payload, independently loading/erroring/
- * retryable" hook — PRD §16.2/§17.2: a failed widget must show an explicit
- * unavailable state (not zero) and must not block the rest of the page
- * from rendering. Shared by the Dashboard, 3D Health, and Analytics tabs
- * so every card in the console fails the same honest way — a bare
- * `r.ok ? r.json() : null` (no error branch) silently gets stuck on
- * "Loading…" forever instead of surfacing the failure, which is worse
- * than useless when the underlying request 401s.
- *
- * A first-attempt 401 gets exactly one silent auto-retry ~1.2s later
- * before showing the error state — the real admin session
- * (`useAdminSessionRepair`) is established asynchronously right after the
- * mock "Sign in as Admin" click, so the very first render of every
- * `requireAdmin()`-gated card can legitimately race that cookie landing.
- * Confirmed live: without this, every Dashboard card read permanently
- * "Unavailable" on a cold sign-in even though the very same request
- * succeeds a moment later. Not a loop — a second failure is a real error. */
 export function useSection<T>(url: string) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);

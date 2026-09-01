@@ -2,10 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 
-/** Real Moderation queue — every `ModerationReport`, newest first, with
- * enough of the reported listing/project's own data to render without a
- * second round-trip. Replaces ModerationTab's previous hardcoded
- * `seedCases()` (3 mock cases pointed at fixed mockData rows). */
 export async function GET(request: Request) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

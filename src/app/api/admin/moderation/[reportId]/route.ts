@@ -9,11 +9,6 @@ const bodySchema = z.object({
   resolution: z.string().optional(),
 });
 
-/** Resolve a moderation report — "actioned" (something real was done
- * about it, typically via Listings/Project Control separately — this
- * route doesn't itself touch the reported listing/project) or
- * "dismissed" (no action needed). Either way the report is kept, not
- * deleted, so it stays in the audit trail. */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ reportId: string }> }

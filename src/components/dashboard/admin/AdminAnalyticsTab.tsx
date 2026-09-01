@@ -20,17 +20,6 @@ interface TopLocations {
 
 const INVENTORY_COLORS = { available: "var(--color-success)", reserved: "#ca8a04", sold: "var(--color-brand-500)" };
 
-/**
- * Analytics — deliberately modest (PRD §1.2 non-goal: "not a
- * business-intelligence warehouse; surfaces operational metrics and links
- * to deeper analytics"). Re-presents the same real endpoints the Dashboard
- * cards already use (Inventory, Price Intelligence, Publisher Health,
- * Top Locations) at a larger size rather than building a second, parallel
- * set of metrics — no data here is different from what the Dashboard
- * already shows, just roomier. Each card fetches via `useSection` so a
- * failed request shows the shared honest "unavailable, retry" state
- * instead of a silently blank card.
- */
 export function AdminAnalyticsTab() {
   const { t } = useT();
   const inventory = useSection<InventoryPayload>("/api/admin/dashboard/inventory");

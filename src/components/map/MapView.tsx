@@ -38,17 +38,10 @@ function tierForZoom(z: number): ZoomTier {
 
 interface MapModelRow {
   projectId: string;
-  // Nullable as of "save location before uploading a model" — a published
-  // MapModelVersion can be placement-only. Already handled below (the
-  // `model.glbUrl` truthiness check a few lines down falls through to the
-  // procedural massing box), this just makes the type honest.
   glbUrl: string | null;
   scale: number;
   rotationDeg: number;
   altitudeOffset: number;
-  /** The model's real placement — was hardcoded to the project's own
-   * coordinates everywhere before the "multi-building-pick + reposition"
-   * pass; now the actual (possibly Admin-dragged) position. */
   lng: number;
   lat: number;
   enabled: boolean;
@@ -56,11 +49,6 @@ interface MapModelRow {
   hiddenBuildings: { lng: number; lat: number; footprint: BuildingFootprint | null; featureId?: string | number }[];
 }
 
-/** "3D Map Control" placement, keyed by project id — a real, shared Postgres
- * row (src/app/api/map-models) rather than one browser's localStorage, so a
- * model an admin publishes shows up for every visitor. Refetches on window
- * focus (no realtime/websocket layer yet) so an admin's edit in another tab
- * shows up here without a full page reload. */
 function useProjectMapModels(): Record<string, MapModelRow> {
   const [models, setModels] = useState<Record<string, MapModelRow>>({});
 
@@ -77,8 +65,6 @@ function useProjectMapModels(): Record<string, MapModelRow> {
         });
         if (!cancelled) setModels(byProjectId);
       } catch {
-        // Offline/unreachable — the map just falls back to flat pins for
-        // every project until the next successful fetch.
       }
     }
     load();
@@ -120,8 +106,6 @@ export function MapView({
   const [ready, setReady] = useState(false);
   const [tier, setTier] = useState<ZoomTier>("cluster");
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
-  // WebGL support can only be detected client-side; the token check below is
-  // a build-time constant so it's derived at render time instead of state.
   const [webglFailReason, setWebglFailReason] = useState<string | null>(null);
 
   const filters = useAppStore((s) => s.filters);
@@ -131,14 +115,6 @@ export function MapView({
   const liveProjects = useAppStore((s) => s.liveProjects);
   useLiveListings();
   useLiveProjects();
-  // The map-init effect below (`[token]` deps, runs once) closes over
-  // `onPick` at mount time — `liveProjects` starts `null` and only
-  // populates once `GET /api/projects` resolves, so a stale closure would
-  // permanently see `null`. mockData's `projects` this replaced was a
-  // static immutable array, so the same stale-closure pattern was
-  // harmless there; a ref keeps that effect from needing to re-run (which
-  // would tear down and rebuild the whole Mapbox instance) while still
-  // reading the latest value.
   const liveProjectsRef = useRef<Project[] | null>(null);
   useEffect(() => {
     liveProjectsRef.current = liveProjects;
@@ -161,8 +137,6 @@ export function MapView({
   const noTokenReason = !token ? t("map.addTokenHint") : null;
   const failReason = noTokenReason ?? webglFailReason;
 
-  // Bounds affect the dataset only after the visitor explicitly commits the
-  // visible area with Search here; ordinary panning remains exploratory.
   const visibleListings = useMemo(
     () =>
       getVisibleListings(
@@ -179,12 +153,9 @@ export function MapView({
     [filters, mapBounds, mapAreaSearchBounds, liveProjects]
   );
 
-  // --- Initialize map once ---
   useEffect(() => {
     if (!containerRef.current || noTokenReason) return;
     if (!mapboxgl.supported()) {
-      // Capability can only be known once running in the browser — a
-      // legitimate, one-time synchronous effect update.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setWebglFailReason(t("map.noWebglBrowser"));
       return;
@@ -216,10 +187,6 @@ export function MapView({
       }
       setTier(tierForZoom(map.getZoom()));
 
-      // "3D Map Control" — Admin-uploaded GLBs (real Vercel Blob URLs, see
-      // MapModelEditor.tsx) plotted as real georeferenced models rather than
-      // flat pins (see ProjectModelSource.ts doc comment) — Mapbox's own
-      // `model` layer type, not a Three.js custom layer.
       modelLayerRef.current = new ProjectModelSource(map, {
         onPick: (projectId) => {
           const project = liveProjectsRef.current?.find((p) => p.id === projectId);
@@ -235,7 +202,6 @@ export function MapView({
     let debounceHandle: ReturnType<typeof setTimeout> | null = null;
     map.on("moveend", () => {
       if (debounceHandle) clearTimeout(debounceHandle);
-      // MAP-007: 250-500ms debounce before spatial queries settle.
       debounceHandle = setTimeout(() => {
         const b = map.getBounds();
         if (b) {
@@ -252,9 +218,6 @@ export function MapView({
     map.on("zoom", () => setTier(tierForZoom(map.getZoom())));
 
     map.on("click", (e) => {
-      // Defensive: a marker's own click handler already stops propagation,
-      // but skip deselecting here too if the click somehow still targeted
-      // a marker element.
       const target = e.originalEvent.target as HTMLElement | null;
       if (target?.closest(".mapboxgl-marker")) return;
       selectListing(null);
@@ -272,18 +235,6 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // --- 3D Map Control: reconcile which projects render as a real 3D volume ---
-  // Every visible project gets one now, not just ones with an Admin-uploaded
-  // GLB (T1 of the platform audit's roadmap — putting the 3D map layer on
-  // by default; see the "Rozaris Platform Audit" memory): a real GLB wins
-  // when one's published, otherwise a data-driven procedural massing box
-  // (threeBuilding.ts's computeProjectMassing) stands in — a real building
-  // volume instead of a flat pin, using nothing but the project's own real
-  // unit/floor data. Gated to the two non-cluster tiers: at "cluster" zoom
-  // a project is already a single pin among many neighborhoods, too small
-  // on screen for a 3D volume to read as anything but noise, and skipping
-  // it there avoids rebuilding/holding geometry for every project in the
-  // city at once.
   const mapModelEntries = useMemo<MapModelEntry[]>(() => {
     if (tier === "cluster") return [];
     return visibleProjects.flatMap((p): MapModelEntry[] => {
@@ -293,38 +244,22 @@ export function MapView({
           {
             projectId: p.id,
             glbUrl: model.glbUrl,
-            // The model's own (possibly Admin-dragged) position — previously
-            // hardcoded to the project's own coordinates, which silently
-            // ignored any repositioning Admin did.
             lng: model.lng,
             lat: model.lat,
             scale: model.scale,
             rotationDeg: model.rotationDeg,
             altitudeOffset: model.altitudeOffset,
-            // A modeled project renders no flat pin (see the marker effect
-            // below), and Mapbox does not return native `model` layers from
-            // `queryRenderedFeatures` — so the GLB needs an invisible,
-            // queryable stand-in or it simply cannot be clicked anywhere
-            // except right at its base. The project's own computed massing
-            // is the honest shape to use: same real unit/floor data the
-            // no-GLB case renders as a visible volume.
             pickMassing: computeProjectMassing(p),
           },
         ];
       }
       const massing = computeProjectMassing(p);
-      // No computable massing (e.g. a project with no unit/floor data yet)
-      // — skip the entry entirely rather than adding an empty one, so this
-      // project's flat pin (below) isn't suppressed for nothing.
       if (massing.length === 0) return [];
       return [{
         projectId: p.id,
         massing,
         lng: p.coords.lng,
         lat: p.coords.lat,
-        // The massing geometry is already built in real meters (see
-        // computeProjectMassing) — scale 1 lets applyTransform's own
-        // meters->Mercator conversion apply directly, unmodified.
         scale: 1,
         rotationDeg: 0,
         altitudeOffset: 0,
@@ -336,8 +271,6 @@ export function MapView({
     return visibleProjects.flatMap((p) => {
       const model = projectMapModels[p.id];
       if (!model?.enabled || !model.glbUrl || !model.hideBaseBuilding) return [];
-      // Every building Admin picked to remove for this project (0, 1, or
-      // several) — each with its own footprint captured at pick time.
       return model.hiddenBuildings.map((b, i) => ({
         key: `${p.id}-${i}`,
         lng: b.lng,
@@ -357,7 +290,6 @@ export function MapView({
     modelLayerRef.current?.setEntries(mapModelEntries);
   }, [ready, mapModelEntries]);
 
-  // --- Keep map sized to its container across layout mode changes (PER-007) ---
   useEffect(() => {
     if (!containerRef.current) return;
     const ro = new ResizeObserver(() => mapRef.current?.resize());
@@ -365,7 +297,6 @@ export function MapView({
     return () => ro.disconnect();
   }, []);
 
-  // --- Search-driven fly-to ---
   useEffect(() => {
     if (!mapRef.current || !flyToTarget || flyToToken === 0) return;
     const center = mapRef.current.getCenter();
@@ -385,11 +316,6 @@ export function MapView({
     map.flyTo({ center: [restoreCamera.lng, restoreCamera.lat], zoom: restoreCamera.zoom, bearing: restoreCamera.bearing, pitch: restoreCamera.pitch, duration: 700, essential: true });
   }, [restoreCameraToken, restoreCamera]);
 
-  // --- Slow auto-rotate while a unit is selected ---
-  // A gentle bearing drift while a listing/project is focused, so the
-  // camera doesn't just sit static on the selection. Cancels the instant
-  // the user actually touches the map (drag/wheel/pinch) rather than
-  // fighting their input, and stops outright once nothing is selected.
   useEffect(() => {
     const map = mapRef.current;
     const isUnitSelected = !!(selectedListingId || selectedProjectId);
@@ -400,11 +326,6 @@ export function MapView({
     let lastTs: number | null = null;
 
     function tick(ts: number) {
-      // setBearing (like every camera method) calls the map's internal
-      // stop() first, which would abort the selection's own flyTo/easeTo
-      // mid-flight — skip ticking while the camera is already animating
-      // (isMoving covers both, whether user- or code-driven) and resume
-      // once it settles, instead of fighting it.
       if (map && !map.isMoving()) {
         if (lastTs != null) {
           const dt = (ts - lastTs) / 1000;
@@ -433,7 +354,6 @@ export function MapView({
     };
   }, [ready, selectedListingId, selectedProjectId]);
 
-  // --- Marker reconciliation ---
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
@@ -441,12 +361,6 @@ export function MapView({
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
 
-    // Projects get a marker pinned to the map at every zoom tier — unlike
-    // listings, they never fold into a neighborhood cluster count. Keeping
-    // them out of that tier switch means the pin doesn't pop away and
-    // reappear (feeling laggy) as you cross the cluster/icon zoom threshold.
-    // A project with a live 3D Map Control model (mapModelEntries) renders
-    // as that real GLB instead — the flat pin would just duplicate it.
     const modeledProjectIds = new Set(mapModelEntries.map((e) => e.projectId));
     visibleProjects
       .filter((project) => !modeledProjectIds.has(project.id))
@@ -457,8 +371,6 @@ export function MapView({
       });
       el.addEventListener("click", (e) => {
         e.stopPropagation();
-        // Same fix as the listing marker below: selectProject already
-        // clears selectedListingId itself.
         selectProject(project.id);
         map.easeTo({
           center: [project.coords.lng, project.coords.lat],
@@ -466,20 +378,12 @@ export function MapView({
           duration: 500,
         });
       });
-      // anchor: "center" (not "bottom") so the coordinate sits at the
-      // marker's exact visual middle — otherwise easeTo/flyTo's `center`
-      // lands the coordinate at the map's center pixel while the marker's
-      // body, hanging above a bottom anchor, renders visibly off-center.
       const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
         .setLngLat([project.coords.lng, project.coords.lat])
         .addTo(map);
       markersRef.current.push(marker);
     });
 
-    // Listings synthesized from a New Project's units already get that
-    // project's own marker above — plotting them individually too would
-    // just duplicate the same pin and clutter the map, so only standalone
-    // listings get their own marker/cluster here.
     const standaloneListings = visibleListings.filter((l) => !l.fromProjectSlug);
 
     if (tier === "cluster") {
@@ -516,17 +420,10 @@ export function MapView({
         });
         el.addEventListener("click", (e) => {
           e.stopPropagation();
-          // First click centers this listing on the map and swaps the
-          // mini card's price for "View Unit" — a second click on the
-          // now-selected marker is what actually navigates.
           if (tier === "price" && isSelected) {
             window.location.href = `/listing/${listing.slug}`;
             return;
           }
-          // selectListing already clears selectedProjectId itself — do not
-          // also call selectProject(null) here, since that action's own
-          // reciprocal clearing (selectedListingId: null) would immediately
-          // wipe out the selection just made, one tick later.
           selectListing(listing.id);
           map.easeTo({
             center: [listing.coords.lng, listing.coords.lat],
@@ -534,7 +431,6 @@ export function MapView({
             duration: 500,
           });
         });
-        // anchor: "center" — see the project marker above for why.
         const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
           .setLngLat([listing.coords.lng, listing.coords.lat])
           .addTo(map);
@@ -555,13 +451,9 @@ export function MapView({
     t,
   ]);
 
-  // --- Popup positioning (tracks camera moves while a popup is open) ---
   const activeProject = selectedProjectId
     ? (liveProjects ?? []).find((p) => p.id === selectedProjectId) ?? null
     : null;
-  // A building with multiple independent (non-project) listings — excludes
-  // project units explicitly, even though those never set buildingListingCount
-  // anyway, since they get their own dedicated popup below instead.
   const activeBuildingListing =
     !activeProject && selectedListingId
       ? (liveListings ?? []).find(
@@ -571,10 +463,6 @@ export function MapView({
             (l.buildingListingCount ?? 0) > 1
         ) ?? null
       : null;
-  // A specific unit belonging to a New Project, selected from the results
-  // list — the project's marker is the only pin plotted at its location, so
-  // this popup is the only way the map shows *which* unit is selected
-  // (rather than falling back to the generic project overview popup).
   const activeProjectUnit =
     !activeProject && !activeBuildingListing && selectedListingId
       ? projectUnitListingsFrom(liveProjects ?? []).find(
@@ -584,16 +472,6 @@ export function MapView({
   const activeCoords =
     activeProject?.coords ?? activeBuildingListing?.coords ?? activeProjectUnit?.coords ?? null;
 
-  // mapbox fires `move` on every single rendered frame during a drag/
-  // rotate/zoom — up to 60/sec. Funneling every one of those through
-  // `setPopupPos` forced a full React re-render at that same rate for as
-  // long as any popup stayed open, which is a large part of what made the
-  // map "laggish, not responsive while moving" (independent of whatever
-  // else — a 3D model, markers — happened to be on screen at the time).
-  // Only the very first position (needed to mount the popup at the right
-  // spot at all) goes through React state; every subsequent `move` writes
-  // straight to the already-mounted card's `style.left/top` via
-  // `popupCardRef`, bypassing React entirely for the high-frequency part.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !activeCoords) {
@@ -629,10 +507,8 @@ export function MapView({
         </div>
       ) : (
         <>
-          {/* Rounded-corner clipping lives on this inner wrapper only — the
-              canvas/texture/spinner need it, but controls and popups sit
-              on the outer (unclipped) root below so a popup near the top
-              edge of the map isn't cut off by it. */}
+          {                                                                 
+                                                     }
           <div className={cn("absolute inset-0 overflow-hidden bg-neutral-100", className)}>
             <div ref={containerRef} className="h-full w-full" />
             <div className="cloud-texture" aria-hidden="true" />

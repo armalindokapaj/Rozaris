@@ -16,11 +16,6 @@ interface DetailModelRow {
   enabled: boolean;
 }
 
-/** Business Publisher's read-only 3D status view (PRD_ROZARIS_User_Types
- * §4 "3D Experiences" — "Publisher can see project 3D status, preview and
- * report issues. Production Map and Detailed models remain Admin-uploaded
- * and Admin-published.") No upload/mapping/publish controls here — those
- * stay in the Admin console's 3D Experience tab. */
 export function ThreeDExperiencesTab({ projects }: { projects: Project[] }) {
   const { t } = useT();
   const [mapModels, setMapModels] = useState<Record<string, MapModelRow>>({});

@@ -3,28 +3,6 @@
 import { ColorRow, GroupCard, SectionHeading, SliderRow, ToggleRow } from "../../fields";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 
-/**
- * Environment → Fog & Haze (PRD §12, `webgpu_custom_fog.html` parity) — a
- * real TSL `scene.fogNode` (src/lib/render-engine/fog.ts): a base→top
- * height band, distance haze, and animated `triNoise3D` wisps, layered on
- * top of the pre-existing classic exponential fog (Fog master/Color/
- * Density/Matches Sky). "Height Band" here is PRD §12's own height-band
- * toggle.
- *
- * Every fog-labeled control lives on THIS panel now, including "Ground
- * Fog" (its own older radial-mist-on-the-ground-material technique,
- * fields still owned by the Ground tab's schema/renderer since it paints
- * onto that tab's ground material — see RenderEngine.buildGroundMaterial)
- * — it used to live on the Ground tab under an identical "Ground Fog"
- * label as the Height Band toggle above, which both (a) split fog
- * controls across two unrelated panels and (b) let the ground radial
- * mist keep rendering even with the master Fog switch off, since it read
- * only its own `groundFogEnabled`. Now it's grouped here and gated by
- * the same master `on` (`fogEnabled`) as everything else on this panel,
- * both in the UI (`disabled`) and in the renderer (RenderEngine.ts
- * ANDs `fogEnabled` into `groundFogStrengthUniform`) — turning off "Fog"
- * now genuinely turns off every fog-like effect.
- */
 export function FogSubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const on = draft.fogEnabled;

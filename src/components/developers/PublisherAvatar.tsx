@@ -18,9 +18,6 @@ function hash(seed: string) {
   return Math.abs(h);
 }
 
-/** Gradient-square initial avatar for publisher cards/profiles — a lettered
- * mark reads closer to a real logo than PlaceholderImage's generic-icon
- * avatar (used for actual people, e.g. the account menu). */
 export function PublisherAvatar({ publisher, className }: { publisher: Publisher; className?: string }) {
   const idx = hash(publisher.id) % AVATAR_GRADIENTS.length;
   const [from, to] = AVATAR_GRADIENTS[idx];

@@ -2,16 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 
-/**
- * Full-page decorative backdrop: a flat, textured brand wallpaper
- * (gradient wash + dot grid + a faint grain, all solid layers — no
- * blur/glassmorphism per the design system) that reveals a second,
- * larger-scale texture in a soft circle wherever the mouse is, like the
- * pattern is expanding to meet the cursor. `fixed` + `pointer-events-none`
- * so it sits behind every section on the page — header, hero, tools row —
- * without ever intercepting a click; the cursor is tracked on `window`
- * rather than via mouse events on this element for that same reason.
- */
 export function HeroWallpaper() {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -35,7 +25,7 @@ export function HeroWallpaper() {
 
   return (
     <div ref={ref} className="fixed inset-0 z-0 overflow-hidden bg-gradient-to-br from-brand-50 via-neutral-50 to-brand-100">
-      {/* Base texture — fine dot grid, always visible and static. */}
+      {                                                              }
       <div
         className="absolute inset-0 opacity-70"
         style={{
@@ -44,8 +34,8 @@ export function HeroWallpaper() {
         }}
       />
 
-      {/* Faint grain for depth — a static SVG filter, not a blur/glass
-          effect, kept low-opacity so it reads as paper texture. */}
+      {                                                                
+                                                                   }
       <svg className="absolute inset-0 h-full w-full mix-blend-overlay" aria-hidden="true">
         <filter id="wallpaper-grain">
           <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves={2} stitchTiles="stitch" />
@@ -54,11 +44,8 @@ export function HeroWallpaper() {
         <rect width="100%" height="100%" filter="url(#wallpaper-grain)" opacity="0.06" />
       </svg>
 
-      {/* Cursor-tracked reveal — a larger-scale copy of the same dot grid,
-          masked to a soft circle at the pointer so the pattern reads as
-          "expanding" right where the mouse is. Position updates directly
-          via inline vars on every mousemove; only opacity is transitioned,
-          so the reveal itself tracks the cursor with no lag. */}
+      {                                                                    
+                                                                }
       <div
         className="absolute inset-0 transition-opacity duration-300 ease-[var(--ease-rz)]"
         style={{
@@ -70,8 +57,8 @@ export function HeroWallpaper() {
         }}
       />
 
-      {/* Soft warm glow following the cursor, reinforcing the "expanding"
-          feel without any blur filter — just a low-opacity radial fill. */}
+      {                                                                   
+                                                                           }
       <div
         className="absolute inset-0 transition-opacity duration-300 ease-[var(--ease-rz)]"
         style={{

@@ -10,9 +10,6 @@ const bodySchema = z.object({
   notes: z.string().max(4000).optional().nullable(),
 });
 
-/** Update a lead's pipeline status and/or follow-up notes — scoped to a
- * lead actually belonging to the signed-in publisher, same ownership
- * check every other publisher-write route in this app uses. */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requirePublisherSession();
   if (gate instanceof NextResponse) return gate;

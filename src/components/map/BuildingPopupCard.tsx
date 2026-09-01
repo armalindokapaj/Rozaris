@@ -6,9 +6,6 @@ import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import type { Listing } from "@/lib/types";
 
-/** MAP-016: a building with multiple independent listings shows an aggregate
- * popup. `forwardRef`'d for the same reason as ProjectPopupCard — see its
- * comment. */
 export const BuildingPopupCard = forwardRef<HTMLDivElement, {
   listing: Listing;
   siblingCount: number;

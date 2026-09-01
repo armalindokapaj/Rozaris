@@ -28,9 +28,6 @@ const STATUS_LABEL_KEY: Record<Project["status"], string> = {
   completed: "results.statusCompleted",
 };
 
-/** Richer horizontal row for the New Projects "List view" — more facts
- * visible per project than the compact grid ProjectCard, for browsing
- * before committing to a detail/3D view. */
 export function ProjectListRow({ project }: { project: Project }) {
   const { t } = useT();
   const priceFmt = usePriceFormat();
@@ -102,8 +99,8 @@ export function ProjectListRow({ project }: { project: Project }) {
           )}
         </div>
 
-        {/* Construction Process Timeline — the project's status reads below
-            it (rather than up by the title) so the two are read together. */}
+        {                                                                   
+                                                                             }
         {project.status === "under_construction" && (
           <div className="mt-3 max-w-xs">
             <div className="flex items-center justify-between text-[11px] text-neutral-400">
@@ -125,9 +122,8 @@ export function ProjectListRow({ project }: { project: Project }) {
       </div>
 
       <div className="flex shrink-0 items-center gap-2 sm:pl-2">
-        {/* Primary CTA leads to the editorial Project Detail Page (the
-            authoritative info/inventory page); 3D stays a distinct,
-            explicit secondary action into the Three.js viewer. */}
+        {                                                              
+                                                                  }
         <Link
           href={`/projects/${project.slug}`}
           className="flex flex-1 items-center justify-center gap-2 rounded-control bg-neutral-900 px-6 py-3.5 text-sm font-semibold text-white hover:bg-neutral-800 sm:w-auto"

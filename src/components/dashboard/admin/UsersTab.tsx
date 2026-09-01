@@ -20,15 +20,6 @@ interface RealUser {
 
 const ADMIN_SCOPES = ["listing_reviewer", "publisher_verification", "3d_manager", "content_manager", "finance_admin", "support_admin"];
 
-/** Admin's Users tab (PRD_ROZARIS_User_Types §5 "Users, publishers &
- * developers") — a searchable roster. Two sources, same combine convention
- * as the rest of this console: the five fixed demo personas
- * (src/lib/demoAccounts.ts) plus real signed-up accounts from the real
- * User table. Real accounts now get a real management panel — edit name,
- * set status (with a time-bound idle window), reset password, and (Super
- * Admin only) grant the admin role + scopes, all via the real
- * `PATCH /api/admin/users/[id]` route (see the "Rozaris Platform Audit"
- * memory) — this used to be inert, no write path from this tab at all. */
 export function UsersTab({ initialQuery, isSuperAdmin }: { initialQuery?: string; isSuperAdmin?: boolean }) {
   const { t } = useT();
   const [query, setQuery] = useState(initialQuery ?? "");

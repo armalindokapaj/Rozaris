@@ -17,8 +17,6 @@ const nunitoSans = Nunito_Sans({
   display: "swap",
 });
 
-// Roboto is reserved for prices, measurements, and tables. Its tabular
-// figures make financial information substantially easier to scan.
 const roboto = Roboto({
   variable: "--font-roboto",
   subsets: ["latin"],
@@ -26,10 +24,6 @@ const roboto = Roboto({
   weight: ["400", "500", "600", "700"],
 });
 
-// Platform CMS's "SEO titles / descriptions" (see src/lib/pageSeo.ts) —
-// the site-wide default/fallback title (`template` still applies to every
-// page below that doesn't set its own `title`), admin-overridable via the
-// "home" key without a deploy.
 export async function generateMetadata(): Promise<Metadata> {
   const seo = await getPageSeoRaw("home");
   return {

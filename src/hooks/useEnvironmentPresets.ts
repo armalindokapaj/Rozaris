@@ -13,9 +13,6 @@ export interface EnvironmentPresetRow {
   updatedAt: string;
 }
 
-// Same real bug fix as useDetailModelSlots.ts's identical helper (see its
-// own doc comment) — a write route 401ing needs to surface a real sign-in
-// prompt immediately, never a silent retry.
 function fetchWithSessionRetry(
   input: string,
   init: RequestInit | undefined,
@@ -27,13 +24,6 @@ function fetchWithSessionRetry(
   });
 }
 
-/**
- * "1 preset for every Sun, Fog, Sunflare... setting, to use in other
- * projects" — the global Environment Presets library backing the
- * Experience Editor's Presets tab. Deliberately not project-scoped: it
- * fetches once, independent of whichever project's editor is currently
- * open, same "fetch once, own local list" shape as useDetailModelSlots.
- */
 export function useEnvironmentPresets() {
   const { establishAdminSession } = useAdminSessionRepair();
 

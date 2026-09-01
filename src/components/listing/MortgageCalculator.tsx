@@ -19,9 +19,6 @@ export function MortgageCalculator({
 }: {
   initialPrice?: number;
   compact?: boolean;
-  /** Fires whenever the computed monthly payment changes — lets a parent
-   * page (e.g. the affordability check below) stay in sync without owning
-   * a duplicate copy of this calculator's inputs. */
   onMonthlyChange?: (monthly: number) => void;
 }) {
   const [price, setPrice] = useState(initialPrice);

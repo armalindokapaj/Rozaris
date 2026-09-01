@@ -2,14 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 
-/**
- * Real User search/list (PRD_ROZARIS_Admin §12 "Search: User ID, name,
- * email, phone, role/status") — backs the Permissions and Account Controls
- * panels' user pickers. `?q=` matches name/email/phone (substring,
- * case-insensitive); `?role=` narrows to a role. Excludes soft-deleted
- * users by default (they're in the Recycle Bin, not this list) unless
- * `?includeDeleted=1`.
- */
 export async function GET(request: Request) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

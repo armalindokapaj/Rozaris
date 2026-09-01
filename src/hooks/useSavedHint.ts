@@ -8,7 +8,6 @@ import type { CompareHintState } from "@/hooks/useCompareHint";
 
 const HINT_TIMEOUT_MS = 3000;
 
-/** Clicking "Saved" with nothing saved shows a small tooltip instead of navigating to an empty page. */
 export function useSavedHint() {
   const savedCount = useAppStore((s) => s.saved.listings.length + s.saved.projects.length);
   const { t } = useT();

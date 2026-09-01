@@ -1,18 +1,3 @@
-/**
- * One-off data migration: sets `Property.locationId` / `Project.locationId`
- * for every existing row from its (still-present, unchanged) legacy
- * `neighborhoodId` string, now that scripts/seed-locations.ts has given
- * every mockData.ts neighborhood id a real Location row with the same id.
- * Idempotent — only touches rows where `locationId` is still null.
- *
- * `Listing.locationId` no longer exists — the Property/Listing split (see
- * MEMORY note "rozaris-controlled-taxonomy-spec") moved every physical
- * field, `locationId` included, off `Listing` onto the `Property` it
- * points at. This script backfills `Property` instead of `Listing` now.
- *
- * Run with: npx tsx scripts/backfill-location-ids.ts
- * (run scripts/seed-locations.ts first)
- */
 import { PrismaClient } from "../src/generated/prisma";
 
 const prisma = new PrismaClient();

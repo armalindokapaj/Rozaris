@@ -16,19 +16,6 @@ interface PublisherOption {
   name: string;
 }
 
-/**
- * Project Manager → "General". Identity (name/slug/developer),
- * classification (type/setting), construction state, and both
- * descriptions. Everything here writes into the shared record draft; the
- * page's save bar commits it.
- *
- * `slug` is editable for the first time (the old modal always sent the
- * project's existing slug back unchanged, so a typo made at creation was
- * permanent) — with the live public URL shown underneath and an explicit
- * warning, because changing it breaks every link anyone has already
- * shared. The upsert route de-duplicates a colliding slug rather than
- * failing, so a clash costs a suffix, not an error.
- */
 export function ProjectGeneralSection({
   draft,
   onChange,
@@ -86,10 +73,8 @@ export function ProjectGeneralSection({
               onChange={(e) => onChange({ publisherId: e.target.value })}
               className={inputClass}
             >
-              {/* A project whose publisher isn't in the loaded list (a
-                  publisher that was archived, say) would otherwise show
-                  the FIRST option as if it were the real one, and a save
-                  would silently reassign the project to it. */}
+              {                                                        
+                                                               }
               {!publishers.some((p) => p.id === draft.publisherId) && (
                 <option value={draft.publisherId}>{project.developer.name}</option>
               )}

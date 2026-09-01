@@ -5,19 +5,6 @@ import { prisma } from "@/lib/db";
 import { auth } from "@/auth";
 import { logAuditEvent } from "@/lib/audit";
 
-/**
- * Account & Profile System PRD v1.0 §14.6 "Account deletion — User
- * requests deletion -> explain consequences -> re-authenticate -> process
- * required retention/anonymization rules -> revoke sessions." Real
- * self-service soft-delete, same `deletedAt`/`deletedBy` mechanism the
- * admin Recycle Bin already uses (`src/lib/adminEntities.ts`'s `user`
- * config) — `deletedBy` is tagged with the account's own email so the
- * audit trail can tell a self-service deletion from an admin one. Blocks
- * a request while the account still owns an organization (§9's Publisher
- * relation is a hard `ownerUserId @unique` FK — deleting the owner would
- * orphan every Listing/Project/LeadItem under it); an active team
- * membership is just removed, same as leaving a team normally.
- */
 const bodySchema = z.object({ password: z.string().min(1) });
 
 export async function POST(request: Request) {

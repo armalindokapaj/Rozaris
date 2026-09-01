@@ -2,9 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { DEFAULT_SEARCH_RANKING_WEIGHTS } from "@/lib/searchRanking";
 
-/** Public, read-only — the "recommended" sort needs these weights
- * client-side to score real listings. No auth: these are ranking tuning
- * knobs, not secrets, same convention as `GET /api/feature-flags`. */
 export async function GET() {
   const row = await prisma.searchRankingConfig.findUnique({ where: { id: "default" } });
   return NextResponse.json({

@@ -5,25 +5,18 @@ import { upload } from "@vercel/blob/client";
 import { useAdminSessionRepair } from "./useAdminSessionRepair";
 import type { DetailModelSlot } from "@/lib/types";
 
-const MAX_FILE_BYTES = 60 * 1024 * 1024; // keep in sync with api/blob/upload's maximumSizeInBytes
+const MAX_FILE_BYTES = 60 * 1024 * 1024;
 
 export interface UnitLinkRow {
   meshName: string;
   unitId: string;
   mappingStatus: string;
-  /** Units Blocks & POI Layer PRD §7/§15 — the per-unit POI camera-facing
-   * direction (Building-local degrees) plus its rare escape-hatch
-   * overrides. Optional here purely because callers building a fresh,
-   * not-yet-saved row (e.g. autoDetectLinks/setLink) don't set them —
-   * the API/DB default (0°, enabled) applies once persisted. */
   poiYawDeg?: number;
   poiEnabled?: boolean;
   poiDistanceOverride?: number | null;
   poiHeightOverride?: number | null;
 }
 
-/** Response-only companion to a freshly created version — the slot-versions
- * POST route's account of what a GLB replacement inherited. Never stored. */
 export interface CarryReport {
   carriedFromVersion: number | null;
   carriedCount: number;
@@ -31,11 +24,6 @@ export interface CarryReport {
   unmappedUnitNodeNames: string[];
 }
 
-/** The one line the admin sees after a replace. Spells out BOTH halves of
- * what they asked for — what was kept, and what still needs mapping —
- * because silence after an upload is indistinguishable from "it started
- * over again", which is the exact complaint this carry-forward exists to
- * answer. */
 function describeCarryReport(report: CarryReport | undefined, requested: boolean): string {
   if (!requested) return "Uploaded. Unit mappings were not carried over — map the blocks in the Units tab.";
   if (!report) return "Uploaded.";
@@ -88,9 +76,6 @@ export interface DetailVersionRow {
   nodeOverrides: NodeOverrideRow[] | null;
 }
 
-// Kept as untyped-import-free local aliases (rather than importing
-// SceneManifestNode/NodeOverride from lib/types) so this hook doesn't need
-// to know their full shape — it just round-trips whatever the API returns.
 export type SceneManifestNodeRow = {
   rzNodeId: string;
   name: string;
@@ -102,12 +87,6 @@ export type SceneManifestNodeRow = {
 };
 export type NodeOverrideRow = Record<string, unknown> & { rzNodeId: string };
 
-/** Real bug fix carried over from the pre-rebuild editor: a fetch that hits
- * any of this editor's write routes with a 401 needs to surface a real
- * sign-in prompt immediately rather than waiting for next-auth's cached
- * session status to notice on its own. No silent retry — see the deleted
- * Project3DConfigEditor.tsx's identical function for the full history of
- * why (an admin-auth-backdoor closure removed a security hole here). */
 function fetchWithSessionRetry(
   input: string,
   init: RequestInit | undefined,
@@ -119,18 +98,6 @@ function fetchWithSessionRetry(
   });
 }
 
-/**
- * The Experience Editor's Scene-tab upload/slot section — Multiple
- * Detail-Model Slots (Building/+Add slot pills, each an independently
- * versioned GLB). Ported faithfully out of the deleted
- * Project3DConfigEditor.tsx as part of the Experience Editor v2 rebuild
- * (2026-08-15): this is the one piece of the old editor the rebuild was
- * told to keep working exactly as before, everything else around it is
- * being rebuilt per the new PRD. Deliberately excludes the old scale/
- * rotation/altitude sliders, unit-mesh-link mapping, and node overrides —
- * those get redesigned into the PRD's Model/Materials/Unit Mapping specs
- * in a later phase, not preserved as-is.
- */
 export function useDetailModelSlots(projectId: string) {
   const { establishAdminSession } = useAdminSessionRepair();
 
@@ -142,10 +109,6 @@ export function useDetailModelSlots(projectId: string) {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailFlash, setDetailFlash] = useState<string | null>(null);
-  /** "Replacing this GLB keeps the unit mappings already authored on this
-   * slot." On by default because a replace is overwhelmingly a corrected
-   * re-export of the same building, not a different one — see the
-   * carry-source comment in the slot-versions POST route. */
   const [keepUnitLinks, setKeepUnitLinks] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -236,18 +199,6 @@ export function useDetailModelSlots(projectId: string) {
     }
   }
 
-  /** Sets (or clears) a slot's Building anchor — the transform parent it
-   * inherits placement from. The PATCH route has accepted this since the
-   * Units Blocks & POI Layer pass, whose own comment called it something
-   * "the (future) Units tab" would drive, but no UI was ever built for
-   * it. That left a dead end an admin could not get out of: publishing a
-   * role=units slot is HARD-GATED on having an anchor
-   * (versions/[versionId]/publish/route.ts:78), and both the Publish and
-   * Units panels told the admin to "set it on the Scene tab" — where no
-   * such control existed. Slots created today auto-anchor when the
-   * project has exactly one building slot (slots/route.ts:65-72); this is
-   * what fixes the ones that predate that, or that had 0/2+ building
-   * slots at creation time. */
   async function handleSetTransformParent(slotId: string, parentSlotId: string | null) {
     try {
       const res = await fetchWithSessionRetry(
@@ -270,7 +221,7 @@ export function useDetailModelSlots(projectId: string) {
   }
 
   async function handleDeleteSlot(slotId: string) {
-    if (slots.length <= 1) return; // matches the server-side "keep at least one" rule
+    if (slots.length <= 1) return;
     const slot = slots.find((s) => s.id === slotId);
     if (!slot) return;
     if (!window.confirm(`Delete "${slot.name}"? This removes every version in it.`)) return;
@@ -297,13 +248,6 @@ export function useDetailModelSlots(projectId: string) {
 
   async function ensureActiveSlotId(): Promise<string> {
     if (activeSlotId) return activeSlotId;
-    // Real bug fixed 2026-08-21: this used to POST without a `role`,
-    // which the API/DB default to "custom" — so a brand-new project's
-    // very first slot was named "Building" but never actually satisfied
-    // `role === "building"`, silently breaking every feature that filters
-    // on that (Map tab, Units transform-parent auto-link). Projects
-    // created before this line changed still carry the wrong role and
-    // need a one-off data fix.
     const res = await fetchWithSessionRetry(
       `/api/detail-models/${projectId}/slots`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Building", role: "building" }) },
@@ -474,13 +418,6 @@ export function useDetailModelSlots(projectId: string) {
     }
   }
 
-  /** Publish tab (PRD §42) — the real Publish Gate route already existed
-   * (GLB validation not BLOCKED + no duplicate unit bindings) but had no
-   * hook-level caller until this pass. Returns the error message on
-   * failure (the route's own real validation-gate rejection, e.g.
-   * "Blocked by validation..." or "N units linked to more than one
-   * mesh...") so the Publish tab can show it, rather than swallowing it
-   * into the generic detailError string other handlers use. */
   async function handlePublish(opts?: { force?: boolean; reason?: string }): Promise<string | null> {
     if (!activeVersion) return "No draft to publish.";
     setDetailBusy(true);
@@ -501,7 +438,6 @@ export function useDetailModelSlots(projectId: string) {
         try {
           message = (JSON.parse(text) as { error?: string }).error ?? text;
         } catch {
-          // not JSON — use the raw text
         }
         return message;
       }
@@ -520,11 +456,6 @@ export function useDetailModelSlots(projectId: string) {
     slots,
     activeSlotId,
     versions,
-    /** Units Blocks & POI Layer PRD — every slot's own latest version, not
-     * just the active one, so a consumer can composite ALL slots into one
-     * live preview (Building + Units together) the way the public viewer
-     * already does, rather than showing only whichever slot's tab is
-     * currently selected. */
     versionsBySlot,
     activeVersion,
     slotsLoaded,

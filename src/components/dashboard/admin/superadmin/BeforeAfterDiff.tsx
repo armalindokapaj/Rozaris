@@ -9,12 +9,6 @@ function formatValue(v: unknown): string {
   return String(v);
 }
 
-/** Generic field-by-field diff renderer over any `previousState`/
- * `newState` pair — the shared "Before / After comparison" component used
- * by the Audit Log, Version History, and User Activity panels. Mirrors
- * `diffState()` in `src/lib/audit.ts` (same added/changed/removed rules);
- * this component re-derives the diff client-side so it works whether the
- * caller passes two raw snapshots or one already-diffed AuditLog row. */
 export function BeforeAfterDiff({
   before,
   after,

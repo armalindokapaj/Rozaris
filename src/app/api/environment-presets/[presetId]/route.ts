@@ -8,9 +8,6 @@ import { environmentPresetConfigSchema } from "@/lib/environmentPresetFields";
 
 const patchPresetSchema = z.object({
   name: z.string().min(1).max(60).optional(),
-  // Both optional so the Presets tab can do a pure rename OR a
-  // "update this preset to match my current draft" re-save without two
-  // different routes.
   config: environmentPresetConfigSchema.optional(),
 });
 

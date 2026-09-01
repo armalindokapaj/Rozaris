@@ -7,24 +7,6 @@ import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import { UNIT_ORIENTATIONS, type Project, type Unit, type UnitOrientation } from "@/lib/types";
 
-/**
- * PRD_3D_Project_Viewer §11/§13/§18 — a project's "Units" and "3D Model"
- * steps. Units added here immediately flow into the real unit-mapping
- * pipeline (Unit Mesh Mapper -> ThreeProjectViewer's procedural layout,
- * lib/threeBuilding.ts), unlike the model upload below: with no backend or
- * object storage in this prototype, "Add 3D model" stays an honest,
- * non-functional mock (matching the dashboard's existing Media tab) rather
- * than pretending to persist a file.
- *
- * Drift-bug fix: this used to dual-write to Zustand `customProjects` (the
- * app-wide read source at the time) and a fire-and-forget Postgres call.
- * The Zustand action silently no-op'd for any of the 7 seeded mockData
- * projects (never added to `customProjects`), so editing a seeded
- * project's units here wrote *only* to Postgres, invisibly — this same
- * editor's own `units` selector kept showing stale data forever. Postgres
- * (via `useProjectUnits`) is now the only path — see that hook's doc
- * comment for the full history.
- */
 export function ProjectUnitsEditor({
   project,
   onClose,
@@ -33,19 +15,10 @@ export function ProjectUnitsEditor({
   onClose: () => void;
 }) {
   const { units: liveUnits, error: syncError, createUnit, updateUnit, deleteUnit } = useProjectUnits(project.id);
-  // Falls back to the caller's own project.units for visual continuity on
-  // first paint — same reasoning as Project3DConfigEditor.tsx's
-  // `effectiveProject` (useProjectUnits's `units` is `null` while the
-  // initial fetch is in flight).
   const units = liveUnits ?? project.units;
   const priceFmt = usePriceFormat();
   const { t } = useT();
 
-  // "Units & Listings, Untangled" — the reverse direction of the Unit
-  // picker on a listing: which of this project's units already have a
-  // marketplace ad pointed at them. Read-only here (nothing to edit from
-  // this side); the link itself is made/broken from the Listing's own
-  // manage panel.
   const [linkedUnitIds, setLinkedUnitIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     fetch("/api/admin/listings?status=all")
@@ -87,31 +60,16 @@ export function ProjectUnitsEditor({
       status,
       images: [],
       floorPlanImage: "",
-      // "" is the picker's real "not set" choice, and stays undefined on
-      // the wire rather than becoming an empty-string orientation the
-      // normalizer would then have to reject on the way back out.
       orientation: orientation || undefined,
     };
-    // Only clear the form on confirmed success — unlike the old
-    // fire-and-forget dual-write, which cleared it unconditionally even
-    // when the (only real) write failed. `syncError` still surfaces the
-    // failure either way.
     const ok = await createUnit(unit);
     if (ok) setCode("");
   }
 
-  // Inline per-row editing — the only way to change a unit's status (or any
-  // other field) after creation. Editing in place, rather than delete-then-
-  // re-add with a new generated id, is what keeps existing UnitMeshLinkV2
-  // rows (GLB mesh -> unit bindings, keyed on Unit.id) from silently
-  // orphaning the moment an admin marks a linked unit Reserved/Sold.
   type EditDraft = Pick<
     Unit,
     "code" | "buildingName" | "floor" | "bedrooms" | "bathrooms" | "area" | "price" | "status"
   > & {
-    /** `""` is the picker's "not set" row, which `saveEdit` sends as an
-     * explicit `null` — a unit whose orientation was authored by mistake
-     * has to be clearable, and PATCH treats an omitted key as "leave it". */
     orientation: UnitOrientation | "";
   };
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -145,9 +103,6 @@ export function ProjectUnitsEditor({
       code: editDraft.code.trim(),
       orientation: editDraft.orientation || null,
     };
-    // Only leave edit-mode on confirmed success — same reasoning as
-    // handleAddUnit above; a failed write now leaves the row exactly as
-    // the admin left it instead of silently closing over a lost edit.
     const ok = await updateUnit(editingId, patch);
     if (ok) cancelEdit();
   }
@@ -174,8 +129,8 @@ export function ProjectUnitsEditor({
         </div>
 
         <div className="space-y-6 p-5">
-          {/* 3D model — PRD §13, honestly mocked since there's no backend/
-              object storage here to actually receive an upload. */}
+          {                                                                
+                                                                   }
           <section>
             <h3 className="mb-2 text-sm font-bold text-neutral-900">{t("admin.projectModelTitle")}</h3>
             <div className="rounded-panel border border-dashed border-neutral-300 bg-neutral-50 p-6 text-center">
@@ -191,9 +146,8 @@ export function ProjectUnitsEditor({
             </div>
           </section>
 
-          {/* Units — PRD §18, the Unit ID <-> geometry bridge. Every unit
-              added here becomes selectable in the public viewer immediately
-              (lib/threeBuilding.ts groups by buildingName/floor). */}
+          {                                                               
+                                                                     }
           <section>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-bold text-neutral-900">{t("admin.projectUnitsListTitle")}</h3>
@@ -438,14 +392,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/** The N/E/S/W picker. Lives here, on the unit itself, rather than in the
- * 3D Experience Editor's Units panel: which way a unit faces is a listing
- * fact a buyer asks about, authored once and true across every GLB
- * re-upload — unrelated to that panel's own N/E/S/W buttons, which aim the
- * POI camera for a particular model version (`UnitMeshLink.poiYawDeg`).
- *
- * The letter is the stored value and stays the same in every locale; only
- * the spelled-out name beside it translates. */
 function OrientationSelect({
   value,
   onChange,

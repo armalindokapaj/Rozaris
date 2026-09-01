@@ -2,13 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 
-/**
- * Global Audit Log — real, paginated, filterable read of `AuditLog`
- * (`admin_audit_log`), replacing `AuditLogTab.tsx`'s previous session-local
- * Zustand mock. Query params: `entityType`, `actor`, `action` (all
- * substring/exact-match filters), `from`/`to` (ISO date bounds on
- * `createdAt`), `cursor`/`limit` (id-based pagination, newest first).
- */
 export async function GET(request: Request) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;
@@ -16,12 +9,6 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const entityType = url.searchParams.get("entityType");
   const entityId = url.searchParams.get("entityId");
-  /** Everything that happened to one project — its own rows PLUS the rows
-   * written against its children (units, inventory connectors, publish
-   * targets), which carry a different `entityId` but stamp `projectId`
-   * into `metadata`. The Project Manager's Activity tab is the caller;
-   * without this it could only ever show project-level edits and would
-   * silently omit "who repriced A-044". */
   const projectId = url.searchParams.get("projectId");
   const actor = url.searchParams.get("actor");
   const action = url.searchParams.get("action");

@@ -3,16 +3,6 @@
 import { ColorRow, GroupCard, SectionHeading, SliderRow, SelectRow, ToggleRow } from "../../fields";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 
-/**
- * Environment → Water (PRD §13, `webgpu_ocean.html` parity) — extends the
- * pre-existing WaterMesh wiring. Honest split (RenderEngine.ts's
- * applyEnvironmentConfig doc comment carries the full reasoning): Water/
- * Sun Reflection/Waves/Normal Map/Height/Color/Size/Distortion are REAL;
- * Movement and Environment Reflection are stored (flip and persist, per
- * PRD's own ON/OFF contract) but not yet wired to a visible difference —
- * WaterMesh's shared shader has no per-instance pause and its planar
- * reflector is baked in at construction, not a runtime toggle.
- */
 export function WaterSubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const on = draft.waterEnabled;

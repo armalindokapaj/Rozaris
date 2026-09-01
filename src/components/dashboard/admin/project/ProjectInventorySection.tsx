@@ -22,9 +22,6 @@ const STATUS_TONE: Record<Unit["status"], "positive" | "warning" | "danger"> = {
 
 type SortKey = "code" | "buildingName" | "floor" | "area" | "price" | "pricePerM2" | "status";
 
-/** The full editable row. `orientation`'s `""` is the picker's real "not
- * set" choice, sent as an explicit `null` so it can be CLEARED — the PATCH
- * route reads an omitted key as "leave it alone". */
 type Draft = Pick<
   Unit,
   "code" | "type" | "buildingName" | "floor" | "bedrooms" | "bathrooms" | "area" | "price" | "currency" | "transaction" | "status"
@@ -47,31 +44,11 @@ function toDraft(u: Unit): Draft {
   };
 }
 
-/**
- * Project Manager → "Inventory". The unit table an actual sales office
- * runs on: every column sortable, filterable and editable in place, plus
- * multi-select bulk actions and a CSV export.
- *
- * Replaces the stacked card list in `ProjectUnitsEditor` — fine for the
- * six units a demo project has, unusable at the 120 a real tower has, and
- * it exposed only eight of the twelve fields a unit actually carries.
- * That editor still exists for the 3D authoring flow; this is the
- * commercial one.
- *
- * Deliberately NOT a virtualised grid: real projects here top out in the
- * low hundreds of units, where the browser handles a plain table fine and
- * a virtualiser would only cost `Ctrl+F`.
- */
 export function ProjectInventorySection({ project }: { project: Project }) {
   const { t } = useT();
   const priceFmt = usePriceFormat();
   const { units: liveUnits, error, refresh, createUnit, updateUnit, deleteUnit } = useProjectUnits(project.id);
   const units = liveUnits ?? project.units;
-  /* Whether this project's inventory is externally managed. Nothing
-   * outside the Sheet Sync tab used to know, so an admin could carefully
-   * reprice a floor here with no hint that the next sync would put it all
-   * back — the single most expensive thing this feature can do to someone
-   * silently. */
   const { connector } = useInventoryConnector(project.id);
 
   const [query, setQuery] = useState("");
@@ -171,15 +148,6 @@ export function ProjectInventorySection({ project }: { project: Project }) {
     }
   }
 
-  /**
-   * Exactly the columns the Google Sheets connector reads back, so an
-   * export can go straight into a sheet and become the sync source with no
-   * re-shaping — and as `.xlsx`, not CSV, for the same reason the Sheet
-   * Sync starter sheet is (see `lib/integrations/xlsx.ts`): a comma-
-   * separated file lands in a SINGLE column in Excel under every locale
-   * whose list separator is `;`, which is all of the ones this is sold
-   * into. Exports the filtered/sorted rows on screen, not the whole table.
-   */
   async function exportSheet() {
     const stream = buildInventoryWorkbook(
       visible.map((u) => ({
@@ -253,11 +221,8 @@ export function ProjectInventorySection({ project }: { project: Project }) {
         />
       </div>
 
-      {/* Shown for ANY linked connector, including one currently in error:
-          a sheet that failed to fetch this morning still owns these fields
-          and will still overwrite them once its sharing setting is fixed.
-          Hiding the warning exactly when the connector looks broken is
-          hiding it exactly when a hand edit is most likely. */}
+      {                                                                    
+                                                               }
       {connector && (
         <p className="flex flex-wrap items-center gap-2 rounded-control border border-brand-200 bg-brand-50 px-3 py-2 text-[11px] leading-relaxed text-brand-800">
           <Sheet className="h-3.5 w-3.5 shrink-0" />
@@ -488,8 +453,6 @@ export function ProjectInventorySection({ project }: { project: Project }) {
   );
 }
 
-/** Bulk actions on the current selection. Every action here maps to one
- * audited `PATCH /api/projects/[id]/units` — not N separate writes. */
 function BulkBar({
   count,
   busy,

@@ -11,10 +11,6 @@ const STYLES = {
   blocked: { icon: XCircle, className: "bg-red-100 text-red-700" },
 } as const;
 
-/** Shared status pill for the versioned 3D pipeline's server-side GLB
- * validation result (src/lib/glbValidate.ts) — PRD_Admin_Mapbox_GLB §6 /
- * PRD_Admin_3D_Project_Experience §9's READY/WARNING/BLOCKED table. Shows
- * the issue list on click when there is one. */
 export function ValidationBadge({
   status,
   issues,

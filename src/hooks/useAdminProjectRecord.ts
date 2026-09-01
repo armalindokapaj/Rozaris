@@ -13,8 +13,6 @@ export interface ProjectSlotSummary {
   updatedAt: string | null;
 }
 
-/** Everything `GET /api/admin/projects/[projectId]` returns — the record
- * the Project Manager opens. See that route's doc comment. */
 export interface AdminProjectRecord {
   project: Project;
   approvalStatus: "pending" | "active" | "archived";
@@ -28,26 +26,12 @@ export interface AdminProjectRecord {
   threeD: {
     hasMapModel: boolean;
     mapModelEnabled: boolean;
-    /** Null when no map-model version exists yet — see the route's own
-     * comment for why this is compared against the project's coordinates. */
     mapModelPosition: { lat: number; lng: number } | null;
     hasConfig: boolean;
     slots: ProjectSlotSummary[];
   };
 }
 
-/**
- * One project's full admin record, refetchable — unlike `useAdminProject`,
- * which resolves against the whole-console project list and has no way to
- * reload after a write. The Project Manager saves in a dozen places and
- * every one of them needs the header (name, status badges, counts) to
- * agree with what just landed in Postgres, so `refresh()` is the point of
- * this hook existing separately.
- *
- * `notFound` is distinguished from `error`: a project that was deleted in
- * another tab should say so, not show a generic failure with a retry
- * button that can never succeed.
- */
 export function useAdminProjectRecord(projectId: string | undefined) {
   const [record, setRecord] = useState<AdminProjectRecord | null>(null);
   const [loading, setLoading] = useState(true);

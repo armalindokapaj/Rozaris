@@ -14,40 +14,6 @@ export interface TargetResolutionSuccess {
 
 export type TargetResolutionResult = TargetResolutionSuccess | TargetResolutionFailure;
 
-/**
- * Multi-Channel Publishing PRD Phase 5 — the one place every public
- * `/api/viewer/v1/t/[publicKey]/*` route resolves an opaque `publicKey`
- * into a live, licensed, origin-permitted `ProjectPublishTarget`. PRD §41:
- * "Check: target ACTIVE? license valid? origin permitted? release
- * assigned?" (release-assignment is checked by bootstrap's own caller, not
- * here, since the manifest/inventory routes don't all need it).
- *
- * Deliberately a generic 404 for "doesn't exist at all" — never reveal
- * whether a key format is merely wrong vs. a real-but-revoked one — but a
- * specific reason once a target IS found, matching PRD §60's "SUSPEND
- * VIEWER" flow (the whole point of a distinct suspended state is that it's
- * meant to be a visible, branded "unavailable" message, not a bare 404).
- *
- * Origin enforcement here is defense-in-depth only, checked when the
- * request actually carries an `Origin` header. The PRD's stronger
- * mechanism (`Content-Security-Policy: frame-ancestors`, §43) belongs on
- * the `/embed/[publicKey]` PAGE response itself, which doesn't exist yet —
- * see the "rozaris-multichannel-publishing-prd" memory for why that's
- * deliberately deferred to a session with real browser verification
- * available, unlike this API-layer work.
- *
- * Security-audit fix (2026-08-18): also checks the target's own
- * `project.deletedAt`/`publisher.deletedAt` — the admin Recycle Bin's
- * soft-delete (`src/lib/adminEntities.ts`) sets those flags but doesn't
- * cascade to suspend related `ProjectPublishTarget` rows, and this check
- * used to live only in `bootstrap/route.ts` (project only, never
- * publisher), so a caller already holding a `publicKey`/`releaseId` could
- * keep hitting `manifest`/`inventory` directly — bypassing `bootstrap`
- * entirely — after an admin believed Recycle-Binning the project or its
- * whole publisher had taken it offline. Centralized here so every current
- * and future route sharing this resolver inherits it, instead of each
- * route needing to remember to re-implement it.
- */
 export async function resolvePublishTarget(publicKey: string, request: Request): Promise<TargetResolutionResult> {
   const target = await prisma.projectPublishTarget.findUnique({
     where: { publicKey },

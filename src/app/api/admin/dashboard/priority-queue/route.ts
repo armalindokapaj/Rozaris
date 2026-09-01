@@ -25,13 +25,7 @@ export interface PriorityItem {
   entityId: string;
   projectId: string | null;
   createdAt: string;
-  /** Where clicking the item's own deep link goes — a real, existing admin
-   * route (never a fabricated detail page). */
   deepLink: string;
-  /** Set on `listing_pending`/`project_pending` — the item can be approved
-   * directly from the card via the existing publication PATCH routes,
-   * rather than only linking elsewhere (PRD §1.1 "Provide direct actions
-   * from dashboard cards without forcing users to browse multiple pages"). */
   inlineApprove: { entityType: "listing" | "project"; entityId: string } | null;
   blocking: boolean;
   priorityScore: number;
@@ -42,21 +36,10 @@ function score(severity: Severity, createdAt: Date, opts: { revenueImpact?: bool
   const ageWeight = Math.min(ageDays, 30);
   const revenueImpactWeight = opts.revenueImpact ? 30 : 0;
   const publishBlockWeight = opts.blocking ? 25 : 0;
-  // userReportWeight is part of the PRD's formula but has no real signal to
-  // add today — Moderation is still session-local demo data (see
-  // ModerationTab.tsx), and this queue only surfaces real, actionable
-  // items. Reserved for when a real reports pipeline exists.
   const userReportWeight = 0;
   return SEVERITY_WEIGHT[severity] + ageWeight + revenueImpactWeight + publishBlockWeight + userReportWeight;
 }
 
-/**
- * PRD_ROZARIS_Admin_Dashboard §6.2/§6.3 "Priority Queue" — deterministic,
- * severity/age/revenue/blocking-ranked operational work. Every item here is
- * backed by a real row (unlike the Reports/Flags KPI, which still counts
- * the seeded Moderation demo cases) — see each section below for the exact
- * signal and why it's real.
- */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

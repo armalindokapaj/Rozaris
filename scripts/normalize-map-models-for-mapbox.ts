@@ -1,26 +1,3 @@
-/**
- * One-off backfill: re-lays out every existing "3D Map Control" GLB into
- * the non-interleaved vertex layout Mapbox's own model loader requires.
- *
- * The map now renders project models through Mapbox's native `model`
- * layer (`ProjectModelSource.ts`) instead of a Three.js custom layer, and
- * mapbox-gl cannot read an interleaved POSITION accessor — it throws
- * `RangeError: offset is out of bounds` and the model simply never
- * appears. New uploads are normalized in the browser before they reach
- * Vercel Blob (MapModelEditor.tsx); this script does the same for every
- * model uploaded BEFORE that change, so nobody has to re-upload.
- *
- * Rewrites `publicAssetUrl` only — `sourceAssetUrl` keeps pointing at the
- * untouched original, which is the split those two columns already exist
- * for on the detail-model pipeline.
- *
- * Idempotent: a version whose file is already tightly packed is skipped
- * without re-uploading anything.
- *
- * Run with: npx tsx scripts/normalize-map-models-for-mapbox.ts
- * Add --dry-run to report what would change without writing.
- */
-
 import { put } from "@vercel/blob";
 import { prisma } from "../src/lib/db";
 import { normalizeGlbForMapbox, isTightlyPacked } from "../src/lib/glbMapboxNormalize";

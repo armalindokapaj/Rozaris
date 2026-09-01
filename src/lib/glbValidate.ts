@@ -1,19 +1,3 @@
-/**
- * Server-side GLB structural validation (PRD_Admin_Mapbox_GLB §6/§9,
- * PRD_Admin_3D_Project_Experience §9) — runs in a route handler after the
- * client has already uploaded the file directly to Vercel Blob (our server
- * never sees the raw upload bytes in that flow, only the resulting URL), so
- * the version-creation route `fetch()`s the blob back and validates it here
- * before persisting a draft version.
- *
- * Deliberately dependency-free: parses the GLB binary container by hand
- * (12-byte header + length-prefixed JSON/BIN chunks per the glTF 2.0 spec)
- * rather than pulling in three.js's GLTFLoader (browser/DOM-oriented, used
- * client-side today in src/lib/glbUnitNodes.ts and the map/viewer layers)
- * or a heavier gltf-validator/gltf-transform dependency. Good enough for
- * MVP structural checks — not a full glTF schema validator.
- */
-
 import type { SceneManifestNode } from "@/lib/types";
 import { cleanGlbNodeName } from "@/lib/glbNodeName";
 
@@ -28,14 +12,7 @@ export interface GlbValidationResult {
   meshCount: number | null;
   materialCount: number | null;
   textureCount: number | null;
-  /** Node/mesh names matching the existing `Unit_<number>` convention
-   * (src/lib/glbUnitNodes.ts) — used for unit-mesh carry-forward matching
-   * on the detailed 3D Experience pipeline; unused (but harmless) for the
-   * lightweight map-model pipeline. */
   unitNodeNames: string[];
-  /** Every node in the GLB (not just Unit_*) — Editor UX & Scene Structure
-   * pass. Empty for the map-model pipeline's own validate() calls; only
-   * meaningful/persisted for "detailModel" kind. */
   sceneManifest: SceneManifestNode[];
 }
 
@@ -44,7 +21,7 @@ interface GltfAccessor {
 }
 interface GltfPrimitive {
   indices?: number;
-  mode?: number; // glTF default primitive mode is 4 (TRIANGLES) when omitted
+  mode?: number;
 }
 interface GltfMesh {
   primitives?: GltfPrimitive[];
@@ -62,23 +39,10 @@ interface GltfJson {
   accessors?: GltfAccessor[];
 }
 
-/** Lowercase, alphanumeric-and-underscore-only slug for use inside an
- * `rzNodeId` — deliberately its own small function rather than reusing
- * `glbUnitNodes.ts`'s `normalizeUnitMatchKey` (which strips a leading
- * `Unit_`/`UNIT_` prefix, exactly the info worth keeping visible in a
- * general node-manifest id) or importing anything from that file at all
- * (it pulls in three.js's browser-oriented GLTFLoader — the whole reason
- * this module hand-parses the GLB binary itself, see the file doc comment
- * above; importing it here would quietly reintroduce that dependency into
- * a server-only code path). */
 function slugifyNodeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "node";
 }
 
-/** Walks the glTF node graph (nodes reference children by index, per the
- * glTF 2.0 spec — no parent pointers in the source data) to assign each
- * node a stable-within-this-file id, its parent's id, and a depth. Roots
- * are nodes no other node lists as a child. */
 export function buildSceneManifest(json: GltfJson): SceneManifestNode[] {
   const nodes = json.nodes ?? [];
   const parentOf = new Map<number, number>();
@@ -89,8 +53,6 @@ export function buildSceneManifest(json: GltfJson): SceneManifestNode[] {
   const ids = nodes.map((node, i) => `rz_${i}_${slugifyNodeName(cleanGlbNodeName(node.name || `node${i}`))}`);
 
   function depthOf(index: number, guard = 0): number {
-    // `guard` caps recursion on a malformed/cyclic children graph — real
-    // glTF files are trees, but this is untrusted uploaded input.
     const parent = parentOf.get(index);
     if (parent == null || guard > nodes.length) return 0;
     return 1 + depthOf(parent, guard + 1);
@@ -111,11 +73,9 @@ export function buildSceneManifest(json: GltfJson): SceneManifestNode[] {
   });
 }
 
-const GLB_MAGIC = 0x46546c67; // "glTF" little-endian
-const CHUNK_TYPE_JSON = 0x4e4f534a; // "JSON"
+const GLB_MAGIC = 0x46546c67;
+const CHUNK_TYPE_JSON = 0x4e4f534a;
 
-/** Thresholds are intentionally generous MVP defaults, named/exported so
- * they're easy to retune later rather than magic numbers buried in logic. */
 export const VALIDATION_THRESHOLDS = {
   mapModel: { warnTriangles: 150_000, blockTriangles: 500_000 },
   detailModel: { warnTriangles: 800_000, blockTriangles: 2_000_000 },
@@ -123,13 +83,6 @@ export const VALIDATION_THRESHOLDS = {
 
 export type ModelKind = keyof typeof VALIDATION_THRESHOLDS;
 
-/** Units Blocks & POI Layer PRD §27 — "Give Units GLB its own performance
- * budget." The generic detailModel budget (800k warn / 2M block) is sized
- * for a full architectural GLB; a `role: units` slot is meant to be a few
- * hundred bare interaction volumes with no materials/textures, and should
- * be flagged far earlier. Kept separate from VALIDATION_THRESHOLDS (a
- * per-`kind`, not per-role, map) since only the detailModel kind has any
- * concept of slot role at all. */
 export const UNITS_SLOT_TRIANGLE_THRESHOLDS = { warnTriangles: 100_000, blockTriangles: 250_000 } as const;
 
 function parseGlbJsonChunk(buffer: ArrayBuffer): GltfJson {
@@ -140,8 +93,6 @@ function parseGlbJsonChunk(buffer: ArrayBuffer): GltfJson {
   const totalLength = view.getUint32(8, true);
   if (totalLength > buffer.byteLength) throw new Error("GLB header length exceeds file size.");
 
-  // First chunk starts right after the 12-byte header; per spec, chunk 0 is
-  // always the JSON chunk.
   const chunkLength = view.getUint32(12, true);
   const chunkType = view.getUint32(16, true);
   if (chunkType !== CHUNK_TYPE_JSON) throw new Error("First GLB chunk isn't JSON.");
@@ -153,11 +104,6 @@ function parseGlbJsonChunk(buffer: ArrayBuffer): GltfJson {
 export async function validateGlb(
   buffer: ArrayBuffer,
   kind: ModelKind,
-  /** Units Blocks & POI Layer PRD §26-27 — only meaningful for
-   * `kind: "detailModel"`; a `role: "units"` slot gets its own triangle
-   * budget and a BLOCKING (not warning) duplicate-`Unit_*`-name check,
-   * since every node in that GLB is meant to be an unambiguous, uniquely-
-   * named interaction volume. */
   slotRole?: "building" | "units" | "surroundings" | "context" | "custom"
 ): Promise<GlbValidationResult> {
   const issues: string[] = [];
@@ -184,7 +130,7 @@ export async function validateGlb(
   let triangleCount = 0;
   for (const mesh of json.meshes ?? []) {
     for (const prim of mesh.primitives ?? []) {
-      if (prim.mode != null && prim.mode !== 4) continue; // non-triangle primitive, skip
+      if (prim.mode != null && prim.mode !== 4) continue;
       const accessor = prim.indices != null ? json.accessors?.[prim.indices] : undefined;
       if (accessor?.count != null) triangleCount += Math.floor(accessor.count / 3);
     }
@@ -202,11 +148,6 @@ export async function validateGlb(
 
   if (meshCount === 0) issues.push("No meshes found in the GLB.");
 
-  // Worded to name the actual consequence, not just the raw number — this
-  // is the one signal Admin gets, before publishing, that a heavy file will
-  // feel laggy once it's actually rendered continuously during map/viewer
-  // interaction (drag, rotate, zoom), rather than finding out after the
-  // fact on the live page.
   const isUnitsSlot = kind === "detailModel" && slotRole === "units";
   const { warnTriangles, blockTriangles } = isUnitsSlot ? UNITS_SLOT_TRIANGLE_THRESHOLDS : VALIDATION_THRESHOLDS[kind];
   const consequence =
@@ -223,22 +164,8 @@ export async function validateGlb(
     issues.push(`Triangle count ${triangleCount.toLocaleString()} exceeds the ${warnTriangles.toLocaleString()} recommended limit — ${consequence}. Consider simplifying the model before publishing.`);
   }
 
-  // Only the detail-model pipeline has any use for a full node manifest
-  // (Scene Explorer, per-node overrides) — skip the walk for map-model
-  // uploads rather than compute and immediately discard it.
   const sceneManifest = kind === "detailModel" ? buildSceneManifest(json) : [];
 
-  // Rewrite Track B, step 4 (stable-ID resolution — honestly scoped): a
-  // node override/unit link is stored keyed by `rzNodeId`, but resolving
-  // that to a live Object3D at render time is still name-based (three.js's
-  // GLTFLoader doesn't expose the raw glTF node array index anywhere on
-  // the parsed scene graph, so recomputing a matching rzNodeId client-side
-  // isn't reliably possible — a real, documented limitation, not
-  // something this pass can silently solve). What IS solvable: warning
-  // admin up front when two nodes in the SAME file share a name, since
-  // that's exactly the situation where name-based resolution becomes
-  // genuinely ambiguous (an override/link could silently apply to the
-  // wrong one of the two).
   let blockingDuplicateUnitNames = false;
   if (kind === "detailModel") {
     const nameCounts = new Map<string, number>();
@@ -250,12 +177,6 @@ export async function validateGlb(
         .map(([name, count]) => `"${name}" (×${count})`)
         .join(", ");
       const duplicateUnitNames = duplicates.filter(([name]) => UNIT_NODE_PATTERN.test(name));
-      // Units Blocks & POI Layer PRD §26 — for a role=units slot, a
-      // duplicate Unit_* name isn't just an ambiguity risk (the generic
-      // warning below already covers that for every other pipeline) — it
-      // means the DB's own (detailModelVersionId, meshName) unique
-      // constraint would make one of the two indistinguishable copies
-      // silently un-mappable. Blocking, not a warning, specifically here.
       if (isUnitsSlot && duplicateUnitNames.length > 0) {
         blockingDuplicateUnitNames = true;
         issues.push(
@@ -268,11 +189,6 @@ export async function validateGlb(
       }
     }
 
-    // §26 "Invalid Unit_* naming" — a bare `Unit_` (or `Unit_` followed by
-    // only punctuation) node has no usable code to auto-match against a
-    // real Unit.code at all; flag it explicitly rather than let it fall
-    // through as a silent "needs review" mapping-panel row with no clue
-    // why auto-detect never found it.
     const invalidUnitNames = unitNodeNames.filter((n) => !/[a-z0-9]/i.test(n.replace(/^unit_?/i, "")));
     if (isUnitsSlot && invalidUnitNames.length > 0) {
       issues.push(
@@ -288,8 +204,6 @@ export async function validateGlb(
   return { status, issues, triangleCount, meshCount, materialCount, textureCount, unitNodeNames, sceneManifest };
 }
 
-/** Fetches an already-uploaded Blob URL and validates it — the entry point
- * route handlers actually call. */
 export async function fetchAndValidateGlb(
   url: string,
   kind: ModelKind,

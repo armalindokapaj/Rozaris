@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 
-/** §14.4 "Business invitation" flow — pending `OrganizationInvitation`
- * rows addressed to the signed-in account's own verified email. */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.email) {

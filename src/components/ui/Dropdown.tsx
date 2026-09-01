@@ -2,19 +2,6 @@ import Link from "next/link";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/**
- * Canonical popover shell + menu item for every dropdown/menu on the
- * public site (filter pills, sort menus, the account menu, the language/
- * currency switcher, …). Pair with `useDropdown` for the open/close
- * wiring. This does not replace `<select>` for plain native form fields —
- * it's for the custom popovers the app already builds by hand.
- *
- * Fixes the drift the audit found across the four hand-rolled instances:
- * FilterDropdown used `rounded-none` + a one-off `shadow-[0_3px_9px_...]`
- * instead of the `rounded-card`/`shadow-2` every other popover on the
- * site uses; menu items varied between `rounded-lg` (non-token) call
- * sites. Both are pinned here to the token values instead.
- */
 export function DropdownPanel({
   align = "right",
   openUpward = false,
@@ -25,7 +12,6 @@ export function DropdownPanel({
 }: {
   align?: "left" | "right";
   openUpward?: boolean;
-  /** Tailwind width utility, e.g. "w-56" or "w-full". */
   width?: string;
   role?: "menu" | "listbox";
   className?: string;
@@ -61,7 +47,6 @@ export function DropdownSeparator() {
 
 type DropdownMenuItemBaseProps = {
   icon?: React.ReactNode;
-  /** Shows a trailing brand check mark — for single/radio selection lists. */
   selected?: boolean;
   variant?: "default" | "danger";
   role?: "menuitem" | "menuitemradio" | "option";

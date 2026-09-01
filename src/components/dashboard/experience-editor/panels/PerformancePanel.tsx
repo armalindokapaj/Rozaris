@@ -15,17 +15,6 @@ const PRESET_LABELS: Record<QualityPreset, string> = {
   custom: "Custom",
 };
 
-/**
- * Performance tab (PRD §40) — real, built on the pre-existing
- * QUALITY_TIERS system (viewerPresets.ts) + a small Phase-E schema
- * addition (custom overrides, adaptive/interaction-reduction toggles).
- * Render Scale/Pixel Ratio Limit are genuinely live in RenderEngine.ts
- * now (renderingMode requires a real remount, handled transparently).
- * Texture Budget/LOD Distances/Shadow Budget/Temporal Quality/Post FX
- * Resolution/Volumetric Resolution are honest placeholders — they
- * describe systems (real shadows, TRAA, post-processing, volumetrics)
- * that don't exist in this rebuilt engine until Phases 2-4.
- */
 export function PerformancePanel({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const isCustom = draft.qualityPreset === "custom";

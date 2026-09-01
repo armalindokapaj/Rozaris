@@ -29,7 +29,6 @@ const TIER_LABEL_KEY: Record<Tier, string> = {
   premium: "interiorDesign.tierPremium",
   luxury: "interiorDesign.tierLuxury",
 };
-// Illustrative €/m² range per design tier.
 const TIER_RATE: Record<Tier, [number, number]> = {
   essential: [80, 120],
   premium: [150, 220],

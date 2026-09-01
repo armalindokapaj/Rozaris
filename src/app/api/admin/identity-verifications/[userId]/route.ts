@@ -9,9 +9,6 @@ const bodySchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
-/** Admin approve/reject one pending identity verification request. A
- * `failed` decision requires a reason (mirrors the existing "Restrict
- * publishing" mandatory-reason rule in /api/admin/publishers/[id]). */
 export async function PATCH(request: Request, { params }: { params: Promise<{ userId: string }> }) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

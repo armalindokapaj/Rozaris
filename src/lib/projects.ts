@@ -1,23 +1,5 @@
 import type { ConstructionStage, Listing, Project, Publisher, Unit } from "./types";
 
-/**
- * Live-projects data layer — the Projects/Units half of the "Rozaris
- * Platform Audit" roadmap's T0 (see the "Rozaris Platform Audit" memory;
- * the Listings half is `src/lib/listings.ts`, which this file deliberately
- * mirrors). `/search`, the map, the Project Detail Page, `/new-projects`,
- * and both dashboards all read `mockData.projects` — a static array —
- * even though the Postgres `Project`/`Unit`/`ConstructionStage` tables
- * already exist and, as of `prisma/seed.ts`, already carry a live row for
- * every one of mockData's 7 projects (kept 1:1 with mockData on every seed
- * run — see that file's own comment). This is the one seam between
- * Prisma's flat row shape and the app's nested `Project`/`Unit` types.
- *
- * Deliberately isomorphic (no `@/lib/db`/Prisma import) so client
- * components can import the `Raw*Row` types without pulling the Prisma
- * client into the browser bundle — only `/api/projects/**` route handlers
- * touch Prisma directly, same convention as `listings.ts`.
- */
-
 export interface RawPublisherRow {
   id: string;
   slug: string;
@@ -58,14 +40,6 @@ export interface RawConstructionStageRow {
   dateLabel: string;
 }
 
-/** Raw shape `GET /api/projects*` returns — the Prisma `Project` row's own
- * JSON shape (flat `lat`/`lng`, `descriptionEn`/`descriptionSq`,
- * `publisherId`) with its `units`/`constructionStages`/`publisher`
- * relations included, not the app's `Project` type (nested `coords`/
- * `description`/`developer`/`units`). `setting`/`propertyType`/`amenities`
- * are unconstrained `String`/`String[]` columns (no DB enum) — narrowed
- * with a cast below rather than validated at runtime, same convention as
- * `normalizeListing`. */
 export interface RawProjectRow {
   id: string;
   slug: string;
@@ -137,19 +111,7 @@ function normalizeConstructionStage(row: RawConstructionStageRow): ConstructionS
   };
 }
 
-/** Normalizes one Postgres `Project` row (with `units`/`constructionStages`/
- * `publisher` included) into the app's `Project` type.
- *
- * `availableUnits`/`totalUnits` are computed from the real `units` array
- * rather than carried as their own columns — mockData hand-picked
- * marketing-rounded numbers here (e.g. "96 total" for a project whose
- * `units` array only ever listed a dozen sample rows); a live project's
- * unit count is real, so deriving it is more honest, not less. */
 export function normalizeProject(row: RawProjectRow): Project {
-  // Soft-deleted units are expected to already be excluded by the caller's
-  // Prisma query (`where: { deletedAt: null }`, same convention as
-  // listings.ts) — not re-filtered here since `RawUnitRow` doesn't carry
-  // the column at all.
   const units = row.units;
   return {
     id: row.id,
@@ -195,14 +157,6 @@ function hashSeed(str: string): number {
   return Math.abs(h);
 }
 
-/** New-development units are their own searchable inventory too — each
- * available residential unit gets a synthetic Listing (reusing the
- * project's location/developer/amenities) so it flows through the exact
- * same Front Page search, filter, map and detail-page pipeline as any
- * other listing, with no separate code paths to keep in sync. Ported
- * verbatim from mockData.ts's `unitToListing`/`projectUnitListings` (same
- * jitter so a live project's unit pins don't visually jump versus the mock
- * ones did), just driven by a real `Project` now instead of a static one. */
 export function unitToListing(unit: Unit, project: Project): Listing {
   const seed = hashSeed(`${project.id}-${unit.id}`);
   return {
@@ -241,29 +195,17 @@ export function unitToListing(unit: Unit, project: Project): Listing {
   };
 }
 
-/** Live equivalent of mockData's `getListingForUnit` — the synthetic
- * Listing behind one of a project's units, for "View Unit" links on the
- * Project Detail Page. Only available residential units get one (same
- * rule `projectUnitListingsFrom` filters on below), so this returns
- * `undefined` for parking/commercial/reserved/sold units, which the page
- * renders without a link instead. Computed directly rather than searching
- * an array — `unitToListing`'s id is deterministic from `project.id`/
- * `unit.id`, so there's nothing to look up. */
 export function getListingForUnit(project: Project, unit: Unit): Listing | undefined {
   if (unit.status !== "available" || unit.type !== "residential") return undefined;
   return unitToListing(unit, project);
 }
 
-/** Live equivalent of mockData's `projectUnitListings` — call with the
- * live `projects` array (from `useLiveProjects`/`getAllProjects`). */
 export function projectUnitListingsFrom(projects: Project[]): Listing[] {
   return projects.flatMap((p) =>
     p.units.filter((u) => u.status === "available" && u.type === "residential").map((u) => unitToListing(u, p))
   );
 }
 
-/** Live equivalent of mockData's `relatedProjects` — same-neighborhood
- * developments, falling back to same-city when there aren't enough. */
 export function relatedProjectsFrom(projects: Project[], project: Project, count = 3): Project[] {
   const sameNeighborhood = projects.filter((p) => p.id !== project.id && p.neighborhoodId === project.neighborhoodId);
   if (sameNeighborhood.length >= count) return sameNeighborhood.slice(0, count);

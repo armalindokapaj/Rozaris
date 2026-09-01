@@ -6,27 +6,9 @@ import { RectAreaLightHelper } from "three/examples/jsm/helpers/RectAreaLightHel
 import type { ArtificialLight } from "@/lib/types";
 
 let rectAreaLibInited = false;
-/** Real bug fix, live-tested: `RectAreaLightUniformsLib.init()` (the
- * classic helper this three.js version still ships) only populates the
- * legacy WebGLRenderer-era `UniformsLib` global — its own doc comment
- * says so explicitly ("only relevant when using RectAreaLight with
- * WebGLRenderer"). Under WebGPURenderer's TSL lighting model,
- * `RectAreaLightNode` reads its LTC BRDF-approximation textures from a
- * SEPARATE internal static (`_ltcLib`, set via `RectAreaLightNode.
- * setLTC()`) that the classic helper never touches — using it alone
- * crashed every frame ("Cannot read properties of null (reading
- * 'LTC_FLOAT_1')"). The real fix: `RectAreaLightTexturesLib.init()` (the
- * texture data itself) + `RectAreaLightNode.setLTC(RectAreaLightTexturesLib)`
- * (wiring it into the WebGPU node system). */
 function ensureRectAreaLightSupport() {
   if (rectAreaLibInited) return;
   RectAreaLightTexturesLib.init();
-  // RectAreaLightTexturesLib.init() sets LTC_FLOAT_1/2/HALF_1/2 as real
-  // STATIC properties on the class itself (confirmed against
-  // RectAreaLightUniformsLib.js's own identical destructuring pattern) —
-  // setLTC()'s own .d.ts types its param as an unrelated same-named
-  // instance shape (two separate ambient type declarations), a
-  // declaration-only mismatch, not a runtime one.
   RectAreaLightNode.setLTC(RectAreaLightTexturesLib as unknown as Parameters<typeof RectAreaLightNode.setLTC>[0]);
   rectAreaLibInited = true;
 }
@@ -36,17 +18,6 @@ interface LightEntry {
   helper: THREE.Object3D | null;
 }
 
-/**
- * Lighting → Artificial Lights (PRD §20) — real Point/Spot/IES-Spot/Rect-
- * Area light management. `IESSpotLight` (real `.iesMap`-bearing SpotLight
- * subclass) and `IESLoader` (real `.ies` photometric-profile parser) are
- * both genuine three.js/webgpu classes, not re-derived — confirmed
- * against `three/src/lights/webgpu/IESSpotLight.js`. RectAreaLight needs
- * its LTC BRDF-approximation textures wired into WebGPU's TSL lighting
- * model via `ensureRectAreaLightSupport()` (see its own doc comment for
- * a real bug this fixed — the classic `RectAreaLightUniformsLib.init()`
- * helper alone crashes every frame under WebGPURenderer).
- */
 export class ArtificialLightSystem {
   private group: THREE.Group;
   private entries = new Map<string, LightEntry>();
@@ -59,10 +30,6 @@ export class ArtificialLightSystem {
     scene.add(this.group);
   }
 
-  /** Adds/updates/removes real THREE light instances to match `defs` —
-   * same "only touch what actually changed" discipline as
-   * RenderEngine.syncModels, so editing one light's slider doesn't rebuild
-   * every other light. */
   async sync(defs: ArtificialLight[]) {
     const wanted = new Map(defs.filter((d) => d.enabled).map((d) => [d.id, d]));
     for (const [id, entry] of this.entries) {

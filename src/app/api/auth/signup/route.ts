@@ -5,16 +5,6 @@ import { prisma } from "@/lib/db";
 import { slugify } from "@/lib/utils";
 import { rateLimit, requestIp } from "@/lib/rateLimit";
 
-/**
- * Real account creation — the counterpart to `src/auth.ts`'s Credentials
- * provider, which could only ever authenticate a row that already had a
- * `passwordHash` (previously just the one seeded admin). This is the first
- * route that lets a real buyer or publisher sign up for themselves (real
- * auth to UI pass — see the "Rozaris Platform Audit" memory). Does not sign
- * the new account in itself — the client calls `signIn("credentials", ...)`
- * from `next-auth/react` right after a successful response, same round
- * trip any other credentials flow would use.
- */
 const signupSchema = z
   .object({
     name: z.string().min(1),
@@ -34,9 +24,6 @@ const signupSchema = z
   });
 
 export async function POST(request: Request) {
-  // Platform Audit (finding H2) — signup was fully uncapped: unlimited
-  // automated account creation, and a free oracle for testing which
-  // emails already exist (finding L1) via the 409 below.
   const limited = rateLimit(`signup:${requestIp(request)}`, { limit: 5, windowMs: 10 * 60 * 1000 });
   if (limited) return limited;
 

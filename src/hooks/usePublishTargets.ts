@@ -31,13 +31,6 @@ export interface CreatePublishTargetInput {
   allowedOrigins?: string[];
 }
 
-/**
- * Multi-Channel Publishing PRD Phase 7 — CRUD + deploy for one project's
- * `ProjectPublishTarget` rows, backing the new `/admin/distribution`
- * page. Mirrors `useProjectUnits.ts`'s shape (`targets: null` while the
- * initial GET is in flight, mutations patch local state from each
- * request's own response rather than a full refetch).
- */
 export function usePublishTargets(projectId: string) {
   const [targets, setTargets] = useState<PublishTarget[] | null>(null);
   const [error, setError] = useState<string | null>(null);

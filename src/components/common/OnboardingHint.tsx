@@ -9,8 +9,6 @@ export function OnboardingHint() {
   const dismissed = useAppStore((s) => s.onboardingDismissed);
   const dismiss = useAppStore((s) => s.dismissOnboarding);
   const { t } = useT();
-  // Avoid a hydration flash: only decide visibility after the persisted
-  // store has rehydrated on the client.
   const mounted = useHasMounted();
 
   if (!mounted || dismissed) return null;

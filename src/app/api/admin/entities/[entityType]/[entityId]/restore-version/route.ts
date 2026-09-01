@@ -8,22 +8,9 @@ import { logApiError } from "@/lib/apiErrorLog";
 
 const bodySchema = z.object({
   auditLogId: z.string().min(1),
-  /** Named fields to restore from that version; omitted restores every
-   * field the entity's `restorableFields` allowlist covers ("whole-row"
-   * restore, still never touching identity/relation columns — see
-   * `EntityConfig.restorableFields`'s doc comment). */
   fields: z.array(z.string()).optional(),
 });
 
-/**
- * "Restore individual fields" / "Version History → restore" — the one
- * route both features share. Reads a past AuditLog row's `newState` (what
- * the entity became as of that action — the natural thing a version-
- * history list lets you pick) and writes it back onto the live row,
- * itself as a new, fully audited action (never a silent overwrite: the
- * restore is its own AuditLog entry, with the live pre-restore state
- * captured as *its* previousState).
- */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ entityType: string; entityId: string }> }

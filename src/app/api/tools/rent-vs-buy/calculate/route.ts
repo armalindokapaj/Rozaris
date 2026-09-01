@@ -2,14 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { calculateRentVsBuy, type RentBuyScenario } from "@/lib/rentVsBuy";
 
-// PRD_Rent_vs_Buy.pdf §15: "Calculation logic should live in a shared
-// server-side/domain package... front-end may mirror formulas only if
-// generated from the same tested calculation library; do not maintain two
-// independent implementations." This route and the client page both call
-// the exact same src/lib/rentVsBuy.ts — the client calls it directly for
-// zero-latency live recalculation while typing, this route exists so the
-// same math is also reachable as a real server endpoint (§15's suggested
-// shape), not a second reimplementation.
 const scenarioSchema = z.object({
   currency: z.enum(["EUR", "ALL"]),
   locationText: z.string().min(1),

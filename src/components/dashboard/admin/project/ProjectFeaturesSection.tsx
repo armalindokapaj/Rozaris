@@ -6,20 +6,6 @@ import { ChipEditor, Panel, SectionHeader } from "./kit";
 import type { ProjectDraft } from "./draft";
 import type { Amenity } from "@/lib/types";
 
-/**
- * Project Manager → "Buildings & Amenities".
- *
- * Amenities are a CLOSED set (`Amenity`, nine values, with real
- * translated labels and matching public-site filters) — so they're
- * toggles, not the free-text comma field the old modal used. That field
- * happily wrote "Pool " or "swimming pool" into the array, neither of
- * which any filter or label lookup would ever match; the project simply
- * showed no amenity and nothing anywhere said why.
- *
- * Buildings genuinely are free text (a development names its own blocks),
- * so they stay an add/remove chip list — but one that can delete a single
- * entry without re-typing the rest.
- */
 export function ProjectFeaturesSection({
   draft,
   onChange,
@@ -71,11 +57,8 @@ export function ProjectFeaturesSection({
             );
           })}
         </div>
-        {/* Any value already stored that isn't one of the nine — written
-            by the old free-text field before this was a closed picker —
-            would otherwise vanish from the UI while still sitting in the
-            row, and be silently dropped on the next save. Show it, and let
-            it be removed deliberately. */}
+        {                                                                
+                                          }
         {draft.amenities.some((a) => !AMENITY_KEYS.includes(a)) && (
           <div className="mt-3 rounded-control border border-amber-200 bg-amber-50 p-3">
             <p className="mb-2 text-xs font-semibold text-amber-800">{t("projectManager.unknownAmenitiesTitle")}</p>

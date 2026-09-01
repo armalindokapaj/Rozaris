@@ -5,18 +5,12 @@ import { GroupCard, SectionHeading, SliderRow, ToggleRow } from "../fields";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 import type { Project } from "@/lib/types";
 
-/** What `RenderEngine`'s `onSiteStatus` callback reports back, narrowed to
- * what this panel renders. Null = nothing has been built yet this
- * session. */
 export type SiteStatus =
   | null
   | { state: "loading" }
   | { state: "failed" }
   | { state: "ready"; centreElevationM: number; reliefM: { min: number; max: number } };
 
-/** Every field this tab owns, back to the Project3DConfig defaults that
- * mean "no site". Same one-shot reset shape the old Map tab's own
- * MAP_VIEW_DEFAULTS had. */
 const SITE_DEFAULTS = {
   siteEnabled: false,
   siteRadiusM: 600,
@@ -30,21 +24,6 @@ const SITE_DEFAULTS = {
   siteScale: 1,
 } as const;
 
-/**
- * "Map" tab — real-world site context INSIDE the Studio scene.
- *
- * This replaces the tab's previous meaning entirely. It used to place the
- * building on a separate mapbox-gl map that the visitor switched to,
- * mutually exclusive with the 3D viewer. Now Mapbox raster-DEM + satellite
- * tiles are fetched as data and rebuilt as an ordinary `THREE.Mesh` in the
- * engine's own scene graph, so turning this on integrates the site into
- * the Project Viewer directly — there is no second viewer to switch to.
- *
- * The nine `mapView*` columns are deliberately left in the schema rather
- * than dropped: `projectLocation.ts`'s `syncProjectLocationDependents()`
- * writes `mapViewLatitude`/`mapViewLongitude` on every project move, so
- * removing them would break the canonical-location cascade.
- */
 export function MapPanel({
   project,
   configEditor,
@@ -246,9 +225,6 @@ function normalizeDeg(deg: number): number {
   return (((deg % 360) + 360) % 360);
 }
 
-/** Real build state rather than a silent viewport — tiles take a moment,
- * and "nothing appeared" should never be ambiguous between still-loading,
- * failed, and genuinely flat. */
 function SiteStatusRow({ status }: { status: SiteStatus }) {
   if (!status) return null;
   if (status.state === "loading") {

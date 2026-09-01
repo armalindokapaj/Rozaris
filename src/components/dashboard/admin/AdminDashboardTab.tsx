@@ -51,10 +51,6 @@ function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: 
   );
 }
 
-// ---------------------------------------------------------------------------
-// KPI row — §5.1/§6.1
-// ---------------------------------------------------------------------------
-
 interface KpiValue {
   value: number;
   newThisWeek: number | null;
@@ -132,10 +128,6 @@ function KpiRow({ onNavigate }: { onNavigate: (tab: string) => void }) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Priority Queue — §6.2/§6.3
-// ---------------------------------------------------------------------------
 
 interface PriorityItem {
   id: string;
@@ -242,12 +234,6 @@ function PriorityQueueCard({ go }: { go: (deepLink: string) => void }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Platform Activity + Audit Log (latest) — §6.4 / §12 — same underlying feed
-// (`AuditLog`), fetched once and rendered two ways: a friendlier sentence
-// for Activity, a compact actor/action/time row for the Audit Log preview.
-// ---------------------------------------------------------------------------
-
 interface ActivityItem {
   id: string;
   actor: string;
@@ -332,10 +318,6 @@ function AuditLogLatestCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// 3D System Health — §7
-// ---------------------------------------------------------------------------
-
 interface ThreeDHealth {
   mapGlbsLive: number;
   detailGlbsLive: number;
@@ -351,15 +333,6 @@ interface ThreeDHealth {
 function ThreeDHealthCard({ onOpenProject }: { onOpenProject: (projectId: string) => void }) {
   const { t } = useT();
   const { data, loading, error, reload } = useSection<ThreeDHealth>("/api/admin/dashboard/3d-health");
-  // The donut is deliberately 3 segments (Live/Draft/Errors), not the
-  // reference mockup's 5 (…+Uploading+Missing Units): this app's upload
-  // pipeline is synchronous (no async processing queue to ever be
-  // mid-"Uploading"), and "missing bindings" isn't a publish-state a
-  // Experience is *in* — it's an orthogonal, overlapping signal (a
-  // published Experience can also have missing bindings), so it can't
-  // honestly be one slice of a mutually-exclusive whole. Real mutually-
-  // exclusive states only, kept as their own stat tiles below instead of
-  // forced into the ring.
   const total = data ? data.experiencesPublished + data.experiencesDraft + data.failedUploads : 0;
 
   return (
@@ -424,10 +397,6 @@ function ThreeDHealthCard({ onOpenProject }: { onOpenProject: (projectId: string
     </DashboardCard>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Inventory Overview + Price Intelligence — §8
-// ---------------------------------------------------------------------------
 
 interface InventoryPayload {
   units: { available: number; reserved: number; sold: number };
@@ -532,10 +501,6 @@ function PriceIntelligenceCard() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Publisher Health — §9
-// ---------------------------------------------------------------------------
-
 interface PublisherHealth {
   total: number;
   verified: number;
@@ -579,12 +544,6 @@ function PublisherHealthCard({ onNavigate }: { onNavigate: (tab: string, section
   );
 }
 
-// ---------------------------------------------------------------------------
-// Top Locations — real inventory-by-city (not "by Views" — see the API
-// route's own doc comment for why: no page-view tracking exists anywhere
-// in this schema, so a "views" ranking would have to be fabricated).
-// ---------------------------------------------------------------------------
-
 function TopLocationsCard() {
   const { t } = useT();
   const { data, loading, error, reload } = useSection<{ items: { city: string; count: number }[] }>(
@@ -603,10 +562,6 @@ function TopLocationsCard() {
     </DashboardCard>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Recently Deleted — §11.2, reuses the existing Recycle Bin API
-// ---------------------------------------------------------------------------
 
 interface BinItem {
   id: string;
@@ -681,14 +636,6 @@ function RecentlyDeletedCard({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// System Status — §16, reuses the existing System Health API. All 5 rows
-// from the reference mockup are present, but only three carry a real
-// signal (API, Database, 3D Service) — Storage and Search Index have no
-// health check anywhere in this app, so they read "Not monitored" in muted
-// gray rather than a fabricated "Operational" (PRD §20.2's own rule).
-// ---------------------------------------------------------------------------
-
 interface SystemHealthPayload {
   brokenGlbs: { blockedMapModels: unknown[]; blockedDetailModels: unknown[] };
   apiErrors: { last24h: number };
@@ -738,25 +685,6 @@ function SystemStatusCard() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Root
-// ---------------------------------------------------------------------------
-
-/**
- * The Admin Dashboard — PRD_ROZARIS_Admin_Dashboard's Overview landing page
- * (§6-§17). Made the default tab in `admin/page.tsx` so it's the first and
- * only thing an Admin sees right after entering the console (§3.1/AC-01).
- *
- * Every card fetches independently (§16.2 "a broken analytics widget must
- * not prevent Dashboard load") and is individually retryable. Counts that
- * combine the seeded catalog with real DB rows are marked in code comments
- * on their API routes, not hidden — same convention already used by every
- * other tab in this console.
- *
- * `onNavigate(tab, superAdminSection?)` switches this shell's own local tab
- * state (no URL round-trip) for in-console destinations; a handful of 3D
- * Health items are real *different* routes and use next/navigation directly.
- */
 export function AdminDashboardTab({ onNavigate }: { onNavigate: (tab: string, superAdminSection?: string) => void }) {
   const { t } = useT();
   const router = useRouter();

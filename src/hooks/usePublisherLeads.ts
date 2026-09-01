@@ -27,15 +27,6 @@ function normalize(row: RawLead): LeadItem {
   };
 }
 
-/**
- * Real `GET/PATCH /api/business/leads` — replaces the Leads tab's
- * `buildDemoLeads()`, which fabricated a fresh batch of fake leads every
- * session (launch-readiness audit finding). Real leads are only produced
- * today from phone/WhatsApp clicks (see `POST /api/analytics/track`), so
- * this list starts empty until a real visitor clicks call/WhatsApp on one
- * of this publisher's listings/projects — same honesty-over-mock pattern
- * as the rest of this app's real-data migrations.
- */
 export function usePublisherLeads() {
   const [leads, setLeads] = useState<LeadItem[] | null>(null);
 
@@ -57,8 +48,6 @@ export function usePublisherLeads() {
     }).catch(() => {});
   }, []);
 
-  // Callers should only invoke this once editing finishes (e.g. a
-  // textarea's onBlur), not on every keystroke — there's no debounce here.
   const setNotes = useCallback((id: string, notes: string) => {
     setLeads((prev) => (prev ?? []).map((l) => (l.id === id ? { ...l, notes } : l)));
     fetch(`/api/business/leads/${id}`, {

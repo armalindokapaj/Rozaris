@@ -3,17 +3,6 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 
-/**
- * Account & Profile System PRD v1.0 §10.1 "Active sessions/devices" +
- * "Sign out all other sessions" — reads/revokes real Auth.js `Session`
- * rows for the signed-in account. Note: this app uses JWT session
- * strategy (src/auth.ts's `session: { strategy: "jwt" }`), so the
- * `sessions` table is not populated by sign-in itself; this endpoint is
- * the real data source once/if a session-token strategy or explicit
- * device-tracking rows are added. It's honest about that today — see
- * GET's `strategy` field, which the UI uses to explain an empty list
- * rather than implying no other devices exist.
- */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -31,7 +20,6 @@ export async function GET() {
 
 const bodySchema = z.object({ sessionId: z.string().min(1) });
 
-/** Revoke one session row by id (must belong to the signed-in account). */
 export async function DELETE(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {

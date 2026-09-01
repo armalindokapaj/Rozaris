@@ -13,47 +13,15 @@ const bodySchema = z.object({
     .enum(["draft", "pending", "active", "sold", "rented", "expired", "suspended", "archived", "rejected"])
     .optional(),
   reason: z.string().optional(),
-  /// Admin taking THIS listing offline for N days — `Listing.idleUntil`
-  /// (see the "Rozaris Platform Audit" memory), independent of `status`.
-  /// `0` clears an existing idle window early.
   idleDays: z.number().int().min(0).max(365).optional(),
-  /// Listings Control's "Feature listing / Premium placement" toggle —
-  /// `Listing.premium` already existed in the schema, just had no admin
-  /// write path.
   premium: z.boolean().optional(),
-  /// Listings Control's "Transfer ownership" — moves the listing to a
-  /// different real Publisher. Named distinctly from the route's own
-  /// `listingId` param to avoid any confusion about which id is which.
   transferToPublisherId: z.string().min(1).optional(),
-  /// Listings Control's "Mark duplicate" — a real (id or slug) pointer to
-  /// another listing, resolved server-side below. `null` clears it.
   duplicateOfId: z.string().min(1).nullable().optional(),
-  /// Projects console — attaches/detaches this listing to/from a Project
-  /// (a development). `null` clears it back to a standalone listing.
   projectId: z.string().min(1).nullable().optional(),
-  /// "Units & Listings, Untangled" — links/unlinks this listing to a Unit
-  /// (the 3D-mapped inventory record). `null` clears it.
   unitId: z.string().min(1).nullable().optional(),
-  /// Locations tab's "Fix" action (`GET /api/admin/locations/issues`) —
-  /// admin manually reassigns THIS listing's own location. Only valid for
-  /// a standalone listing (no `projectId`, after whatever this same
-  /// request leaves it as): a project-attached one's location always
-  /// follows its project ("unit location follows project location" — see
-  /// `POST /api/listings`'s doc comment), so re-sending the *same*
-  /// `projectId` it already has is the correct way to fix a project-
-  /// attached listing's drifted location (re-triggers the sync block
-  /// below), not this field.
   neighborhoodId: z.string().min(1).optional(),
 });
 
-/**
- * "Force unpublish/republish" for Listing — `suspended` already existed in
- * `ListingStatus`, just never driven by an admin route. `suspended`
- * transitions require a reason per PRD §14. `status: "active"` (or
- * "pending") from a `draft` listing is also how an admin exercises the
- * "location drop" rule's one exception — approving a listing that never
- * got a confirmed location.
- */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ listingId: string }> }
@@ -131,12 +99,6 @@ export async function PATCH(
     if (!unitTarget) {
       return NextResponse.json({ error: "Target unit not found." }, { status: 400 });
     }
-    // A Unit belongs to exactly one Project (required column) — linking a
-    // listing to a unit under a DIFFERENT project than the one it's
-    // itself attached to would be a silent, confusing mismatch. Checked
-    // against whatever this same request leaves the listing's project as,
-    // not just its pre-existing one, so patching both fields together
-    // (the common case — creating from inside a project) is consistent.
     const effectiveProjectId = projectTarget ? projectTarget.id : clearProject ? null : existing.projectId;
     if (effectiveProjectId && unitTarget.projectId !== effectiveProjectId) {
       return NextResponse.json(
@@ -146,13 +108,6 @@ export async function PATCH(
     }
   }
 
-  // The reverse case: the project is moving (or clearing) in THIS request,
-  // but the request doesn't otherwise touch `unitId` — a plain "Move to
-  // project" click, not a "Link unit" one. If this listing already has a
-  // linked unit, that unit now silently belongs to a different project
-  // than the listing does — an inconsistent pair the admin UI's own unit
-  // picker (scoped to the listing's project) could never even produce.
-  // Auto-clear it rather than leave that mismatch sitting in the DB.
   if ((projectTarget || clearProject) && parsed.data.unitId === undefined && existing.unitId) {
     const linkedUnit = await prisma.unit.findUnique({
       where: { id: existing.unitId },
@@ -195,10 +150,6 @@ export async function PATCH(
         where: { id: listingId },
         data: {
           ...(parsed.data.status ? { status: parsed.data.status } : {}),
-          // Real "reviewed" timestamp — was declared in the schema but never
-          // written by any route (Reports tab had nothing real to average).
-          // Only stamped on an actual status decision, not an idle-window
-          // tweak alone.
           ...(parsed.data.status ? { reviewedAt: new Date() } : {}),
           ...idleUpdate,
           ...(parsed.data.premium != null ? { premium: parsed.data.premium } : {}),
@@ -211,12 +162,6 @@ export async function PATCH(
         },
       });
 
-      // "Unit location follows project location" — attaching (or moving)
-      // this listing to a Project always carries that project's own real
-      // location onto its Property row, the same as a brand-new listing
-      // created directly under a project (see POST /api/listings). An
-      // apartment inside a building can't have a different address than
-      // the building itself, so there's nothing to ask the admin for here.
       if (projectTarget) {
         await tx.property.update({
           where: { id: row.propertyId },
@@ -231,9 +176,6 @@ export async function PATCH(
         });
       }
 
-      // Locations tab's "Fix" action — a standalone listing's location,
-      // reassigned by hand (see `manualLocation`'s resolution above; a
-      // project-attached listing never reaches here, rejected earlier).
       if (manualLocation) {
         await tx.property.update({
           where: { id: row.propertyId },
@@ -248,7 +190,6 @@ export async function PATCH(
         });
       }
 
-      // Real Transaction event — see src/lib/transactions.ts's doc comment.
       await recordSaleOrRentalIfNewlyCompleted(tx, {
         listingId: row.id,
         previousStatus: existing.status,
@@ -259,10 +200,6 @@ export async function PATCH(
         currency: row.currency,
       });
 
-      // "Units & Listings, Untangled" — one-way status push onto the
-      // linked Unit (see unitStatusForListingStatus's own doc comment for
-      // why this direction only). Only on an actual status write, and
-      // only when a Unit is linked after this same update.
       if (parsed.data.status && row.unitId) {
         const mapped = unitStatusForListingStatus(row.status);
         if (mapped) {

@@ -4,14 +4,6 @@ import { requireAdmin } from "@/lib/adminAuth";
 
 const STUCK_DRAFT_DAYS = 14;
 
-/**
- * System Health — real signals computed from the live DB, not simulated.
- * Two honest limits, both surfaced in the panel's own copy rather than
- * hidden: (1) `recentErrors` only has data from *after* this pass shipped
- * (`ApiErrorLog` is forward-only, no historical backfill); (2) this is
- * DB-observable health only — no uptime/APM/request-tracing (out of scope,
- * see the plan's "Explicitly deferred").
- */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

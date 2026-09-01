@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 
-/** Rows whose `parentId` values (from `getIds`) aren't in `validIds` —
- * shared anti-join helper for every "orphaned row" check below. */
 function findOrphans<T extends { [k: string]: unknown }>(
   rows: T[],
   parentIdKey: keyof T,
@@ -12,15 +10,6 @@ function findOrphans<T extends { [k: string]: unknown }>(
   return rows.filter((r) => !validIds.has(String(r[parentIdKey])));
 }
 
-/**
- * Data Integrity checks — real, on-demand Prisma queries over the live DB
- * (no synthetic/sample data). Every relation checked here (`Project3DConfig`
- * /`ProjectMapModel`/`ProjectDetailModel`/`MapModelVersion`/
- * `DetailModelVersion` → `Project`) has `onDelete: Cascade` in the schema,
- * so a true orphan shouldn't be reachable through this app's own routes —
- * finding one here would point at a real bug (a historical raw import, a
- * manual DB edit), which is exactly why the check still exists.
- */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

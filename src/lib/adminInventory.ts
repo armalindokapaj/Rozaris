@@ -6,23 +6,6 @@ export interface InventoryStatusCounts {
   sold: number;
 }
 
-/**
- * Unit counts by commercial status — PRD §8.1 "Inventory Overview".
- *
- * ⚠️ Real-data fix (see the "Rozaris Platform Audit" memory's
- * Projects/Units migration): this used to sum `lib/mockData.ts`'s static
- * `projects` *and* real Postgres `Unit` rows as if they were two disjoint
- * inventories. They stopped being disjoint the moment `prisma/seed.ts`
- * started seeding every mockData project's units into this same table
- * (kept 1:1 with mockData on every seed run) — the old code was silently
- * double-counting every seeded unit, once from the mock array and once
- * again from this same `groupBy`. One real query now.
- *
- * `coming_soon`/`unavailable` from PRD §8.1's full status list are
- * deliberately absent here — the Unit model doesn't track those states
- * today, and inventing zero-valued buckets for states nothing can ever
- * populate would be its own dishonesty.
- */
 export async function getCombinedUnitStatusCounts(): Promise<InventoryStatusCounts> {
   const counts: InventoryStatusCounts = { available: 0, reserved: 0, sold: 0 };
 
@@ -48,24 +31,8 @@ export interface PriceIntelligence {
   sampleSize: number;
 }
 
-/** ±5% of a neighborhood's average €/m² counts as "at area average". */
 const TOLERANCE = 0.05;
 
-/**
- * A deliberately simple same-neighborhood €/m² benchmark — PRD §8.2 "Price
- * Intelligence dashboard" describes a fuller comparable-set model that also
- * tracks price-change-YoY and "changed recently", both of which need a
- * price-history table this schema doesn't have. This computes only what's
- * honestly derivable today: every active-for-sale real unit/listing's
- * €/m², grouped by neighborhood, classified against that neighborhood's own
- * average. The route calling this returns YoY/"changed recently" as
- * explicitly unavailable rather than fabricating a number (PRD §20.2 "never
- * show 0 when a data source failed").
- *
- * Real-data fix (same as `getCombinedUnitStatusCounts` above): no longer
- * sums mockData's static arrays alongside the real tables that now contain
- * the same rows — real Postgres is the only source.
- */
 export async function getPriceIntelligence(): Promise<PriceIntelligence> {
   const pricesPerSqm: { neighborhoodId: string; pricePerSqm: number }[] = [];
 
@@ -78,9 +45,6 @@ export async function getPriceIntelligence(): Promise<PriceIntelligence> {
     pricesPerSqm.push({ neighborhoodId: u.project.neighborhoodId, pricePerSqm: u.price / u.area });
   }
 
-  // `area`/`neighborhoodId` moved off Listing onto its related Property row
-  // in the Property/Listing split (see MEMORY note
-  // "rozaris-controlled-taxonomy-spec").
   const realListings = await prisma.listing.findMany({
     where: { deletedAt: null, status: "active", transaction: "sale" },
     select: { price: true, property: { select: { area: true, neighborhoodId: true } } },

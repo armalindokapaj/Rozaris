@@ -16,12 +16,6 @@ interface BinGroup {
   items: BinItem[];
 }
 
-/** Recycle Bin — lists soft-deleted rows across all 8 configured entity
- * types (`GET /api/admin/recycle-bin`), with Restore (any admin) and Hard
- * Delete (Super Admin only, typed confirmation). `isSuperAdmin` comes from
- * `/api/admin/me` via the parent tab — the Hard Delete button only renders
- * for a real Super Admin, but the route itself re-checks server-side
- * regardless (front-end visibility is never authorization). */
 export function RecycleBinPanel({ isSuperAdmin }: { isSuperAdmin: boolean }) {
   const { t, locale } = useT();
   const [groups, setGroups] = useState<BinGroup[]>([]);

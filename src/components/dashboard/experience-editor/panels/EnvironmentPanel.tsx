@@ -19,12 +19,6 @@ const SUBTABS: { id: EnvironmentSubtab; label: string }[] = [
   { id: "ground", label: "Ground" },
 ];
 
-/**
- * Environment tab (PRD §7-13) — 5 subtabs. Every field here is real,
- * live-applied to the viewport with no remount (RenderEngine.ts's
- * setEnvironmentConfig), and persists through the same Project3DConfig
- * PATCH route/draft every other tab already uses.
- */
 export function EnvironmentPanel({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const [subtab, setSubtab] = useState<EnvironmentSubtab>("sun-sky");
 

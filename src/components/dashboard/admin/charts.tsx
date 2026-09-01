@@ -1,15 +1,5 @@
 "use client";
 
-/**
- * Small, dependency-free chart primitives for the Admin Dashboard (no chart
- * library is installed in this project — see package.json). Built per the
- * `dataviz` skill's mark specs: a 2px surface gap between donut segments
- * (never a stroke), single-hue bars for pure-magnitude series, a
- * per-mark `<title>` as the (lightweight) hover layer. Palettes used with
- * these are pre-validated with the skill's `validate_palette.js` — see the
- * call sites in AdminDashboardTab.tsx/Admin3DHealthTab.tsx for which set.
- */
-
 export interface DonutSegment {
   label: string;
   value: number;
@@ -32,13 +22,8 @@ export function DonutChart({
   const radius = (size - thickness) / 2;
   const circumference = 2 * Math.PI * radius;
   const total = segments.reduce((sum, s) => sum + s.value, 0);
-  const gap = 3; // px surface gap between segments — dataviz skill's "surface gap" spacer
+  const gap = 3;
 
-  // Cumulative dash offsets threaded functionally through a reduce
-  // accumulator (running fraction + the arcs built so far) rather than
-  // mutating an outer `let` from inside the JSX .map() below — reassigning
-  // a captured variable during render isn't safe to rely on for repeat
-  // renders.
   const { arcs } = segments.filter((s) => s.value > 0).reduce(
     (acc, seg) => {
       const fraction = seg.value / total;
@@ -104,9 +89,6 @@ export function DonutLegend({ segments, total }: { segments: DonutSegment[]; tot
   );
 }
 
-/** Single-hue horizontal bar chart — pure magnitude ranking of one series,
- * never one color per bar (that would imply categorical identity that
- * isn't there). Value labeled at the tip per the mark spec. */
 export function HorizontalBarChart({
   data,
   color = "var(--color-brand-500)",
@@ -135,7 +117,6 @@ export function HorizontalBarChart({
   );
 }
 
-/** 2px line + 10%-opacity area wash, single series only. */
 export function Sparkline({
   values,
   width = 96,

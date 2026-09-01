@@ -8,22 +8,10 @@ const DELETE_MS = 45;
 const HOLD_MS = 1600;
 const SWAP_PAUSE_MS = 300;
 
-/** "a home" vs "an apartment" — English's usual heuristic, not a real
- * phonetic check, but every word in the hero's cycle is a plain noun so
- * "starts with a written vowel" is exactly right here. */
 function articleFor(word: string) {
   return /^[aeiou]/i.test(word) ? "an" : "a";
 }
 
-/**
- * Renders "<article> <animated word>" as one unit — the hero's
- * "a home" → "an apartment" → "a villa" … phrase. The word types and
- * backspaces letter-by-letter; the article swaps instantly alongside it
- * (it's derived straight from `words[wordIndex]`, so it's never out of
- * sync — "an" only ever appears in front of a vowel-led word). Reserves
- * the widest word's width up front (measured off-screen) so the heading
- * doesn't reflow as letters come and go.
- */
 export function TypewriterWord({ words, className }: { words: string[]; className?: string }) {
   const [wordIndex, setWordIndex] = useState(0);
   const [text, setText] = useState("");
@@ -78,7 +66,7 @@ export function TypewriterWord({ words, className }: { words: string[]; classNam
       <span className={cn("relative inline-block", className)} style={{ minWidth }}>
         {text || " "}
         <span aria-hidden className="ml-0.5 inline-block w-[2px] animate-pulse bg-current align-[-0.1em]" style={{ height: "0.85em" }} />
-        {/* Off-screen measuring copies of every word, tallest/widest wins via offsetWidth above. */}
+        {                                                                                           }
         <span ref={measureRef} className="pointer-events-none absolute left-0 top-0 -z-10 opacity-0" aria-hidden>
           {words.map((word) => (
             <span key={word} className="whitespace-nowrap">

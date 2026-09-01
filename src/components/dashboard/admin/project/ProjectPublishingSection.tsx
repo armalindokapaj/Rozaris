@@ -7,16 +7,6 @@ import { useT } from "@/lib/i18n/useT";
 import { Badge, Btn, ErrorNote, Panel, SectionHeader } from "./kit";
 import type { AdminProjectRecord } from "@/hooks/useAdminProjectRecord";
 
-/**
- * Project Manager → "Publishing". The one screen that answers "is this
- * live, and if not, why not" — the approval state machine
- * (`pending`/`active`/`archived`), the public URL, the multi-channel
- * Distribution hand-off, and the Recycle Bin exit.
- *
- * Unpublishing requires a reason (PRD §14, enforced server-side too) —
- * "why did this development disappear from the site" being the question
- * someone will ask three weeks later.
- */
 export function ProjectPublishingSection({
   record,
   onChanged,
@@ -66,8 +56,6 @@ export function ProjectPublishingSection({
         const body = await res.json().catch(() => null);
         throw new Error(typeof body?.error === "string" ? body.error : t("admin.projectVisibilityActionFailed"));
       }
-      // The record is gone from every admin list now — going back to the
-      // grid is the only coherent next screen.
       router.push("/admin?tab=content");
     } catch (err) {
       setError(err instanceof Error ? err.message : t("admin.projectVisibilityActionFailed"));

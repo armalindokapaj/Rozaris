@@ -29,62 +29,21 @@ import type { Project, Unit } from "@/lib/types";
 import { Badge, Btn, EmptyState, ErrorNote, Panel, SectionHeader, inputClass } from "./kit";
 import { ProjectUnitGrid } from "./ProjectUnitGrid";
 
-/**
- * Project Manager → "Sheet Sync". The developer keeps their inventory in
- * their own Google Sheet; this points the project at it and pulls
- * AREA / PRICE / BEDROOMS / BATHROOMS / FLOOR / STATUS across onto the
- * real `Unit` rows, matched by unit code.
- *
- * The whole engine (`InventoryConnector` + `InventorySyncRun` +
- * `runInventorySync`) already existed from Multi-Channel Publishing Phase
- * 8 with no UI whatsoever — nothing in the console could create a
- * connector, so nothing could ever sync. This is that missing surface,
- * plus the two things the API needed to be usable by a human: a pasted
- * LINK instead of a bare sheet id, and a dry run so "41 apartments are
- * about to be repriced" is readable before it happens rather than
- * afterwards in the audit log.
- *
- * Sync is admin-triggered, not scheduled — this app has no cron, and
- * pretending otherwise ("syncs every 15 minutes") would be a claim
- * nothing here can keep. Documented as such in the panel itself.
- */
 export function ProjectSheetSyncSection({ project }: { project: Project }) {
   const { t } = useT();
   const { connector, runs, loading, busy, connect, update, disconnect, sync, refresh: refreshConnector } =
     useInventoryConnector(project.id);
-  // Exactly ONE useProjectUnits instance for the whole section — a second
-  // one would mean a second 30s poll, a second focus listener, and two
-  // divergent `units` arrays, so a real sync's `refreshUnits()` would
-  // refresh the copy the grid isn't reading.
   const { units: liveUnits, refresh: refreshUnits } = useProjectUnits(project.id);
-  /* The hook nulls `units` on ANY failed poll, not just the first load.
-   * Falling back to `project.units` (mockData/Zustand — DIFFERENT ids)
-   * mid-edit would make every dirty grid row look deleted and prune it,
-   * so hold the last known good rows instead. */
   const [lastGoodUnits, setLastGoodUnits] = useState<Unit[] | null>(null);
-  // Adjusted DURING render against the previous value (React's own
-  // "adjusting state when a prop changes" pattern — the same one
-  // `admin/projects/[projectId]/page.tsx` uses to seed its draft) rather
-  // than in an effect, which would render once with the stale array first.
   if (liveUnits && liveUnits !== lastGoodUnits) setLastGoodUnits(liveUnits);
   const units = liveUnits ?? lastGoodUnits ?? project.units;
-  /** Unsaved cells in the grid below. A real sync rewrites these same seven
-   * fields on these same units, so it must not run over them. */
   const [gridDirty, setGridDirty] = useState(0);
 
   const [linkInput, setLinkInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<SyncOutcome | null>(null);
-  /** Headers from a sheet that downloaded fine but couldn't be read as
-   * inventory (no unit-code column). Without these the error's own advice
-   * — "map one of the columns below" — would point at nothing. */
   const [unmappedHeaders, setUnmappedHeaders] = useState<string[] | null>(null);
   const [editingLink, setEditingLink] = useState(false);
-  /* A dry-run preview describes ONE sheet. Disconnect and link a different
-   * one and the panel used to keep the old preview on screen, its "Apply
-   * N changes" button now pointed at the new connector — one click away
-   * from writing sheet A's numbers after reading sheet B. Tie the preview
-   * to the connector it came from and drop it the moment that changes. */
   const [outcomeConnectorId, setOutcomeConnectorId] = useState<string | null>(null);
   if (outcome && outcomeConnectorId !== (connector?.id ?? null)) {
     setOutcome(null);
@@ -123,16 +82,11 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
       setError(result.error ?? null);
       const headers = (result.data as { sheet?: { headers?: string[] } } | undefined)?.sheet?.headers;
       if (headers?.length) setUnmappedHeaders(headers);
-      // A failed REAL run just set `status: "error"` and wrote a run row
-      // server-side. Without this the badge kept saying "Connected" and the
-      // sync history kept showing the previous run — the UI disagreeing
-      // with the database about whether the sheet works.
       if (!dryRun) await refreshConnector();
       return;
     }
     setOutcome(result.outcome ?? null);
     setOutcomeConnectorId(connector?.id ?? null);
-    // A real run just rewrote units this page is also showing elsewhere.
     if (!dryRun) refreshUnits();
   }
 
@@ -142,11 +96,6 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
         title={t("projectManager.sheetSyncTitle")}
         description={t("projectManager.sheetSyncDescription")}
         actions={
-          /* A real link, not a fetch+objectURL: the browser downloads it
-             with the filename and content type the route sets, and the
-             route reads the units fresh from Postgres rather than from this
-             page's copy. Not disabled on an empty inventory — the header
-             row alone is the point when a sheet is being set up first. */
           <a
             href={`/api/admin/projects/${project.id}/inventory-template`}
             className="inline-flex items-center justify-center gap-1.5 rounded-control border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-50"
@@ -159,10 +108,8 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
-      {/* Outside the connector ternary on purpose: "edit the seven sheet
-          columns here" is MORE true when no sheet is connected, and putting
-          it inside would move it to a different scroll position depending
-          on connector state. */}
+      {                                                                  
+                                }
       <ProjectUnitGrid
         projectId={project.id}
         units={units}
@@ -321,20 +268,11 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
             <SyncOutcomePanel
               outcome={outcome}
               onApply={() => void run(false)}
-              // Paused is a server-side 409, so an ungated Apply just
-              // produced a mystery error. Same gate as "Sync now" above.
               paused={connector.status === "paused"}
-              // The preview panel's "Apply" is a third way into run(false),
-              // and it outlives the edit that made the grid dirty — gate it
-              // on the same interlock as the two buttons above.
               busy={busy || gridDirty > 0}
               onSaveMapping={async (mapping) => {
                 const result = await update({ columnMapping: mapping });
                 if (!result.ok) setError(result.error ?? null);
-                // Re-preview rather than just clearing the panel: the whole
-                // reason to edit a mapping mid-preview is to see what the
-                // sheet reads as NOW. Blanking the panel left the admin
-                // with no confirmation that anything had happened.
                 else await run(true);
               }}
               currentMapping={connector.columnMapping}
@@ -405,8 +343,6 @@ export function ProjectSheetSyncSection({ project }: { project: Project }) {
   );
 }
 
-/** What a dry run found, and the mapping table that makes an unrecognised
- * column fixable rather than mysterious. */
 function SyncOutcomePanel({
   outcome,
   busy,
@@ -518,9 +454,6 @@ function SyncOutcomePanel({
   );
 }
 
-/** header -> Unit field picker. Shared by the successful-preview panel and
- * the "this sheet has no unit column" failure path, which is the case that
- * needs it MOST. */
 function ColumnMappingEditor({
   headers,
   initial,
@@ -571,12 +504,6 @@ function ColumnMappingEditor({
           className="mt-3"
           disabled={busy}
           onClick={() => {
-            // An explicit "Ignore this column" is SAVED, as
-            // `IGNORE_COLUMN`, rather than dropped. Dropping it used to
-            // fall straight back through to the built-in header aliases,
-            // so a column the aliases recognise ("ROOMS") could never
-            // actually be turned off — the choice was in the UI and
-            // unenforceable in the engine.
             const cleaned: Record<string, ColumnMappingValue> = {};
             for (const [header, field] of Object.entries(mapping)) {
               if (field) cleaned[header] = field as ColumnMappingValue;
@@ -606,9 +533,6 @@ function SmallStat({ label, value, tone }: { label: string; value: number; tone?
   );
 }
 
-/** The four steps a developer has to actually perform. Written out rather
- * than linked, because "share it correctly" is the single failure this
- * connector hits and the fix is one specific Google menu. */
 function SheetInstructions() {
   const { t } = useT();
   return (

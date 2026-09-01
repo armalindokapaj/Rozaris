@@ -14,17 +14,9 @@ const patchTargetSchema = z.object({
   viewerOverrides: z.record(z.string(), z.unknown()).optional(),
   licenseStartsAt: z.coerce.date().nullable().optional(),
   licenseEndsAt: z.coerce.date().nullable().optional(),
-  // Admin control ("SUSPEND VIEWER", PRD §60) needs a reason on the audit
-  // trail, same convention as the project soft-delete reason prompt — not
-  // a column on the row itself, just metadata on this one audit entry.
   reason: z.string().max(500).optional(),
 });
 
-/// `type` is deliberately not patchable — a target's marketplace/embed/
-/// custom_domain/kiosk shape is structural, not an edit; create a new one
-/// instead of repurposing an old one. `activeReleaseId` is deliberately not
-/// here either — see route.ts's own doc comment (needs Phase 3's compiler
-/// + Phase 7's deploy action to mean anything).
 export async function PATCH(request: Request, { params }: { params: Promise<{ targetId: string }> }) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

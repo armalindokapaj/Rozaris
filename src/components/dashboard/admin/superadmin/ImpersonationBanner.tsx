@@ -4,15 +4,6 @@ import { useEffect, useState } from "react";
 import { Eye, X } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 
-/**
- * Persistent "View as User" banner — Super Admin control/audit pass.
- * Mounted once in `(site)/layout.tsx`, fetches `GET /api/admin/impersonate`
- * on every page load. For the overwhelming majority of visitors (no real
- * admin session, no impersonation cookie) this 401s or comes back
- * `{active: false}` and the component renders nothing — a single
- * fire-and-forget fetch, not a poll, so it costs a non-admin visitor one
- * quiet failed request, not an ongoing one.
- */
 export function ImpersonationBanner() {
   const { t } = useT();
   const [target, setTarget] = useState<{ id: string; name: string; email: string | null } | null>(null);

@@ -22,12 +22,6 @@ const SCOPE_LABEL_KEY: Record<string, string> = {
   business_publisher: "admin.fieldPolicies.scopeBusinessPublisher",
 };
 
-/** Account & Profile System PRD v1.0 — "Admin can edit everything from
- * the console panel; can make some fillings from users 'Must fill this'
- * or 'Only by choice'." Real DB-backed per-field required/optional
- * override (`FieldPolicy`, see src/lib/fieldPolicies.ts for the registry
- * every key here comes from), enforced server-side by
- * `/api/account/profile`'s PATCH — this toggle isn't just cosmetic. */
 function FieldPoliciesSection() {
   const { t } = useT();
   const [rows, setRows] = useState<FieldPolicyRow[]>([]);
@@ -189,11 +183,6 @@ interface PageSeoRow {
   updatedBy: string | null;
 }
 
-/** Platform CMS's "SEO titles / SEO descriptions" — real per-page
- * overrides (`PageSeoOverride`), read by each page's own
- * `generateMetadata()` (see src/lib/pageSeo.ts). Leaving both fields
- * blank and saving clears the override back to that page's own real
- * hardcoded copy, shown as the placeholder text. */
 function PageSeoSection() {
   const { t } = useT();
   const [rows, setRows] = useState<PageSeoRow[]>([]);
@@ -299,10 +288,6 @@ const WEIGHT_LABEL_KEY: Record<keyof SearchRankingWeights, string> = {
   poorDataWeight: "admin.searchRanking.poorData",
 };
 
-/** Search Engine Control's real ranking weights (`SearchRankingConfig`) —
- * applied by `src/lib/searchRanking.ts`'s `computeRankScore()` to real
- * listing fields wherever the public "recommended" sort is used
- * (`getVisibleListings`, src/lib/filtering.ts). */
 function SearchRankingSection() {
   const { t } = useT();
   const [weights, setWeights] = useState<SearchRankingWeights | null>(null);
@@ -379,11 +364,6 @@ const STUB_SECTION_KEYS = [
   "security",
 ] as const;
 
-/** Admin's Platform Settings tab (PRD_ROZARIS_User_Types §5 "Platform
- * configuration") — absorbs the existing EUR→ALL exchange-rate editor
- * (the one setting that's genuinely wired end-to-end today) as its first
- * real section, with the PRD's other settings groups shown as honest
- * placeholders rather than faked controls with nothing behind them. */
 export function PlatformSettingsTab() {
   const { t } = useT();
   const rate = useAppStore((s) => s.eurToAllRate);

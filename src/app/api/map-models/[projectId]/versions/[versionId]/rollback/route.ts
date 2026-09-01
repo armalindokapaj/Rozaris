@@ -3,14 +3,6 @@ import { prisma } from "@/lib/db";
 import { requireAdmin, requireSuperAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 
-/**
- * Restores a previously-published (now archived) version back to
- * published — PRD_Admin_Mapbox_GLB §19 "Rollback".
- *
- * `{"force": true}` (Super Admin control/audit pass) also allows rolling
- * back to a version NOT currently archived (e.g. still draft) — Super
- * Admin only, mandatory `reason`.
- */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ projectId: string; versionId: string }> }

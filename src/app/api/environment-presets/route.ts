@@ -11,13 +11,6 @@ const createPresetSchema = z.object({
   config: environmentPresetConfigSchema,
 });
 
-/**
- * Environment Presets library — global (no projectId), reusable across
- * every project. Purely an internal admin tool (unlike
- * /api/project-3d-config's GET, this is never read by the public viewer),
- * so both GET and POST are requireAdmin()-gated, same convention as
- * /api/detail-models/[projectId]/slots.
- */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;
@@ -46,9 +39,6 @@ export async function POST(request: Request) {
       },
     });
   } catch (err: unknown) {
-    // Prisma P2002 — the @unique name constraint. A named "collision" is a
-    // real, expected user action (typo'd the same name twice), not a server
-    // error — surfaced as a normal 409 the Presets tab can show inline.
     if (typeof err === "object" && err !== null && "code" in err && err.code === "P2002") {
       return NextResponse.json({ error: `A preset named "${parsed.data.name}" already exists.` }, { status: 409 });
     }

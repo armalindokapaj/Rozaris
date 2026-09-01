@@ -52,20 +52,6 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: "wa
   );
 }
 
-/**
- * 3D Health — its own top-level tab (PRD_ROZARIS_Admin_Dashboard §7 "3D
- * System Health"), not just the compact Dashboard card. Combines the two
- * real endpoints already backing that card: `/api/admin/dashboard/3d-health`
- * for the publish-state counts + missing-bindings project rollup, and the
- * existing `/api/admin/system-health` (Super Admin's own panel) for the
- * actual list of blocked GLB versions with enough detail to act on
- * (project, version, file) — reused rather than duplicated.
- *
- * Both fetched via `useSection` so a failed request shows the shared
- * honest "unavailable, retry" state instead of hanging on "Loading…"
- * forever — the KPI band and the two lower panels each retry
- * independently since they come from different endpoints.
- */
 export function Admin3DHealthTab() {
   const { t, locale } = useT();
   const router = useRouter();

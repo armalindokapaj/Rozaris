@@ -73,17 +73,7 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-/** Routes a signed-in publisher to the right dashboard shape for their
- * account type (PRD_ROZARIS_User_Types §3/§4) — Private Publisher gets an
- * intentionally simpler, single-listing workspace; Agency/Developer get the
- * fuller multi-project/multi-listing operational dashboard below. Never one
- * generic dashboard with sidebar items shown/hidden by role — the PRD's
- * "Final Platform Rule" — so this is a real branch to a different component
- * tree, not a conditional inside a shared one. */
 export default function DashboardPage() {
-  // Suspense boundary: `BusinessPublisherDashboard`/`PrivatePublisherDashboard`
-  // below read the active tab from `?tab=` via `useUrlTab`, and
-  // `useSearchParams()` requires one per Next.js.
   return (
     <Suspense fallback={null}>
       <DashboardPageInner />
@@ -96,10 +86,6 @@ function DashboardPageInner() {
   const openSignIn = useAppStore((s) => s.openSignIn);
   const { t } = useT();
   const isPublisher = auth.signedIn && auth.role === "publisher";
-  // Real Postgres row for the signed-in org, replacing the old
-  // `getPublisherById(auth.publisherId) ?? DEMO_PUBLISHER` mock lookup —
-  // that silently showed the seed demo publisher's data to any real
-  // signed-up publisher, since real ids are never in mockData.publishers.
   const { publisher, loading, error } = usePublisherProfile(isPublisher);
 
   if (!isPublisher) {
@@ -495,9 +481,6 @@ function ProjectRow({ project: p }: { project: Project }) {
   );
 }
 
-// Deterministic mock performance numbers — a real backend would replace
-// this with actual view/lead counters. Premium-only: analytics are a
-// premium perk, so standard listings never call this.
 function metricHash(id: string, salt: number): number {
   const s = `${id}-${salt}`;
   let h = 0;
@@ -722,12 +705,6 @@ function BillingTab() {
 
 function NotificationsTab() {
   const { t } = useT();
-  // Real `Notification` rows for the signed-in account (same
-  // `useAccountNotifications`/`/api/account/notifications` the buyer
-  // dashboard uses — it's keyed by `session.user.id`, not role, so it
-  // works unchanged for a signed-in publisher). Replaces
-  // `publisherNotifications()`, which regenerated a fresh batch of fake
-  // notifications every session — see the launch-readiness audit.
   const { notifications, readIds, markRead, markAllRead } = useAccountNotifications();
   return (
     <div className="space-y-4">

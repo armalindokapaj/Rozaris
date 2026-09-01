@@ -13,20 +13,6 @@ function formatBytes(bytes: number) {
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-/**
- * Scene tab's "Detailed model" section — the one piece of the pre-rebuild
- * editor kept exactly as it behaved before (explicit instruction, before
- * the new PRD's tab structure was even sent): slot picker, upload/replace/
- * delete card, Ready/Draft status, version history. Still light-themed on
- * purpose against the new dark shell around it — "keep the uploading files
- * section the same" was about the section itself, not just its data.
- *
- * Scale/Rotation/Altitude and the old Publish checklist/Save Draft button
- * are deliberately NOT here — those get redesigned into the PRD's real
- * Model transform spec (§5: Position/Rotation/Scale/Ground alignment/Reset
- * Transform + Model/Visibility/Shadow/Selectable/Transform-Lock switches)
- * in a later phase, not preserved as-is.
- */
 export function DetailModelUpload({ slots: detail, locale }: { slots: UseDetailModelSlotsReturn; locale: Locale }) {
   const {
     slots,

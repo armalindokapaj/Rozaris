@@ -124,33 +124,14 @@ export function NewListingForm({
   onCancel,
 }: {
   publisherId: string;
-  /** Admin "Projects" console — when set, the created listing is attached
-   * to this Project from the start (see `POST /api/listings`'s optional
-   * `projectId`). Omitted everywhere else this form is already used, so
-   * those callers keep creating standalone listings exactly as before.
-   * "Unit location follows project location" — when set, the neighborhood
-   * picker and map pin below are skipped entirely: the server always
-   * overrides a project-attached listing's location with the project's
-   * own real one anyway (an apartment inside a building can't have a
-   * different address than the building), so asking for one here would
-   * just be discarded. */
   projectId?: string;
-  /** Display-only, for the "follows {projectName}" note below — purely
-   * cosmetic, has no effect on what's actually submitted. */
   projectName?: string;
-  /** "Units & Listings, Untangled" — when supplied (only from inside a
-   * project's own Listings section), offers a picker over that project's
-   * real Units so the new listing can point at the specific inventory
-   * item it's advertising from the start, instead of having no relation
-   * to it at all. Omitted everywhere else, same as `projectId`. */
   unitOptions?: { id: string; code: string }[];
   onSaved: () => void;
   onCancel: () => void;
 }) {
   const { t, locale } = useT();
   const flags = useFeatureFlags();
-  // Both levels — a unit can sit directly in a Village with no
-  // neighborhood layer at all (2026-08-21 spec).
   const neighborhoods = useLocations(["neighborhood", "village"]);
   const propertyTypeLabels = PROPERTY_TYPE_LABELS[locale];
   const conditionLabels = CONDITION_LABELS[locale];
@@ -227,11 +208,6 @@ export function NewListingForm({
     setSaving(true);
     setSaveError(null);
     try {
-      // The form only collects one language at a time — the language not
-      // written in is mirrored with the same text as an untranslated
-      // placeholder rather than left blank (both are required columns; see
-      // the "Rozaris locale: English only for now" memory for the same
-      // convention applied to UI copy).
       const res = await fetch("/api/listings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -284,10 +260,8 @@ export function NewListingForm({
         </p>
       )}
 
-      {/* "Units & Listings, Untangled" — the bridge between this ad and
-          the 3D-mapped inventory record it's actually advertising.
-          Optional: a listing with no matching unit yet (or none at all)
-          is still a completely normal listing. */}
+      {                                                                 
+                                                  }
       {unitOptions && unitOptions.length > 0 && (
         <label className="block">
           <span className="mb-1.5 block text-xs font-medium text-neutral-500">{t("admin.linkedUnitLabel")}</span>
@@ -306,7 +280,7 @@ export function NewListingForm({
         </label>
       )}
 
-      {/* Fields appear one by one, in the order a publisher fills them in. */}
+      {                                                                       }
       <TextField label={t("dashboard.titleLabel")} value={title} onChange={setTitle} required />
 
       <div>
@@ -320,11 +294,8 @@ export function NewListingForm({
         </div>
       </div>
 
-      {/* "Unit location follows project location" — a listing attached to
-          a project always uses that project's own real location (see
-          POST /api/listings' doc comment), so there's nothing to ask for
-          here; showing a picker whose choice gets silently overridden
-          would just be confusing. */}
+      {                                                                   
+                                     }
       {projectId != null ? (
         <p className="rounded-control bg-neutral-50 px-3.5 py-2.5 text-xs text-neutral-500">
           {t("dashboard.listingLocationFollowsProject", { project: projectName ?? t("admin.projectLabel") })}
@@ -349,12 +320,8 @@ export function NewListingForm({
             </select>
           </label>
 
-          {/* The "location drop" requirement — a listing submitted without
-              a confirmed pin still saves, but stays in `draft` (invisible
-              to buyers) until either the publisher adds one or an admin
-              explicitly approves it without one. Not required for
-              `canSave` on purpose — the neighborhood alone is enough to
-              submit; this is what unlocks going live. */}
+          {                                                                
+                                                         }
           <div>
             <span className="mb-1.5 block text-xs font-medium text-neutral-500">{t("dashboard.exactLocationLabel")}</span>
             <LocationPicker value={location} onChange={setLocation} />

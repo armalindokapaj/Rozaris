@@ -3,17 +3,6 @@
 import { Footer } from "@/components/layout/Footer";
 import { useT } from "@/lib/i18n/useT";
 
-/**
- * Shared renderer for `/privacy` and `/terms` — both are the same shape
- * (title, intro, N numbered sections), driven by i18n keys
- * `${topicKey}.s${n}Title` / `${topicKey}.s${n}Body` (same "flat numbered
- * keys" convention HelpPageClient's FAQ list uses, rather than an array —
- * `useT()`'s `t()` only does dot-path string lookups).
- *
- * Real, considered content (see the "legal.draftNotice" banner below) —
- * not a lawyer-reviewed final document. Flagged plainly rather than
- * presented as more authoritative than it is.
- */
 export function LegalPageClient({
   topicKey,
   sectionCount,

@@ -16,10 +16,6 @@ import { StatusBar } from "./StatusBar";
 import type { EditorTabId } from "./tabs";
 import type { NodeOverride, Project, ProjectDetailModel } from "@/lib/types";
 
-/** Builds the ProjectDetailModel the viewport actually renders from the
- * server row's static fields (glbUrl/fileName/...) plus the LIVE editor
- * draft (transform/switches/overrides) — so Scene/Materials-tab edits show
- * in the viewport immediately, before Save. */
 function detailModelFromDraft(
   version: DetailVersionRow,
   transform: ModelTransform,
@@ -61,15 +57,6 @@ function detailModelFromDraft(
   };
 }
 
-/** Units Blocks & POI Layer PRD — every OTHER (non-active) slot's own
- * latest version, read-only (no live draft overrides — those only exist
- * for whichever slot the Scene/Materials tabs currently have open),
- * straight from its own stored fields. Lets Building + Units (+
- * Surroundings/Context) all render together in the editor's own preview,
- * same as the public viewer already composites every published slot —
- * previously the editor only ever rendered the single active-tab slot,
- * which made a Units slot's placement/POI camera impossible to actually
- * see against the building while authoring it. */
 function detailModelFromVersion(version: DetailVersionRow): ProjectDetailModel {
   return {
     glbUrl: version.publicAssetUrl,
@@ -106,11 +93,6 @@ function detailModelFromVersion(version: DetailVersionRow): ProjectDetailModel {
   };
 }
 
-/**
- * ROZARIS Experience Editor — full-page shell, ground-up rebuild
- * (2026-08-15). Replaces the deleted Project3DConfigEditor.tsx/
- * EditorShell.tsx at the same route.
- */
 export function ExperienceEditor({
   project,
   onClose,
@@ -134,9 +116,6 @@ export function ExperienceEditor({
     dpr: number;
   } | null>(null);
   const [statusPreviewEnabled, setStatusPreviewEnabled] = useState(true);
-  // "Map" tab — real build state from the engine, so the panel can show
-  // "loading tiles" / a real failure / the site's actual elevation and
-  // relief instead of leaving the admin guessing at a silent viewport.
   const [siteStatus, setSiteStatus] = useState<SiteStatus>(null);
   const [effectiveRenderScale, setEffectiveRenderScale] = useState<number | null>(null);
   const viewerRef = useRef<ThreeProjectViewerHandle>(null);
@@ -172,12 +151,6 @@ export function ExperienceEditor({
     return entries;
   }, [detail.slots, detail.activeSlotId, detail.activeVersion, detail.versionsBySlot, modelEditor.transform, modelEditor.switches, modelEditor.overrides, modelEditor.links, units, statusPreviewEnabled]);
 
-  // "Map" tab — real-world site context, built as geometry INSIDE the
-  // Studio scene rather than shown as a separate mapbox-gl view. The
-  // coordinates come from the project record, never from site-owned
-  // fields: Project.lat/lng is canonical (src/lib/projectLocation.ts), and
-  // a site with its own copy would recreate exactly the drift that module
-  // exists to prevent.
   const siteConfig = useMemo(
     () => ({
       siteEnabled: configEditor.draft.siteEnabled,
@@ -257,8 +230,6 @@ export function ExperienceEditor({
       idleDroneVerticalCycles: configEditor.draft.idleDroneVerticalCycles,
       idleDronePhaseOffsetDeg: configEditor.draft.idleDronePhaseOffsetDeg,
       idleDroneSmoothness: configEditor.draft.idleDroneSmoothness,
-      // Shots (PRD §38) — so the editor viewport opens on the same
-      // Opening Shot a visitor gets (see RenderEngine.maybeApplyOpeningShot).
       cameraPresets: configEditor.draft.cameraPresets,
     }),
     [configEditor.draft]
@@ -453,26 +424,10 @@ export function ExperienceEditor({
     if (offset != null) modelEditor.groundAlign(offset);
   }
 
-  // Units Blocks & POI Layer PRD §13 — "Units mode" only shows/allows
-  // interaction with unit blocks while the Units tab is actually open, so
-  // the X-ray overlay doesn't obstruct the Materials/Environment/etc.
-  // tabs' own preview of the architectural model.
   useEffect(() => {
     viewerRef.current?.setUnitsMode(activeTab === "units");
   }, [activeTab]);
 
-  // Real gap found live (Tower Vlora): the editor loads with whichever
-  // slot the API returns first as "active" — almost always Building,
-  // never Units — and UnitsPanel's own Mapping/link UI (Auto Detect,
-  // per-mesh/per-unit pickers) only renders for the CURRENTLY ACTIVE
-  // slot. An admin opening the Units tab landed on Building's mapping
-  // state with no cue to switch, so Auto Detect never ran and no
-  // mesh<->Unit link ever got saved — the unit blocks then had no status
-  // color, no click target, no POI camera, i.e. "Units doesn't show".
-  // Auto-selects the project's Units slot the moment this tab opens
-  // (only when it isn't already active, so it never fights a deliberate
-  // slot switch made while the tab stays open) — closes that gap without
-  // touching UnitsPanel's own picker for projects with multiple slots.
   useEffect(() => {
     if (activeTab !== "units") return;
     const unitsSlot = detail.slots.find((s) => s.role === "units");
@@ -519,11 +474,8 @@ export function ExperienceEditor({
           {leftOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
         </button>
 
-        {/* The Map tab no longer swaps in a separate mapbox-gl viewport.
-            The site is real geometry in this same scene now, so the admin
-            has to be looking at the Studio viewport to align it — a
-            separate map preview would show them the one thing they cannot
-            align against. */}
+        {                                                                
+                             }
         <EditorViewport
           ref={viewerRef}
           detailModels={detailModels}

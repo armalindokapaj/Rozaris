@@ -10,11 +10,9 @@ import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import type { GeoPoint } from "@/lib/types";
 
-const POSITION_MARKER_COLOR = "#6b55f5"; // --color-brand-500
+const POSITION_MARKER_COLOR = "#6b55f5";                     
 
 export interface ProjectMapViewPlacement {
-  /** Null falls back to `project.coords` — same convention as
-   * Project3DConfig's `mapViewLatitude`/`mapViewLongitude`. */
   latitude: number | null;
   longitude: number | null;
   altitude: number;
@@ -22,13 +20,6 @@ export interface ProjectMapViewPlacement {
   scale: number;
 }
 
-/** The Mapbox camera itself (zoom/tilt/rotation of the map view) — as
- * opposed to `ProjectMapViewPlacement` above, which places the *model* on
- * it. Optional on the component: a caller that doesn't pass one gets
- * `DEFAULT_CAMERA`, the exact literals this component hardcoded before
- * Project3DConfig's `mapViewZoom`/`mapViewPitchDeg`/`mapViewBearingDeg`
- * fields existed, so nothing changes for a caller that hasn't wired them
- * through yet. */
 export interface ProjectMapViewCamera {
   zoom: number;
   pitchDeg: number;
@@ -37,15 +28,6 @@ export interface ProjectMapViewCamera {
 
 const DEFAULT_CAMERA: ProjectMapViewCamera = { zoom: 17.5, pitchDeg: 60, bearingDeg: -20 };
 
-/** The small slice of Project3DConfig's Sun & Sky fields this view needs to
- * re-light itself to match — not the whole config, so callers (the admin
- * Map tab and the public viewer) don't have to thread more than this
- * through. A static snapshot resolved once per mount/change, not a live
- * time-of-day feed — see the "Map" tab's own scope note in
- * prisma/schema.prisma's Project3DConfig doc comment: when a project's
- * Solar Controller is driving elevation/azimuth live (`solarControllerEnabled`),
- * this still just reads the stored `sunAzimuthDeg`/`sunElevationDeg` columns
- * directly, same as every other non-Studio consumer of this config would. */
 export interface ProjectMapViewSun {
   azimuthDeg: number;
   elevationDeg: number;
@@ -56,22 +38,6 @@ export interface ProjectMapViewSun {
   enabled: boolean;
 }
 
-/**
- * Real Mapbox GL map showing exactly ONE project's own detailed 3D model
- * (never other projects — unlike the platform-wide Search Map's
- * `MapView.tsx`) at its real-world location, lit to match that project's
- * own Sun & Sky config. Reuses `ProjectModelLayer` (the same Mapbox custom
- * layer the Search Map / Map Control use) directly, but is otherwise a
- * lean, standalone sibling to `MapModelMapPreview.tsx` — that component's
- * own prop surface (building-picker, hide-base-building) is specific to Map
- * Control's own unrelated admin workflow and stays untouched.
- *
- * Two callers: the Experience Editor's "Map" tab (`editable`, with a
- * draggable position marker feeding `onMove`, and — since that's also
- * where "full Mapbox camera control" lives — an optional `onCaptureCamera`
- * for its own "Use current view" button) and the public project viewer
- * (`editable={false}` — camera can still orbit/pan, but no placement UI).
- */
 export function ProjectMapView({
   project,
   glbUrl,
@@ -86,17 +52,10 @@ export function ProjectMapView({
   project: { id: string; coords: GeoPoint };
   glbUrl: string | null;
   placement: ProjectMapViewPlacement;
-  /** Defaults to `DEFAULT_CAMERA` when omitted — see that constant's doc
-   * comment. */
   camera?: ProjectMapViewCamera;
   sun: ProjectMapViewSun;
   editable?: boolean;
   onMove?: (point: GeoPoint) => void;
-  /** Only ever rendered (as a small "Use current view" button) when both
-   * `editable` and this are set — reads the map's own live zoom/pitch/
-   * bearing, e.g. after the admin free-navigates it, and hands them back
-   * so a caller can snapshot them into its own draft/config in one click
-   * instead of dialing in three sliders by trial and error. */
   onCaptureCamera?: (camera: ProjectMapViewCamera) => void;
   className?: string;
 }) {
@@ -122,7 +81,6 @@ export function ProjectMapView({
   const lat = placement.latitude ?? project.coords.lat;
   const lng = placement.longitude ?? project.coords.lng;
 
-  // --- Init once per mount ---
   useEffect(() => {
     if (!containerRef.current || noTokenReason || !token) return;
     if (!mapboxgl.supported()) {
@@ -185,14 +143,10 @@ export function ProjectMapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-init only on token/editable change; lat/lng handled by the recenter effect below
   }, [token, editable]);
 
-  // --- Recenter if the project/placement changes underneath an already-mounted map ---
   useEffect(() => {
     mapRef.current?.jumpTo({ center: [lng, lat] });
   }, [lat, lng]);
 
-  // --- Same, for the map's own camera (zoom/pitch/bearing) — lets the
-  // editable Map tab's sliders drive the live preview the same way its
-  // Placement sliders already drive `modelLayerRef` below. ---
   useEffect(() => {
     mapRef.current?.jumpTo({
       zoom: resolvedCamera.zoom,
@@ -201,9 +155,6 @@ export function ProjectMapView({
     });
   }, [resolvedCamera.zoom, resolvedCamera.pitchDeg, resolvedCamera.bearingDeg]);
 
-  // --- Reconcile the one entry this view ever shows — always exactly one,
-  // by construction, satisfying "only the current project, not other
-  // models" regardless of caller. ---
   useEffect(() => {
     if (!ready) return;
     modelLayerRef.current?.setEntries(
@@ -223,10 +174,6 @@ export function ProjectMapView({
     );
   }, [ready, project.id, glbUrl, lng, lat, placement.scale, placement.headingDeg, placement.altitude]);
 
-  // --- Re-light to match the project's own Sun & Sky config. Intensity/
-  // color resolution mirrors RenderEngine.ts's applyEnvironmentConfig
-  // (Studio's own sun) so this reads as the same lighting mood, not a
-  // separately-invented formula. ---
   useEffect(() => {
     if (!ready) return;
     const isNight = sun.elevationDeg <= 0;
@@ -257,7 +204,6 @@ export function ProjectMapView({
     sun.enabled,
   ]);
 
-  // --- Editable: keep the draggable position marker in sync ---
   useEffect(() => {
     const map = mapRef.current;
     const marker = positionMarkerRef.current;
@@ -292,10 +238,8 @@ export function ProjectMapView({
           </span>
         </div>
       )}
-      {/* "Full map control" — free-navigate the actual map (Mapbox's own
-          NavigationControl sits bottom-right) then snapshot whatever zoom/
-          pitch/bearing it landed on, instead of dialing all three in via
-          the Map tab's sliders by trial and error. */}
+      {                                                                  
+                                                      }
       {editable && onCaptureCamera && ready && (
         <button
           type="button"

@@ -4,9 +4,6 @@ import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 
-/** Static sponsored-slot creative — not wired to any real ad system, just a
- * fixed placement in the sidebar above the Mortgage calculator. Links to
- * the sponsor's own dedicated page (/resources/interior-design). */
 export function AdBanner() {
   const { t } = useT();
 

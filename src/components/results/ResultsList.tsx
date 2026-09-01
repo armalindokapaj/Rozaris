@@ -26,9 +26,6 @@ const GRID_COLS_CLASS: Record<2 | 3 | 4, string> = {
 
 export function ResultsList({
   layout,
-  // Matches the map: results reflect the search filters, not whatever
-  // happens to be panned into view, so an off-screen match isn't dropped
-  // from the list either.
   restrictToBounds = false,
   columns = 3,
   topContent,
@@ -37,9 +34,7 @@ export function ResultsList({
 }: {
   layout: "panel" | "grid";
   restrictToBounds?: boolean;
-  /** Grid column count — only meaningful when layout is "grid". */
   columns?: 2 | 3 | 4;
-  /** Scrolls away with the grid; the result count/sort row remains sticky. */
   topContent?: ReactNode;
   restoreScrollTop?: number;
   onScrollTopChange?: (scrollTop: number) => void;
@@ -55,10 +50,6 @@ export function ResultsList({
   const [page, setPage] = useState(1);
   const { t } = useT();
 
-  // The sort/count header above has no scroll of its own, so a wheel
-  // gesture there does nothing by default — forward it to the results
-  // scroll container below so scrolling works from anywhere in the panel,
-  // without moving or extending the visible scrollbar into the header.
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (scrollRef.current && restoreScrollTop != null) scrollRef.current.scrollTop = restoreScrollTop;
@@ -69,8 +60,6 @@ export function ResultsList({
     scrollRef.current.scrollTop += e.deltaY;
   }
 
-  // Reset to page 1 whenever the result set changes — adjusted during
-  // render (React's recommended pattern) rather than in an effect.
   const [prevFilters, setPrevFilters] = useState(filters);
   const [prevBounds, setPrevBounds] = useState(mapBounds);
   if (filters !== prevFilters || mapBounds !== prevBounds) {
@@ -106,7 +95,6 @@ export function ResultsList({
     const listingRows: Row[] = listingResults.map((item) => ({ kind: "listing", item }));
     const projectRows: Row[] = projectResults.map((item) => ({ kind: "project", item }));
     if (filters.projectsOnly) return projectRows;
-    // Interleave: premium projects surface near the top, otherwise append after listings.
     return [...projectRows, ...listingRows];
   }, [listingResults, projectResults, filters.projectsOnly]);
 
@@ -131,9 +119,6 @@ export function ResultsList({
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {layout === "panel" ? (
-        // Mobile: results count on the left, sort on the right, one row.
-        // Desktop map-mode side panel (narrower): sort centered on top,
-        // result count below.
         <div
           onWheel={forwardWheelToList}
           className="flex shrink-0 flex-row-reverse items-center justify-between gap-2 border-b border-neutral-100 px-4 py-3 lg:flex-col lg:items-stretch lg:justify-start"

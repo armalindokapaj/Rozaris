@@ -32,11 +32,6 @@ export async function generateMetadata({
   };
 }
 
-/** Public, SEO-indexable editorial page for one development — distinct from
- * the dedicated /project/[slug] Three.js ArchViz experience it links out to
- * (PRD_Project_Detail_Page §1/§5: this page is the authoritative
- * information/inventory page, the 3D viewer is a connected spatial
- * experience, not a replacement for it). */
 export default async function ProjectDetailPage({
   params,
 }: {
@@ -76,8 +71,8 @@ export default async function ProjectDetailPage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      {/* Server-rendered, always-crawlable fallback — same pattern as
-          /project/[slug]: real text exists even if client JS never runs. */}
+      {                                                               
+                                                                            }
       <noscript>
         <main style={{ padding: 24, fontFamily: "sans-serif", maxWidth: 720 }}>
           <h1>{project.name}</h1>

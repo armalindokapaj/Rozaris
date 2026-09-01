@@ -16,9 +16,6 @@ export type SheetSnap = "collapsed" | "preview" | "half" | "expanded";
 
 const SNAP_VH: Record<SheetSnap, number> = {
   collapsed: 0.16,
-  // Just tall enough for the listings sheet's category-quick-filters row
-  // and popular-areas row — the default state, with results cropped out
-  // until the visitor drags the sheet up further.
   preview: 0.28,
   half: 0.6,
   expanded: 0.92,
@@ -43,8 +40,6 @@ export function BottomSheet({
   children: ReactNode;
   snapPoints?: SheetSnap[];
   headerContent?: ReactNode;
-  /** Snap tapped (not dragged) into when the visitor taps the sheet's
-   * handle bar — e.g. "half" so it jumps to 60% of the screen. */
   tapToExpand?: SheetSnap;
 }) {
   const [dragOffset, setDragOffset] = useState(0);
@@ -89,7 +84,6 @@ export function BottomSheet({
       }
     }
 
-    // Dragged down past the smallest snap point closes the sheet.
     if (currentFraction < SNAP_VH[snapPoints[0]] * 0.55) {
       onClose();
       return;
@@ -97,10 +91,6 @@ export function BottomSheet({
     onSnapChange(nearest);
   }, [isDragging, dragOffset, onClose, onSnapChange, snap, snapPoints]);
 
-  // A tap (click/touch, not a drag) anywhere in the sheet expands it to a
-  // fixed snap — e.g. "half" so the listings sheet jumps to 60% of the
-  // screen. Browsers already suppress the click event after a genuine
-  // touch-drag, so this only fires for real taps.
   const onSheetClick = useCallback(() => {
     if (!tapToExpand || SNAP_VH[snap] >= SNAP_VH[tapToExpand]) return;
     onSnapChange(tapToExpand);

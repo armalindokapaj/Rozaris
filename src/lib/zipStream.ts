@@ -1,40 +1,3 @@
-/**
- * Minimal, dependency-free, **streaming** ZIP writer — store-only (no
- * compression). Written for the Admin console's "download all of this
- * project's 3D models as one archive" action
- * (`/api/admin/3d-assets/bundle`).
- *
- * Why hand-rolled rather than a library: the only zip implementation
- * present in node_modules (`fflate`) is a *transitive* dependency of
- * three.js, not a declared one in package.json — importing it directly
- * would silently break the moment three.js changed its own deps. The
- * store-only subset of the ZIP spec (APPNOTE 6.3.x) needed here is small
- * and fully specified, so this is ~150 lines with no supply-chain surface
- * instead of a new direct dependency added for one admin button.
- *
- * Why store-only: every entry is a `.glb`. GLB payloads are already
- * binary meshes/textures (often Draco/KTX2-compressed internally), so
- * DEFLATE buys almost nothing while costing CPU on a serverless function
- * — and store-only is what makes the *streaming* property below possible
- * with no buffering at all.
- *
- * Why it streams: entries are opened lazily one at a time and their bytes
- * are forwarded straight through, so peak memory is one network chunk —
- * not the whole archive. That matters because these files come from
- * Vercel Blob over the network and a project can hold tens of megabytes
- * of GLBs; the repo's one existing server-side GLB fetch buffers the
- * whole file with `arrayBuffer()`, which is exactly what this avoids.
- * Streaming means the CRC-32 and sizes are only known *after* the bytes
- * have already been written, which is precisely what ZIP's "data
- * descriptor" mode (general-purpose bit 3) exists for.
- *
- * Deliberate limits, enforced rather than hoped for:
- * - No ZIP64. `assertNoZip64Overflow` throws before writing anything that
- *   would exceed the 4 GiB offset/size or 65 535 entry fields, instead of
- *   emitting a silently corrupt archive. Callers cap total bytes up front.
- * - No directories, no permissions, no comments. Flat archive.
- */
-
 const ZIP_MAX_UINT32 = 0xffffffff;
 const ZIP_MAX_UINT16 = 0xffff;
 
@@ -43,24 +6,13 @@ const DATA_DESCRIPTOR_SIG = 0x08074b50;
 const CENTRAL_HEADER_SIG = 0x02014b50;
 const EOCD_SIG = 0x06054b50;
 
-/** Bit 3 = sizes/CRC follow the data in a descriptor (what lets us
- *  stream); bit 11 = the file name is UTF-8, not CP437. */
 const FLAG_DATA_DESCRIPTOR_AND_UTF8 = 0x0808;
 const METHOD_STORE = 0;
-const VERSION_NEEDED = 20; // 2.0 — the floor for a store-only archive.
+const VERSION_NEEDED = 20;
 
 export interface ZipEntry {
-  /** Path inside the archive. Sanitize with `zipEntryName()` first. */
   name: string;
-  /** Stamped into the entry's DOS date/time field. */
   lastModified: Date;
-  /**
-   * Opened lazily, immediately before this entry's bytes are written, so
-   * only one upstream response is in flight at a time. Throwing here
-   * SKIPS the entry cleanly (nothing has been written for it yet) — a
-   * failure once bytes are already flowing correctly errors the whole
-   * stream, since a half-written entry cannot be retracted.
-   */
   open: () => Promise<ReadableStream<Uint8Array>>;
 }
 
@@ -80,8 +32,6 @@ function crc32Update(state: number, chunk: Uint8Array) {
   return c >>> 0;
 }
 
-/** MS-DOS packed date/time (APPNOTE 4.4.6). Pre-1980 clamps to 1980-01-01
- *  because the format simply cannot represent anything earlier. */
 function dosDateTime(date: Date) {
   const usable = Number.isFinite(date.getTime()) ? date : new Date(0);
   const year = usable.getFullYear();
@@ -98,13 +48,6 @@ function dosDateTime(date: Date) {
   };
 }
 
-/**
- * Makes an arbitrary string safe as a ZIP entry name: no absolute paths,
- * no `..` traversal, no separators, no control characters. Extraction
- * tools treat entry names as real filesystem paths, so this is the
- * boundary that stops a careless or malicious DB-stored `fileName` from
- * writing outside the extraction directory ("zip slip").
- */
 export function zipEntryName(raw: string, fallback: string): string {
   const cleaned = raw
     .replace(/[\u0000-\u001f\u007f]/g, "")
@@ -127,10 +70,6 @@ function assertNoZip64Overflow(bytesWritten: number, entryCount: number) {
   }
 }
 
-/**
- * Builds the archive as an async stream of chunks. Kept as a generator so
- * the sequencing reads top-to-bottom the way the file format is laid out.
- */
 async function* zipChunks(entries: ZipEntry[]): AsyncGenerator<Uint8Array> {
   const encoder = new TextEncoder();
   const centralRecords: Uint8Array[] = [];
@@ -141,9 +80,6 @@ async function* zipChunks(entries: ZipEntry[]): AsyncGenerator<Uint8Array> {
     try {
       body = await entry.open();
     } catch {
-      // Nothing has been written for this entry yet, so skipping keeps
-      // the archive valid. The bundle's own manifest entry is what tells
-      // the admin a file was unreachable; a corrupt archive would not.
       continue;
     }
 
@@ -159,8 +95,6 @@ async function* zipChunks(entries: ZipEntry[]): AsyncGenerator<Uint8Array> {
     u16(lh, 8, METHOD_STORE);
     u16(lh, 10, time);
     u16(lh, 12, date);
-    // CRC and both sizes stay zero here (offsets 14/18/22) and are
-    // carried in the trailing data descriptor instead.
     u16(lh, 26, nameBytes.length);
     u16(lh, 28, 0);
     localHeader.set(nameBytes, 30);
@@ -239,13 +173,6 @@ async function* zipChunks(entries: ZipEntry[]): AsyncGenerator<Uint8Array> {
   yield eocd;
 }
 
-/**
- * Wraps `zipChunks` as a web `ReadableStream` suitable for returning
- * directly from a Next.js Route Handler (`new Response(stream, …)`).
- * Built by hand rather than via `ReadableStream.from()` so the
- * cancellation path — the admin closing the tab mid-download — is
- * explicit and releases the upstream Blob response.
- */
 export function createZipStream(entries: ZipEntry[]): ReadableStream<Uint8Array> {
   const iterator = zipChunks(entries)[Symbol.asyncIterator]();
   return new ReadableStream<Uint8Array>({

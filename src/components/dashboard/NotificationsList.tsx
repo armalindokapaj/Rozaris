@@ -8,15 +8,6 @@ import { formatRelativeDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { NotificationItem } from "@/lib/types";
 
-/** Shared Notifications list for every dashboard (User/Private Publisher/
- * Business Publisher — PRD_ROZARIS_User_Types §2/§3/§4 all list "Alerts /
- * Notifications" as a nav item). Publisher dashboards still pass
- * session-local content from `src/lib/mockActivity.ts` with read-state in
- * the Zustand `readNotificationIds` slice (default behavior, unchanged);
- * the buyer dashboard (Account & Profile System PRD v1.0 §13) passes real
- * `readIds`/`onMarkRead`/`onMarkAllRead` sourced from
- * `GET/PATCH /api/account/notifications` instead — see
- * `buyer/dashboard/page.tsx`'s `AlertsTab`. */
 export function NotificationsList({
   items,
   readIds: readIdsProp,

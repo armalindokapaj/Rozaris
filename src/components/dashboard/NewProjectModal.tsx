@@ -22,12 +22,6 @@ function slugify(name: string) {
   );
 }
 
-/**
- * Admin creates a project shell (identity + location only) here — units and
- * the 3D model are added afterward in ProjectUnitsEditor, per
- * PRD_3D_Project_Viewer §11 ("Project > 3D Experience" is a per-project
- * workspace, so a project must exist first).
- */
 export function NewProjectModal({
   onClose,
   onCreated,
@@ -38,8 +32,6 @@ export function NewProjectModal({
   const addProject = useAppStore((s) => s.addProject);
   const { t, locale } = useT();
   const propertyTypeLabels = PROPERTY_TYPE_LABELS[locale];
-  // Both levels — a development can sit directly in a Village with no
-  // neighborhood layer at all (2026-08-21 spec).
   const neighborhoods = useLocations(["neighborhood", "village"]);
 
   const [name, setName] = useState("");
@@ -48,18 +40,9 @@ export function NewProjectModal({
   const [setting, setSetting] = useState<ProjectSetting>("residential_complex");
   const [buildingsInput, setBuildingsInput] = useState("A");
 
-  // Defaults to the first canonical neighborhood once the real list has
-  // loaded (`useLocations` starts empty — see its own doc comment) — same
-  // "pick the first option" behavior the old `neighborhoods[0]?.id`
-  // mockData default had. Derived at render time (not a synced-in-effect
-  // setState) so there's no cascading-render round trip while waiting on
-  // the fetch.
   const neighborhoodId = neighborhoodIdInput || neighborhoods[0]?.id || "";
   const setNeighborhoodId = setNeighborhoodIdInput;
 
-  // City is derived from the selected canonical neighborhood, never
-  // free-typed — the "no custom location field" rule from the Canonical
-  // Location System spec (see MEMORY note "rozaris-controlled-taxonomy-spec").
   const selectedNeighborhood = neighborhoods.find((n) => n.id === neighborhoodId);
   const city = selectedNeighborhood?.cityName ?? "Tirana";
 
@@ -104,17 +87,6 @@ export function NewProjectModal({
       constructionStages: stageTemplate(0),
     };
 
-    // Real, awaited creation — this used to be fire-and-forget ("gives the
-    // project a real Postgres row... without blocking the optimistic local
-    // creation"), which meant a failed POST (a network hiccup, or a stale
-    // `neighborhoodId` from before the Canonical Location System required
-    // one) left a phantom project that only ever existed in this browser's
-    // localStorage: it showed up in the admin grid and was clickable, but
-    // every 3D Map Control / 3D Experience upload against it 404'd forever
-    // since there was no real row to attach to — the confirmed root cause
-    // of a real "can't upload a GLB" report. Now the project only ever
-    // becomes real (added locally, handed to the caller, navigated to)
-    // once the server has actually confirmed it exists.
     try {
       const res = await fetch("/api/projects", {
         method: "POST",

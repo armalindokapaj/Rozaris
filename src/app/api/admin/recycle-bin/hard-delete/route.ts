@@ -8,24 +8,10 @@ import { logApiError } from "@/lib/apiErrorLog";
 const bodySchema = z.object({
   entityType: z.enum(RECYCLE_BIN_ENTITY_TYPES as [string, ...string[]]),
   entityId: z.string().min(1),
-  /** Must exactly match the entity's own human-readable identifier
-   * (slug/code/email/name — see `EntityConfig.confirmValue`), not the raw
-   * id — the "strong confirmation" the plan calls for. */
   confirm: z.string().min(1),
   reason: z.string().min(1, "A reason is required for a hard delete."),
 });
 
-/**
- * The one real hard-delete path in the whole Super Admin system — Super
- * Admin only, requires the row to already be soft-deleted (hard-delete is
- * the SECOND step of a two-step destroy, never a shortcut past the Recycle
- * Bin), and requires `confirm` to exactly match a human-readable
- * identifier the caller must already know (not guessable from the id
- * alone). Removes the real Postgres row (+ Blob files for asset-backed
- * types) and writes one final `hardDeleted: true` AuditLog row carrying a
- * full snapshot — the record is gone, the fact that it existed and was
- * removed is not.
- */
 export async function POST(request: Request) {
   const gate = await requireSuperAdmin();
   if (gate instanceof NextResponse) return gate;

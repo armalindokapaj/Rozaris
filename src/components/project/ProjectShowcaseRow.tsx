@@ -28,10 +28,6 @@ const STATUS_LABEL_KEY: Record<Project["status"], string> = {
   completed: "results.statusCompleted",
 };
 
-/** Full-bleed-image project card for the Developer profile page — a
- * different (stacked, larger) treatment than ProjectListRow's side-by-side
- * row, matching that page's own reference design. Same underlying facts,
- * different layout; not meant to replace ProjectListRow elsewhere. */
 export function ProjectShowcaseRow({ project }: { project: Project }) {
   const { t } = useT();
   const priceFmt = usePriceFormat();

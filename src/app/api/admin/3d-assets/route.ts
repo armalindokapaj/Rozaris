@@ -3,30 +3,6 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { getAdminAssetProjects } from "@/lib/admin3dAssets";
 import { logApiError } from "@/lib/apiErrorLog";
 
-/**
- * Admin Dashboard → 3D Health → "Project 3D files": the inventory of
- * every GLB the platform holds, grouped project → slot → version.
- *
- * Genuinely new rather than a duplicate — nothing else in `src/app/api`
- * returns project → [{ slot, versions[] }]. The existing cross-project 3D
- * queries are all counts (`/api/admin/dashboard/3d-health`), a
- * blocked-only list (`/api/admin/system-health`), or single-project
- * routes; the per-project version lists that do exist
- * (`/api/detail-models/[projectId]/slots/[slotId]/versions`) are one
- * request per slot and would need an N+1 fan-out to answer this.
- *
- * Note this response carries NO Blob URLs — see `AdminAssetFile`. Every
- * download goes back through `/api/admin/3d-assets/download` by version
- * id, which keeps the store URLs off the wire and gives the transfer an
- * audit-log entry.
- *
- * An optional `?projectId=` narrows the inventory to one project, which
- * is what the Project Manager's 3D Assets section reads. That is a
- * filter on the same admin-gated query, not a record lookup: a project
- * with no 3D rows yet answers 200 with an empty `projects` array, since
- * "nothing uploaded yet" is an ordinary state that surface renders as its
- * own empty panel rather than an error.
- */
 export async function GET(request: Request) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

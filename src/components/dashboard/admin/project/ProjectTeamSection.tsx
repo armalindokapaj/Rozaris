@@ -15,18 +15,6 @@ interface Membership {
   user: { id: string; name: string | null; email: string };
 }
 
-/**
- * Project Manager → "Team". Multi-Channel Publishing Phase 9's
- * `ProjectMembership` — who at the developer's company can reach THIS
- * project, as opposed to `OrganizationMembership`, which grants a role
- * across their entire portfolio. The routes existed; nothing in the
- * console could call them, so no project has ever had a member.
- *
- * Granted by email, matching the routes (and the fact that an admin
- * assigning access knows a person's email, not their internal id). An
- * email with no account yet is a real 404 from the server, surfaced as-is
- * — inviting a stranger is `OrganizationInvitation`'s job, not this one.
- */
 export function ProjectTeamSection({ projectId, onChanged }: { projectId: string; onChanged: () => void }) {
   const { t } = useT();
   const [members, setMembers] = useState<Membership[] | null>(null);
@@ -35,9 +23,6 @@ export function ProjectTeamSection({ projectId, onChanged }: { projectId: string
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetched inside the effect (rather than through a `useCallback`d
-  // loader called from one) so no state is set synchronously as the
-  // effect runs — `reloadKey` is what a mutation bumps to re-read.
   const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
     let cancelled = false;

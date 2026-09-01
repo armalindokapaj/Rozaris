@@ -11,37 +11,16 @@ const patchSchema = z.object({
   phone: z.string().min(1).optional(),
   whatsapp: z.string().optional(),
   bio: z.string().optional(),
-  /// Legacy simple toggle, still accepted — derives `verificationStatus`
-  /// (below) rather than being written raw, so the two fields can never
-  /// disagree (§9.2 "cannot self-select a verified badge" applies to admin
-  /// UI drift too, not just client requests).
   verified: z.boolean().optional(),
-  /// Account & Profile System PRD v1.0 §9 "Business" verification —
-  /// real reviewed state, distinct from the bare `verified` toggle above.
   verificationStatus: z.enum(["not_submitted", "pending", "verified", "rejected", "reverify_required"]).optional(),
   verificationRejectionReason: z.string().max(500).optional(),
-  /// §9.1 "Developer status" — separate dimension, only meaningful for
-  /// `type: developer`.
   developerStatus: z.enum(["not_applicable", "pending", "verified"]).optional(),
   restricted: z.boolean().optional(),
   restrictedReason: z.string().optional(),
-  /// Time-bound restriction (see the "Rozaris Platform Audit" memory) —
-  /// days from now `restrictedUntil` auto-lifts. `0` (or omitted) with
-  /// `restricted: true` stays indefinite, same as before this field
-  /// existed.
   restrictedDays: z.number().int().min(0).max(365).optional(),
-  /// Admin-set password on the publisher's OWNER user account — same
-  /// reasoning as `PATCH /api/admin/users/[id]`'s `newPassword`.
   newOwnerPassword: z.string().min(4).optional(),
 });
 
-/**
- * Publisher Admin actions (PRD_ROZARIS_Admin §6): "Verify / remove
- * verification" and "Restrict publishing" — both real, first-time write
- * paths for `Publisher` (previously read-only, list-only). A `restricted:
- * true` write without a `restrictedReason` is rejected — mandatory reasons
- * per the PRD's ADM-005.
- */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ publisherId: string }> }
@@ -69,10 +48,6 @@ export async function PATCH(
     const data: Record<string, unknown> = { ...fields };
     const actor = gate.user?.email ?? gate.user?.name ?? "admin";
 
-    // Reconcile the legacy `verified` toggle and the real
-    // `verificationStatus`/`developerStatus` dimensions into one
-    // consistent write — whichever the caller sent, `verified` always
-    // ends up true iff either verification dimension is `verified`.
     let nextVerificationStatus = existing.verificationStatus;
     if (verificationStatus !== undefined) {
       nextVerificationStatus = verificationStatus;

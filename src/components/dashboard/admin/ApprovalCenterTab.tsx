@@ -19,13 +19,6 @@ const TYPE_LABEL_KEY: Record<ApprovalItemType, string> = {
   publisher_verification: "admin.approvalTypeVerification",
 };
 
-/**
- * "Click one and review everything from one screen" (PRD_ROZARIS_Admin
- * §10) — real pending Listings/Projects/unverified Publishers from
- * `GET /api/admin/approval-center`, decided here by calling the exact same
- * routes Listings Control / Content / Verification already use, so there
- * is only ever one real approve/reject code path per entity type.
- */
 export function ApprovalCenterTab() {
   const { t } = useT();
   const [items, setItems] = useState<ApprovalItem[]>([]);
@@ -41,9 +34,6 @@ export function ApprovalCenterTab() {
       .finally(() => setLoading(false));
   }
 
-  // `loading` starts `true` (not set synchronously in the effect body) —
-  // react-hooks/set-state-in-effect flags a bare `setLoading(true)` at the
-  // top of an effect-fired function as a cascading-render risk.
   useEffect(load, []);
 
   async function decide(item: ApprovalItem, verdict: "approve" | "reject") {

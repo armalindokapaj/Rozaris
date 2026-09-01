@@ -10,29 +10,15 @@ const patchSchema = z.object({
   name: z.string().min(1).optional(),
   status: z.enum(["active", "restricted", "suspended", "disabled"]).optional(),
   statusReason: z.string().optional(),
-  /// Time-bound idle (see the "Rozaris Platform Audit" memory) — days from
-  /// now `status: "restricted"` auto-lifts. Ignored for suspended/disabled
-  /// (those stay indefinite, matching `isUserIdle()`'s own logic).
   idleDays: z.number().int().min(0).max(365).optional(),
   role: z.enum(["buyer", "publisher", "admin"]).optional(),
   superAdmin: z.boolean().optional(),
   adminScopes: z.array(z.string()).optional(),
-  /// Admin-set password — bcrypt-hashed here, never stored/logged in the
-  /// clear. Real launch-readiness gap this closes: previously the only way
-  /// to recover a locked-out account was re-running the seed script.
   newPassword: z.string().min(4).optional(),
 });
 
 const HIGH_RISK_STATUSES = new Set(["suspended", "disabled"]);
 
-/**
- * Account controls + permission overrides (PRD_ROZARIS_Admin §12, §14) —
- * the first write path `User` has ever had. Two permission tiers on one
- * route: suspending/restoring/role changes need only `requireAdmin()`;
- * `superAdmin`/`adminScopes` changes ("Change Admin permissions") are
- * Super-Admin-only per the PRD's explicit high-risk-actions table, checked
- * here rather than by splitting into a second route.
- */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ userId: string }> }

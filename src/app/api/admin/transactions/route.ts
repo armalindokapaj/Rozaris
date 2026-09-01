@@ -4,9 +4,6 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 
-/** Market Data Engine's transaction list — every completed transaction
- * with the real listing/property context an admin needs to judge whether
- * it's a genuine outlier worth excluding from the €/m² aggregate. */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

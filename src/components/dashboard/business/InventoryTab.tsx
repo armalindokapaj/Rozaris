@@ -25,12 +25,6 @@ const STATUS_BADGE: Record<Unit["status"], string> = {
   sold: "bg-neutral-200 text-neutral-600",
 };
 
-/** Business Publisher's global Inventory table (PRD_ROZARIS_User_Types §4
- * "Inventory") — every unit across every one of the publisher's projects in
- * one place, distinct from the per-project workspace the Projects tab
- * links out to. The 3D Mapping column reads the real UnitMeshLink data
- * already live in Postgres (src/app/api/detail-models/[projectId]) — the
- * one inventory-adjacent domain in this app that isn't Zustand/mock. */
 export function InventoryTab({ projects }: { projects: Project[] }) {
   const { t } = useT();
   const priceFmt = usePriceFormat();

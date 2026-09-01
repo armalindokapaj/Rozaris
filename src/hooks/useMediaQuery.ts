@@ -6,7 +6,6 @@ function subscribe(query: string, callback: () => void) {
   return () => mql.removeEventListener("change", callback);
 }
 
-/** SSR-safe media query hook backed by useSyncExternalStore (no effect needed). */
 export function useMediaQuery(query: string) {
   return useSyncExternalStore(
     (callback) => subscribe(query, callback),

@@ -8,14 +8,6 @@ import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEdito
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import type { CameraPreset } from "@/lib/types";
 
-/**
- * Shots tab (PRD §38) — saved Viewer viewpoints, not animation (no
- * timeline/keyframes/sequencer). Built directly on Project3DConfig's
- * pre-existing `cameraPresets` field/route/type (real, validated,
- * already used by the public viewer's own camera-preset transitions) —
- * see useProjectConfigEditor.ts's doc comment. The first shot in the
- * list is the "Opening Shot" by convention.
- */
 export function ShotsPanel({
   configEditor,
   canEdit,

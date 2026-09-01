@@ -4,9 +4,6 @@ import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 
-// Compare used to live here too, but Header already has its own Compare
-// entry point (icon + badge, top-right) — showing it a second time here
-// was redundant, so this is Map/List only now.
 export function ModeSwitch({ className }: { className?: string }) {
   const mode = useAppStore((s) => s.mode);
   const setMode = useAppStore((s) => s.setMode);

@@ -27,11 +27,6 @@ const STATUS_COLORS: Record<string, string> = {
   disabled: "bg-neutral-200 text-neutral-600",
 };
 
-/** Account suspension/restoration for Users, and verify/restrict for
- * Publishers — the two "Account controls" surfaces named in the brief,
- * both real writes (`PATCH /api/admin/users/[id]`,
- * `PATCH /api/admin/publishers/[id]`), both reason-required for the
- * high-risk transitions. */
 export function AccountControlsPanel({ isSuperAdmin }: { isSuperAdmin: boolean }) {
   const { t } = useT();
   const [userQuery, setUserQuery] = useState("");

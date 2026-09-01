@@ -15,8 +15,6 @@ interface Health {
   apiErrors: { last24h: number; recent: { id: string; route: string; message: string; createdAt: string }[]; forwardOnlyNotice: string };
 }
 
-/** System Health — real DB-observable signals only (see the route's doc
- * comment for the two honest limits: forward-only error log, no infra/APM). */
 export function SystemHealthPanel() {
   const { t } = useT();
   const [health, setHealth] = useState<Health | null>(null);

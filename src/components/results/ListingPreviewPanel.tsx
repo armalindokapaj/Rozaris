@@ -9,7 +9,6 @@ import { formatArea } from "@/lib/utils";
 import { getNeighborhood } from "@/lib/mockData";
 import type { Listing } from "@/lib/types";
 
-/** Focused unit preview shown in the search rail without leaving map context. */
 export function ListingPreviewPanel({ listing, onBack }: { listing: Listing; onBack: () => void }) {
   const priceFmt = usePriceFormat();
   const { t, locale } = useT();

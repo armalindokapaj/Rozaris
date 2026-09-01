@@ -1,19 +1,5 @@
 import { prisma } from "@/lib/db";
 
-/**
- * Canonical Location System helpers — see MEMORY note
- * "rozaris-controlled-taxonomy-spec" and the schema-header comment above
- * `Location` in prisma/schema.prisma. First real consumer: `POST
- * /api/listings`, which used to validate a submitted neighborhood id
- * against the in-memory `mockData.neighborhoods` array only — this
- * resolves it against the real `locations` table instead, walking the
- * parent chain up to the nearest `city` ancestor for the (still-present,
- * legacy) `Listing.city` string column.
- */
-
-/** Resolves a neighborhood-level (or any) Location id to itself plus its
- * nearest `city`-typed ancestor's official name — `null` if the id doesn't
- * exist or has been deactivated. */
 export async function resolveLocation(
   locationId: string
 ): Promise<{ id: string; officialName: string; lat: number | null; lng: number | null; cityName: string } | null> {

@@ -5,17 +5,6 @@ import { getMissingBindingsProjects } from "@/lib/admin3dHealth";
 
 const STUCK_DRAFT_DAYS = 14;
 
-/**
- * PRD_ROZARIS_Admin_Dashboard §7 "3D System Health" — dashboard-sized
- * summary of the same real signals the full Super Admin System Health
- * panel (`/api/admin/system-health`) exposes in more detail, plus the
- * publish-state counts that route doesn't compute (map/detail GLBs live,
- * 3D Experiences draft/published).
- *
- * `sectionErrors` is `null`, not `0` — Sections (src/lib/render-engine/
- * sections.ts) have no server-side validation table yet, so this is
- * honestly "not tracked" rather than a fake healthy zero (PRD §20.2).
- */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

@@ -4,15 +4,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { logAuditEvent } from "@/lib/audit";
 
-/**
- * Account & Profile System PRD v1.0 §9 "Verification & Trust — Identity" —
- * real self-service request + real admin manual review (see
- * `/api/admin/identity-verifications`), not automated document
- * verification (no KYC provider in this environment — same constraint
- * noted on phone OTP in src/auth.ts). Requesting it is what unlocks the
- * "Verified Publisher" badge for a Private Publisher (§6.3), but any
- * signed-in account can request it.
- */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {

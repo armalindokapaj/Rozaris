@@ -8,22 +8,7 @@ import { downloadAdminAsset, pickCurrentFile } from "@/lib/admin3dAssetView";
 import type { AdminAssetFile, AdminAssetGroup } from "@/lib/admin3dAssets";
 import { Btn } from "./kit";
 
-/**
- * The file-level half of the Project Manager's 3D Assets section, split out
- * so `Project3DSection` stays what it has always been — a short panel that
- * answers "what does this project have" — instead of growing a second
- * screenful of version-row markup inside itself.
- *
- * Everything here is a view over `/api/admin/3d-assets?projectId=…`. It
- * never sees a Blob URL: a download is `(kind, versionId)` handed to the
- * admin-gated proxy, which is what keeps the store URLs off the wire and
- * every transfer in the audit log.
- */
-
 export interface AssetDownloads {
-  /** Key of the transfer currently in flight, or null. One at a time: a
-   *  GLB is tens of megabytes and parallel clicks mostly produce a queue
-   *  the admin cannot see. */
   busy: string | null;
   failed: string | null;
   download: (url: string, key: string, fallbackName: string) => void;
@@ -46,28 +31,6 @@ export function useAssetDownloads(): AssetDownloads {
   };
 }
 
-/**
- * One slot's (or the map model's) files: the current version inline, the
- * rest behind a disclosure. A long-lived project accumulates versions an
- * admin almost never wants, and showing all of them by default would bury
- * the one file that is actually live.
- *
- * `group` is undefined when the record knows about a slot that holds no
- * version row at all — a real state for a freshly created slot, and worth
- * saying out loud rather than rendering an empty gap.
- *
- * `error` therefore has to be checked BEFORE that empty case: the record
- * and the inventory are two independent reads, so when the inventory one
- * fails the slot keeps rendering its (still correct) "Published vN" badge
- * while every group goes undefined. An undefined `group` is ambiguous
- * between "no version rows" and "we could not read the inventory", and
- * only in the first case may we assert there is no file — saying "no model
- * file uploaded" under a published slot because a fetch 500'd is an
- * affirmatively false statement about the project's data. In the failure
- * case the section-level `ErrorNote` (with its Retry) is the one place
- * that explains it; repeating it per row would print the same sentence
- * once per slot.
- */
 export function AssetGroupBlock({
   group,
   projectSlug,
@@ -146,8 +109,6 @@ function AssetVersionRow({
   const key = `file:${file.versionId}`;
   const sourceKey = `source:${file.versionId}`;
   const base = `/api/admin/3d-assets/download?kind=${file.kind}&versionId=${encodeURIComponent(file.versionId)}`;
-  // Only used if a proxy strips the server's Content-Disposition; the
-  // route's own `buildDownloadName()` normally wins.
   const fallbackName = `${projectSlug}__${groupName}__v${file.version}.glb`;
 
   return (
@@ -168,9 +129,8 @@ function AssetVersionRow({
         {t(`projectManager.assetStatus${capitalize(file.publicationStatus)}`)}
       </span>
       <span className="min-w-0 flex-1">
-        {/* A missing file name means the right-hand side already explains
-            why the row has nothing to download; repeating it here would
-            print the same sentence twice on one line. */}
+        {                                                                 
+                                                         }
         <span className="block truncate text-xs text-neutral-700">{file.fileName ?? "—"}</span>
         <span className="block truncate text-[11px] text-neutral-400">
           {file.fileSize ? `${formatBytes(file.fileSize)} · ` : ""}
@@ -202,10 +162,6 @@ function AssetVersionRow({
           </Btn>
         </span>
       ) : (
-        // Say why instead of showing a button that cannot work. The two
-        // reasons are genuinely different: one is a legitimate
-        // placement-only version, the other is a row whose URL the SSRF
-        // gate refuses to fetch and which someone should look at.
         <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-neutral-400">
           <FileWarning className="h-3.5 w-3.5" />
           {file.fileName ? t("projectManager.assetBlockedUrl") : t("projectManager.assetNoFile")}

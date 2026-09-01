@@ -9,10 +9,10 @@ import { autoMatchUnitNodes } from "@/lib/glbUnitNodes";
 export interface ModelTransform {
   scale: number;
   positionX: number;
-  altitudeOffset: number; // Y position
+  altitudeOffset: number;
   positionZ: number;
   rotationXDeg: number;
-  rotationDeg: number; // Y rotation
+  rotationDeg: number;
   rotationZDeg: number;
 }
 
@@ -48,18 +48,6 @@ function switchesFrom(v: DetailVersionRow | null): ModelSwitches {
   };
 }
 
-/**
- * Scene tab's Model transform/switches (PRD §5) + Materials tab's node
- * overrides (PRD §6) — editing state for whichever version is currently
- * active in the Scene tab's slot picker (useDetailModelSlots). Kept as a
- * separate hook from useDetailModelSlots since that one owns slot/version
- * CRUD (upload/replace/delete/rollback — the "keep exactly as before"
- * section) while this one owns the PRD's new per-version editing surface.
- *
- * Local draft state re-syncs from the server row whenever the ACTIVE
- * VERSION ID changes (slot switch, upload, rollback) — not on every
- * render, so mid-edit state survives unrelated re-renders.
- */
 export function useModelEditor(projectId: string, activeVersion: DetailVersionRow | null, canEdit: boolean) {
   const { establishAdminSession } = useAdminSessionRepair();
   const [transform, setTransform] = useState<ModelTransform>(() => transformFrom(activeVersion));
@@ -70,13 +58,6 @@ export function useModelEditor(projectId: string, activeVersion: DetailVersionRo
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // React's documented "adjusting state when a prop changes" pattern
-  // (calling setState during render, not in an effect) — re-syncs the
-  // whole draft only when the underlying version IDENTITY changes (slot
-  // switch, upload, rollback), not on every field inside it (a save()
-  // round-trip echoes the row back with the same id — that shouldn't
-  // stomp on unrelated mid-edit fields). An effect would work too but
-  // costs an extra render; this adjusts within the same one.
   const [syncedVersionId, setSyncedVersionId] = useState<string | null>(activeVersion?.id ?? null);
   if ((activeVersion?.id ?? null) !== syncedVersionId) {
     setSyncedVersionId(activeVersion?.id ?? null);
@@ -123,23 +104,6 @@ export function useModelEditor(projectId: string, activeVersion: DetailVersionRo
 
   function setLink(meshName: string, unitId: string | null) {
     setLinks((prev) => {
-      // Evicting by `unitId` as well as by `meshName` is the fix for a real,
-      // reported defect. The mapping is 1:1 — `@@unique([detailModelVersionId,
-      // unitId])` on UnitMeshLinkV2, enforced again in the links PUT — but
-      // this filter only ever dropped the row for the mesh being edited. So
-      // re-pointing a mesh at a unit ANOTHER mesh already held left both rows
-      // in `links`, and `save()` then posted a payload with a duplicate
-      // unitId, which the route rejects wholesale:
-      // "Each unit can only be mapped to one mesh." (400). The admin saw a
-      // cryptic red error on the one action that fixes a crossed mapping,
-      // with the entire save — transform, overrides and links alike — lost.
-      //
-      // Dropping the other row makes the mesh that lost its unit unmapped,
-      // rather than swapping as the Sheet Sync column does. That difference
-      // is deliberate: this panel is mesh-first and shows every mesh at
-      // once, so the freed mesh is visibly sitting there empty and is the
-      // admin's next pick. Silently moving a unit into a row they can see
-      // but did not touch would be the surprising behaviour here.
       const withoutConflicts = prev.filter(
         (l) => l.meshName !== meshName && (unitId === null || l.unitId !== unitId)
       );
@@ -155,23 +119,11 @@ export function useModelEditor(projectId: string, activeVersion: DetailVersionRo
   function linkRowFor(meshName: string): UnitLinkRow | null {
     return links.find((l) => l.meshName === meshName) ?? null;
   }
-  /** Units tab (PRD §15/§25) — the per-unit POI-camera fields. Only
-   * meaningful on an already-linked mesh; a no-op if `setLink` hasn't
-   * created the row yet. */
   function updateLinkPoi(meshName: string, patch: Partial<Pick<UnitLinkRow, "poiYawDeg" | "poiEnabled" | "poiDistanceOverride" | "poiHeightOverride">>) {
     setLinks((prev) => prev.map((l) => (l.meshName === meshName ? { ...l, ...patch } : l)));
     setDirty(true);
   }
   function autoDetectLinks(detectedMeshNames: string[], units: { id: string; code: string }[]) {
-    // "Auto Detect" — matches Unit_<code> mesh names to a real Unit via
-    // the shared `normalizeUnitMatchKey`/`autoMatchUnitNodes` (glbUnitNodes.ts),
-    // the same normalizer `Unit Mapping`'s own code-comparison-by-code
-    // path already used correctly. Units Blocks & POI Layer PRD §6: this
-    // used to compare bare trailing digits instead ("Unit_A-101" vs. code
-    // "A-101" both reduced to "101") — a real collision risk across
-    // buildings sharing room numbers ("A-101" and "B-101" would both match
-    // the first Unit found with a "101" in its code, mis-mapping whichever
-    // lost the race). Never overwrites an existing manual selection.
     setLinks((prev) => {
       const currentSelections: Record<string, string> = {};
       for (const l of prev) currentSelections[l.meshName] = l.unitId;

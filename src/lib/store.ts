@@ -31,7 +31,6 @@ import type {
 import { DEMO_PUBLISHER, seedConversations } from "./mockData";
 import { accountApi } from "./accountApi";
 
-/** Recently Viewed is bounded, not infinite storage (PRD_User §8.3/§20.7). */
 const RECENTLY_VIEWED_MAX = 50;
 
 export const defaultBuyerPreferences: BuyerPreferences = {
@@ -41,13 +40,8 @@ export const defaultBuyerPreferences: BuyerPreferences = {
   location: "Tirana, Albania",
 };
 
-// Default until an admin sets a real rate in the Admin Console.
 export const DEFAULT_EUR_TO_ALL_RATE = 97;
 
-/** PRD_3D_Project_Viewer §11/§15/§16 — applied until an Admin configures a
- * project's own "3D Experience". Distances are relative multipliers of the
- * project's auto-computed bounding radius (lib/threeBuilding.ts), so they
- * stay sensible whether a project is one small building or a large complex. */
 export const defaultProject3DConfig: Project3DConfig = {
   groundEnabled: true,
   groundStyle: "disc",
@@ -102,14 +96,8 @@ export const defaultProject3DConfig: Project3DConfig = {
   exposure: 1,
   toneMapping: "aces",
   viewerUI: { home: true, unitSearch: true },
-  // Sky/Water/Bloom/Clouds "Ocean" tab — the geographic-sun/HDRI system
-  // this replaced (see Project3DConfig's own doc comment) is gone; sun
-  // azimuth/elevation are now the only sun model, defaults unchanged.
   sunAzimuthDeg: 180,
   sunElevationDeg: 45,
-  // Environment → Sun & Sky's Manual Time + Sun system (PRD §9-10) — off
-  // by default, same zero-behavior-change reasoning as everything else in
-  // this default object.
   solarControllerEnabled: false,
   solarPathMode: "manual",
   viewerTimeControlEnabled: false,
@@ -128,30 +116,20 @@ export const defaultProject3DConfig: Project3DConfig = {
   manualSunIntensity: 1.2,
   manualSunColorHex: "#ffffff",
   environmentRefreshEnabled: true,
-  // Standalone "Sky" tab (webgl_shaders_sky.html parity) — defaults match
-  // the prior fixed SKY_PHYSICAL_PARAMS constant exactly, so no existing
-  // project's rendered sky changes.
   skyEnabled: true,
   skyTurbidity: 4,
   skyRayleigh: 2.4,
   skyMieCoefficient: 0.004,
   skyMieDirectionalG: 0.78,
-  // Experience Editor "Map" tab — off/null by default, zero behavior
-  // change; lat/lng null falls back to the project's own coords.
   mapViewEnabled: false,
   mapViewLatitude: null,
   mapViewLongitude: null,
   mapViewAltitude: 0,
   mapViewHeadingDeg: 0,
   mapViewScale: 1,
-  // Matches the literals ProjectMapView.tsx hardcoded before these fields
-  // existed, so an unmigrated row's map still opens exactly as before.
   mapViewZoom: 17.5,
   mapViewPitchDeg: 60,
   mapViewBearingDeg: -20,
-  // "Map" tab — real-world site context (see types.ts `siteEnabled`).
-  // Every value here is the "feature absent" state, so no existing
-  // project changes behavior until an admin turns it on.
   siteEnabled: false,
   siteRadiusM: 600,
   siteTerrainEnabled: true,
@@ -162,7 +140,6 @@ export const defaultProject3DConfig: Project3DConfig = {
   siteElevationOffset: 0,
   siteRotationDeg: 0,
   siteScale: 1,
-  // 360° Backdrop Photo — off/null by default, zero behavior change.
   backdropEnabled: false,
   backdropImageUrl: null,
   backdropRotationDeg: 0,
@@ -186,11 +163,6 @@ export const defaultProject3DConfig: Project3DConfig = {
   fogWindSpeed: 0.02,
   fogFalloff: 1,
   fogMaxOpacity: 0.85,
-  // Sky/Water/Bloom/Clouds pass — all off by default (bloom/water/clouds),
-  // param defaults mirror webgl_shaders_ocean.html's own GUI defaults
-  // exactly (bloom strength 0.1/radius 0, water distortionScale 3.7/
-  // size 1, cloud coverage 0.4/density 0.5/elevation 0.5) so turning one
-  // on for the first time looks like the reference demo, not an untuned 0.
   bloomEnabled: false,
   bloomStrength: 0.1,
   bloomRadius: 0,
@@ -222,37 +194,24 @@ export const defaultProject3DConfig: Project3DConfig = {
   cloudWindSpeed: 0.02,
   cloudWindDirectionDeg: 45,
   cloudRaymarchSteps: 16,
-  // webgl_watch.html — default matches the engine's own previous
-  // hardcoded/unset behavior exactly.
   shadowSoftness: 0,
-  // 3D LUT — off by default.
   lutEnabled: false,
   lutPreset: "bourbon64",
   lutIntensity: 1,
-  // Depth of field — off by default; focalLength/bokehScale match the
-  // TSL dof() node's own default GUI values.
   depthOfFieldEnabled: false,
   depthOfFieldFocalLength: 10,
   depthOfFieldBokehScale: 1,
-  // Distance Blur — off by default. Start/Full are absolute metres from
-  // the camera, not multipliers, so these two numbers mean the same thing
-  // on every project regardless of GLB size.
   distanceBlurEnabled: false,
   distanceBlurStartM: 150,
   distanceBlurFullM: 400,
   distanceBlurAmount: 0.9,
   distanceBlurRadius: 2,
   logarithmicDepthEnabled: false,
-  // Loading-screen reveal — on by default, see types.ts's own field doc
-  // comment for why.
   loadingRevealEnabled: true,
-  // Match the previously-hardcoded UNIT_BOX_COLOR/SELECTED_COLOR constants
-  // in viewerPresets.ts exactly, so existing projects render identically.
   unitColorAvailable: "#22c55e",
   unitColorReserved: "#eab308",
   unitColorSold: "#ef4444",
   unitColorSelected: "#6b55f5",
-  // Units Blocks & POI Layer PRD — same defaults as the real DB columns.
   unitBlocksEnabled: true,
   unitBlocksStatusColorsEnabled: true,
   unitBlocksXrayEnabled: true,
@@ -272,7 +231,6 @@ export const defaultProject3DConfig: Project3DConfig = {
   unitPoiCameraHeightOffset: 0.5,
   unitPoiTransitionMs: 900,
   unitPoiAutoOcclusionCorrection: false,
-  // Unit-status caustics — off by default.
   causticsEnabled: false,
   causticsScale: 0.5,
   causticsSpeed: 0.15,
@@ -282,8 +240,6 @@ export const defaultProject3DConfig: Project3DConfig = {
   shadowsEnabled: true,
   antialiasEnabled: true,
   sections: [],
-  // Lighting tab (PRD §14-21) — off/neutral by default, zero behavior
-  // change for any existing project.
   sunLightEnabled: true,
   sunTemperatureK: 5500,
   csmEnabled: false,
@@ -323,8 +279,6 @@ export const defaultProject3DConfig: Project3DConfig = {
   volumetricDensity: 0.7,
   volumetricMaxDensity: 0.5,
   volumetricDistanceAtten: 2,
-  // Rendering tab (PRD §22-33) — off by default, zero behavior change for
-  // any existing project.
   ssrEnabled: false,
   ssrIntensity: 1,
   ssrMaxDistance: 30,
@@ -337,11 +291,6 @@ export const defaultProject3DConfig: Project3DConfig = {
   updatedAt: "2025-01-01T00:00:00.000Z",
 };
 
-/** Applied to a project the moment Admin uploads a GLB, before they've
- * touched any placement slider. 1:1 scale, no rotation/altitude correction —
- * intentionally naive so the preview grid immediately shows whether the
- * source file needs correcting. Starts disabled: an upload alone shouldn't
- * go live on the public map until Admin explicitly enables it. */
 export const defaultProjectMapModel: ProjectMapModel = {
   glbUrl: "",
   fileName: "",
@@ -356,10 +305,6 @@ export const defaultProjectMapModel: ProjectMapModel = {
   updatedAt: "",
 };
 
-/** Applied the moment Admin uploads the Project 3D Experience's detailed
- * GLB (Project3DConfigEditor's "Detailed Model" section), before touching
- * any placement slider or linking a single unit box — same "starts
- * disabled" reasoning as defaultProjectMapModel above. */
 export const defaultProjectDetailModel: ProjectDetailModel = {
   glbUrl: "",
   fileName: "",
@@ -421,16 +366,8 @@ export interface AuthState {
   signedIn: boolean;
   name: string | null;
   role: "visitor" | "publisher" | "admin" | "buyer";
-  /** Only meaningful when role === "publisher" — which of the three
-   * PRD account types (Private Publisher / Real Estate Business / Developer)
-   * this identity is, per PRD_Authentication_Account_Selection §7. */
   orgType?: PublisherType;
-  /** The mock Publisher record (src/lib/mockData.ts) this identity's
-   * listings/projects are drawn from. */
   publisherId?: string;
-  /** §8 "Business Teams" — "owner" or the real `OrganizationRole` an
-   * accepted membership carries; UI-only gating (client convenience), the
-   * real enforcement is server-side in `requireOrgRole()`. */
   orgRole?: string;
 }
 
@@ -441,45 +378,28 @@ interface SavedState {
 }
 
 interface AppState {
-  // Layout / navigation
   mode: ViewMode;
   setMode: (mode: ViewMode) => void;
   mobileSheet: MobileSheet;
   setMobileSheet: (sheet: MobileSheet) => void;
 
-  // Filters
   filters: FilterState;
   setFilters: (partial: Partial<FilterState>) => void;
   setTransaction: (transaction: FilterState["transaction"]) => void;
   resetFilters: () => void;
 
-  // Live listings — real Postgres `Listing` rows (`GET /api/listings`),
-  // fetched once by `useLiveListings()` and shared here so ResultsList and
-  // MapView (siblings, not parent/child) both read the same array without
-  // each fetching independently. `null` while the initial GET is in
-  // flight (or if it's never been triggered on this page) so callers can
-  // fall back to `liveListings ?? []` rather than flashing an empty state —
-  // same reasoning `useProjectUnits.ts` documents for its own `| null`.
-  // Deliberately absent from `partialize` below: this is always refetched,
-  // never persisted to localStorage, so it can't ever go stale.
   liveListings: Listing[] | null;
   liveListingsLoading: boolean;
   setLiveListings: (listings: Listing[]) => void;
   setLiveListingsLoading: (loading: boolean) => void;
 
-  // Live projects — real Postgres `Project` rows (`GET /api/projects`),
-  // same shape/reasoning as `liveListings` above (fetched once by
-  // `useLiveProjects()`, shared so MapView/SearchBar/etc. don't each fetch
-  // independently, `null` while in flight, absent from `partialize`).
   liveProjects: Project[] | null;
   liveProjectsLoading: boolean;
   setLiveProjects: (projects: Project[]) => void;
   setLiveProjectsLoading: (loading: boolean) => void;
 
-  // Map / selection
   mapBounds: MapBounds | null;
   setMapBounds: (bounds: MapBounds) => void;
-  /** Bounds committed only when the visitor explicitly chooses Search here. */
   mapAreaSearchBounds: MapBounds | null;
   searchThisMapArea: () => void;
   clearMapAreaSearch: () => void;
@@ -493,7 +413,6 @@ interface AppState {
   flyToTarget: (GeoPoint & { zoom?: number }) | null;
   requestFlyTo: (target?: GeoPoint & { zoom?: number }) => void;
 
-  // Compare (CMP-001..006)
   compare: CompareEntity[];
   compareReplaceCandidate: CompareEntity | null;
   addCompare: (item: CompareEntity) => void;
@@ -504,13 +423,6 @@ interface AppState {
   compareOverlayOpen: boolean;
   setCompareOverlayOpen: (open: boolean) => void;
 
-  // Saved content (BR-019: requires signed-in). Real Postgres-backed as of
-  // the Account & Profile System PRD's "User utility" phase — the
-  // toggle/add/remove actions below optimistically update local state AND
-  // (when signed in) fire the matching /api/account/* write; `hydrate*`
-  // setters overwrite local state with the real server list once
-  // `AccountDataSync` fetches it on sign-in, same "always refetched"
-  // pattern as `liveListings`/`liveProjects` above.
   saved: SavedState;
   toggleSavedListing: (id: string) => void;
   toggleSavedProject: (id: string) => void;
@@ -521,16 +433,6 @@ interface AppState {
   removeSavedSearch: (id: string) => void;
   hydrateSavedSearches: (searches: SavedSearch[]) => void;
 
-  // Auth — `auth` is a read-mostly mirror of the real Auth.js session,
-  // kept in sync by `AuthSessionSync` (mounted once in app/layout.tsx)
-  // calling `setAuthFromSession()` on every session change (real auth to
-  // UI pass — see the "Rozaris Platform Audit" memory). `signIn()` below
-  // predates that and is now just a manual override for the couple of
-  // call sites that still want to set it directly (e.g. the Admin
-  // console's demo-flag toggle alongside its own real session
-  // establishment) — the mirror overwrites it the moment the real session
-  // resolves either way, so it can't drift permanently out of sync.
-  // Phone/OTP sign-in is still out of scope; email+password only for now.
   auth: AuthState;
   signIn: (
     name: string,
@@ -539,8 +441,6 @@ interface AppState {
     publisherId?: string
   ) => void;
   signOut: () => void;
-  /** The one real write path — syncs `auth` from the actual Auth.js
-   * session. `null` means signed out. */
   setAuthFromSession: (
     session: {
       name?: string | null;
@@ -554,106 +454,62 @@ interface AppState {
   openSignIn: () => void;
   closeSignIn: () => void;
 
-  // Following: projects & developers (PRD_User §11). Followed neighborhoods
-  // reuse saved.neighborhoods above — Save and Follow are the same action
-  // for a neighborhood, since a neighborhood has no individual "save" target.
   following: FollowState;
   toggleFollowProject: (id: string) => void;
   toggleFollowDeveloper: (id: string) => void;
   hydrateFollowing: (following: FollowState) => void;
 
-  // Recently Viewed (PRD_User §8) — bounded history, newest first.
   recentlyViewed: RecentlyViewedEntry[];
   trackView: (kind: RecentlyViewedKind, id: string) => void;
   removeRecentlyViewed: (kind: RecentlyViewedKind, id: string) => void;
   clearRecentlyViewed: () => void;
   hydrateRecentlyViewed: (entries: RecentlyViewedEntry[]) => void;
 
-  // Notifications (PRD_User §13, PRD_Business_Publisher §22, PRD_Private_Publisher §10.4)
-  // — the notification *content* is generated per-session from mockActivity.ts;
-  // only read-state persists, keyed by notification id.
   readNotificationIds: string[];
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: (ids: string[]) => void;
 
-  // Publisher leads (PRD_Business_Publisher §16, PRD_Private_Publisher §8)
-  // — lead content is generated per-session from mockActivity.ts; only
-  // status overrides persist, keyed by lead id.
   leadStatusOverrides: Record<string, LeadStatus>;
   setLeadStatus: (id: string, status: LeadStatus) => void;
   leadNotes: Record<string, string>;
   setLeadNotes: (id: string, notes: string) => void;
 
-  // Admin audit trail (PRD_ROZARIS_User_Types §5 "Admin roles & audit") — a
-  // session-local stand-in for a real AuditLog table; sensitive admin
-  // actions in this prototype (approvals, publish toggles, rate changes)
-  // call logAudit so the Audit Log tab has real, growing content instead of
-  // seeded copy. Becomes the real Prisma AuditLog model in the backend-
-  // wiring phase (see the Rozaris backend plan memory).
   auditLog: AuditLogEntry[];
   logAudit: (action: string, entity: string) => void;
 
-  // Business Publisher company team roster (PRD_ROZARIS_User_Types §4
-  // "Company & team") — informational only in this prototype (no real
-  // per-seat permissions yet), keyed by publisherId.
   teamMembers: Record<string, TeamMember[]>;
   setTeamMembers: (publisherId: string, members: TeamMember[]) => void;
 
-  // Locale / currency
   currency: Currency;
   setCurrency: (c: Currency) => void;
   locale: Locale;
   setLocale: (l: Locale) => void;
 
-  // EUR -> ALL exchange rate — set manually by an admin in the Admin Console
-  // (not fetched from any external source), rounded to a whole number (ALL
-  // has no meaningful decimal usage). Applies to every listing/project price
-  // shown in ALL immediately.
   eurToAllRate: number;
   eurToAllRateUpdatedAt: string | null;
   setEurToAllRate: (rate: number, updatedAt: string) => void;
 
-  // Onboarding (Section 25.1)
   onboardingDismissed: boolean;
   dismissOnboarding: () => void;
 
-  // Buyer account: profile + saved-preference feed
   buyerProfile: BuyerProfile | null;
   setBuyerProfile: (profile: BuyerProfile) => void;
   updateBuyerPreferences: (partial: Partial<BuyerPreferences>) => void;
 
-  // Buyer <-> Seller messaging (mock — nothing is delivered off-device)
   conversations: Conversation[];
   sendMessage: (conversationId: string, text: string) => void;
 
-  // Construction timeline edits: a publisher's draft only affects what's
-  // shown on the live project (projectConstructionOverrides) once an admin
-  // approves the request.
   timelineRequests: ConstructionTimelineRequest[];
   projectConstructionOverrides: Record<string, ConstructionTimelineDraft>;
   submitTimelineRequest: (projectId: string, projectName: string, draft: ConstructionTimelineDraft) => void;
   approveTimelineRequest: (requestId: string) => void;
   rejectTimelineRequest: (requestId: string) => void;
 
-  // Admin-created projects (3D Experience tab §11 "Overview" -> a project
-  // must exist before Admin can author its scene/units/model). Kept
-  // separate from lib/mockData's seeded `projects` array — merged with it
-  // wherever the Admin console lists projects — since the seed data is a
-  // static module-level constant, not store state.
   customProjects: Project[];
   addProject: (project: Project) => void;
-  // Real "delete everything I create" pass — strips a local-only project
-  // (created before its real Postgres row existed, or one already deleted
-  // server-side) out of persisted state so it stops resurrecting itself
-  // across reloads. Safe no-op for an id that was never in `customProjects`
-  // (e.g. a fully real project whose only representation is the server).
   removeProject: (projectId: string) => void;
   addProjectUnit: (projectId: string, unit: Unit) => void;
   removeProjectUnit: (projectId: string, unitId: string) => void;
-  // Edits a unit's fields in place, `id` untouched — unlike delete-then-
-  // re-add, this can never orphan a UnitMeshLinkV2 row (which points at
-  // Unit.id, not any of its editable fields) just because an admin changed
-  // its status from Available to Reserved/Sold.
   updateProjectUnit: (projectId: string, unitId: string, patch: Partial<Unit>) => void;
 }
 
@@ -668,9 +524,6 @@ export const useAppStore = create<AppState>()(
       filters: defaultFilters,
       setFilters: (partial) =>
         set((s) => ({ filters: { ...s.filters, ...partial } })),
-      // Buy and rent use entirely different price/area slider scales, so a
-      // value picked under one is meaningless (and out of range) under the
-      // other — switching transaction always clears them.
       setTransaction: (transaction) =>
         set((s) => ({
           filters: {
@@ -729,7 +582,6 @@ export const useAppStore = create<AppState>()(
         if (current.length < 2) {
           set({ compare: [...current, item] });
         } else {
-          // CMP-001: never silently replace — prompt user
           set({ compareReplaceCandidate: item });
         }
       },

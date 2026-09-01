@@ -34,15 +34,6 @@ const SOURCE_ICON: Record<LeadSource, typeof Phone> = {
   digital_twin_inquiry: Box,
 };
 
-/** Business Publisher's unified lead inbox (PRD_ROZARIS_User_Types §4
- * "Leads") — pipeline New→Contacted→Qualified→Viewing→Negotiation→Won→Lost.
- * Real `LeadItem` rows via `usePublisherLeads()`/`GET /api/business/leads`
- * — was `buildDemoLeads()`, which fabricated a fresh batch of fake leads
- * every session; see the launch-readiness audit that found this. Leads
- * are only ever real today from a phone/WhatsApp click on this
- * publisher's content (`POST /api/analytics/track`'s producer), so this
- * starts empty until that actually happens — no `listing_inquiry`/
- * `digital_twin_inquiry` producer exists yet. */
 export function LeadsTab({ listings, projects }: { listings: Listing[]; projects: Project[] }) {
   const { t, locale } = useT();
   const { leads, setStatus: setLeadStatus, setNotes: setLeadNotes } = usePublisherLeads();

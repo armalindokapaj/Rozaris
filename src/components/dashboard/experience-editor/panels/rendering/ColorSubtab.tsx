@@ -15,13 +15,6 @@ const TONE_MAPPING_OPTIONS: { value: ToneMapping; label: string }[] = [
   { value: "neutral", label: "Neutral" },
 ];
 
-/**
- * Rendering → Color (PRD §31-33) — Tone Mapping/Exposure (plain renderer
- * properties, live, no rebuild) + 3D LUT color grading (real `Lut3DNode`,
- * one of 9 real vendored LUT files — `webgl_postprocessing_3dlut.html`
- * parity). All 3 pre-date the v2 rebuild's field set; this is their first
- * real UI in the new engine.
- */
 export function ColorSubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const lutOn = draft.lutEnabled;

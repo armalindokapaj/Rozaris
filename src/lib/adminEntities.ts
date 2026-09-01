@@ -1,22 +1,6 @@
 import { del } from "@vercel/blob";
 import { prisma } from "@/lib/db";
 
-/**
- * Super Admin control/audit pass — the single registry every recycle-bin/
- * hard-delete/entity-lookup route reads from, instead of each route
- * hand-rolling its own per-model switch. Deliberately `any`-typed rows
- * internally (this is an admin-only internal registry, not a public API
- * surface) — Prisma's per-model delegate types don't unify cleanly enough
- * to be worth fighting for a file this size.
- *
- * Covers exactly the 7 models the plan's Recycle Bin scope names: Project,
- * Unit, Listing, User, MapModelVersion, DetailModelVersion, Publisher.
- * `Project3DConfig` is deliberately NOT here — it's a 1:1 singleton with
- * no delete concept, restorable only via AuditLog whole-row snapshots (see
- * /api/admin/entities/.../restore-version). `PlatformHdri` ("media") used
- * to be the 8th — removed 2026-08-14 along with the model itself (see
- * prisma/schema.prisma's own removal note).
- */
 export type RecycleBinEntityType =
   | "project"
   | "unit"
@@ -37,32 +21,14 @@ export const RECYCLE_BIN_ENTITY_TYPES: RecycleBinEntityType[] = [
 ];
 
 interface EntityConfig {
-  /** Prisma model delegate name as it appears on `prisma.*`, and the
-   * human-readable entityType string logAuditEvent() calls already use for
-   * this model elsewhere in the app — must match exactly so this registry
-   * and the pre-existing per-route audit calls resolve the same history. */
   auditEntityType: string;
   findMany: (where: Record<string, unknown>) => Promise<Record<string, unknown>[]>;
   findOne: (id: string) => Promise<Record<string, unknown> | null>;
   softDelete: (id: string, actor: string) => Promise<Record<string, unknown>>;
   restore: (id: string) => Promise<Record<string, unknown>>;
-  /** The value a Super Admin's hard-delete `confirm` string must exactly
-   * match — a human-readable identifier, never the raw cuid. */
   confirmValue: (row: Record<string, unknown>) => string;
   label: (row: Record<string, unknown>) => string;
-  /** Deletes the real Postgres row (cascades per schema relations) and,
-   * for asset-backed rows, their Blob object(s). Best-effort on Blob —
-   * an already-missing blob must not block the row from being removed. */
   hardDelete: (id: string, row: Record<string, unknown>) => Promise<void>;
-  /** Real, editable scalar columns a Version History "restore" (whole-row
-   * or single named field) is allowed to write back. Deliberately excludes
-   * identity columns (id/slug/email — restoring those risks unique-
-   * constraint collisions or silently changing what a row *is*), relation
-   * FKs (ownership transfer is its own audited action, not a blind
-   * restore), and any status column a dedicated invariant-checked route
-   * already owns (e.g. MapModelVersion/DetailModelVersion.publicationStatus
-   * — publish/rollback enforce "only one published version", a generic
-   * restore must not bypass that). */
   restorableFields: string[];
   applyState: (id: string, state: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }
@@ -78,10 +44,6 @@ async function bestEffortBlobDelete(urls: (string | null | undefined)[]) {
   );
 }
 
-/** Picks only the given keys out of a snapshot object that are actually
- * present in it — used to build a Prisma `update({ data })` payload from a
- * past AuditLog `previousState`/`newState` snapshot without smuggling in
- * relation fields, timestamps, or other non-restorable columns. */
 function pick(state: Record<string, unknown>, fields: string[]): Record<string, unknown> {
   const data: Record<string, unknown> = {};
   for (const field of fields) {
@@ -105,8 +67,6 @@ const PUBLISHER_RESTORABLE_FIELDS = [
   "name", "type", "verified", "logoUrl", "phone", "whatsapp", "bio",
   "restricted", "restrictedReason",
 ];
-// Deliberately excludes email/phone/passwordHash/image — sensitive/
-// identity fields a generic field-restore shouldn't silently rewrite.
 const USER_RESTORABLE_FIELDS = [
   "name", "role", "status", "statusReason", "superAdmin", "adminScopes",
   "buyerPreferences",
@@ -118,9 +78,6 @@ const LISTING_RESTORABLE_FIELDS = [
   "condition", "amenities", "images", "floorPlanImage", "facadeImage",
   "videoUrl", "descriptionEn", "descriptionSq", "premium", "status",
 ];
-// publicationStatus deliberately excluded on both model-version types —
-// publish/rollback enforce the "only one published version" invariant,
-// a generic restore must not be able to bypass that.
 const MAP_MODEL_VERSION_RESTORABLE_FIELDS = [
   "scale", "heading", "altitude", "longitude", "latitude",
   "hideBaseBuilding", "hiddenBuildings",
@@ -170,9 +127,6 @@ export const RECYCLE_BIN_ENTITIES: Record<RecycleBinEntityType, EntityConfig> = 
     confirmValue: (row) => String(row.slug),
     label: (row) => String(row.name),
     hardDelete: async (id) => {
-      // onDelete: Cascade also removes the owning User's Publisher link,
-      // not the User row itself (schema relation is Publisher -> User, not
-      // the reverse) — the account survives, just no longer a publisher.
       await prisma.publisher.delete({ where: { id } });
     },
     restorableFields: PUBLISHER_RESTORABLE_FIELDS,
@@ -279,17 +233,6 @@ const PROJECT_3D_CONFIG_RESTORABLE_FIELDS = [
   "viewerUI", "sections",
 ];
 
-/**
- * `Project3DConfig` restore-only entry — separate from `RECYCLE_BIN_ENTITIES`
- * above because it's a 1:1 singleton keyed by `projectId` (no independent
- * `id` column, no `deletedAt`/delete concept at all: "deleting" a config
- * means nothing when the row always exists alongside its Project 1:1).
- * `/api/admin/entities/[type]/[id]` and `.../restore-version` special-case
- * `entityType === "project3DConfig"` to use this instead of the registry
- * above — its "version history" is entirely AuditLog-snapshot-driven (see
- * the whole-row previousState/newState capture added to
- * `/api/project-3d-config/[projectId]`'s PATCH).
- */
 export const PROJECT_3D_CONFIG_ENTITY = {
   auditEntityType: "Project3DConfig",
   findOne: (projectId: string) => prisma.project3DConfig.findUnique({ where: { projectId } }),

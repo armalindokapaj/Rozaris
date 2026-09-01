@@ -7,7 +7,6 @@ import { useT } from "@/lib/i18n/useT";
 
 type Coverage = "basic" | "comprehensive";
 
-// Illustrative annual premium as a percent of property value.
 const ANNUAL_RATE: Record<Coverage, number> = {
   basic: 0.0025,
   comprehensive: 0.0045,

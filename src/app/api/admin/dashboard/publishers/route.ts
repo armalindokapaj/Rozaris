@@ -3,14 +3,6 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { publishers as mockPublishers } from "@/lib/mockData";
 
-/**
- * PRD_ROZARIS_Admin_Dashboard §9 "Publisher Health & Verification" —
- * counts combine the seeded publisher directory (`lib/mockData.ts`,
- * treated as already-established/verified accounts, same convention as
- * PublishersTab.tsx) with real Publisher rows (the actual sign-up path).
- * The seeded publishers have no `restricted` field (mock type doesn't
- * model it), so "Suspended" is real-only — an honest count, not a bug.
- */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

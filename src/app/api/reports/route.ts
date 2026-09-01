@@ -18,13 +18,6 @@ const bodySchema = z.object({
   note: z.string().max(1000).optional(),
 });
 
-/**
- * Real "report this listing/project" — the source Moderation's queue now
- * actually reads from (`ModerationReport`, see schema.prisma's own header
- * note), replacing the admin tab's previous hardcoded seed cases. Requires
- * sign-in, same convention as `POST /api/account/saved` — a signed-out
- * visitor gets asked to sign in first rather than reporting anonymously.
- */
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {

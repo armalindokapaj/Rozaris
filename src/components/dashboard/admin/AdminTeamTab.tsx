@@ -18,13 +18,6 @@ const ROLE_KEYS = [
 
 const ADMIN_ROSTER = [{ name: "Admin", roleKey: "superAdmin" as const }];
 
-/** Admin Team tab (PRD_ROZARIS_User_Types §5 "Admin roles & audit") — a
- * reference list of the PRD's suggested granular admin roles, plus the
- * (single, demo) admin roster. Informational only in this prototype: real
- * per-capability permission enforcement (project.publish, listing.review,
- * publisher.verify, 3d.upload, 3d.publish, settings.edit, …) needs real
- * auth/sessions first — see the Rozaris backend plan memory's "auth not
- * wired into the UI" gap. */
 export function AdminTeamTab() {
   const { t } = useT();
 

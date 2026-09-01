@@ -10,11 +10,6 @@ const clientUnitPatchSchema = z.object({
   status: z.enum(["available", "reserved", "sold"]).optional(),
 });
 
-/**
- * Same write shape as the admin unit-PATCH route, deliberately narrower —
- * a client-portal caller manages price/status, not structural fields
- * (code/floor/building/bedrooms/etc.), which stay an admin-only concern.
- */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ projectId: string; unitId: string }> }

@@ -26,8 +26,6 @@ type Tier = "essential" | "premium" | "luxury";
 type ItemKey = "kitchen" | "bathroom" | "bedroom" | "living" | "balcony" | "hallway";
 
 const UNIT_TYPES: RedoUnitType[] = ["apartment", "studio", "villa", "house", "office", "commercial"];
-// Illustrative multiplier applied on top of the tier's €/m² rate — larger,
-// more finish-heavy unit types cost more per m² to rework than a studio.
 const UNIT_TYPE_MULTIPLIER: Record<RedoUnitType, number> = {
   apartment: 1,
   studio: 0.9,
@@ -43,7 +41,6 @@ const TIER_LABEL_KEY: Record<Tier, string> = {
   premium: "redoDesign.tierPremium",
   luxury: "redoDesign.tierLuxury",
 };
-// Illustrative €/m² range per finish tier.
 const TIER_RATE: Record<Tier, [number, number]> = {
   essential: [90, 140],
   premium: [160, 240],
@@ -57,9 +54,6 @@ const WHY_ITEMS = [
   { icon: UserCheck, titleKey: "redoDesign.whyStressTitle", bodyKey: "redoDesign.whyStressBody" },
 ];
 
-// Illustrative flat cost range per reworked space, independent of the
-// area-based estimator above — this one is for "pick exactly what you want
-// redone" rather than a whole-unit ballpark.
 const ITEMS: { key: ItemKey; icon: typeof ChefHat; labelKey: string; range: [number, number] }[] = [
   { key: "kitchen", icon: ChefHat, labelKey: "redoDesign.itemKitchen", range: [3500, 7000] },
   { key: "bathroom", icon: ShowerHead, labelKey: "redoDesign.itemBathroom", range: [1800, 3500] },
@@ -132,9 +126,6 @@ export function RedoUnitDesignPageClient() {
   }, [counts]);
 
   return (
-    // Same p-4 outer spacing and 1fr/360px column split as the listing
-    // detail page, so this page's two panels line up with the rest of the
-    // site's established left-content/right-sidebar convention.
     <div className="px-4 py-4 lg:p-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
         <div className="min-w-0 space-y-6">

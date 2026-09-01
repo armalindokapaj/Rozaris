@@ -1,22 +1,8 @@
 import type { Project, Unit } from "./types";
 
-/**
- * Procedural building layout — PRD_3D_Project_Viewer §20's "Editable Demo
- * Package" runs against a procedural project rather than a supplied GLB,
- * since no developer 3D-asset pipeline exists in this frontend-only
- * prototype (see ThreeProjectViewer.tsx). Each unit becomes one box, arranged
- * in a floor/column grid per building and laid out side by side — a
- * schematic elevation rather than a literal architectural model, but
- * driven entirely by real project/unit data (never baked/fake geometry).
- *
- * Kept framework-free (no `three` imports) so the layout math is easy to
- * reason about and test independently of the renderer.
- */
-
 export interface UnitBox {
   unit: Unit;
   buildingName: string;
-  /** Box center, in scene units. */
   x: number;
   y: number;
   z: number;
@@ -40,11 +26,7 @@ export interface BuildingBlock {
 export interface ProjectLayout {
   buildings: BuildingBlock[];
   units: UnitBox[];
-  /** Radius of a sphere around the origin that contains the whole layout —
-   * used to auto-fit the camera regardless of how big a given project is. */
   boundingRadius: number;
-  /** Vertical midpoint of the tallest building — a sensible default orbit
-   * target height. */
   centerY: number;
 }
 
@@ -119,8 +101,6 @@ export function computeProjectLayout(project: Project): ProjectLayout {
     cursorX += buildingWidth + BUILDING_GAP;
   }
 
-  // Re-center the whole layout on the X origin so OrbitControls' default
-  // target (0,0,0) sits in the middle of the project, not off to one side.
   const totalWidth = Math.max(0, cursorX - BUILDING_GAP);
   const offsetX = totalWidth / 2;
   for (const b of buildings) b.centerX -= offsetX;
@@ -131,8 +111,6 @@ export function computeProjectLayout(project: Project): ProjectLayout {
   return { buildings, units, boundingRadius, centerY: maxHeight / 2 };
 }
 
-/** One building's coarse real-world "massing" box — meters, Y-up (matches a
- * typical GLTF export's convention). */
 export interface MassingBox {
   name: string;
   offsetXM: number;
@@ -144,21 +122,6 @@ export interface MassingBox {
 
 const MASSING_FLOOR_HEIGHT_M = 3;
 
-/**
- * The public map's default 3D hero for a project with no admin-uploaded
- * custom GLB (see ProjectModelLayer's `massing` entry support and the
- * "Rozaris Platform Audit" memory's T1) — a real, data-driven building
- * volume instead of a flat pin. Reuses `computeProjectLayout`'s real
- * building/floor grouping and per-unit footprint (a ~3.2x3m bay is the
- * right order of magnitude for one real apartment's frontage) but replaces
- * its per-floor height: 1.6m there is a deliberately compressed "exploded
- * elevation" for the interactive per-unit viewer, not a literal
- * architectural height, and would read as a squat, wrong-looking box
- * dropped onto a real city at true map scale. `MASSING_FLOOR_HEIGHT_M`
- * (~3m) is the realistic figure instead. Still schematic — a solid massing
- * volume, not the true floor plate — same honest tradeoff
- * computeProjectLayout's own doc comment makes.
- */
 export function computeProjectMassing(project: Project): MassingBox[] {
   return computeProjectLayout(project).buildings.map((b) => ({
     name: b.name,

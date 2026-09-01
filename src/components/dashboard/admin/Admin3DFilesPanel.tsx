@@ -15,25 +15,6 @@ interface AssetInventory {
   totalBytes: number;
 }
 
-/**
- * 3D Health → "Project 3D files". The tab already reports what is *wrong*
- * with the platform's 3D assets (blocked uploads, stuck drafts, unmapped
- * units); this is the one place an admin can actually get the files back
- * out — per version, or a whole project as one `.zip`.
- *
- * Every project holding a GLB is listed, not only unhealthy ones — an
- * admin fetching a model has no reason to care whether that project
- * happens to have a health problem, and a health-filtered list would hide
- * most of the platform.
- *
- * Transfers go through `/api/admin/3d-assets/download` and `.../bundle`
- * rather than linking at Vercel Blob directly, so the store URLs never
- * reach the browser and every download is audit-logged. Downloads are
- * issued with `fetch` + an object URL rather than a bare `<a href>` so a
- * failure (429, 502, an expired session) surfaces as an inline message
- * instead of navigating the admin away from the console into a raw JSON
- * error body.
- */
 export function Admin3DFilesPanel() {
   const { t } = useT();
   const inventory = useSection<AssetInventory>("/api/admin/3d-assets");
@@ -60,9 +41,6 @@ export function Admin3DFilesPanel() {
     });
   }
 
-  /** Wraps the shared transfer helper in this panel's own single-flight
-   *  busy/failed keys, so exactly one control at a time reports itself as
-   *  preparing and a failure lands on the row that caused it. */
   async function download(url: string, key: string, fallbackName: string) {
     setBusy(key);
     setFailed(null);
@@ -208,11 +186,6 @@ export function Admin3DFilesPanel() {
   );
 }
 
-/**
- * One detail-model slot (or the map-model group) with its versions. Only
- * the current file shows by default — history is a click away, since a
- * long-lived project accumulates versions an admin rarely wants.
- */
 function AssetGroupRows({
   group,
   projectSlug,
@@ -311,9 +284,8 @@ function AssetFileRow({
         {t(`admin.health3d.filesStatus${capitalize(file.publicationStatus)}`)}
       </span>
       <span className="min-w-0 flex-1">
-        {/* No file name means the right-hand control already explains why
-            (placement-only, or a refused URL) — repeating that sentence
-            here just prints it twice on the same row. */}
+        {                                                                 
+                                                         }
         <p className="truncate text-[11px] text-neutral-700">{file.fileName ?? "—"}</p>
         <p className="truncate text-[10px] text-neutral-400">
           {file.fileSize ? `${formatBytes(file.fileSize)} · ` : ""}

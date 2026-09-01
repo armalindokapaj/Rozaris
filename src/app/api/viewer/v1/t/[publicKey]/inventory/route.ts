@@ -3,14 +3,6 @@ import { prisma } from "@/lib/db";
 import { resolvePublishTarget } from "@/lib/viewer/resolveTarget";
 import { toPublicUnitDto } from "@/lib/viewer/inventoryDto";
 
-/**
- * Multi-Channel Publishing PRD Phase 6, §16-17 "Live inventory endpoint" +
- * "Inventory caching". `ETag`/`If-None-Match` keyed on
- * `ProjectInventoryState.revision` — see inventoryRevision.ts's doc
- * comment for where that counter actually gets bumped. Cheap: a viewer
- * polling this every 15-30s (PRD §19) gets a 304 with no body on every
- * request until an admin/connector write actually changes something.
- */
 export async function GET(request: Request, { params }: { params: Promise<{ publicKey: string }> }) {
   const { publicKey } = await params;
   const resolution = await resolvePublishTarget(publicKey, request);

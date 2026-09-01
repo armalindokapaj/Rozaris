@@ -3,12 +3,6 @@
 import { GroupCard, SectionHeading, SliderRow, ToggleRow } from "../../fields";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 
-/**
- * Rendering → Camera FX (PRD §27-30) — Bloom, Lens Flare, Depth of Field,
- * Distance Blur, Motion Blur. Bloom/DOF reuse pre-existing Project3DConfig
- * fields (they pre-date the v2 rebuild); Lens Flare/Motion Blur are new
- * (Phase 4); Distance Blur is the far-field-only counterpart to DOF.
- */
 export function CameraFXSubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const bloomOn = draft.bloomEnabled;
@@ -21,9 +15,8 @@ export function CameraFXSubtab({ configEditor }: { configEditor: UseProjectConfi
       <SectionHeading>Bloom</SectionHeading>
       <GroupCard>
         <ToggleRow label="Bloom" checked={bloomOn} onChange={(v) => update({ bloomEnabled: v })} />
-        {/* 0-0.1, not the old 0-3: every usable bloom strength lives in the
-            bottom 3% of that range, so a 0.05 step moved the scene from
-            "off" to "blown out" in one keypress. */}
+        {                                                                   
+                                                    }
         <SliderRow label="Strength" value={draft.bloomStrength} min={0} max={0.1} step={0.005} disabled={!bloomOn} onChange={(v) => update({ bloomStrength: v })} />
         <SliderRow label="Radius" value={draft.bloomRadius} min={0} max={1} step={0.05} disabled={!bloomOn} onChange={(v) => update({ bloomRadius: v })} />
       </GroupCard>

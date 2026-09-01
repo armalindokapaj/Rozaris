@@ -35,8 +35,6 @@ function ComingSoonPanel({ tab }: { tab: EditorTabId }) {
   );
 }
 
-/** Right panel — contextual per PRD §4. Scene, Materials, Camera, and
- * Shots have real content now; every other tab is an honest placeholder. */
 export function Inspector({
   activeTab,
   project,

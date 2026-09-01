@@ -5,13 +5,6 @@ import { Eye, MessageCircle, Phone } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 import type { AnalyticsSummary } from "@/app/api/analytics/summary/route";
 
-/** Real per-post view/contact-click counts — the listing/project owner's
- * own dashboard row and the admin management panel both use this (see the
- * "Rozaris Platform Audit" memory: "every user and publisher can see how
- * the post clicks and views... every owner of the post can see it, admin
- * too"). 403s silently render nothing rather than an error — a viewer
- * without access to these numbers simply doesn't see the row, same as if
- * it were never rendered. */
 export function AnalyticsSummaryInline({ entityType, entityId }: { entityType: "listing" | "project"; entityId: string }) {
   const { t } = useT();
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);

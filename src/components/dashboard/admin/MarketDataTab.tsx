@@ -30,12 +30,6 @@ interface TransactionRow {
   location: string | null;
 }
 
-/**
- * Market Data Engine (PRD_ROZARIS_Admin §12) — real €/m² by location,
- * computed server-side from completed `Transaction` rows
- * (`GET /api/admin/market-data`), plus the raw transaction list an admin
- * can exclude an outlier from (`GET/PATCH /api/admin/transactions`).
- */
 export function MarketDataTab() {
   const { t } = useT();
   const priceFmt = usePriceFormat();

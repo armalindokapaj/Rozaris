@@ -3,13 +3,6 @@
 import { useEffect, useState } from "react";
 import type { Project } from "@/lib/types";
 
-/**
- * The Business Publisher dashboard's "my projects" data — real Postgres
- * rows (`GET /api/projects?publisherId=`), replacing the old
- * `mockData.projectsByDeveloper()` (see the "Rozaris Platform Audit"
- * memory's Projects/Units migration). Mirrors `usePublisherListings`
- * exactly.
- */
 export function usePublisherProjects(publisherId: string): Project[] | null {
   const [projects, setProjects] = useState<Project[] | null>(null);
 

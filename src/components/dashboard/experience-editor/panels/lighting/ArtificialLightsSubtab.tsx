@@ -40,14 +40,6 @@ function defaultLight(type: ArtificialLight["type"]): ArtificialLight {
   };
 }
 
-/**
- * Lighting → Artificial Lights (PRD §20, `webgpu_lights_ies_spotlight.html`
- * parity for the IES type) — real Point/Spot/IES-Spot/Rect-Area light
- * CRUD, rendered by RenderEngine's real ArtificialLightSystem
- * (render-engine/artificialLights.ts). IES profiles upload through the
- * same real Vercel Blob pipeline every other GLB upload in this editor
- * uses (`/api/blob/upload`).
- */
 export function ArtificialLightsSubtab({ configEditor, projectId }: { configEditor: UseProjectConfigEditorReturn; projectId: string }) {
   const { draft, update } = configEditor;
   const lights = draft.artificialLights;

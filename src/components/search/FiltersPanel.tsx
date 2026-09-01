@@ -7,11 +7,6 @@ import { FiltersForm } from "./FiltersForm";
 export function FiltersPanel() {
   const { t } = useT();
 
-  // The title header above has no scroll of its own, so a wheel gesture
-  // there does nothing by default — forward it to the filters scroll
-  // container below so scrolling works from anywhere in the panel, without
-  // moving or extending the visible scrollbar into the header. Same logic
-  // as the right results panel.
   const scrollRef = useRef<HTMLDivElement>(null);
   function forwardWheelToFilters(e: React.WheelEvent) {
     if (!scrollRef.current) return;

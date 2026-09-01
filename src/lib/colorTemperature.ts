@@ -1,11 +1,3 @@
-/**
- * Lighting → Sun Light (PRD §15) — Kelvin color-temperature input as a
- * convenience alternate to picking a raw hex color directly. Standard
- * Tanner Helland Planckian-locus approximation (the same well-known
- * algorithm most black-body-color pickers use) — real, if approximate;
- * accurate enough for a rendered sun tint, not scientific-instrument
- * grade.
- */
 export function kelvinToHex(kelvin: number): string {
   const temp = Math.max(1000, Math.min(40000, kelvin)) / 100;
 

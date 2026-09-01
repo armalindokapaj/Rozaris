@@ -5,7 +5,6 @@ import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import type { Project } from "@/lib/types";
 
-/** ARC-004 / A11Y non-3D equivalent: full inventory + facts, no WebGL required. */
 export function SimplifiedProjectView({ project }: { project: Project }) {
   const prices = project.units.map((u) => u.price);
   const minPrice = Math.min(...prices);

@@ -48,12 +48,6 @@ function Pill({
   );
 }
 
-/**
- * Unit Search — the project's own unit inventory, browsable with the same
- * "collapsed pill -> popover" filter bar as the main Search page's
- * TopFilterBar, and a card grid instead of a plain list, so it reads as a
- * proper search experience rather than a cramped sidebar form.
- */
 export function UnitDiscoveryPanel({
   project,
   open,
@@ -134,8 +128,8 @@ export function UnitDiscoveryPanel({
         </button>
       </div>
 
-      {/* Filter bar — collapsed pills that only expand into a popover on
-          click, the same pattern as the Search page's TopFilterBar. */}
+      {                                                                  
+                                                                       }
       <div className="shrink-0 border-b border-neutral-100 p-3">
         <div className="flex flex-wrap items-center gap-2">
           {project.buildings.length > 1 && (

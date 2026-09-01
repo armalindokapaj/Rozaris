@@ -1,95 +1,52 @@
 @import "tailwindcss";
 @import "mapbox-gl/dist/mapbox-gl.css";
-/* Admin Locations tab's boundary-drawing tool (LocationBoundaryEditor) —
-   the official Mapbox GL Draw plugin's own control styles (polygon/trash
-   toolbar buttons, vertex handles). */
 @import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
-
-/* ROZARIS UI Design System v1.0 (Aug 2026) — Editorial Minimalism +
-   Compact Utility UI. Flat solid surfaces, restrained radius, one brand
-   accent, elevation only where hierarchy needs it. See PRD_UI_Design_System
-   for the full spec — token names below map directly to it. */
 :root {
-  --background: #f7f7f8; /* Canvas */
-  --foreground: #17171c; /* Text primary */
-
-  /* Brand — spec anchors are brand-500/600/soft(50); the rest of the ramp
-     is interpolated around them for hover/badge variety elsewhere. */
-  --color-brand-50: #f0eeff; /* Brand soft */
+  --background: #f7f7f8;
+  --foreground: #17171c;
+  --color-brand-50: #f0eeff;
   --color-brand-100: #e4dffe;
   --color-brand-200: #cbc0fd;
   --color-brand-300: #a794fa;
   --color-brand-400: #8973f8;
-  --color-brand-500: #6b55f5; /* Brand */
-  --color-brand-600: #5c46e8; /* Brand hover */
+  --color-brand-500: #6b55f5;
+  --color-brand-600: #5c46e8;
   --color-brand-700: #4b39c4;
   --color-brand-800: #3b2d9c;
   --color-brand-900: #2e2377;
-
-  /* Neutrals — spec's named tokens (Canvas/Surface/Surface subtle/Text
-     primary/secondary/muted/Border/Border strong) are exact-matched below;
-     the remaining steps are interpolated so existing neutral-* usages
-     across the app keep working without a per-file rewrite. */
-  --color-neutral-0: #ffffff; /* Surface */
-  --color-neutral-50: #f7f7f8; /* Canvas */
-  --color-neutral-100: #f2f2f4; /* Surface subtle */
-  --color-neutral-200: #e1e1e6; /* Border */
-  --color-neutral-300: #c9c9d0; /* Border strong */
+  --color-neutral-0: #ffffff;
+  --color-neutral-50: #f7f7f8;
+  --color-neutral-100: #f2f2f4;
+  --color-neutral-200: #e1e1e6;
+  --color-neutral-300: #c9c9d0;
   --color-neutral-400: #adadb5;
-  --color-neutral-500: #8b8b95; /* Text muted */
-  --color-neutral-600: #666670; /* Text secondary */
+  --color-neutral-500: #8b8b95;
+  --color-neutral-600: #666670;
   --color-neutral-700: #4d4d57;
   --color-neutral-800: #303038;
-  --color-neutral-900: #17171c; /* Text primary */
-
-  /* Status / semantic — availability state (Success/Warning/Sold) is
-     distinct from the generic map-marker palette below: a marker's color
-     communicates "what kind of pin is this" across the whole city map,
-     while Success/Warning/Danger/Sold specifically mean "is this unit
-     available" wherever that status is shown (badges, unit cards, the 3D
-     viewer). Keeping them separate avoids recoloring every ordinary
-     listing pin on the main map green just because "available" is green
-     in an availability badge. */
-  --color-success: #23845e; /* Available / approved */
-  --color-warning: #a66a12; /* Reserved / pending */
-  --color-danger: #c84545; /* Error / destructive */
-  --color-sold: #9a9aa3; /* Unavailable state */
-
+  --color-neutral-900: #17171c;
+  --color-success: #23845e;
+  --color-warning: #a66a12;
+  --color-danger: #c84545;
+  --color-sold: #9a9aa3;
   --color-listing-standard: #6f9bff;
   --color-listing-selected: #6b55f5;
   --color-listing-new-dev: #8b5cf6;
   --color-listing-premium: #c9973f;
   --color-listing-unavailable: #9a9aa3;
-
   --color-sale: #2f8f6f;
   --color-rent: #2f74c9;
   --color-coming-soon: #b5822f;
-
-  /* Accent — a single warm counterpoint to brand-500, reserved for the
-     landing hero's primary CTA (bienici-style "go look at listings"
-     button needs to read as distinct from the brand-tinted tab/link
-     language everywhere else). Anchored to listing-premium's hue family
-     rather than inventing a fourth palette. */
   --color-accent: #d9a441;
   --color-accent-600: #c08f34;
+  --radius-panel: 12px;
+  --radius-card: 8px;
+  --radius-control: 8px;
+  --radius-pill: 999px;
+  --shadow-1: 0 2px 8px rgba(17, 17, 24, 0.06);
+  --shadow-2: 0 8px 24px rgba(17, 17, 24, 0.1);
+  --shadow-3: 0 18px 48px rgba(17, 17, 24, 0.14);
 
-  /* Radius — R1..R4 + Pill (chips/status/segmented only). The app's three
-     named tokens collapse the spec's finer R2/R3 split (inputs vs.
-     buttons) into one 8px value, since existing components share a single
-     "control" class between the two — still a large reduction from the
-     previous 16-28px oversized-card language the PRD explicitly retires. */
-  --radius-panel: 12px; /* R4 — large panels/drawers */
-  --radius-card: 8px; /* R3 — cards/dropdowns */
-  --radius-control: 8px; /* R3 — buttons; close enough to R2 for inputs */
-  --radius-pill: 999px; /* Pill — chips/status/segmented only */
-
-  /* Elevation — shadow is the exception, not the default; most surfaces
-     use a border instead (see Design Direction §1/§8). */
-  --shadow-1: 0 2px 8px rgba(17, 17, 24, 0.06); /* dropdown / sticky surface */
-  --shadow-2: 0 8px 24px rgba(17, 17, 24, 0.1); /* drawer / popover */
-  --shadow-3: 0 18px 48px rgba(17, 17, 24, 0.14); /* modal only */
-
-  /* Motion */
   --ease-rz: cubic-bezier(0.2, 0, 0, 1);
   --duration-instant: 90ms;
   --duration-fast: 140ms;
@@ -101,13 +58,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* One readable sans family throughout. `font-serif` remains mapped to the
-     same family during the transition, so legacy title utilities never
-     reintroduce an editorial serif. */
   --font-sans: var(--font-nunito-sans);
   --font-serif: var(--font-nunito-sans);
   --font-numeric: var(--font-roboto);
-
   --color-brand-50: var(--color-brand-50);
   --color-brand-100: var(--color-brand-100);
   --color-brand-200: var(--color-brand-200);
@@ -118,7 +71,6 @@
   --color-brand-700: var(--color-brand-700);
   --color-brand-800: var(--color-brand-800);
   --color-brand-900: var(--color-brand-900);
-
   --color-neutral-0: var(--color-neutral-0);
   --color-neutral-50: var(--color-neutral-50);
   --color-neutral-100: var(--color-neutral-100);
@@ -130,30 +82,25 @@
   --color-neutral-700: var(--color-neutral-700);
   --color-neutral-800: var(--color-neutral-800);
   --color-neutral-900: var(--color-neutral-900);
-
   --color-success: var(--color-success);
   --color-warning: var(--color-warning);
   --color-danger: var(--color-danger);
   --color-sold: var(--color-sold);
-
   --color-listing-standard: var(--color-listing-standard);
   --color-listing-selected: var(--color-listing-selected);
   --color-listing-new-dev: var(--color-listing-new-dev);
   --color-listing-premium: var(--color-listing-premium);
   --color-listing-unavailable: var(--color-listing-unavailable);
-
   --color-sale: var(--color-sale);
   --color-rent: var(--color-rent);
   --color-coming-soon: var(--color-coming-soon);
 
   --color-accent: var(--color-accent);
   --color-accent-600: var(--color-accent-600);
-
   --radius-panel: var(--radius-panel);
   --radius-card: var(--radius-card);
   --radius-control: var(--radius-control);
   --radius-pill: var(--radius-pill);
-
   --ease-rz: var(--ease-rz);
   --duration-instant: var(--duration-instant);
   --duration-fast: var(--duration-fast);
@@ -161,112 +108,32 @@
   --duration-panel: var(--duration-panel);
   --duration-camera: var(--duration-camera);
 }
-
 * {
   -webkit-tap-highlight-color: transparent;
 }
-
 html,
 body {
   height: 100%;
   overscroll-behavior-y: none;
 }
 
-/* Project Viewer and /embed only — the two routes whose root really is one
-   non-scrolling screen (`.h-viewport` on ProjectViewerRuntime's root, which is
-   also what carries `data-viewer-channel`).
-
-   The rule above is the problem it fixes. On iOS Safari a percentage
-   height on <html> resolves against the LARGE viewport — the screen as it
-   would be with the browser toolbars retracted — while `dvh` tracks the
-   viewport as it is right now. On page load the toolbars ARE shown, so
-   `height: 100%` makes the document about a toolbar's worth taller than
-   anything visible, and the whole document becomes scrollable by that
-   much. Nobody notices on a page that scrolls anyway. On the viewer it is
-   the reported bug: reload, Safari restores a scroll offset, and the
-   viewer (only `100dvh` tall) rides up with `body`'s own #f7f7f8
-   background showing beneath the dock — which is why the dock reads as
-   "too high" and why a second reload, landing at scroll 0, looks correct.
-
-   Pinning both to the dynamic viewport makes the document exactly as tall
-   as the visible area, so there is no overflow left to scroll and no
-   offset to restore. `overflow: hidden` is belt-and-braces for the same
-   reason. Scoped by `:has()` rather than applied globally because every
-   other page on the site is a normal scrolling document and must keep
-   `height: 100%`; the attribute is server-rendered, so this matches on the
-   first paint, not after hydration. */
 html:has([data-viewer-channel]),
 body:has([data-viewer-channel]) {
-  /* See `.h-viewport` below for the `@supports` fallback that covers
-     browsers without `dvh` — a plain `height: 100vh` fallback line here
-     would be deleted by Lightning CSS before it ever reached one. */
+
   height: 100dvh;
   min-height: 100dvh;
   overflow: hidden;
 }
 
-/* Viewport-height utilities WITH A FALLBACK, and the reason they exist
-   instead of Tailwind's own `h-dvh`/`min-h-dvh`.
-
-   Tailwind compiles `h-dvh` to a single `height: 100dvh`. A browser that
-   does not know the `dvh` unit treats that declaration as invalid and
-   drops it, leaving the element at `height: auto` — and the Project
-   Viewer's root is a `shrink-0` flex item whose children are all
-   absolutely positioned, so `auto` resolves to ZERO. The result is not a
-   slightly-wrong height, it is a completely blank viewer: canvas 393x0,
-   drawing buffer 746x0, no HUD, no dock, no floor rail, and not one error
-   in any console.
-
-   `dvh` shipped in Chrome 108 (Dec 2022) and Safari 15.4. Anything older —
-   which is most of what "an older Android phone" means in practice — got a
-   blank page. Measured, not theorised: reproduced in a real Chromium 101 at
-   a Pixel 5 viewport, where the viewer root computed to exactly `0px` while
-   `CSS.supports("height", "100dvh")` returned false. Reported as "in older
-   Android, section floor does not work" — the floor rail was one of the
-   many things that simply were not there.
-
-   Why `@supports` and not the ordinary two-declaration fallback
-   (`height: 100vh; height: 100dvh;`): Tailwind v4 compiles this file with
-   Lightning CSS, which sees that every browser in the project's target set
-   supports `dvh` and DELETES the `100vh` line as redundant. Verified by
-   reading the emitted stylesheet — the pair really does come out the other
-   side as `height: 100dvh` alone, so the classic pattern is not merely
-   redundant here, it is silently removed. A `@supports not (...)` block
-   survives, and every browser too old for `dvh` is far newer than
-   `@supports` itself (Chrome 28). Unlayered on purpose so it outranks the
-   layered utility above; the query makes sure it only ever applies where
-   `dvh` is genuinely missing. */
 @layer utilities {
   .h-viewport {
     height: 100dvh;
   }
-
   .min-h-viewport {
     min-height: 100dvh;
   }
 }
 
-/* Tailwind v4 compiles `translate-x-*`/`translate-y-*` to the INDEPENDENT
-   `translate:` property (Chrome 104, Aug 2022), not to `transform`. Below
-   that the declaration is invalid, `transform` computes to `none`, and the
-   element simply is not moved.
-
-   That is not cosmetic here. The Project Viewer's floor rail is positioned
-   `absolute top-1/2 -translate-y-1/2`, i.e. its centering depends entirely
-   on that one declaration — measured on a real Chromium 101 at a Pixel 5
-   viewport, the rail lands 86px low, exactly half its own 173px height,
-   which drops its lowest floors behind the mobile units sheet where they
-   cannot be tapped. Same class of failure as the `dvh` one below, same
-   report: "in older Android, section floor does not work".
-
-   Every Tailwind translate utility funnels through the same two custom
-   properties, so one rule rebuilds all of them as a real `transform`. It
-   is guarded by `@supports`, so on any browser that has `translate:` this
-   block does not exist at all — and on the browsers where it does apply,
-   the thing it overrides is `transform: none`, so it can only improve
-   matters. Inline styles still win, which is what keeps GSAP's own
-   transform animations (the dock morph, the rail's glyph magnification)
-   in charge where they run. */
 @supports not (translate: 0 0) {
   [class*="translate-"] {
     transform: translate(var(--tw-translate-x, 0), var(--tw-translate-y, 0));
@@ -277,49 +144,29 @@ body:has([data-viewer-channel]) {
   .h-viewport {
     height: 100vh;
   }
-
   .min-h-viewport {
     min-height: 100vh;
   }
-
-  /* The document-level pin has the same problem, for browsers new enough
-     to match `:has()` (Chrome 105) but too old for `dvh` (Chrome 108) —
-     a three-version window, but the failure there is the same blank page. */
   html:has([data-viewer-channel]),
   body:has([data-viewer-channel]) {
     height: 100vh;
     min-height: 100vh;
   }
 }
-
-/* The site Header is sticky at h-16 (64px). Without this, hash-anchor
-   navigation (native <a href="#id"> and Next's Link scrollIntoView) lands
-   targets right at the viewport top, hidden behind the header. */
 html {
   scroll-padding-top: 80px;
 }
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-nunito-sans), ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: "tnum" 1, "cv11" 1;
 }
-
-/* Use this on monetary values, measurements and dense numeric tables. */
 .font-numeric {
   font-family: var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
 }
 
-/* Utility: solid floating panel (top filter bar, map/3D overlays, compare
-   tray, etc.) — PRD §1/§22/§28: no glassmorphism/blur/translucency
-   anywhere in the platform. A 94-98% opaque surface plus a border and a
-   restrained Level-2 shadow reads as "grouped controls", not glass.
-   Wrapped in @layer components so Tailwind utility classes on the same
-   element (e.g. `absolute` on ModeSwitch/OnboardingHint) still win — custom
-   CSS declared after `@import "tailwindcss"` without a layer is unlayered
-   and would otherwise always beat Tailwind's own (layered) utilities. */
 @layer components {
   .glass-panel {
     position: relative;
@@ -327,36 +174,19 @@ body {
     border: 1px solid var(--color-neutral-200);
     box-shadow: var(--shadow-2);
   }
-
   .cloud-texture {
     display: none;
   }
 }
-
 .glass-panel-dark {
   background: color-mix(in srgb, var(--color-neutral-900) 96%, transparent);
   border: 1px solid color-mix(in srgb, white 12%, transparent);
 }
-
-/* Project Viewer Front Page chrome, scoped to ViewerHUD only. Was
-   "controlled architectural glassmorphism" (translucent + backdrop-blur,
-   per the original Idle Experience PRD §11) — switched to a fully solid,
-   opaque panel per direct design feedback (no see-through into the 3D
-   scene behind it). Kept as its own class rather than merging into
-   `.glass-panel-dark` above since the two still carry different exact
-   colors/radii conventions across this file tree. */
 .viewer-glass {
   background: #0c0e12;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: var(--shadow-1);
 }
-
-/* Front Page PRD §12, Stage 1 — indeterminate loading sweep. No fake
-   percentage: `onReady` only reports done/not-done (see
-   ThreeProjectViewer's `onReady` doc comment), so the indicator is
-   honestly indeterminate rather than a progress bar with numbers it
-   can't back up. Track is `.viewer-loading-bar` (relative, clipped); the
-   sweeping fill is its `::after`, transform-animated per PRD §27. */
 @keyframes rz-viewer-loading-sweep {
   0% {
     transform: translateX(-100%);
@@ -385,13 +215,6 @@ body {
     transform: translateX(75%);
   }
 }
-
-/* More / Settings Menu — real open transition (previously flagged as a
-   gap in MoreMenu.tsx's own doc comment: "deliberately no open/close
-   fade"). Desktop dropdown only — the mobile bottom sheet already reads
-   as a real physical sheet via its own slide-adjacent position, and
-   `.viewer-glass` there is already flush with the screen edge, so a
-   fade+shift would fight rather than reinforce that. */
 @keyframes rz-more-menu-in {
   from {
     opacity: 0;
@@ -410,35 +233,20 @@ body {
     animation: none;
   }
 }
-
-/* Scoped dark theme — the 3D Experience Configurator only
-   (src/components/dashboard/project3d/EditorShell.tsx's root wrapper),
-   not a site-wide dark mode. Every existing panel already styles itself
-   with the neutral, background and foreground Tailwind tokens defined in
-   :root above; Tailwind v4 emits a var() reference to the underlying
-   custom property at the utility level rather than inlining a literal
-   value, so redefining those same custom properties under this scope is
-   enough to flip every existing neutral/text/border utility class already
-   used throughout the panels — no component file needed to change its
-   className for the bulk of the surface. Declared unlayered (like
-   `.glass-panel-dark` above), not inside `@layer components`, so it wins
-   the cascade over same-specificity Tailwind utility classes (e.g. a
-   literal `bg-white` on a couple of raw `<select>` elements) — same
-   reasoning as that block's own comment. */
 .rz-editor-dark {
   --background: #131317;
   --foreground: #f5f5f7;
-  --color-neutral-0: #1c1c22; /* was white — now the base dark panel surface */
-  --color-neutral-50: #131317; /* was canvas bg — darkest, page-level bg */
-  --color-neutral-100: #232329; /* was surface subtle — hover rows, inputs */
-  --color-neutral-200: #34343d; /* was border */
-  --color-neutral-300: #45454f; /* was border strong */
+  --color-neutral-0: #1c1c22;
+  --color-neutral-50: #131317;
+  --color-neutral-100: #232329;
+  --color-neutral-200: #34343d;
+  --color-neutral-300: #45454f;
   --color-neutral-400: #5c5c68;
-  --color-neutral-500: #9494a0; /* was text muted */
-  --color-neutral-600: #b4b4bd; /* was text secondary */
+  --color-neutral-500: #9494a0;
+  --color-neutral-600: #b4b4bd;
   --color-neutral-700: #cfcfd6;
   --color-neutral-800: #e4e4e8;
-  --color-neutral-900: #f5f5f7; /* was text primary — now near-white */
+  --color-neutral-900: #f5f5f7;
   background: var(--background);
   color: var(--foreground);
 }
@@ -454,14 +262,6 @@ body {
 .rz-editor-dark input[type="range"] {
   background-color: transparent;
 }
-
-/* Scoped dark sidebar theme — the Admin console's own left nav only
-   (src/app/admin/page.tsx), not a site-wide dark mode. Unlike
-   `.rz-editor-dark` above, this doesn't redefine `--color-neutral-*`: the
-   sidebar is small, bespoke markup written directly against these tokens,
-   not a set of shared components already leaning on neutral-* utilities
-   that need to "flip" — so these are just new named colors, scoped so nothing
-   else on the page is affected. */
 .rz-admin-sidebar {
   --sidebar-bg: #12132a;
   --sidebar-bg-hover: #1c1d3d;
@@ -472,8 +272,6 @@ body {
   --sidebar-heading: #ffffff;
   background: var(--sidebar-bg);
 }
-
-/* Scrollbars: slim, unobtrusive */
 .scroll-thin::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -485,15 +283,6 @@ body {
 .scroll-thin::-webkit-scrollbar-track {
   background: transparent;
 }
-
-/* No visible scrollbar at all — the element still scrolls, it just has no
-   bar. For surfaces where the bar reads as chrome rather than as an
-   affordance: the 3D viewer's unit card is `.viewer-glass` (#0c0e12), and
-   `.scroll-thin`'s thumb is `--color-neutral-300`, so on that dark ground
-   the bar became the brightest thing on the card (direct instruction,
-   2026-08-25). Deliberately a separate class rather than a change to
-   `.scroll-thin`, which a dozen light-themed admin/dashboard surfaces rely
-   on and where a visible thumb is correct. */
 .scroll-none {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -501,8 +290,6 @@ body {
 .scroll-none::-webkit-scrollbar {
   display: none;
 }
-
-/* Mapbox popup reset so we can fully restyle */
 .mapboxgl-popup-content {
   padding: 0 !important;
   border-radius: var(--radius-card) !important;
@@ -517,11 +304,6 @@ body {
 .mapboxgl-ctrl-bottom-left {
   display: none !important;
 }
-
-/* Map markers — plain DOM (Mapbox GL markers), styled outside Tailwind's
-   scan so colors can be assigned dynamically via inline style. Compact,
-   solid, minimal separation from the map per PRD §23 — no glow, hover
-   scale capped at ~8%. */
 .rz-marker {
   display: flex;
   align-items: center;
@@ -543,9 +325,6 @@ body {
   height: 34px;
   border-radius: var(--radius-pill);
 }
-/* Price-tier marker: a tight, pill-shaped badge with just the price —
-   standalone listings only (a unit that's part of a New Project shows the
-   project's own marker instead, so the map stays uncluttered). */
 .rz-marker-price-card {
   display: flex;
   align-items: center;
@@ -595,8 +374,6 @@ body {
 .rz-marker-cluster strong {
   font-size: 14px;
 }
-/* The neighborhood name is kept as a title/aria label (markerFactory.ts)
-   rather than shown — the mockup's cluster badges are a bare number. */
 .rz-marker-cluster span {
   display: none;
 }
@@ -621,13 +398,8 @@ body {
   width: 44px;
   height: 44px;
   border-radius: var(--radius-pill);
-  /* Soft glow beneath, standing in for the mockup's isometric-tower
-     marker — a plain flat icon reads as "just another pin" without it. */
   box-shadow: var(--shadow-2), 0 0 0 6px color-mix(in srgb, var(--color-brand-500) 16%, transparent);
 }
-
-/* Sponsor ad "GIF-style" visual: a slowly drifting gradient standing in for
-   an animated creative, since no real ad assets exist here. */
 @keyframes rz-ad-shimmer {
   0%,
   100% {
@@ -648,9 +420,6 @@ body {
     animation: none;
   }
 }
-
-/* Dual-thumb range slider (search filters): two overlaid native inputs,
-   track hidden so only the thumb is interactive/visible. */
 .rz-range-thumb {
   position: absolute;
   inset-inline: 0;
@@ -710,23 +479,6 @@ body {
   outline: 2px solid var(--color-brand-500);
   outline-offset: 2px;
 }
-
-/* Single-thumb range slider (viewer dock — Time). Visually identical to
-   .rz-range-thumb above, but the input itself stays hit-testable.
-   .rz-range-thumb's `pointer-events: none` is load-bearing for the
-   DUAL-thumb case only: two <input type="range"> are absolutely stacked
-   there, and without it the upper one swallows every event meant for the
-   lower. With a single input there is nothing underneath to protect, and
-   inheriting that workaround cost Time both of its touch gestures —
-   tap-to-seek hit the inert wrapper div, and drag only started on the
-   16px thumb pseudo-element. Do NOT "simplify" this by deleting
-   `pointer-events: none` from .rz-range-thumb instead: the dual-thumb
-   sliders (Units → Surface, /search price+area filters) break silently
-   and only under drag, so it survives a click-through QA pass.
-   Height is a 28px TOUCH BAND sitting over the 6px visual track — the
-   maximum that still clears the mobile dock's controls row 2px above it
-   (see TimeContent.tsx's own mobile row math); do not raise it toward
-   44px without re-planning DOCK_HEIGHT_MOBILE_STANDARD. */
 .rz-range-single {
   position: absolute;
   inset-inline: 0;
@@ -738,10 +490,6 @@ body {
   background: transparent;
   appearance: none;
   -webkit-appearance: none;
-  /* A horizontal drag with any vertical component must never be handed to
-     the UA as a pan mid-gesture. Safe here: this input lives in a fixed,
-     non-scrolling bottom dock over a full-viewport canvas, so there is no
-     scroll gesture to preserve. */
   touch-action: none;
 }
 .rz-range-single::-webkit-slider-runnable-track {
@@ -763,12 +511,6 @@ body {
   border: 2px solid var(--color-brand-500);
   box-shadow: var(--shadow-1);
   cursor: grab;
-  /* Centres the thumb in the taller runnable track: (28 − 16) / 2. The
-     2px border does NOT add to that 16 — WebKit lays this pseudo-element
-     out border-box, so the thumb renders 16px, not 20. Measured against a
-     real Chromium rather than reasoned about: the thumb centre lands 8px
-     from each end of the track and 13.5px down the 28px band. See
-     scripts/test-time-slider-touch.ts §4, `npm run test:time-slider`. */
   margin-top: 6px;
 }
 .rz-range-single::-moz-range-thumb {
@@ -794,13 +536,9 @@ body {
   outline: 2px solid var(--color-brand-500);
   outline-offset: 2px;
 }
-/* Restores the old swallow-nothing behaviour exactly where it IS wanted:
-   a read-only viewer (`sunTimeInteractive === false`) must not eat taps
-   that belong to the dock beneath it. */
 .rz-range-single:disabled {
   pointer-events: none;
 }
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -811,8 +549,6 @@ body {
     scroll-behavior: auto !important;
   }
 }
-
-/* Focus visibility (A11Y-004 / PRD §25): 2px brand outline, ~2px offset */
 :focus-visible {
   outline: 2px solid var(--color-brand-500);
   outline-offset: 2px;

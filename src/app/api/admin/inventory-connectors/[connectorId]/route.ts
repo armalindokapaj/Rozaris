@@ -9,12 +9,8 @@ import { COLUMN_MAPPING_VALUES } from "@/lib/integrations/normalization";
 
 const patchConnectorSchema = z.object({
   status: z.enum(["active", "paused", "error"]).optional(),
-  /** Repoint the connector at a different sheet (or a different tab of
-   * the same workbook) — the whole URL, same as create. */
   sheetUrl: z.string().min(1).optional(),
   externalResourceId: z.string().min(1).nullable().optional(),
-  /** Replaces the stored mapping wholesale; `{}` clears every override
-   * and falls back to the built-in header aliases. */
   columnMapping: z.record(z.string(), z.enum(COLUMN_MAPPING_VALUES)).optional(),
 });
 
@@ -47,8 +43,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
     }
     data.externalResourceId = ref.sheetId;
     data.configuration = { ...(existing.configuration as Record<string, unknown> | null), gid: ref.gid } as Prisma.InputJsonValue;
-    // Repointing at a different sheet clears a previous failure — the
-    // stored `error` state described the OLD sheet.
     if (existing.status === "error" && !parsed.data.status) data.status = "active";
   } else if (parsed.data.externalResourceId !== undefined) {
     data.externalResourceId = parsed.data.externalResourceId;

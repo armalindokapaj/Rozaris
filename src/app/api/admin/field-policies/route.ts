@@ -5,10 +5,6 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { FIELD_POLICIES, type FieldPolicyKey } from "@/lib/fieldPolicies";
 
-/** Admin's "Account & Profile Fields" list — every declared key in
- * `FIELD_POLICIES`, merged with its DB override row if one exists yet (a
- * field never toggled reads as its registry default). Mirrors
- * `GET /api/admin/feature-flags` exactly. */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 
-/** PRD §33 "[Open Sync Log]" — recent sync attempts for one connector,
- * newest first. */
 export async function GET(_request: Request, { params }: { params: Promise<{ connectorId: string }> }) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

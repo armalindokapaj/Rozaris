@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 
-/** Full release detail incl. the compiled `manifest` — for the future
- * Distribution UI's [Preview] action and manual inspection. */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ projectId: string; releaseId: string }> }

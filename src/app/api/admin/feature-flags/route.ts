@@ -5,9 +5,6 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { FEATURE_FLAGS, type FeatureFlagKey } from "@/lib/featureFlags";
 
-/** Admin's Feature Flags list — every declared key in `FEATURE_FLAGS`,
- * merged with its DB row if one exists yet (a flag never toggled has no
- * row, and reads as enabled). */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

@@ -14,29 +14,9 @@ const stageSchema = z.object({
 });
 
 const bodySchema = z.object({
-  // The whole list, in display order — a replace, not a per-row patch.
-  // These rows have no meaning individually (they're a sequence), the set
-  // is small, and reordering under a per-row API would mean N writes with
-  // a half-reordered timeline visible in between.
   stages: z.array(stageSchema).max(30),
 });
 
-/**
- * A project's construction timeline — the stage list shown on the public
- * project page (`ConstructionTimelineStrip`).
- *
- * `ConstructionStage` rows had existed since the first schema but were
- * written ONLY by `prisma/seed.ts`: no admin surface, no API. So any
- * project created through the console (rather than seeded) had a
- * permanently empty timeline, and no seeded project's timeline could ever
- * be corrected. This is that missing write path, added alongside the
- * Project Manager's Timeline section.
- *
- * Note the separate, pre-existing `ConstructionTimelineRequest` flow: that
- * is the PUBLISHER asking for a progress change and an admin approving it
- * (still Zustand-backed). This route is the admin editing the stages
- * directly, which they could not do at all before.
- */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ projectId: string }> }
@@ -76,9 +56,6 @@ export async function PUT(
   const previous = await prisma.constructionStage.findMany({ where: { projectId }, orderBy: { order: "asc" } });
 
   try {
-    // One transaction: a failure halfway through must not leave the
-    // project with the old stages deleted and the new ones unwritten —
-    // i.e. no timeline at all on a live public page.
     const stages = await prisma.$transaction(async (tx) => {
       await tx.constructionStage.deleteMany({ where: { projectId } });
       if (parsed.data.stages.length > 0) {
@@ -89,8 +66,6 @@ export async function PUT(
       return tx.constructionStage.findMany({ where: { projectId }, orderBy: { order: "asc" } });
     });
 
-    // Same ISR staleness every other project write here has to handle —
-    // see the publication route's own comment.
     revalidatePath(`/project/${project.slug}`);
     revalidatePath(`/projects/${project.slug}`);
 

@@ -7,11 +7,6 @@ import { isSlotCutBySections } from "./sectionScope";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-// Environment tab (PRD §7-13) — SkyMesh/WaterMesh are the real TSL/
-// NodeMaterial ports of webgl_shaders_sky.html/webgl_shaders_ocean.html's
-// classic Sky/Water for this app's WebGPURenderer pipeline (vendored
-// directly in three.js's own examples/jsm, not re-derived) — restored
-// near-verbatim from the pre-rebuild engine's proven usage.
 import { SkyMesh } from "three/examples/jsm/objects/SkyMesh.js";
 import { WaterMesh } from "three/examples/jsm/objects/WaterMesh.js";
 import { length as tslLength, mix as tslMix, positionWorld, smoothstep as tslSmoothstep, uniform } from "three/tsl";
@@ -149,18 +144,9 @@ function resolveFogColor(config: EnvironmentConfig): string {
   return config.fogMatchesSky ? FOG_SKY_HORIZON_COLOR : config.fogColor;
 }
 
-/** Read-only shared vectors, so the Sun & Time write path (applySunState)
- * allocates nothing per tick — it runs once per input event during a scrub
- * and once per animation frame through a preset tween. Never mutated; both
- * uses copy FROM them. */
 const WORLD_ORIGIN = new THREE.Vector3(0, 0, 0);
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
-/** Rendering → Color's tone-mapping curve picker (PRD §31) — every real
- * THREE.*ToneMapping constant, keyed by Project3DConfig.toneMapping's own
- * string union. Plain renderer properties (this + toneMappingExposure),
- * not part of the TSL post-processing node graph — applied directly,
- * live, no pipeline rebuild needed. */
 const TONE_MAPPING_MAP: Record<RenderingConfig["toneMapping"], THREE.ToneMapping> = {
   none: THREE.NoToneMapping,
   linear: THREE.LinearToneMapping,
@@ -249,11 +235,6 @@ export const DEFAULT_RENDERING_CONFIG: RenderingConfig = {
   lutIntensity: 1,
 };
 
-/** Units tab (Units Blocks & POI Layer PRD) defaults — match the Prisma
- * column defaults exactly (see the migration's own doc comments), so an
- * unconfigured project renders identically to what every existing
- * project already showed via the old hardcoded UNIT_BOX_COLOR/
- * UNIT_BOX_OPACITY/SELECTED_COLOR constants in viewerPresets.ts. */
 export const DEFAULT_UNITS_CONFIG: UnitsConfig = {
   unitColorAvailable: "#22c55e",
   unitColorReserved: "#eab308",
@@ -280,7 +261,6 @@ export const DEFAULT_UNITS_CONFIG: UnitsConfig = {
   unitPoiAutoOcclusionCorrection: false,
 };
 
-/** Performance tab (PRD §40) subset of Project3DConfig. */
 export type QualityConfig = Pick<
   Project3DConfig,
   "renderingMode" | "qualityPreset" | "customRenderScale" | "customDprCap" | "adaptiveQualityEnabled" | "runtimeQualityReductionEnabled" | "interactionQualityReductionEnabled"
@@ -296,9 +276,6 @@ const DEFAULT_QUALITY_CONFIG: QualityConfig = {
   interactionQualityReductionEnabled: true,
 };
 
-/** The real target renderScale/dprCap for a config — QUALITY_TIERS'
- * fixed per-preset values, except "custom" which reads the two admin-
- * entered overrides (falling back to the tier's own default when unset). */
 function resolveQualityTarget(config: QualityConfig): { renderScale: number; dprCap: number; shadowMapSize: number } {
   const tier = QUALITY_TIERS[config.qualityPreset];
   if (config.qualityPreset === "custom") {
@@ -311,12 +288,6 @@ function resolveQualityTarget(config: QualityConfig): { renderScale: number; dpr
   return { renderScale: tier.renderScale, dprCap: tier.dprCap, shadowMapSize: tier.shadowMapSize };
 }
 
-/** Resizing a shadow map after the first frame needs the already-allocated
- * render target thrown away — three.js only reads `mapSize` when it has no
- * `shadow.map` to reuse, so writing the vector alone would silently keep
- * rendering at the old resolution. Disposing and nulling it makes the next
- * frame reallocate at the new size. A no-op when the size is unchanged, so
- * this is safe to call on every setQualityConfig(). */
 function applySunShadowMapSize(sun: THREE.DirectionalLight, size: number) {
   if (sun.shadow.mapSize.x === size && sun.shadow.mapSize.y === size) return;
   sun.shadow.mapSize.set(size, size);
@@ -326,9 +297,6 @@ function applySunShadowMapSize(sun: THREE.DirectionalLight, size: number) {
 
 const UNIT_NODE_PATTERN = /^Unit_/i;
 
-/** The Camera-tab subset of Project3DConfig (PRD §37) — a Pick rather
- * than the full config, so RenderEngine doesn't need to know about
- * Environment/Lighting/Rendering fields it doesn't consume yet. */
 export type CameraConfig = Pick<
   Project3DConfig,
   | "cameraFovDesktop"
@@ -347,9 +315,6 @@ export type CameraConfig = Pick<
   | "cameraZoomEnabled"
   | "cameraDampingEnabled"
   | "autoRotate"
-  // Idle Drone Camera PRD — folded into the same per-tab Pick/apply
-  // pattern every other Camera-tab field already uses, rather than a new
-  // sibling prop (see idleDroneCamera.ts's own doc comment).
   | "idleDroneEnabled"
   | "idleDroneDelaySec"
   | "idleDroneOrbitDurationSec"
@@ -364,10 +329,6 @@ export type CameraConfig = Pick<
   | "idleDroneVerticalCycles"
   | "idleDronePhaseOffsetDeg"
   | "idleDroneSmoothness"
-  // Shots (PRD §38) — the saved-viewpoint list is carried on the Camera
-  // config purely so the FIRST entry (the "Opening Shot") can be the
-  // camera the viewer opens on; every other use of it (the Views menu,
-  // the editor's Shots tab) goes through flyToPreset() imperatively.
   | "cameraPresets"
 >;
 
@@ -405,111 +366,32 @@ const DEFAULT_CAMERA_CONFIG: CameraConfig = {
   cameraPresets: [],
 };
 
-/**
- * ROZARIS 3D Experience Editor — Rendering & Authoring Architecture v2.0.
- *
- * Ground-up rebuild (2026-08-15) of the previous RenderEngine.ts. See the
- * "Rozaris 3D Experience Editor v2 rebuild" memory for the full decision
- * trail.
- *
- * Phase 0: GLB loading, camera/controls, one ambient + one directional
- * light, resize, screenshot, live perf telemetry.
- * Phase 1 (this pass): full Position/Rotation/Scale + Model switches
- * (Scene tab, PRD §5), non-destructive Materials node overrides (PRD §6).
- * Still NOT implemented: Sun&Sky/Clouds/Fog/Water (Phase 2), Shadows/GI/
- * Artificial/Volumetric Lighting (Phase 3), SSR/TRAA/Bloom/LensFlare/DOF/
- * MotionBlur/Color/LUT (Phase 4), Sections rework (Phase 5).
- *
- * One instance is shared across mount()/dispose() cycles.
- */
-
 const MOBILE_VIEWPORT_BREAKPOINT = 768;
 
-/** See the resize ResizeObserver's own doc comment (mount()) — throttles
- * real `renderer.setSize()` calls during a continuous container resize
- * (e.g. the Units panel's GSAP width tween) to avoid out-pacing the GPU's
- * ability to reallocate swap chain/render targets. */
 const RESIZE_THROTTLE_MS = 90;
 
-/** How often `samplePerfStats` reports, in frames. Also the divisor for
- * the per-frame draw-call delta, so the two cannot drift apart. */
 const PERF_SAMPLE_EVERY_N_FRAMES = 20;
 
-/** Enough to identify a failing pipeline, few enough that a pass failing
- * every frame cannot grow this without bound. */
 const MAX_REPORTED_GPU_ERRORS = 6;
 
-/** What the renderer actually resolved to on THIS device, published for
- * `ViewerDiagnostics` (`?diag=1`). Written once per mount and then only on
- * a context-loss event — this is a report, not engine state, and nothing
- * in the render path reads it back.
- *
- * It exists because "it's dark on my iPhone, fine on desktop" is not
- * answerable from a desktop: the two devices resolve a different backend
- * (WebGPU vs WebGL2), a different GPU, different limits, and iOS drops GL
- * contexts under memory pressure with no visible error at all. Guessing
- * across that gap cost a full day; asking the device costs one URL. */
 export interface RendererFacts {
   backend: "webgpu" | "webgl2";
-  /** `navigator.gpu` present at all — separates "this browser has no
-   * WebGPU" (every iPhone before iOS 26) from "it has it but the adapter
-   * request failed". */
   webgpuAvailable: boolean;
   glRenderer: string | null;
   maxTextureSize: number | null;
   drawingBufferPx: { width: number; height: number } | null;
   pixelRatio: number;
-  /** Non-zero means the GPU dropped this canvas mid-session — the one
-   * failure mode that renders a permanently black viewer with nothing in
-   * the console. */
   contextLostCount: number;
-  /** WebGPU validation/out-of-memory errors, as reported by the device
-   * itself.
-   *
-   * This is the channel that made the "dark on iPhone" reports so hard to
-   * act on. A WebGPU pipeline that fails validation does NOT throw, does
-   * NOT reject a promise and does NOT reach `console.error` on its own —
-   * it surfaces on `GPUDevice.onuncapturederror`, and rendering carries on
-   * at a full frame rate afterwards, drawing with whatever the failed pass
-   * left behind. Chrome mirrors these into DevTools, which is why the same
-   * build can look healthy on a desktop; Safari does not, and a phone has
-   * no console to mirror them into anyway. Nothing in this app listened
-   * here until now, so the single most diagnostic message the GPU can send
-   * was being dropped on the floor on exactly the devices that needed it.
-   *
-   * Capped and de-duplicated — a failing pipeline re-reports every frame,
-   * and 60 copies a second of one message is not a report. */
   gpuErrors: string[];
 }
 
 export interface RenderEngineCallbacks {
   onWebglFail: () => void;
-  /** The GPU dropped the canvas AFTER a successful start (iOS Safari does
-   * this under memory pressure, and on tab backgrounding). Distinct from
-   * `onWebglFail`, which only ever fires if the renderer cannot be built
-   * in the first place — before this existed, a loss after mount left a
-   * black canvas, no error, and no way for the visitor to know anything
-   * had gone wrong. Optional: predates every existing caller. */
   onContextLost?: () => void;
-  /** Published once the backend is known, for `?diag=1`. */
   onRendererFacts?: (facts: RendererFacts) => void;
-  /** "Map" tab — progress/outcome of a site build, so the Map panel can
-   * show a real state instead of a silent nothing while tiles download.
-   * Optional: every existing caller predates the site feature. `ready`
-   * carries the real elevation numbers so an admin can see the site's
-   * true height above sea level and its actual relief rather than
-   * guessing from a flat-looking render. */
   onSiteStatus?: (
     status:
       | { state: "loading" }
-      // `reason` carries whatever actually went wrong. It exists because
-      // this failure is otherwise completely silent: the site build is
-      // wrapped in a bare `catch` and a scene that simply has no ground in
-      // it looks, on a phone, exactly like a lighting bug — two fewer draw
-      // calls and a black horizon, with nothing in any console to say the
-      // terrain was ever attempted. Optional: a `null` result is a real
-      // outcome too (every tile 404'd, or imagery is off), and that has no
-      // exception to report.
       | { state: "failed"; reason?: string }
       | { state: "ready"; centreElevationM: number; reliefM: { min: number; max: number } }
   ) => void;
@@ -521,67 +403,26 @@ export interface RenderEngineCallbacks {
       triangles: number;
       textures: number;
       dpr: number;
-      /** What the CPU-side selection-outline clip is currently doing — see
-       * clipUnitOutlinesState. Reported alongside the frame stats rather
-       * than with the renderer facts because, unlike those, it changes with
-       * every selection and every cut. */
       outlineClip: string;
     } | null
   ) => void;
-  /** Units Blocks & POI Layer PRD §19-20 — the "3D → List" half of the
-   * shared selection state: a real click on a unit block (not a drag-to-
-   * orbit) fires this so the caller's own `selectedUnitId` React state —
-   * the single source of truth per §20 — can follow, alongside whatever
-   * else a click should do (scroll the list row into view, open the
-   * detail panel). The engine ALSO updates its own internal selection
-   * immediately for instant visual feedback, without waiting for the
-   * caller to round-trip back through setSelectedUnit(). Optional — the
-   * editor's own preview viewport doesn't need this wired. */
   onUnitClick?: (unitId: string | null) => void;
-  /** Same shape, for hover — lets a caller show a cursor/tooltip without
-   * polling the engine. Optional. */
   onUnitHover?: (unitId: string | null) => void;
 }
 
 export interface DetailModelEntry {
   slotId: string;
   model: ProjectDetailModel;
-  /** Unit Mapping's "Status Preview" (PRD §5) — real project Units +
-   * whether to tint Unit_<number> boxes by their linked status. Optional:
-   * the public viewer doesn't pass units yet (Interaction-tab public
-   * status display is later-phase scope), only the admin editor does. */
   units?: Unit[];
   statusPreviewEnabled?: boolean;
-  /** Units Blocks & POI Layer PRD §2/§3 — which real slot this entry is
-   * (building/units/surroundings/context/custom) and, if set, which
-   * OTHER slot's transform to live-inherit instead of this entry's own
-   * position/rotation/scale fields on `model`. Optional so a caller that hasn't
-   * been updated yet (shouldn't exist post this PRD, but keeps the type
-   * honest about what's really required) just gets "custom, no parent" —
-   * the same as every pre-existing slot before this PRD's migration ran. */
   slotRole?: DetailModelSlotRole;
   transformParentSlotId?: string | null;
-  /** The slot's admin-facing name. Read by exactly one render-path rule —
-   * whether an active Section is allowed to cut this slot, see
-   * render-engine/sectionScope.ts — because the Scene tab's slot strip
-   * has no role picker, so every site slot an admin creates by hand is
-   * `role: "custom"` and its NAME is the only signal of what it is.
-   * Optional for the same reason `slotRole` is: an un-updated caller just
-   * gets the pre-rule behaviour (cut like everything else). */
   slotName?: string;
 }
 
 export interface MountParams {
   showPerfStats?: boolean;
   qualityConfig?: QualityConfig;
-  /** "Mapbox merged into the Studio Scene" (approved plan, Phase 2) — when
-   * set, this mount binds Studio's renderer to a live Mapbox basemap
-   * sharing the same canvas instead of Three.js owning its own (see
-   * `createBasemapRenderer`'s own doc comment). Mount-time only, like
-   * `qualityConfig.renderingMode` — changing it needs a real remount. Not
-   * yet threaded through from the editor UI (that's the plan's Phase 5);
-   * this param exists so the engine itself is independently exercisable
-   * (and was headed-verified) ahead of that wiring. */
   basemapAnchor?: BasemapAnchor | null;
 }
 
@@ -589,11 +430,6 @@ function normalizeMaterials(m: THREE.Material | THREE.Material[]): THREE.Materia
   return Array.isArray(m) ? m : [m];
 }
 
-/** Applies one NodeOverride's fields onto a fresh clone of a mesh's
- * original material, upgrading to MeshPhysicalMaterial first if any
- * Physical/Glass/Emissive-adjacent field needs it — same upgrade pattern
- * the pre-rebuild engine used (preserves the existing look instead of
- * setting a property that silently no-ops on MeshStandardMaterial). */
 function buildOverriddenMaterial(original: THREE.Material, override: NodeOverride): THREE.Material {
   const std = original as THREE.MeshStandardMaterial;
   const needsPhysical =
@@ -631,7 +467,6 @@ function buildOverriddenMaterial(original: THREE.Material, override: NodeOverrid
     mat = std.clone();
   }
 
-  // --- PBR base ---
   if (override.colorHex) mat.color?.set(override.colorHex);
   if (override.baseTextureEnabled === false) mat.map = null;
   if (override.roughness != null) mat.roughness = override.roughness;
@@ -648,7 +483,6 @@ function buildOverriddenMaterial(original: THREE.Material, override: NodeOverrid
   }
   if (override.aoMapEnabled === false) mat.aoMap = null;
 
-  // --- Emissive ---
   if (override.emissiveEnabled) {
     if (override.emissiveColorHex) mat.emissive?.set(override.emissiveColorHex);
     if (override.emissiveIntensity != null) mat.emissiveIntensity = override.emissiveIntensity;
@@ -658,7 +492,6 @@ function buildOverriddenMaterial(original: THREE.Material, override: NodeOverrid
   }
   if (override.emissiveMapEnabled === false) mat.emissiveMap = null;
 
-  // --- Physical-only fields (mat is MeshPhysicalMaterial when set) ---
   if (mat instanceof THREE.MeshPhysicalMaterial) {
     if (override.clearcoat != null) mat.clearcoat = override.clearcoat;
     if (override.clearcoatRoughness != null) mat.clearcoatRoughness = override.clearcoatRoughness;
@@ -681,7 +514,6 @@ function buildOverriddenMaterial(original: THREE.Material, override: NodeOverrid
     }
   }
 
-  // --- Texture transform (applies to every present map, shared UV) ---
   if (override.textureTransformEnabled) {
     const maps = [mat.map, mat.normalMap, mat.roughnessMap, mat.metalnessMap, mat.aoMap, mat.emissiveMap].filter(
       (t): t is THREE.Texture => !!t
@@ -710,46 +542,19 @@ export class RenderEngine {
   private scene: THREE.Scene | null = null;
   private camera: THREE.PerspectiveCamera | null = null;
   private controls: OrbitControls | null = null;
-  // "Real-world basemap" mount path (approved plan, Phase 2) — null on the
-  // default (standard) mount. `map` non-null is this engine's own signal
-  // for "basemap mode is active", read by performResize()/dispose() so
-  // they don't fight Mapbox's ownership of the shared canvas.
   private map: mapboxgl.Map | null = null;
   private basemapLayer: StudioBasemapLayer | null = null;
   private basemapRafId: number | null = null;
   private ambient: THREE.AmbientLight | null = null;
   private sun: THREE.DirectionalLight | null = null;
   private resizeObserver: ResizeObserver | null = null;
-  /** Throttle/trailing-call state for the resize observer below — see its own doc comment. */
   private resizeTimer: ReturnType<typeof setTimeout> | null = null;
   private lastResizeAt = 0;
 
-  // Sections module (PRD §34-36) — every "clippable" object (the loaded
-  // GLB roots) lives inside clippingGroup instead of directly under
-  // scene; sectionHelperGroup holds cap/indicator meshes, which must
-  // NEVER themselves be clipped. Restored technique from the pre-rebuild
-  // engine (real production bug fixes already baked into sections.ts —
-  // see its own doc comments), not re-derived from scratch.
   private clippingGroup: THREE.ClippingGroup | null = null;
-  /** Sibling of clippingGroup for the loaded roots a Section must NOT cut
-   * — site-context GLBs, see render-engine/sectionScope.ts for the rule
-   * and the bug that motivated it. A plain THREE.Group directly under
-   * `scene` at identity, exactly like `siteGroup` (the Map tab's terrain,
-   * excluded from clipping for the same reason since it shipped), so
-   * moving a root between the two groups is a pure reparent with no
-   * transform bookkeeping. Everything else about such a root is
-   * unchanged: it is still in `modelRootsBySlot`/`loadedRoots`, so
-   * bounds, raycasting, materials, node overrides and the Scene Explorer
-   * all behave identically. */
   private unclippedModelGroup: THREE.Group | null = null;
   private sectionHelperGroup: THREE.Group | null = null;
   private activeSectionId: string | null = null;
-  /** The exact planes `activateSection` last handed to `clippingGroup`,
-   * kept because the selection outline has to be clipped on the CPU
-   * against the same volume (see clipUnitOutlinesToSection). Null when no
-   * section is active — the clippingGroup still holds the fixed 6 no-op
-   * planes in that state, but null lets the outline pass skip its work
-   * instead of clipping against a volume that removes nothing. */
   private activeSectionPlanes: THREE.Plane[] | null = null;
   private sectionFillClippingGroup: THREE.ClippingGroup | null = null;
   private sectionFillMaterial: THREE.MeshBasicMaterial | null = null;
@@ -760,42 +565,16 @@ export class RenderEngine {
   private loader: GLTFLoader | null = null;
   private loadedRoots: THREE.Object3D[] = [];
   private modelRootsBySlot = new Map<string, THREE.Object3D>();
-  /** The last entries passed to syncModels() — a Performance-tab-
-   * triggered remount() (renderingMode change) needs to reload the same
-   * content into the fresh scene afterward; without this, the real bug
-   * this fixes is a blank viewport (Tris 1) after switching Rendering
-   * Mode, since mount() only sets up the renderer/scene/camera, it never
-   * loads any GLB on its own. */
   private lastSyncEntries: DetailModelEntry[] = [];
   private loadedGlbUrlBySlot = new Map<string, string>();
   private originalMaterials = new WeakMap<THREE.Mesh, THREE.Material[]>();
-  /** Units Search Mode PRD, Phase 3 (2026-08-16) — the unit whose mesh
-   * should render with the distinct SELECTED_COLOR/UNIT_BOX_SELECTED_
-   * OPACITY treatment (both pre-existing constants in viewerPresets.ts,
-   * never previously consumed by applyUnitBoxes). Independent of
-   * `statusPreviewEnabled` — a visitor selecting a unit from the list
-   * should see it highlighted even on a project that has that general
-   * preview toggle off. */
   private selectedUnitId: string | null = null;
-  /** Guards syncModels() calls that race a slower earlier one (e.g. two
-   * quick Replace clicks) — each call gets its own token, a late-resolving
-   * stale one's GLB load is discarded rather than raced into the scene. */
   private syncToken = 0;
 
-  // Units Blocks & POI Layer PRD — real Unit Registry + X-ray overlay
-  // (render-engine/unitRegistry.ts owns the actual traversal/material
-  // logic; these are the caches/state that must survive across syncModels()
-  // calls, same reasoning as originalMaterials above).
   private unitsConfig: UnitsConfig = DEFAULT_UNITS_CONFIG;
   private unitMaterialCache = new Map<string, THREE.MeshBasicMaterial>();
   private unitOutlineByMesh = new Map<THREE.Mesh, LineSegments2>();
-  /** Authored transform of whichever unit root is currently scaled up by
-   * the selection "pop" — restored, then re-applied, on every appearance
-   * refresh (see refreshUnitRegistryAndAppearance). */
   private unitSelectionScaleOriginals: UnitSelectionScaleOriginals = new Map();
-  /** unitId -> live runtime entry (bounds/meshes/root) — rebuilt after
-   * every syncModels() and every refreshUnitStatuses() call, never on
-   * every frame. */
   private unitRegistry = new Map<string, UnitRuntimeEntry>();
   private unitRaycastTargets: THREE.Mesh[] = [];
   private hoveredUnitId: string | null = null;
@@ -805,11 +584,6 @@ export class RenderEngine {
     reserved: true,
     sold: true,
   };
-  /** Ids of the units that still pass the *non-status* half of the public
-   * Units workspace's filter state (Surface/Rooms/Price/Floor/Building/
-   * search) — `null` means "no such filter is active", which is not the
-   * same as an empty set ("a filter is active and nothing matches", where
-   * every block correctly hides). See `setUnitIdFilter`. */
   private unitIdFilter: Set<string> | null = null;
   private unitsModeEnabled = false;
 
@@ -818,46 +592,19 @@ export class RenderEngine {
   private frameTimes: number[] = [];
   private lastFrameAt: number | null = null;
 
-  // Performance tab (PRD §40).
   private qualityConfig: QualityConfig = DEFAULT_QUALITY_CONFIG;
-  /** The renderScale actually in effect right now — starts at the
-   * config's real target, only ever pushed DOWN by adaptive quality
-   * (never up past the target without a config change/mount, matching
-   * PRD §41's "temporarily reduce... when interaction stops, restore
-   * full quality" for the interaction case, and a real sustained-low-fps
-   * downgrade for the runtime case). */
   private effectiveRenderScale = 1;
   private downgradeStep = 0;
   private isInteracting = false;
   private interactionRenderScale: number | null = null;
-  /** Kept fresh on mount + every resize (see performResize). Mobile gets
-   * the admin-configured quality preset at full strength, same as
-   * desktop — the interaction-time and sustained-low-fps render-scale
-   * levers below both back off on mobile instead of firing, since a
-   * touch-drag orbit is effectively constant contact (unlike an
-   * occasional desktop mouse-drag), which made those two real, honest
-   * "temporarily/adaptively reduce resolution" features read as "mobile
-   * always looks low-res" in practice. `dprCap`/`renderScale` themselves
-   * stay admin-controlled and untouched here. */
   private isMobileViewport = false;
-  /** See `watchForContextLoss`. Cumulative for the life of the engine. */
   private contextLostCount = 0;
   private readonly gpuErrors: string[] = [];
-  /** `renderer.info.render.calls` at the previous perf sample — see
-   * `samplePerfStats`. `null` until the first sample. */
   private lastDrawCallMark: number | null = null;
 
-  // Camera tab (PRD §37).
   private cameraConfig: CameraConfig = DEFAULT_CAMERA_CONFIG;
   private boundingRadius = 20;
 
-  // Idle Drone Camera PRD — see idleDroneCamera.ts's own doc comment for
-  // why this is a self-contained controller rather than more flat fields
-  // here. `prefersReducedMotion` is read once at mount (§49);
-  // `visibilityHandler` is only kept so dispose() can remove the exact
-  // listener mount() added. `dronePathHelperGroup`/`showDronePath` are
-  // the editor-only "Show Drone Path" helper (§38-39) — never built for
-  // the public viewer since nothing there ever calls setShowDronePath().
   private idleDrone = new IdleDroneController();
   private prefersReducedMotion = false;
   private visibilityHandler: (() => void) | null = null;
@@ -866,18 +613,11 @@ export class RenderEngine {
   private droneRingLines: THREE.Line[] = [];
   private droneMarker: THREE.Mesh | null = null;
 
-  // Environment tab (PRD §7-13) — see EnvironmentConfig's own doc comment.
   private environmentConfig: EnvironmentConfig = DEFAULT_ENVIRONMENT_CONFIG;
   private envScene: THREE.Scene | null = null;
   private pmrem: THREE.PMREMGenerator | null = null;
   private envRenderTarget: THREE.RenderTarget | null = null;
   private skyMesh: InstanceType<typeof SkyMesh> | null = null;
-  /** 360° Backdrop Photo — a real Mesh (not the SkyMesh dome itself), see
-   * this field group's own doc comment on EnvironmentConfig. Always
-   * constructed in mount() like skyMesh/waterMesh/groundMesh, just
-   * toggles `.visible`; its texture only reloads when `backdropImageUrl`
-   * actually changes (backdropImageUrl tracks the URL the live `map`
-   * texture was loaded from). */
   private backdropMesh: THREE.Mesh | null = null;
   private backdropImageUrl: string | null = null;
   private waterMesh: InstanceType<typeof WaterMesh> | null = null;
@@ -894,105 +634,29 @@ export class RenderEngine {
   private groundSunDirectionUniform: { value: THREE.Vector3 } | null = null;
   private cloudSystem: CloudSystem | null = null;
   private fogSystem: FogSystem | null = null;
-  /** "Map" tab — real-world site context as scene geometry (see
-   * render-engine/siteTerrain.ts). Added straight to `scene`, deliberately
-   * NOT to `clippingGroup`: `collectClippableMeshes()` walks that group,
-   * so a site inside it would be sliced by every Section — a "Floor 7" cut
-   * authored for the building would also cut the terrain and, with fill
-   * enabled, silently double the site's draw calls by building a BackSide
-   * twin of it.
-   *
-   * Equally deliberately NOT a DetailModelSlot, despite the slot system
-   * already owning GLB versioning and a five-field transform that matches
-   * this one exactly. Three concrete reasons: `frameLoadedContent()` unions
-   * a Box3 over every loaded root, so a 1.2 km site would inflate
-   * boundingRadius ~30x and collapse the shadow frustum, camera framing,
-   * sun distance and ground disc in one step; `compileViewerRelease()`
-   * throws if ANY slot has no published version, so a draft site would
-   * break white-label release compilation for the whole project; and
-   * `SceneNavigator` would list it under "Buildings", which reads wrong.
-   * Living outside `loadedRoots` gets the boundingRadius exclusion for
-   * free rather than as a special case someone must remember. */
   private siteGroup: THREE.Group | null = null;
   private siteResult: SiteTerrainResult | null = null;
   private siteConfig: SiteRuntimeConfig | null = null;
-  /** Signature of the inputs that require a real rebuild (location,
-   * radius, which layers). Transform and brightness changes deliberately
-   * do NOT appear here — they are uniform/matrix writes, matching the
-   * engine's existing three-tier discipline (remount / signature-keyed
-   * structural rebuild / plain uniform write). */
   private siteSignature: string | null = null;
   private siteAbort: AbortController | null = null;
-  /** Guards against a slow build landing after a newer one was requested
-   * or after unmount — the same mount-token pattern createRenderer uses. */
   private siteToken = 0;
-  /** How far the current site reaches from the world origin, in scene
-   * units — read only by applyCameraConfig's far-plane floor. Zero when
-   * no site is loaded, so it can never affect a project without one. */
   private siteFarExtentM = 0;
-  /** The one real Global Sun Vector (PRD §10) — every Environment feature
-   * (Sky/Water/Clouds/Fog/Ground today; Shadows/GI/Volumetrics/Lens Flare
-   * in later phases) reads this SAME field, computed once per
-   * setEnvironmentConfig() call, never independently. */
   private sunDirection = new THREE.Vector3(0, 1, 0);
   private sunDistance = 200;
-  /** Gates the Sun & Time scrub fast path in setEnvironmentConfig — it may
-   * only ever run AFTER one real full pass has applied every non-sun
-   * uniform and the meshes exist to carry them. */
   private hasAppliedEnvironmentConfigOnce = false;
   private environmentRebuildTimer: ReturnType<typeof setTimeout> | null = null;
-  /** environmentRefreshEnabled's "off" state (PRD §9) means the real PMREM
-   * capture never re-runs after this first successful one — tracked so
-   * scheduleEnvironmentRebuild can tell "haven't run yet" (still runs,
-   * even if refresh is off — every project needs at least one real
-   * environment map) from "already ran once, refresh is off, skip". */
   private hasRebuiltEnvironmentOnce = false;
-  /** Real bug found live: the "freeze" gate below used to key purely off
-   * `hasRebuiltEnvironmentOnce`, which the mount-time call already flips
-   * true using DEFAULT_ENVIRONMENT_CONFIG's placeholder `skyEnabled: true`
-   * — before the real per-project config has even been fetched. For any
-   * project stored with `environmentRefreshEnabled: false` AND
-   * `skyEnabled: false`, that meant the real config's rebuild got gated
-   * out entirely: the cheap live path still flipped `skyMesh.visible =
-   * false` (correct), but the expensive rebuild that would set
-   * `scene.background` to the flat fallback color never ran again, so it
-   * stayed permanently `null` from the placeholder's `skyEnabled: true`
-   * pass — a solid black void wherever the (now-invisible) sky dome used
-   * to be, with nothing else painted behind it. Tracking the `skyEnabled`
-   * a rebuild actually captured lets the gate below force exactly one
-   * more rebuild through when that flag changes, even with refresh off,
-   * without touching the freeze's real intent (skip re-capturing PMREM
-   * for continuous slider tweaks like turbidity/sun color while frozen). */
   private lastRebuiltSkyEnabled: boolean | null = null;
 
-  // Lighting tab (PRD §14-21).
   private lightingConfig: LightingConfig = DEFAULT_LIGHTING_CONFIG;
   private csmSystem: CSMSystem | null = null;
   private artificialLightSystem: ArtificialLightSystem | null = null;
 
-  // Rendering tab (PRD §22-33) — shares the Lighting tab's own post
-  // pipeline (postProcessing.ts's buildScenePostPipeline), not a second
-  // one; see scenePostPipeline's own doc comment below.
   private renderingConfig: RenderingConfig = DEFAULT_RENDERING_CONFIG;
-  /** The ONE shared post-processing pipeline both Lighting (Contact
-   * Shadows/GI/Sun Shafts) and Rendering (Reflections/Anti-Aliasing/
-   * Bloom/Lens Flare/DOF/Motion Blur/LUT) extend — built/rebuilt from
-   * BOTH configs together (postProcessing.ts's buildScenePostPipeline). */
   private scenePostPipeline: ScenePostPipeline | null = null;
-  /** Which post-processing effects are structurally active right now —
-   * the pipeline only gets a real rebuild when this changes (which
-   * effects are on, and which MRT channels they need); numeric sliders
-   * inside an already-active effect are cheap uniform updates instead
-   * (postProcessing.ts's computeScenePostSignature/ScenePostPipeline.update). */
   private scenePostSignature: string | null = null;
 
   private hasFramedOnce = false;
-  /** Shots (PRD §38) — the Opening Shot (`cameraPresets[0]`) is applied
-   * exactly once per mount, and only if the visitor hasn't already taken
-   * the camera somewhere themselves. Two latches rather than one because
-   * the config and the GLB arrive independently (either can be last), so
-   * the apply is attempted from both `frameLoadedContent()` and
-   * `setCameraConfig()`. */
   private hasAppliedOpeningShot = false;
   private hasUserMovedCamera = false;
   private contentBounds: { min: THREE.Vector3; max: THREE.Vector3; center: THREE.Vector3; size: THREE.Vector3 } | null = null;
@@ -1028,11 +692,6 @@ export class RenderEngine {
     scene.background = new THREE.Color(0x1a1a20);
     this.scene = scene;
 
-    // Sections module — see this.clippingGroup's own field doc comment.
-    // Starts at the fixed 6-plane "nothing active" state always (see
-    // NO_ACTIVE_SECTION_PLANES' own doc comment) — every later
-    // activate/deactivate/switch reuses that same plane-count from here
-    // on, never toggling the array's length.
     const clippingGroup = new THREE.ClippingGroup();
     clippingGroup.clippingPlanes = NO_ACTIVE_SECTION_PLANES;
     scene.add(clippingGroup);
@@ -1046,9 +705,6 @@ export class RenderEngine {
     scene.add(sectionHelperGroup);
     this.sectionHelperGroup = sectionHelperGroup;
 
-    // Idle Drone Camera PRD §38-39 — editor-only orbit-path helper, never
-    // clipped (same reasoning as sectionHelperGroup above), empty until
-    // setShowDronePath(true) actually populates it.
     const dronePathHelperGroup = new THREE.Group();
     dronePathHelperGroup.name = "RZ_DronePathHelper";
     scene.add(dronePathHelperGroup);
@@ -1072,36 +728,16 @@ export class RenderEngine {
     this.sun = sun;
     this.ambient = ambient;
 
-    // Lighting tab (PRD §14-21) — real shadow mapping, previously never
-    // enabled at all in this rebuilt engine (renderer.shadowMap.enabled
-    // defaults to false), so every mesh's real castShadow/receiveShadow
-    // flags (already set correctly in syncModels) had nothing to actually
-    // render. `shadowsEnabled` is the pre-existing master field this tab
-    // finally gives a real home to.
     renderer.shadowMap.enabled = this.lightingConfig.shadowsEnabled;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     setShadowMapTransmitted(renderer, this.lightingConfig.transmittedShadowsEnabled);
     sun.castShadow = this.lightingConfig.shadowsEnabled;
-    // Was a hardcoded 2048 regardless of tier — `QUALITY_TIERS.shadowMapSize`
-    // has always declared a real per-tier value (4096 down to 512) and
-    // nothing in the rebuilt engine ever read it, so every quality preset
-    // paid the same shadow-map cost. Wired up here and in setQualityConfig
-    // (applySunShadowMapSize) so the Settings → Quality levels differ by
-    // more than resolution alone.
     applySunShadowMapSize(sun, resolveQualityTarget(this.qualityConfig).shadowMapSize);
     sun.shadow.radius = this.lightingConfig.shadowSoftness;
 
     const artificialLightSystem = new ArtificialLightSystem(scene);
     this.artificialLightSystem = artificialLightSystem;
 
-    // Environment tab (PRD §7-13) — envScene/pmrem are the real shaded-
-    // sky PMREM capture rig (rebuildEnvironment, restored near-verbatim
-    // from the pre-rebuild engine); skyMesh/waterMesh/groundMesh are
-    // always constructed (never conditionally, unlike the pre-rebuild
-    // engine) and just toggle `.visible` — cheaper to manage than
-    // constructing/disposing them on every on/off flip, and the ONE thing
-    // that DOES need a real remount (renderingMode) already tears down
-    // and rebuilds everything anyway.
     const envScene = new THREE.Scene();
     this.envScene = envScene;
     const pmrem = new THREE.PMREMGenerator(renderer);
@@ -1112,23 +748,6 @@ export class RenderEngine {
     scene.add(skyMesh);
     this.skyMesh = skyMesh;
 
-    // 360° Backdrop Photo — a plain equirect-UV sphere just inside the
-    // SkyMesh dome, unlit (MeshBasicMaterial, untouched by scene
-    // lighting — it's a real photo, not a lit surface) and alpha-blended
-    // (`transparent: true`) with `depthWrite: false` so it never fights
-    // the sky/other transparent layers for the depth buffer, but
-    // `depthTest: true` so real scene geometry (buildings) still
-    // correctly occludes it. No renderOrder trick needed: SkyMesh itself
-    // renders depthWrite:false in the opaque pass (see SkyMesh.js), so by
-    // the time this transparent sphere draws, every pixel already holds
-    // either real (depth-tested) building color or the sky's — alpha=1
-    // photo pixels replace that; alpha=0 "sky hole" pixels blend through
-    // at 0%, leaving the real sky exactly as rendered underneath. BackSide
-    // matches skyMesh's own convention (camera sits inside both).
-    // `toneMapped` left at its true default deliberately — the photo
-    // shares the same tone-mapping curve/exposure as the physical sky it
-    // borders, so an admin's exposure slider moves both together instead
-    // of leaving a brightness seam at the horizon.
     const backdropMaterial = new THREE.MeshBasicMaterial({
       transparent: true,
       depthWrite: false,
@@ -1136,10 +755,6 @@ export class RenderEngine {
     });
     const backdropMesh = new THREE.Mesh(new THREE.SphereGeometry(SKY_DOME_SCALE * 0.9, 60, 40), backdropMaterial);
     backdropMesh.visible = false;
-    // "YXZ" (yaw outer, pitch inner) so backdropPitchDeg's up/down tilt is
-    // always relative to wherever backdropRotationDeg's left/right spin
-    // has already turned the photo — the standard FPS-camera Euler order
-    // for decoupling the two, not the Object3D default ("XYZ").
     backdropMesh.rotation.order = "YXZ";
     scene.add(backdropMesh);
     this.backdropMesh = backdropMesh;
@@ -1176,23 +791,12 @@ export class RenderEngine {
     scene.fogNode = fogSystem.node;
     this.fogSystem = fogSystem;
 
-
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 0, 0);
     this.controls = controls;
-    // A user grabbing the view mid-transition wins immediately, rather
-    // than fighting a saved-Shot transition for its remaining duration.
-    // Also PRD §41's "Interaction Performance Strategy" — real, if scoped
-    // to what exists now (render scale only; SSR/SSGI/volumetric/shadow
-    // sample-count reduction all land with their own Phase 2-4 features).
     controls.addEventListener("start", () => {
       this.cameraTransition = null;
-      // Shots (PRD §38) — a late-arriving config must never yank the
-      // camera out from under a visitor who is already orbiting.
       this.hasUserMovedCamera = true;
-      // Idle Drone Camera PRD §17 — every real orbit/pan/zoom/touch/wheel
-      // gesture is exactly this event; stops the drone immediately with
-      // no animate-back (idleDrone.notifyInteraction's own doc comment).
       this.idleDrone.notifyInteraction(performance.now());
       this.isInteracting = true;
       if (this.qualityConfig.interactionQualityReductionEnabled && !this.isMobileViewport) {
@@ -1206,17 +810,6 @@ export class RenderEngine {
       this.applyRenderScale();
     });
 
-    // Units Blocks & POI Layer PRD §19 — real Raycaster support, scoped
-    // to `unitRaycastTargets` only (never the whole architectural GLB —
-    // both correct, since only confirmed-mapped units should be
-    // clickable, and fast, since the target list never grows with the
-    // building's own triangle/mesh count). Click-vs-drag distinguished by
-    // pointer travel distance, not timing (timing is unreliable across
-    // mouse/trackpad/touch) — the exact same class of gesture ambiguity
-    // OrbitControls' own "start"/"end" events above already have to
-    // account for. Both listeners no-op entirely while Units mode is off
-    // (unitIdAtPointer's own early return), so this never interferes with
-    // any other tool/gizmo interaction.
     const unitRaycaster = new THREE.Raycaster();
     const unitPointerNdc = new THREE.Vector2();
     let unitPointerDownAt: { x: number; y: number } | null = null;
@@ -1227,17 +820,6 @@ export class RenderEngine {
       unitPointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       unitPointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       unitRaycaster.setFromCamera(unitPointerNdc, camera);
-      // Walks the hit list instead of taking `[0]`, and skips any unit
-      // whose root is currently hidden. Both halves are load-bearing:
-      // three.js' Raycaster filters on layers only, never on `.visible`
-      // (r185, Raycaster.intersect), and `unitRaycastTargets` is rebuilt
-      // only by refreshUnitRegistryAndAppearance() — the filter setters
-      // (setUnitStatusFilters/setUnitIdFilter/isolateUnit) call
-      // applyUnitVisibility() alone and leave the target list untouched.
-      // Without this, a unit hidden by an Availability/Surface/Rooms
-      // filter stayed clickable and opened a card for a block the visitor
-      // could not see, and a hidden block in front swallowed the click
-      // from a visible one behind it.
       for (const hit of unitRaycaster.intersectObjects(this.unitRaycastTargets, false)) {
         const hitUnitId = hit.object.userData.unitId as string | undefined;
         if (!hitUnitId) continue;
@@ -1264,15 +846,10 @@ export class RenderEngine {
       const unitId = unitIdAtPointer(event);
       this.selectedUnitId = unitId;
       this.refreshUnitRegistryAndAppearance();
-      this.idleDrone.notifyInteraction(performance.now()); // Idle Drone Camera PRD §17 — a real unit click
+      this.idleDrone.notifyInteraction(performance.now());
       this.callbacks.onUnitClick?.(unitId);
     });
 
-    // Idle Drone Camera PRD §49-50 — read the OS/browser reduced-motion
-    // preference once (drone stays fully disabled for the life of this
-    // mount if set, idleDroneCamera.ts's own step() doc comment) and pause
-    // the idle clock/drone while the tab is hidden, resetting (not
-    // resuming) on return so it never picks up mid-orbit after being away.
     this.prefersReducedMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const visibilityHandler = () => {
       if (!document.hidden) this.idleDrone.notifyInteraction(performance.now());
@@ -1281,9 +858,6 @@ export class RenderEngine {
     this.visibilityHandler = visibilityHandler;
 
     this.applyCameraConfig(this.cameraConfig);
-    // Mount-time environment application stays direct/synchronous
-    // (including its PMREM rebuild) — only the hot per-slider-tick path
-    // (setEnvironmentConfig, called from React) debounces the rebuild.
     this.applyEnvironmentConfig(this.environmentConfig, true);
     this.applyLightingConfig(this.lightingConfig);
     this.applyRenderingConfig(this.renderingConfig);
@@ -1295,29 +869,6 @@ export class RenderEngine {
     loader.setDRACOLoader(dracoLoader);
     this.loader = loader;
 
-    // Front Page/Units Search Mode PRDs' live-resize choreography (a GSAP
-    // width tween on a real DOM sibling, panel opening/closing) drives
-    // this ResizeObserver continuously — real bug found live-testing that
-    // transition: the canvas rendered solid black for roughly the first
-    // half of the ~250ms transition every time, on both WebGPU and its
-    // WebGL2 fallback. Coalescing to one real resize per rAF (~60fps)
-    // made no measurable difference, which is itself informative — the
-    // browser was already effectively coalescing ResizeObserver to about
-    // that rate, so the actual problem isn't call *frequency* so much as
-    // *volume*: ~15-20 real `renderer.setSize()` calls in quick
-    // succession during one transition, each one presumably forcing the
-    // WebGPU backend to reallocate its swap chain/render targets, adds up
-    // to more reallocation work than the GPU can retire before the next
-    // one lands — so the canvas never catches up until the resizing
-    // itself slows down near the tween's ease-out tail.
-    //
-    // Throttled to one real resize per `RESIZE_THROTTLE_MS` instead, with
-    // a guaranteed trailing call so the final settled size is never
-    // skipped. Still reads as continuous/live to the eye (a threshold
-    // well under normal human motion-smoothness perception) while
-    // cutting the number of real GPU reallocations during a fast
-    // transition by roughly 4-5x — confirmed empirically to remove the
-    // black frame entirely.
     const resizeObserver = new ResizeObserver(() => {
       const now = performance.now();
       if (now - this.lastResizeAt >= RESIZE_THROTTLE_MS) {
@@ -1336,26 +887,11 @@ export class RenderEngine {
     resizeObserver.observe(container);
     this.resizeObserver = resizeObserver;
 
-    // Real per-frame update+draw lives in renderFrame() (below) so it can
-    // be driven from either this standalone loop (default mount,
-    // unchanged behavior) or Mapbox's own custom-layer render callback
-    // (basemap mount, via startBasemapRepaintLoop() instead — see
-    // createBasemapRenderer's own doc comment for why Three.js must not
-    // also own the frame loop there).
     if (!this.map) {
       renderer.setAnimationLoop(() => this.renderFrame());
     }
   }
 
-  /**
-   * The engine's real per-frame update+draw step (approved plan, Phase 2)
-   * — extracted from what used to be `renderer.setAnimationLoop()`'s own
-   * inline callback so it can be driven from either that same standalone
-   * loop (default mount) or Mapbox's own custom-layer render callback (the
-   * "real-world basemap" mount path). Identical logic either way — Studio's
-   * OrbitControls camera stays authoritative in both, per the plan's
-   * design decision.
-   */
   private renderFrame() {
     const { renderer, camera, controls, scene } = this;
     if (!renderer || !camera || !controls || !scene) return;
@@ -1377,24 +913,10 @@ export class RenderEngine {
     if (this.showDronePath) this.updateDronePathHelper();
     this.sampleAdaptiveQuality();
     this.stepEnvironmentAnimation(dtSeconds);
-    // CSM's cascades track the live camera frustum — must be recomputed
-    // every frame the camera can move (free orbit), per CSMShadowNode's
-    // own doc comment ("call every time you change camera or settings").
     this.csmSystem?.updateFrustums();
-    // Depth of Field real auto-focus (PRD §26) — the live camera-to-
-    // orbit-target distance, recomputed every frame rather than a
-    // manual distance that would drift out of sync as a visitor orbits.
     if (this.scenePostPipeline?.dofFocusDistance && this.renderingConfig.cameraAutoFocusEnabled) {
       this.scenePostPipeline.dofFocusDistance.value = camera.position.distanceTo(controls.target);
     }
-    // Distance Blur's mask is anchored to the BUILDING, not the camera, so
-    // it needs the live content bounds — which move on every (re)load
-    // (frameLoadedContent) while the post pipeline only ever rebuilds on a
-    // change of WHICH effects are active. Written here for the same reason
-    // the focus distance above is: cheapest possible way to stay correct.
-    // Deliberately the content bounds and not `controls.target` — the
-    // target follows panning, which would drag the sharp region off the
-    // building the moment a visitor panned.
     const blurAnchor = this.scenePostPipeline?.distanceBlurAnchor;
     if (blurAnchor) {
       const center = blurAnchor.center.value as THREE.Vector3;
@@ -1402,25 +924,6 @@ export class RenderEngine {
       else center.set(0, 0, 0);
       blurAnchor.buildingRadius.value = this.boundingRadius;
     }
-    // Sections + fat lines, cut on the CPU — every frame, deliberately.
-    //
-    // three.js cannot clip a `LineSegments2` at all (the whole story is in
-    // clipSegmentsToPlanes' doc comment), so the selected unit's outline is
-    // cut here instead. This used to be two hand-placed calls — one in
-    // activateSection(), one at the end of refreshUnitRegistryAndAppearance()
-    // — which is correct only for as long as those two are the ONLY moments
-    // the answer can change. They are not: the building's own transform can
-    // land after either of them, a slot can finish loading late, and a
-    // re-mount re-runs the two in whichever order React happens to schedule
-    // them. Every one of those leaves the outline holding its un-cut edge
-    // set while the block it traces is sliced correctly — the exact symptom
-    // this fix exists to remove, reported again on 2026-08-27 from a device
-    // that could not be reproduced here.
-    //
-    // A frame is the only moment that is guaranteed to come after all of
-    // them, so the invariant lives here now and there is no ordering left to
-    // get wrong. It costs a Map size check on every frame that has nothing
-    // selected, and a 16-float matrix compare on the frames that do.
     clipUnitOutlinesToSection(this.unitOutlineByMesh, this.activeSectionPlanes);
     if (this.scenePostPipeline) this.scenePostPipeline.pipeline.render();
     else renderer.render(scene, camera);
@@ -1428,21 +931,6 @@ export class RenderEngine {
     this.samplePerfStats();
   }
 
-  /** See renderFrame()'s own call site — promoted from a mount()-local
-   * closure to a method for the same reason renderFrame() itself was.
-   *
-   * `drawCalls` is a real PER-FRAME figure, derived as a delta. It has to
-   * be: this engine renders through a `THREE.RenderPipeline`
-   * (`scenePostPipeline.pipeline.render()`), and on that path
-   * `renderer.info.render.calls` is never reset between frames the way a
-   * plain `renderer.render()` resets it — it just accumulates for the
-   * life of the renderer. Reading it raw (which this did until
-   * 2026-08-27) reported a number that climbed forever: ~25,000 "draw
-   * calls" after a few seconds on a scene of fifteen meshes, which reads
-   * as a catastrophic performance problem and is really about 28 draws a
-   * frame. `triangles` needs no such treatment — three writes that one
-   * per frame. Resetting `info` here instead would have been the other
-   * option, but that is renderer-wide state other code may read. */
   private samplePerfStats() {
     const renderer = this.renderer;
     if (!this.showPerfStats || !renderer) return;
@@ -1451,9 +939,6 @@ export class RenderEngine {
     const frames = this.frameTimes;
     const avgFrameMs = frames.length ? frames.reduce((a, b) => a + b, 0) / frames.length : 0;
     const callsNow = renderer.info.render.calls;
-    // First sample after enabling has no previous mark to subtract, and
-    // the counter may already be far into a session — report 0 rather
-    // than the whole accumulated history divided by 20.
     const drawCalls =
       this.lastDrawCallMark == null ? 0 : Math.max(0, Math.round((callsNow - this.lastDrawCallMark) / PERF_SAMPLE_EVERY_N_FRAMES));
     this.lastDrawCallMark = callsNow;
@@ -1464,19 +949,12 @@ export class RenderEngine {
       triangles: renderer.info.render.triangles,
       textures: renderer.info.memory.textures,
       dpr: renderer.getPixelRatio(),
+      // LineSegments2 is never clipped by a ClippingGroup (it extends Mesh but
+      // renders through its own shader), so unit outlines are cut on the CPU here.
       outlineClip: clipUnitOutlinesState(this.unitOutlineByMesh, this.activeSectionPlanes),
     });
   }
 
-  /**
-   * Constructs and initializes this mount's `WebGPURenderer` — branches
-   * between the default path (Three.js owns its own canvas, byte-for-byte
-   * the same construction this engine always did) and the "real-world
-   * basemap" path (Mapbox owns the canvas/WebGL2 context instead; see
-   * `createBasemapRenderer`'s own doc comment). Both branches already
-   * report failure (`onWebglFail`) or handle a mount-token race
-   * themselves — callers just bail on a `null` return.
-   */
   private async createRenderer(
     container: HTMLDivElement,
     target: { renderScale: number; dprCap: number },
@@ -1488,25 +966,6 @@ export class RenderEngine {
       : await this.createStandardRenderer(mountToken);
     if (!renderer) return null;
 
-    // Shared post-construction setup. Color grading applies identically
-    // either way. Canvas *ownership* (DOM insertion, CSS style) does not —
-    // Mapbox owns the canvas element itself in basemap mode. But BOTH
-    // branches still need a real setPixelRatio()/setSize() call: verified
-    // empirically (Phase 2 root-cause) that without it, Three's internal
-    // render-target sizing — used by the post-processing pipeline's
-    // offscreen scene-pass, active by default via TRAA — falls back to
-    // some un-set internal default disconnected from the canvas's real
-    // dimensions. Draw calls still get submitted (confirmed via
-    // renderer.info), but nothing lands where it's visible: Studio's
-    // scene silently fails to composite over Mapbox's basemap even though
-    // the render loop runs error-free. So basemap mode still calls
-    // setPixelRatio()/setSize() — just without touching DOM/CSS, and
-    // without effectiveRenderScale's quality-tier downscale (unlike the
-    // standard branch below): Mapbox and Three share the literal same
-    // canvas/backing-buffer here, so shrinking it for Three's own
-    // adaptive-quality would also blur Mapbox's own crisp basemap
-    // rendering — reconciling basemap mode with the render-scale quality
-    // tiers is a known follow-up, not solved by this Phase.
     const pixelRatio = Math.min(window.devicePixelRatio, target.dprCap);
     renderer.setPixelRatio(pixelRatio);
     if (basemapAnchor) {
@@ -1517,18 +976,6 @@ export class RenderEngine {
       renderer.domElement.style.height = "100%";
       container.appendChild(renderer.domElement);
     }
-    // Real bug fix (pre-existing, Phase 2 of the original engine rebuild)
-    // — the Environment tab's physically-based Sky/Water/Ground shaders
-    // all produce genuine HDR output (a physical sky's luminance routinely
-    // exceeds 1.0), and WebGPURenderer's own default is NoToneMapping
-    // (hard-clip above 1.0) — without a real curve set before the first
-    // PMREM sky capture below, the sky dome renders solid blown-out white
-    // instead of a blue gradient. Reads from `this.renderingConfig` (real
-    // Rendering → Color tab fields) rather than a hardcoded ACES/1 — by
-    // the time this runs, React's setRenderingConfig has already updated
-    // the field (same effect-ordering guarantee applyCameraConfig/
-    // applyEnvironmentConfig already rely on), so this picks up the real
-    // per-project value on first paint, not a default flash.
     renderer.toneMapping = TONE_MAPPING_MAP[this.renderingConfig.toneMapping];
     renderer.toneMappingExposure = this.renderingConfig.exposure;
     this.renderer = renderer;
@@ -1537,16 +984,6 @@ export class RenderEngine {
     return renderer;
   }
 
-  /** iOS Safari drops a WebGL/WebGPU context under memory pressure and on
-   * some tab-backgrounding transitions. Nothing here used to listen, so
-   * that arrived as a permanently black canvas: no exception, no console
-   * error, no `onWebglFail` (which only covers construction). Every frame
-   * after the loss is a no-op, and the viewer looks "dark" with no other
-   * symptom — the single most misleading failure this renderer has.
-   *
-   * `preventDefault()` on the loss event is what makes a restore possible
-   * at all per the WebGL spec; the engine does not attempt to rebuild
-   * itself here, it reports, and the surface above decides what to show. */
   private watchForContextLoss(renderer: THREE.WebGPURenderer) {
     const canvas = renderer.domElement;
     this.watchForDeviceErrors(renderer);
@@ -1556,8 +993,6 @@ export class RenderEngine {
       this.publishRendererFacts(renderer);
       this.callbacks.onContextLost?.();
     });
-    // WebGPU has its own, entirely separate loss channel — a lost
-    // `GPUDevice` never fires `webglcontextlost`.
     const device = (renderer.backend as unknown as { device?: { lost?: Promise<unknown> } })?.device;
     device?.lost
       ?.then(() => {
@@ -1568,12 +1003,6 @@ export class RenderEngine {
       .catch(() => {});
   }
 
-  /** Listens on the WebGPU device's own error channel — see
-   * `RendererFacts.gpuErrors` for why this matters more than it looks.
-   *
-   * `onuncapturederror` is additive-safe here because nothing else in the
-   * app (or in three) installs a handler on it; if that ever changes this
-   * has to become an `addEventListener`, which the spec also allows. */
   private watchForDeviceErrors(renderer: THREE.WebGPURenderer) {
     const device = (renderer.backend as unknown as {
       device?: { onuncapturederror?: ((event: { error?: { message?: string } }) => void) | null };
@@ -1588,10 +1017,6 @@ export class RenderEngine {
     };
   }
 
-  /** See `RendererFacts` — a report for `?diag=1`, never read back. The
-   * GL strings come from a throwaway context rather than the live one so
-   * this cannot disturb the renderer's own state, and are simply absent
-   * under WebGPU, which exposes no equivalent. */
   private publishRendererFacts(renderer: THREE.WebGPURenderer) {
     if (!this.callbacks.onRendererFacts) return;
     const backend = (renderer.backend as unknown as { isWebGPUBackend?: boolean })?.isWebGPUBackend === true ? "webgpu" : "webgl2";
@@ -1619,19 +1044,7 @@ export class RenderEngine {
     });
   }
 
-  /** The default mount path — unchanged from before this method existed,
-   * just extracted so createRenderer() can share its shared tail (above)
-   * with createBasemapRenderer() below instead of duplicating it. */
   private async createStandardRenderer(mountToken: number): Promise<THREE.WebGPURenderer | null> {
-    // renderingMode -> forceWebGL and antialiasEnabled -> antialias are
-    // both renderer-CONSTRUCTION-time flags — "auto"/"webgpu" both let
-    // Three.js probe for WebGPU and fall back to WebGL2 on its own; only
-    // "webgl2" forces the WebGL2 backend outright. `antialias: false`
-    // whenever Rendering → Anti-Aliasing (TRAA) is on, per TRAANode's own
-    // doc note ("MSAA must be disabled when TRAA is in use") — real MSAA
-    // otherwise, matching this engine's pre-Phase-4 always-on behavior.
-    // Changing either after mount needs a real remount (see
-    // setQualityConfig's/setRenderingConfig's own doc comments).
     const renderer = new THREE.WebGPURenderer({
       antialias: !this.renderingConfig.antialiasEnabled,
       forceWebGL: this.qualityConfig.renderingMode === "webgl2",
@@ -1649,25 +1062,6 @@ export class RenderEngine {
     return renderer;
   }
 
-  /**
-   * "Real-world basemap" mount path (approved plan, Phase 2) — creates a
-   * non-interactive `mapboxgl.Map` in `container` (Studio's own
-   * OrbitControls stays the sole navigation input, per the plan's design
-   * decision: Mapbox never receives its own drag/scroll/rotate gestures
-   * here) and binds a `THREE.WebGPURenderer`'s WebGL2 backend to that
-   * map's own canvas+context via `StudioBasemapLayer`, exactly the
-   * technique headed-verified by the plan's Phase 0 spike. Unlike the
-   * standard path, this renderer's canvas is never appended/sized by
-   * Three.js — Mapbox owns that canvas completely (dimensions,
-   * devicePixelRatio, DOM lifecycle) — see performResize()'s and
-   * dispose()'s own basemap branches for the other two places that
-   * ownership split matters.
-   *
-   * Deliberately duplicates the Map tab's own style URL (`ProjectMapView.
-   * tsx`) as a local literal rather than importing it — the plan's own
-   * scope decision keeps this build fully independent of that untouched,
-   * separately-owned feature.
-   */
   private async createBasemapRenderer(container: HTMLDivElement, mountToken: number): Promise<THREE.WebGPURenderer | null> {
     const accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
     if (!accessToken) {
@@ -1708,17 +1102,6 @@ export class RenderEngine {
     return renderer;
   }
 
-  /**
-   * Mapbox only calls a custom layer's `render()` when IT decides a
-   * repaint is needed (camera move, style change) — Studio's own scene has
-   * continuous animation (water, clouds, idle drone, in-flight camera
-   * transitions, TRAA accumulation) that needs a steady repaint regardless.
-   * Calling `triggerRepaint()` from an INDEPENDENT rAF loop — never from
-   * inside `render()` itself, which would infinitely self-schedule, the
-   * exact anti-pattern `ProjectModelLayer.render()`'s own doc comment
-   * already warns against — is Mapbox's own supported pattern for an
-   * animated custom layer.
-   */
   private startBasemapRepaintLoop() {
     const tick = () => {
       this.map?.triggerRepaint();
@@ -1727,14 +1110,6 @@ export class RenderEngine {
     this.basemapRafId = requestAnimationFrame(tick);
   }
 
-  /** Environment tab (PRD §7-13) — cheap, every-frame CPU-side uniform
-   * writes: advances Fog/Cloud wind offsets (only when their own Movement
-   * toggle is on — a genuinely pausable animation, not just a shader
-   * `time` term nothing can stop) and re-centers the cloud layer on the
-   * camera. Uses the CACHED `this.environmentConfig`/`this.sunDirection`
-   * from the last real `applyEnvironmentConfig` call — recomputing the
-   * Global Sun Vector itself every frame would be wasted work since it
-   * only ever changes when React calls setEnvironmentConfig(). */
   private stepEnvironmentAnimation(dtSeconds: number) {
     const { camera, fogSystem, cloudSystem, environmentConfig } = this;
     if (!camera) return;
@@ -1742,17 +1117,13 @@ export class RenderEngine {
     cloudSystem?.update(environmentConfig, this.sunDirection, camera.position, dtSeconds);
   }
 
-  /** Shots (PRD §38) — steps an in-flight flyToPreset() transition. Runs
-   * every frame after controls.update() so it's the authoritative final
-   * camera write for the frame, same ordering the pre-rebuild engine used
-   * (otherwise OrbitControls silently fights/overwrites it mid-flight). */
   private stepCameraTransition(now: number) {
     const t = this.cameraTransition;
     const { camera, controls } = this;
     if (!t || !camera || !controls) return;
     const elapsed = now - t.startTime;
     const p = Math.min(1, elapsed / Math.max(1, t.durationMs));
-    const eased = p * p * (3 - 2 * p); // smoothstep
+    const eased = p * p * (3 - 2 * p);
     camera.position.lerpVectors(t.startPos, t.endPos, eased);
     controls.target.lerpVectors(t.startTarget, t.endTarget, eased);
     camera.fov = t.startFov + (t.endFov - t.startFov) * eased;
@@ -1760,18 +1131,6 @@ export class RenderEngine {
     if (p >= 1) this.cameraTransition = null;
   }
 
-  /** Adds/updates/removes per-slot content to match `entries` — the ONE
-   * entry point every editing surface (Scene tab transform/switches,
-   * Materials tab overrides, Unit Mapping's status preview) calls after
-   * mount(). Critical distinction from a naive "just re-mount everything"
-   * approach: a slot whose glbUrl hasn't changed gets a CHEAP in-place
-   * update (transform/switches/overrides/unit-boxes reapplied to the
-   * already-loaded root, no network request) — this is what makes every
-   * slider/toggle in the Inspector responsive instead of reloading the
-   * GLB on every drag tick (the exact "needs triple-clicking" class of
-   * bug a prior pass on this codebase had to fix once already). Only a
-   * genuinely new/changed glbUrl, or a slot appearing/disappearing,
-   * touches the network or the scene graph's set of loaded roots. */
   async syncModels(entries: DetailModelEntry[]) {
     this.lastSyncEntries = entries;
     const scene = this.scene;
@@ -1781,20 +1140,12 @@ export class RenderEngine {
     if (!scene || !loader || !clippingGroup || !unclippedModelGroup) return;
     const token = ++this.syncToken;
 
-    /** Which of the two sibling groups a slot's root belongs under — see
-     * `unclippedModelGroup`'s own field doc comment. Read on EVERY sync,
-     * including the cheap path, so renaming a slot to "Site 7" takes
-     * effect on the next sync rather than needing a GLB reload. */
     const groupFor = (entry: DetailModelEntry) =>
       isSlotCutBySections(entry) ? clippingGroup : unclippedModelGroup;
 
     const wantedSlotIds = new Set(entries.filter((e) => e.model.enabled !== false).map((e) => e.slotId));
     for (const [slotId, root] of this.modelRootsBySlot) {
       if (!wantedSlotIds.has(slotId)) {
-        // removeFromParent(), not clippingGroup.remove() — a site slot's
-        // root lives under unclippedModelGroup instead, and removing it
-        // from the wrong parent is a silent no-op that leaks the model
-        // into the scene forever.
         root.removeFromParent();
         this.modelRootsBySlot.delete(slotId);
         this.loadedGlbUrlBySlot.delete(slotId);
@@ -1810,7 +1161,6 @@ export class RenderEngine {
       const parentGroup = groupFor(entry);
 
       if (existingRoot && existingUrl === model.glbUrl) {
-        // Cheap path — same GLB, just re-apply state.
         if (existingRoot.parent !== parentGroup) parentGroup.add(existingRoot);
         this.applyTransform(existingRoot, model);
         existingRoot.visible = model.visible !== false;
@@ -1825,10 +1175,9 @@ export class RenderEngine {
         continue;
       }
 
-      // New slot, or its GLB changed (Replace) — real (re)load.
       try {
         const gltf = await loader.loadAsync(model.glbUrl);
-        if (token !== this.syncToken) return; // superseded by a newer syncModels() call
+        if (token !== this.syncToken) return;
         if (existingRoot) existingRoot.removeFromParent();
         const root = gltf.scene;
         this.applyTransform(root, model);
@@ -1852,14 +1201,6 @@ export class RenderEngine {
 
     if (token !== this.syncToken) return;
 
-    // Units Blocks & POI Layer PRD §3 — "Units GLB must inherit Building
-    // transform." Runs AFTER every root's own transform is applied above,
-    // so a child slot always copies its parent's freshly-updated
-    // position/rotation/scale — including on an admin's live Building
-    // transform drag, since that already re-enters this same syncModels()
-    // cheap path every tick. Deliberately overrides ANY of the child
-    // slot's own transform fields rather than blending them — per PRD §3
-    // the Units slot's own transform is meant to be ignored entirely.
     for (const entry of entries) {
       const parentSlotId = entry.transformParentSlotId;
       if (!parentSlotId) continue;
@@ -1873,27 +1214,10 @@ export class RenderEngine {
 
     this.loadedRoots = Array.from(this.modelRootsBySlot.values());
     this.refreshUnitRegistryAndAppearance();
-    // Only reframe the camera when something NEW came in — an in-place
-    // transform/material edit on already-loaded content must never yank
-    // the camera away from wherever the admin currently has it pointed.
     if (loadedSomethingNew) this.frameLoadedContent();
   }
 
-  /** Units Blocks & POI Layer PRD §10-12 — rebuilds the unit registry
-   * (bounds/meshes/status) and re-applies the X-ray overlay material
-   * across EVERY currently-loaded slot's root, merged into one project-
-   * wide `unitRegistry`/`unitRaycastTargets` (a unit's mesh could in
-   * principle live in the Building GLB — the old embedded-Unit_-boxes
-   * pattern — or a dedicated `role: units` slot; this doesn't care
-   * which). Called after syncModels() (new/changed content or transform
-   * inheritance), and again by setSelectedUnit/hoverUnit/
-   * refreshUnitStatuses/setUnitsMode/etc. below — cheap (bounding-box
-   * math + a materialCache-backed material assignment, no GLB reload,
-   * no allocation on the hot hover-in/hover-out path once the cache is
-   * warm). */
   private refreshUnitRegistryAndAppearance() {
-    // Un-pop the previously selected unit first, so every bounding box
-    // measured below is the authored one.
     clearUnitSelectionScale(this.unitSelectionScaleOriginals);
     const rootObjectsByName = new Map<string, THREE.Object3D>();
     const allLinks: UnitMeshLink[] = [];
@@ -1911,11 +1235,6 @@ export class RenderEngine {
       for (const link of model.unitLinks) {
         allLinks.push(link);
         poiByUnitId.set(link.unitId, {
-          // `?? null`, deliberately NOT `?? 0`: an unset yaw and an admin
-          // who deliberately picked "N" both used to collapse to the same
-          // 0, so there was no way to tell "nobody aimed this" from "aimed
-          // it north" — and buildUnitRegistry needs exactly that
-          // distinction to know when it may derive one instead.
           poiYawDeg: link.poiYawDeg ?? null,
           poiEnabled: link.poiEnabled ?? true,
           poiDistanceOverride: link.poiDistanceOverride ?? null,
@@ -1938,12 +1257,6 @@ export class RenderEngine {
       this.unitMaterialCache,
       this.unitOutlineByMesh
     );
-    // Centre of everything currently loaded — what an unaimed unit's POI
-    // yaw is derived outward from (see unitRegistry's own `derivedYawDeg`).
-    // Computed from the loaded roots rather than from the unit blocks
-    // themselves: on a project where only a few units are mapped, their
-    // own centroid is not the building's, and aiming outward from a
-    // three-unit cluster would point the camera nowhere useful.
     let sceneCenter: THREE.Vector3 | null = null;
     if (this.loadedRoots.length > 0) {
       const bounds = new THREE.Box3();
@@ -1952,8 +1265,6 @@ export class RenderEngine {
     }
     this.unitRegistry = buildUnitRegistry(rootObjectsByName, allLinks, unitsById, poiByUnitId, sceneCenter);
 
-    // Selection "pop" — last, on top of a registry built from un-scaled
-    // bounds, so focusUnit()'s framing keeps using the unit's real size.
     if (this.unitsConfig.unitBlocksEnabled && this.unitsConfig.unitBlocksSelectedScaleEnabled && this.selectedUnitId) {
       const selected = this.unitRegistry.get(this.selectedUnitId);
       if (selected) {
@@ -1964,15 +1275,9 @@ export class RenderEngine {
         );
       }
     }
-    // The selection outline is cut to the active section by renderFrame(),
-    // not here — see that call site for why it has to be the frame loop.
     this.applyUnitVisibility();
   }
 
-  /** Units mode (§13) + status filters (§18) + isolate (§18) — all pure
-   * visibility toggles on already-built registry entries, no material
-   * work, no registry rebuild. Runs after refreshUnitRegistryAndAppearance
-   * and again whenever any of the three inputs change on their own. */
   private applyUnitVisibility() {
     for (const entry of this.unitRegistry.values()) {
       const passesFilter = this.unitStatusFilters[entry.status];
@@ -1982,80 +1287,42 @@ export class RenderEngine {
     }
   }
 
-  /** §18 — master Units-mode toggle (Explore/Views/Time hide unit blocks;
-   * the Units workspace shows them, per §13). */
   setUnitsMode(enabled: boolean) {
     this.unitsModeEnabled = enabled;
     this.applyUnitVisibility();
   }
 
-  /** §18/§13 — per-status show/hide within Units mode. */
   setUnitStatusFilters(filters: { available: boolean; reserved: boolean; sold: boolean }) {
     this.unitStatusFilters = filters;
     this.applyUnitVisibility();
   }
 
-  /** The rest of the public Units workspace's filter state (Surface,
-   * Rooms, Price, Floor, Building, the search box) projected onto the same
-   * one visibility pass `setUnitStatusFilters` already drives — pass the
-   * ids that currently match, or `null` when none of those fields is
-   * narrowing anything.
-   *
-   * Added 2026-08-24 (direct instruction: "the Surface Filtering its not
-   * working"). Status was the only filter field wired to the 3D scene, so
-   * changing Availability visibly hid blocks while dragging Surface — or
-   * picking a bedroom count, or a price range — changed nothing on screen
-   * at all unless the Filter List side panel happened to be open to show
-   * its own count dropping. The filtering itself was real the whole time
-   * (`filterUnits` genuinely narrowed the list); what was missing was this
-   * half of it ever reaching the model. Deliberately id-based rather than
-   * a second copy of the filter predicate down here: `filterUnits` in
-   * `unitFilters.ts` stays the single definition of what "matches", the
-   * same one the list and the dock's own count badge read.
-   *
-   * Kept separate from `setUnitStatusFilters` rather than folded into it
-   * — that one is PRD §18's own tri-state toggle API, also used by the
-   * admin editor, and it has no notion of a project's live unit rows. */
   setUnitIdFilter(unitIds: string[] | null) {
     this.unitIdFilter = unitIds == null ? null : new Set(unitIds);
     this.applyUnitVisibility();
   }
 
-  /** §18 — hides every unit block except the given one; null clears it. */
   isolateUnit(unitId: string | null) {
     this.isolatedUnitId = unitId;
     this.applyUnitVisibility();
   }
 
-  /** §18 — hover highlight (independent of selection). */
   hoverUnit(unitId: string | null) {
     if (this.hoveredUnitId === unitId) return;
     this.hoveredUnitId = unitId;
     this.refreshUnitRegistryAndAppearance();
   }
 
-  /** §21-22 — live status sync with ZERO GLB reload/remapping. Updates
-   * each cached sync entry's own `units` array in place (so a later
-   * syncModels() call — e.g. the next unrelated Inspector edit — doesn't
-   * clobber it back to stale data) and re-applies box appearance/registry
-   * immediately. The one function `useProjectUnits`'s polling (on load,
-   * window focus, visibilitychange, and every ~30s) should call. */
   refreshUnitStatuses(units: Unit[]) {
     this.lastSyncEntries = this.lastSyncEntries.map((entry) => ({ ...entry, units }));
     this.refreshUnitRegistryAndAppearance();
   }
 
-  /** Units tab (PRD §14, §24) — project-level appearance/POI-camera
-   * config, applied live (no remount), same pattern as
-   * setEnvironmentConfig/setLightingConfig/setRenderingConfig. */
   setUnitsConfig(config: UnitsConfig) {
     this.unitsConfig = config;
     this.refreshUnitRegistryAndAppearance();
   }
 
-  /** Position/Rotation/Scale — PRD §5. Y axis reuses the pre-existing
-   * altitudeOffset/rotationDeg field names (see ProjectDetailModel's own
-   * doc comment); X/Z are the Phase 1 addition. */
   private applyTransform(root: THREE.Object3D, model: ProjectDetailModel) {
     root.scale.setScalar(model.scale);
     root.rotation.set(
@@ -2066,11 +1333,6 @@ export class RenderEngine {
     root.position.set(model.positionX, model.altitudeOffset, model.positionZ);
   }
 
-  /** Non-destructive Materials overrides (PRD §6) — every mesh's ORIGINAL
-   * material is cached the first time it's seen and never mutated; every
-   * (re)application clones fresh from that cached original, so toggling
-   * an override off (or "Restore Original") always gets back exactly
-   * what the GLB shipped with, never a drifted copy of a copy. */
   private applyNodeOverrides(root: THREE.Object3D, model: ProjectDetailModel) {
     const overrides = model.nodeOverrides ?? [];
     const manifest = model.sceneManifest ?? [];
@@ -2085,15 +1347,7 @@ export class RenderEngine {
     root.traverse((child) => {
       const mesh = child as THREE.Mesh;
       if (!mesh.isMesh) return;
-      // Cleaned the same way `sceneManifest`'s names are (glbNodeName.ts) —
-      // `nameToOverride` is keyed off those cleaned names, so the live
-      // lookup below has to match on the same string or every node behind
-      // a stripped prefix (e.g. a Blender "Layer:" export) would silently
-      // never find its override.
       const name = cleanGlbNodeName(mesh.name);
-      // Unit_<number> boxes get their own dedicated status-color tinting
-      // (applyUnitBoxes) — Materials-tab overrides don't apply to them,
-      // same exclusion the pre-rebuild engine had.
       if (UNIT_NODE_PATTERN.test(name)) return;
       if (!this.originalMaterials.has(mesh)) {
         this.originalMaterials.set(mesh, normalizeMaterials(mesh.material));
@@ -2119,50 +1373,18 @@ export class RenderEngine {
     });
   }
 
-  /** Units Search Mode PRD, Phase 3 / Units Blocks & POI Layer PRD §18-20 —
-   * real list→3D sync's "select" half: re-applies unit-box appearance
-   * across every currently-loaded root (via the cached `lastSyncEntries`/
-   * `modelRootsBySlot`, no GLB reload) so selecting a unit — from the list
-   * OR from a real 3D click (see the pointerup handler in mount()) — keeps
-   * both directions of §20's single `selectedUnitId` state in sync. A
-   * project whose GLB has no real `Unit_*`-named meshes for this unit
-   * simply shows no visible change — same honest no-op the old
-   * implementation already had for an unmapped unit. */
   setSelectedUnit(unitId: string | null) {
     this.selectedUnitId = unitId;
     this.refreshUnitRegistryAndAppearance();
   }
 
-  /** Units Blocks & POI Layer PRD §16-17 — "Camera calculation." Frames
-   * the given unit using the ONE master POI camera config
-   * (unitPoiCamera*) plus this unit's own `poiYawDeg` (interpreted in
-   * Building-local space — i.e. relative to the unit ROOT's own world
-   * position/orientation, which already reflects any Building rotation
-   * via transform inheritance/the unit's own placement in that hierarchy,
-   * so a later Building rotation automatically keeps every unit's camera
-   * correct with no extra math here). Reuses the exact same
-   * cameraTransition/stepCameraTransition machinery flyToPreset() already
-   * built (PRD §17 — "do not introduce another animation library"), not a
-   * second transition system. No-op (returns false) if the unit isn't in
-   * the registry (not yet loaded, or genuinely unmapped) or has
-   * poiEnabled === false. */
   focusUnit(unitId: string): boolean {
     const entry = this.unitRegistry.get(unitId);
     const camera = this.camera;
     const controls = this.controls;
     if (!entry || !camera || !controls || !entry.poiEnabled || !this.unitsConfig.unitPoiCameraEnabled) return false;
-    this.idleDrone.notifyInteraction(performance.now()); // Idle Drone Camera PRD §18/§42 — POI focus always preempts the drone
+    this.idleDrone.notifyInteraction(performance.now());
 
-    // `radius * multiplier` alone puts the camera far too close for a unit
-    // of any real size: at the shipped defaults (multiplier 3, POI fov 38)
-    // the block's angular radius works out at ~18.4 deg against a ~19 deg
-    // half-FOV, so the unit fills ~97% of the frame height and the shot is
-    // a flat wall of facade with no context. Floored here at the distance
-    // that has it fill ~60% of the half-frame instead, which is close
-    // enough to read as "this unit" and far enough to show what it is
-    // attached to. A floor, not a replacement: an admin who sets a larger
-    // multiplier still gets exactly what they asked for, and an explicit
-    // `poiDistanceOverride` bypasses both.
     const poiHalfFovRad = Math.max(0.01, (this.unitsConfig.unitPoiCameraFov * Math.PI) / 360);
     const framedDistance = entry.worldBoundingSphere.radius / Math.tan(poiHalfFovRad * 0.6);
     const distance =
@@ -2170,9 +1392,6 @@ export class RenderEngine {
       Math.max(entry.worldBoundingSphere.radius * this.unitsConfig.unitPoiCameraDistanceMultiplier, framedDistance);
     const height = entry.poiHeightOverride ?? this.unitsConfig.unitPoiCameraHeightOffset;
     const yawRad = (entry.poiYawDeg * Math.PI) / 180;
-    // Offset rotated by the unit's own authored yaw, matching §16's
-    // diagram exactly: bounding-sphere center -> rotate a flat offset by
-    // poiYawDeg -> add the height lift.
     const offset = new THREE.Vector3(Math.sin(yawRad) * distance, height, Math.cos(yawRad) * distance);
     const endPos = entry.worldCenter.clone().add(offset);
     const endTarget = entry.worldCenter.clone();
@@ -2190,28 +1409,6 @@ export class RenderEngine {
     return true;
   }
 
-  /** Where the given unit currently sits in the camera's own frame.
-   * `onScreen` is true only when its centre is in front of the camera and
-   * inside the frustum; `coverage` is its bounding sphere's angular radius
-   * as a fraction of the vertical half-FOV, so ~1 means it fills the frame
-   * top to bottom and ~0.05 means it is a speck. Null when the unit isn't
-   * in the registry at all (not loaded, or genuinely unmapped) — callers
-   * use that to tell "no block for this unit" apart from "there is a block
-   * and it happens to be off screen", which are two very different things
-   * to tell a visitor.
-   *
-   * Exists so a list selection can decide whether it needs to move the
-   * camera at all. Flying on EVERY row tap is its own kind of broken: on a
-   * project whose units are all one tower already filling the frame, every
-   * tap became a teleport that re-framed roughly the same picture, and the
-   * visitor loses the orientation they had built up. Angular size rather
-   * than a second projected silhouette point — cheaper, and it stays
-   * stable when the camera is very close to the block.
-   *
-   * Deliberately says nothing about occlusion: `unitBlocksXrayEnabled`
-   * defaults to true, which makes unit blocks draw through the facade, so
-   * "behind geometry" is not normally a reason a selected block can't be
-   * seen. */
   getUnitViewportState(unitId: string): { onScreen: boolean; coverage: number; poiAuthored: boolean } | null {
     const entry = this.unitRegistry.get(unitId);
     const camera = this.camera;
@@ -2223,61 +1420,17 @@ export class RenderEngine {
     const halfFovRad = (camera.fov * Math.PI) / 360;
     const coverage =
       distance > 1e-6 && halfFovRad > 0 ? Math.atan(entry.worldBoundingSphere.radius / distance) / halfFovRad : 1;
-    // "Did a human actually aim this unit's camera, or is it sitting on
-    // schema defaults?" — the three POI fields are all
-    // admin-authored and all default to a neutral value, so anything
-    // non-neutral means someone chose it. Callers use this to decide
-    // between honouring an authored framing and falling back to
-    // revealUnit()'s generic one.
     const poiAuthored =
       entry.poiYawAuthored || entry.poiDistanceOverride != null || entry.poiHeightOverride != null;
     return { onScreen, coverage, poiAuthored };
   }
 
-  /** Brings a unit into a readable frame WITHOUT using its authored POI —
-   * keeps the camera's current viewing direction and only re-targets and
-   * dollies along it, so the unit ends up centred and a known fraction of
-   * the frame tall.
-   *
-   * This exists because focusUnit() is only as good as the data behind it,
-   * and that data is very often absent. focusUnit() places the camera at a
-   * flat offset rotated by the unit's own `poiYawDeg`; on a unit nobody has
-   * aimed (yaw 0, no distance/height override) that is an arbitrary
-   * compass direction at a distance derived purely from the block's own
-   * radius, which on a real project put the camera INSIDE the tower
-   * looking at the back of a floor slab — verified on tower-vlora, whose
-   * three units all sit on defaults. A visitor who taps a unit and is
-   * teleported inside a wall is worse off than one who was left alone.
-   *
-   * Preserving the incoming direction also preserves the visitor's
-   * orientation, which is the whole objection to framing on every tap: the
-   * building does not spin, it just comes closer and centres on what was
-   * asked for. FOV is deliberately left alone for the same reason — a FOV
-   * change on top of a move reads as a lens swap, not as approaching. */
   revealUnit(unitId: string, screenBiasY = 0, frameFraction = 0.35): boolean {
     const entry = this.unitRegistry.get(unitId);
     if (!entry) return false;
     return this.revealSphere(entry.worldCenter, entry.worldBoundingSphere.radius, screenBiasY, frameFraction);
   }
 
-  /** The same reveal, aimed at every unit standing on one floor at once —
-   * what the viewer's floor rail asks for when a visitor picks a floor
-   * (2026-08-25: "clicking the floor number immediately shows the floor in
-   * floor section", answered with a camera move as well as the cut).
-   *
-   * The union of the floor's unit blocks is a far better description of
-   * "floor 8" than the section rectangle an admin drew is: the rectangle
-   * is deliberately oversized (it has to swallow the whole footprint to
-   * clip it), while the units are exactly the things the visitor came to
-   * look at. `frameFraction` defaults higher than `revealUnit`'s — a whole
-   * floor is the subject here, not one block that needs its building
-   * around it for context.
-   *
-   * Returns false when NONE of the ids resolve to a loaded block (an
-   * entirely unmapped floor), which is real information for the caller:
-   * the cut still applies, the camera just has nothing trustworthy to aim
-   * at and is left where the visitor put it rather than being sent to a
-   * guessed position. */
   revealUnits(unitIds: string[], screenBiasY = 0, frameFraction = 0.5): boolean {
     const bounds = new THREE.Box3();
     let matched = 0;
@@ -2292,13 +1445,6 @@ export class RenderEngine {
     return this.revealSphere(sphere.center, sphere.radius, screenBiasY, frameFraction);
   }
 
-  /** Reveal a bare world-space region — the floor rail's fallback for a
-   * floor whose units have no blocks in the loaded GLB, where the section
-   * an admin drew is the only description of where that floor is. Wider
-   * `frameFraction` default than `revealUnits` for the reason above: a
-   * section footprint covers the whole building plan, so filling the same
-   * fraction of frame with it would push the camera much further out than
-   * the floor itself warrants. */
   revealArea(
     area: { centerX: number; centerZ: number; y: number; radius: number },
     screenBiasY = 0,
@@ -2312,12 +1458,6 @@ export class RenderEngine {
     );
   }
 
-  /** The shared body of every reveal above — one bounding sphere, framed
-   * along the camera's CURRENT viewing direction. Split out when the floor
-   * rail needed the identical math for a group of units rather than one
-   * (the alternative was a second copy of the bias/distance solve, which
-   * is exactly the kind of duplication that lets two "same" framings drift
-   * apart). */
   private revealSphere(
     center: THREE.Vector3,
     sphereRadius: number,
@@ -2330,32 +1470,15 @@ export class RenderEngine {
     this.idleDrone.notifyInteraction(performance.now());
 
     const endTarget = center.clone();
-    // Current viewing direction, target -> camera. Falls back to a plain
-    // offset in the degenerate case where the camera sits exactly on its
-    // own target (never happens with OrbitControls, but a zero-length
-    // vector would silently produce NaNs downstream).
     const direction = camera.position.clone().sub(controls.target);
     if (direction.lengthSq() < 1e-8) direction.set(0, 0.35, 1);
     direction.normalize();
 
     const halfFovRad = (camera.fov * Math.PI) / 360;
     const radius = Math.max(sphereRadius, 1e-3);
-    // Solve tan(theta) = radius / distance for the theta that makes the
-    // unit's angular radius `frameFraction` of the vertical half-FOV.
     const targetAngle = Math.max(0.01, halfFovRad * frameFraction);
     const distance = Math.max(radius * 2, radius / Math.tan(targetAngle));
 
-    // `screenBiasY` places the unit somewhere other than dead centre, in
-    // NDC (+1 top, -1 bottom). It exists because "centred in the canvas"
-    // and "where the visitor can see it" are not the same place once a UI
-    // surface covers part of that canvas — on a phone the units sheet owns
-    // the bottom half, so a perfectly centred reveal lands the unit
-    // squarely behind it. Shifting the whole view down (target AND camera
-    // together, so the viewing direction is untouched) raises the unit in
-    // frame. To land at NDC y = b the view moves by D·b·tan(halfFov)
-    // along the camera's own up axis, derived from the actual viewing
-    // direction rather than world up so it stays correct for a tilted
-    // camera.
     if (screenBiasY !== 0) {
       const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), direction);
       if (right.lengthSq() > 1e-8) {
@@ -2377,10 +1500,6 @@ export class RenderEngine {
     return true;
   }
 
-  /** §18 — clears any Units-mode isolate/selection and reframes on the
-   * whole loaded scene, the same real reframe frameLoadedContent() itself
-   * does (Shots/Camera already use resetView() for this exact "back to
-   * the whole building" behavior — reused here rather than duplicated). */
   resetUnitCamera() {
     this.selectedUnitId = null;
     this.isolatedUnitId = null;
@@ -2388,18 +1507,10 @@ export class RenderEngine {
     this.resetView();
   }
 
-  /** Read-only snapshot for callers that need unit metadata without
-   * reaching into engine internals (e.g. a Units-tab "N/E/S/W badge"
-   * showing whether a unit is currently mapped/loaded). */
   getUnitRegistrySnapshot(): { unitId: string; unitCode: string; poiYawDeg: number }[] {
     return Array.from(this.unitRegistry.values()).map((e) => ({ unitId: e.unitId, unitCode: e.unitCode, poiYawDeg: e.poiYawDeg }));
   }
 
-  /** Ground alignment (PRD §5) — the Y offset that would put this model's
-   * lowest point exactly at world Y=0, given its CURRENT scale/rotation.
-   * Returns null if the slot isn't loaded. Caller applies+persists it
-   * (this doesn't mutate anything itself, matching every other Scene-tab
-   * control being an explicit, savable edit). */
   computeGroundAlignOffset(slotId: string): number | null {
     const root = this.modelRootsBySlot.get(slotId);
     if (!root) return null;
@@ -2409,58 +1520,12 @@ export class RenderEngine {
     return currentY - lowestY;
   }
 
-  /** Real world-space bounding box of the currently loaded content —
-   * Sections' "New Section"/"New Floor Section" uses this to place a
-   * sensible default footprint/height, instead of hardcoding world
-   * origin (which is only where the CAMERA orbit target starts, not
-   * necessarily anywhere near the actual GLB — confirmed via a real bug
-   * this exact gap caused: a project whose content sits well off-origin
-   * got a brand-new section that clipped away nearly the whole building,
-   * only grazing a thin edge slice, because the box and the building
-   * barely overlapped). Null before anything has loaded. */
   getContentBounds(): { centerX: number; centerZ: number; minY: number; maxY: number; sizeX: number; sizeZ: number } | null {
     const b = this.contentBounds;
     if (!b) return null;
     return { centerX: b.center.x, centerZ: b.center.z, minY: b.min.y, maxY: b.max.y, sizeX: b.size.x, sizeZ: b.size.z };
   }
 
-  /** Every real THREE.Mesh currently in clippingGroup that the section
-   * fill should borrow geometry from (back faces only, see
-   * rebuildSectionCap's own doc comment) — architecture, i.e. the
-   * Building/Floors/Surroundings GLBs and the ground.
-   *
-   * Three exclusions, all of them real bugs found 2026-08-25 rather than
-   * defensive guesses:
-   *
-   * 1. UNIT BLOCKS. Direct instruction: "Fill the gaps shouldn't work
-   *    with Units GLB. only with the building and floors glb." A unit
-   *    block is a translucent overlay (`transparent: true`, opacity ~0.45,
-   *    `depthWrite: false` — unitRegistry.ts), so giving it an opaque
-   *    back-face twin in the admin's fill colour reads as that block being
-   *    blacked out and hollowed. On tower-vlora, whose fillColor is
-   *    #000000, that happened to the floor-6 and floor-7 blocks even
-   *    though the "Floor 8" plane (y=62) sits 3.2m and 6.5m ABOVE them and
-   *    removes no geometry from either — which is exactly the reported
-   *    "it looks like it tries to cut other units below". Units are an
-   *    information layer over the building, not building material; there
-   *    is no gap in them for a cap to fill.
-   *
-   *    Two signals, because units can live in either place: the whole
-   *    subtree of any `units`-role slot root, and — for the case
-   *    syncModels explicitly supports, a unit whose mesh sits inside the
-   *    Building GLB — anything the registry tagged `isUnitBlock`.
-   *
-   * 2. UNIT SELECTION OUTLINES. `LineSegments2` extends `Mesh` (the same
-   *    trap unitRegistry.ts's own `collectMeshes` already documents and
-   *    filters for), so `.isMesh` accepts it and the copy re-wraps its
-   *    instanced line geometry in a plain Mesh — drawing the fat-line
-   *    template quads as loose triangles floating in the fill colour.
-   *
-   * 3. HIDDEN MESHES. `Object3D.traverse` visits descendants regardless of
-   *    `.visible`, so anything an admin hid through a Materials node
-   *    override still produced a fully visible opaque twin. A mesh that
-   *    isn't drawn cannot be leaving a gap to fill, so the walk below
-   *    prunes invisible subtrees instead of recursing into them. */
   private collectClippableMeshes(): THREE.Mesh[] {
     const unitSlotRoots = new Set<THREE.Object3D>();
     for (const entry of this.lastSyncEntries) {
@@ -2470,8 +1535,6 @@ export class RenderEngine {
     }
 
     const meshes: THREE.Mesh[] = [];
-    // A hand-rolled walk rather than `traverse`, because every exclusion
-    // above has to prune the whole subtree, and `traverse` has no early-out.
     const walk = (obj: THREE.Object3D) => {
       if (obj.visible === false) return;
       if (unitSlotRoots.has(obj)) return;
@@ -2484,9 +1547,6 @@ export class RenderEngine {
     return meshes;
   }
 
-  /** Removes every real color-fill mesh (sectionFillMeshes) — does NOT
-   * dispose their geometry (borrowed from the real source mesh in
-   * clippingGroup, never owned/disposed here). */
   private clearSectionFillMeshes() {
     for (const mesh of this.sectionFillMeshes) {
       this.sectionFillClippingGroup?.remove(mesh);
@@ -2494,17 +1554,6 @@ export class RenderEngine {
     this.sectionFillMeshes = [];
   }
 
-  /** Sections module cap — restored technique from the pre-rebuild engine
-   * (real, production-verified): NOT a stencil trick (broken under this
-   * app's WebGPURenderer, confirmed via a real screenshot once before —
-   * see this method's git history if that's ever needed again). Instead,
-   * every clippable mesh's geometry is reused (buffer shared, not
-   * copied) by a second, BackSide-material mesh sharing the exact same
-   * clipping planes — where the real front face got clipped away, that
-   * mesh's back face (visible from inside the cut) shows a solid color
-   * fill. `fillGapsEnabled: false` shows a plain translucent unclipped
-   * indicator rectangle instead (editing aid only, matches the drawn
-   * footprint). */
   private rebuildSectionCap(section: Section | null, showIndicator: boolean) {
     const helpers = this.sectionHelperGroup;
     if (!helpers) return;
@@ -2560,21 +1609,6 @@ export class RenderEngine {
     }
   }
 
-  /** Activates a section by real clip + cap, or clears it (null). Does
-   * not itself attach/detach an editing gizmo (no viewport drag-authoring
-   * yet — Sections tab uses numeric fields this pass, see the panel's own
-   * doc comment).
-   *
-   * `showIndicator: false` honours what `Section.fillGapsEnabled`'s own
-   * doc comment has always promised and this method never actually
-   * delivered: the translucent grey rectangle a `fillGapsEnabled: false`
-   * section draws is an *editing aid* — it marks the plane the admin is
-   * dragging numbers against — and it was specified as "100% transparent,
-   * i.e. not rendered at all, in the public viewer, since visitors
-   * shouldn't see an abstract reference plane". Until the unit card's
-   * "View in Floor" button (2026-08-25) nothing public called this at
-   * all, so the gap never showed. Defaults to true so the editor keeps
-   * the aid without asking. */
   activateSection(section: Section | null, options?: { showIndicator?: boolean }) {
     this.activeSectionId = section?.id ?? null;
     this.activeSectionPlanes = section ? buildSectionPlanes(section) : null;
@@ -2582,21 +1616,12 @@ export class RenderEngine {
       this.clippingGroup.clippingPlanes = this.activeSectionPlanes ?? NO_ACTIVE_SECTION_PLANES;
     }
     this.rebuildSectionCap(section, options?.showIndicator !== false);
-    // The selected unit's outline is a fat line, which the GPU cannot clip
-    // at all; renderFrame() cuts it on the CPU on the next frame.
   }
 
   getActiveSectionId(): string | null {
     return this.activeSectionId;
   }
 
-  /** Recomputes boundingRadius from currently loaded content and, only on
-   * the very FIRST successful load (hasFramedOnce false), positions the
-   * camera at the real cameraStartDistanceMultiplier distance — matching
-   * the pre-rebuild engine's formula exactly. Every load after that just
-   * updates boundingRadius (so distance-limit/far-plane math tracks the
-   * real content size) without yanking the camera away from wherever the
-   * admin currently has it pointed. */
   private frameLoadedContent() {
     const { camera, controls, loadedRoots } = this;
     if (!camera || !controls || loadedRoots.length === 0) return;
@@ -2612,32 +1637,14 @@ export class RenderEngine {
       const startDistance = this.boundingRadius * this.cameraConfig.cameraStartDistanceMultiplier;
       controls.target.copy(center);
       camera.position.set(center.x + startDistance, center.y + startDistance * 0.7, center.z + startDistance);
-      // Idle Drone Camera PRD §62 — the idle clock starts at Viewer Ready,
-      // not at engine construction (which would burn part of the delay
-      // during GLB/texture loading).
       this.idleDrone.notifyInteraction(performance.now());
     }
-    // Idle Drone Camera PRD §20-21 — real bounds every time content
-    // (re)loads, so the orbit always scales to the CURRENT building, not
-    // a stale one from before a Replace.
     this.idleDrone.setBounds({ center: center.clone(), buildingHeight: Math.max(size.y, 1), groundMinY: box.min.y, boundingRadius: this.boundingRadius });
     if (this.showDronePath) this.rebuildDronePathHelper();
     this.applyCameraConfig(this.cameraConfig);
-    // Real bug this avoids: without re-deriving sunDistance/re-applying
-    // the Environment config once real content bounds are known, the sun
-    // (and the ground disc's own sizing) would stay locked to the
-    // world-origin/boundingRadius=20 placeholder used before anything
-    // loaded — same class of gap Sections' own getContentBounds fix
-    // (Phase B) addressed for section placement.
     this.sunDistance = Math.max(200, this.boundingRadius * 3);
     this.applyEnvironmentConfig(this.environmentConfig, false);
 
-    // Lighting tab — a real shadow-camera frustum sized to the actual
-    // loaded content (same "was locked to the placeholder boundingRadius
-    // of 20" bug class as sunDistance above — the sun's shadow camera
-    // needs to be this. Bias/normalBias scaled to boundingRadius, not a
-    // fixed absolute value (negligible against a real building tens of
-    // meters across otherwise — shadow acne).
     if (this.sun) {
       const shadowSpan = this.boundingRadius * 1.5;
       this.sun.shadow.camera.left = -shadowSpan;
@@ -2652,21 +1659,9 @@ export class RenderEngine {
       this.csmSystem?.updateFrustums();
     }
 
-    // Shots (PRD §38) — content is loaded, so the Opening Shot can be
-    // honoured now if the config is already in (it usually is; the
-    // `setCameraConfig` call site covers the other ordering).
     this.maybeApplyOpeningShot();
   }
 
-  /** Shots (PRD §38) — places the camera on the Opening Shot
-   * (`cameraPresets[0]`, the starred entry in the editor's Shots tab)
-   * instead of the generic `cameraStartDistanceMultiplier` framing
-   * `frameLoadedContent()` computes. Instant, not a `flyToPreset()`
-   * transition: this IS the first frame the visitor sees, so there is
-   * nothing to fly *from*. No-ops (leaving the latch down, so a later
-   * call can still succeed) until content has actually been framed and a
-   * shot actually exists — the published config and the GLB arrive
-   * independently. */
   private maybeApplyOpeningShot() {
     const { camera, controls } = this;
     if (!camera || !controls) return;
@@ -2679,15 +1674,9 @@ export class RenderEngine {
     camera.fov = opening.fov;
     camera.updateProjectionMatrix();
     controls.update();
-    // Same reason flyToPreset() does it: the shot is an explicit framing,
-    // so the idle clock restarts from here rather than from whenever the
-    // engine happened to finish loading.
     this.idleDrone.notifyInteraction(performance.now());
   }
 
-  /** Reframes the camera on the currently loaded content — resets the
-   * "already framed once" latch so it re-runs the real start-distance
-   * placement, same as a fresh mount would. */
   resetView() {
     this.hasFramedOnce = false;
     this.frameLoadedContent();
@@ -2698,19 +1687,12 @@ export class RenderEngine {
     if (!enabled) this.callbacks.onPerfStats(null);
   }
 
-  /** The real, throttled resize work — see mount()'s ResizeObserver doc
-   * comment for why this is throttled at all instead of running inline. */
   private performResize(container: HTMLDivElement, camera: THREE.PerspectiveCamera, renderer: THREE.WebGPURenderer) {
     this.lastResizeAt = performance.now();
     if (!container.clientWidth || !container.clientHeight) return;
     this.isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
-    // Both branches still need a real setSize() call on resize — see
-    // createRenderer()'s own doc comment for why (Three's internal
-    // render-target sizing must track the real canvas, even one Mapbox
-    // owns/resizes itself). Basemap mode skips effectiveRenderScale for
-    // the same reason it does at mount time.
     if (this.map) {
       renderer.setSize(container.clientWidth, container.clientHeight, false);
     } else {
@@ -2718,21 +1700,13 @@ export class RenderEngine {
     }
   }
 
-  /** Real current renderScale (post any adaptive/interaction reduction) —
-   * for the status bar's Quality Profile readout. */
   getEffectiveRenderScale(): number {
     return this.effectiveRenderScale;
   }
 
-  /** Camera tab (PRD §37) — applies every field live, no remount. Safe to
-   * call on every slider drag (matches the Materials/Model-transform
-   * live-preview pattern). */
   setCameraConfig(config: CameraConfig) {
     this.cameraConfig = config;
     this.applyCameraConfig(config);
-    // Shots (PRD §38) — covers the ordering where the config lands AFTER
-    // the model has already been framed (a slow /api/project-3d-config
-    // against a cached GLB); a no-op on every later slider tick.
     this.maybeApplyOpeningShot();
   }
 
@@ -2742,27 +1716,6 @@ export class RenderEngine {
     this.isMobileViewport = window.innerWidth < MOBILE_VIEWPORT_BREAKPOINT;
     camera.fov = this.isMobileViewport ? config.cameraFovMobile : config.cameraFovDesktop;
     camera.near = config.cameraNearClip;
-    // Real bug found live (not the "intermittent race" it first looked
-    // like — screenshot analysis showed the exact same y-position/height
-    // on every affected tab): the SkyMesh dome is a fixed-size backdrop
-    // at SKY_DOME_SCALE (1600 units) radius, entirely independent of an
-    // admin's artistic/perf cameraFarClip choice. Any project configured
-    // with a realistic near-field cameraFarClip (e.g. this app's own demo
-    // project ships 100) put the dome's own geometry beyond camera.far,
-    // so it was silently frustum-culled outright — the clear color
-    // (black) showed through wherever the dome would have been, while
-    // the ground plane (much closer to the camera) rendered normally.
-    // The sky dome must never be subject to the admin's scene-geometry
-    // far-clip setting, so it gets its own floor here.
-    // "Map" tab — the site gets its own far-plane floor for exactly the
-    // same reason the sky dome above does: it is deliberately excluded
-    // from `boundingRadius` (a kilometre-scale site would wreck the shadow
-    // frustum, camera framing and sun distance that number drives), so
-    // nothing else here knows how far it reaches. Without this a large
-    // site's far corners are silently frustum-culled and the ground just
-    // stops mid-air. `siteFarExtentM` is the half-DIAGONAL, not the
-    // radius — the site mesh is square, so its corners sit radius*sqrt(2)
-    // out — plus the orbit distance the camera can pull back to.
     camera.far = Math.max(config.cameraFarClip, this.boundingRadius * 8, SKY_DOME_SCALE * 1.1, this.siteFarExtentM);
     camera.updateProjectionMatrix();
 
@@ -2771,45 +1724,23 @@ export class RenderEngine {
     controls.enableZoom = config.cameraZoomEnabled;
     controls.enableDamping = config.cameraDampingEnabled;
     controls.dampingFactor = 0.08;
-    // Idle Drone Camera PRD §53 — "ROZARIS owns automated movement;
-    // OrbitControls remains the manual navigation system." The two never
-    // fight: autoRotate only actually spins when a project has the drone
-    // turned off, preserving today's plain-spin fallback for it.
     controls.autoRotate = config.autoRotate && !config.idleDroneEnabled;
     controls.minDistance = this.boundingRadius * config.cameraMinDistanceMultiplier;
     controls.maxDistance = this.boundingRadius * config.cameraMaxDistanceMultiplier;
     controls.minPolarAngle = THREE.MathUtils.degToRad(config.cameraMinPolarDeg);
     controls.maxPolarAngle = THREE.MathUtils.degToRad(config.cameraMaxPolarDeg);
-    // OrbitControls' own defaults (unrestricted) when null — same
-    // "nullable means off" contract the schema field itself documents.
     controls.minAzimuthAngle = config.cameraMinAzimuthDeg != null ? THREE.MathUtils.degToRad(config.cameraMinAzimuthDeg) : -Infinity;
     controls.maxAzimuthAngle = config.cameraMaxAzimuthDeg != null ? THREE.MathUtils.degToRad(config.cameraMaxAzimuthDeg) : Infinity;
     this.idleDrone.setConfig(config);
     if (this.showDronePath) this.rebuildDronePathHelper();
   }
 
-  // ---------------------------------------------------------------------
-  // Environment tab (PRD §7-13) — Sun & Sky, Clouds, Fog & Haze, Water,
-  // Ground. PRD §10's "ONE Global Sun Vector" — resolveGlobalSunVector is
-  // the only place elevation/azimuth are computed; every feature below
-  // reads the resulting `this.sunDirection`, never its own.
-  // ---------------------------------------------------------------------
-
   private isMobileQualityTier(): boolean {
     return this.qualityConfig.qualityPreset === "mobile_low" || this.qualityConfig.qualityPreset === "mobile_high";
   }
 
-  /** PRD §9-10 — off (default): the direct static sunElevationDeg/
-   * sunAzimuthDeg, zero behavior change for any project that never opens
-   * this tab. On: derived every call from Viewer Time + the selected
-   * Solar Path (src/lib/sunPosition.ts). `northOffsetDeg` rotates the
-   * result either way. */
   private resolveGlobalSunVector(config: EnvironmentConfig): { elevationDeg: number; azimuthDeg: number } {
     if (!config.solarControllerEnabled) {
-      // Site rotation applies on this branch too. A direct-authored sun is
-      // still a sun in the scene's frame, so if the world rotates under it
-      // and this azimuth did not follow, the shadows would visibly detach
-      // from the site the instant an admin dragged the rotation slider.
       const manualAz = (((config.sunAzimuthDeg + config.siteRotationDeg) % 360) + 360) % 360;
       return { elevationDeg: config.sunElevationDeg, azimuthDeg: manualAz };
     }
@@ -2817,31 +1748,10 @@ export class RenderEngine {
       config.solarPathMode === "geographic"
         ? geographicSunPosition(new Date(config.simulationDate), config.geoLatitude, config.geoLongitude, config.viewerTimeHours)
         : sunPositionForAnchors(config.viewerTimeHours, config.solarAnchors);
-    // `siteRotationDeg` adds here for a real physical reason, not as a
-    // convenience: rotating the site is the admin restating where north
-    // is, and a Y-rotation by theta maps the sun's horizontal direction
-    // (sin a, cos a) to (sin(a+theta), cos(a+theta)) — so rotating the
-    // world by theta and adding theta to the azimuth are the SAME
-    // operation. `northOffsetDeg` and `siteRotationDeg` are therefore one
-    // physical quantity in the same sign and units, and simply sum.
-    // Deriving it this way also means the sun stays locked to the site
-    // through an alignment drag with no extra bookkeeping.
     const northDeg = config.northOffsetDeg + config.siteRotationDeg;
     return { elevationDeg: raw.elevationDeg, azimuthDeg: (((raw.azimuthDeg + northDeg) % 360) + 360) % 360 };
   }
 
-  /** Restored near-verbatim from the pre-rebuild engine's own
-   * buildGroundMaterial — a real MeshStandardNodeMaterial whose colorNode
-   * does a radial fade from groundColor to the resolved fog color around
-   * world origin ("Ground Fog" — a different, older technique from Fog &
-   * Haze's height-band fog; its controls live in the Fog & Haze panel
-   * alongside the rest of fog, but the field/uniform stay ground-owned
-   * since the effect paints onto the ground material itself). Gated by
-   * BOTH `groundFogEnabled` and the master `fogEnabled` — the master
-   * switch must kill every fog-like effect, not just the atmospheric one.
-   * Then multiplies in cloudShadowFactor (PRD §11's real, simplified Cloud
-   * Shadows). Every knob is a live UniformNode (this.ground*Uniform
-   * fields) so toggling never needs a material rebuild. */
   private buildGroundMaterial(config: EnvironmentConfig): THREE.MeshStandardNodeMaterial {
     const groundColorUniform = uniform(new THREE.Color(config.groundColor));
     const groundFogColorUniform = uniform(new THREE.Color(resolveFogColor(config)));
@@ -2875,26 +1785,6 @@ export class RenderEngine {
     return material;
   }
 
-  /** Environment tab (PRD §7-13) — applies every field live, no remount.
-   * Safe to call on every slider drag; the expensive PMREM rebuild is
-   * debounced internally (scheduleEnvironmentRebuild). */
-  // ---------------------------------------------------------------------
-  // "Map" tab — real-world site context as scene geometry.
-  // ---------------------------------------------------------------------
-
-  /**
-   * Applies the site config, following the engine's own established
-   * three-tier discipline rather than rebuilding on every change:
-   *
-   *   - inputs that change what the geometry IS (location, radius, which
-   *     layers) are signature-keyed and trigger a real async rebuild;
-   *   - the transform is a plain matrix write on the group;
-   *   - imagery brightness is a material write.
-   *
-   * That split is what makes an alignment drag cheap: dragging rotation or
-   * offset never refetches a tile, exactly as dragging a detail model's
-   * transform never reloads its GLB.
-   */
   setSiteConfig(config: SiteRuntimeConfig) {
     const previous = this.siteConfig;
     this.siteConfig = config;
@@ -2914,36 +1804,22 @@ export class RenderEngine {
       this.applySiteMaterial();
     }
 
-    // The abstract ground disc and a real site are mutually exclusive by
-    // rule, not by an admin remembering a toggle on a different tab: the
-    // disc is CircleGeometry(boundingRadius*1.6) sitting at Y=0, so with a
-    // site present it z-fights the terrain across the whole overlap and
-    // double-receives the sun's shadow. Re-applying the environment config
-    // is what actually moves the disc, so only do it when the answer
-    // changed.
     const wasActive = !!previous && previous.siteEnabled && previous.latitude != null && previous.longitude != null;
     if (wasActive !== active) this.applyEnvironmentConfig(this.environmentConfig, false);
   }
 
-  /** True while a site is showing — read by applyEnvironmentConfig to
-   * suppress the abstract ground disc (see setSiteConfig). */
   private hasActiveSite(): boolean {
     return !!this.siteGroup && !!this.siteResult;
   }
 
   private async rebuildSite(config: SiteRuntimeConfig | null) {
     const token = ++this.siteToken;
-    // Abort any in-flight tile fetches first — an admin dragging the
-    // radius slider commits several times, and without this the earlier
-    // requests keep downloading tiles nobody will ever look at.
     this.siteAbort?.abort();
     this.siteAbort = null;
     this.siteFarExtentM = 0;
     this.disposeSite();
 
     if (!config || !this.scene) {
-      // A site that just turned off still has to release its ground-disc
-      // suppression, which applyEnvironmentConfig owns.
       if (this.scene) this.applyEnvironmentConfig(this.environmentConfig, false);
       return;
     }
@@ -2968,16 +1844,10 @@ export class RenderEngine {
         signal: controller.signal,
       });
     } catch (error) {
-      // Deliberately still swallowed as far as the SCENE is concerned — a
-      // site that cannot be built must never take the viewer down with it
-      // — but no longer swallowed as far as the REPORT is concerned.
       result = null;
       siteFailureReason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     }
 
-    // A newer request (or an unmount) superseded this one while tiles were
-    // in flight — drop the result rather than adding a stale site to a
-    // scene that has already moved on.
     if (token !== this.siteToken || !this.scene) {
       result?.dispose();
       return;
@@ -2993,15 +1863,9 @@ export class RenderEngine {
     this.scene.add(group);
     this.siteGroup = group;
     this.siteResult = result;
-    // Half-diagonal of the square site, scaled by the admin's own scale
-    // field, plus generous headroom for how far the camera can orbit out.
     this.siteFarExtentM = result.halfExtentM * Math.SQRT2 * Math.max(0.1, config.siteScale) + 1000;
     this.applySiteTransform();
     this.applySiteMaterial();
-    // Re-apply the environment so the ground disc yields to the real site,
-    // and the camera so the far plane grows to actually reach it — neither
-    // happens on its own, since the site sits outside every bounds
-    // computation by design.
     this.applyEnvironmentConfig(this.environmentConfig, false);
     this.applyCameraConfig(this.cameraConfig);
     this.callbacks.onSiteStatus?.({
@@ -3011,9 +1875,6 @@ export class RenderEngine {
     });
   }
 
-  /** The transform rule this whole feature encodes: the SITE moves, the
-   * building never does. Every project GLB stays at its authored origin
-   * and this group carries the alignment instead. */
   private applySiteTransform() {
     const { siteGroup, siteConfig } = this;
     if (!siteGroup || !siteConfig) return;
@@ -3025,17 +1886,6 @@ export class RenderEngine {
   private applySiteMaterial() {
     const { siteResult, siteConfig } = this;
     if (!siteResult || !siteConfig) return;
-    // Aerial imagery ships with the capture day's sun already baked into
-    // it, which fights this engine's own movable sun. Scaling the albedo
-    // down is the cheap, honest mitigation — a real de-lighting pass would
-    // be a different piece of work, and pretending otherwise would be
-    // worse than admitting the trade.
-    //
-    // Written to the material's own uniform, not `material.color`: once
-    // imagery exists the site material drives colour entirely through a
-    // colorNode (it blends a sharp detail sheet over the wide one), and a
-    // `.color` write there would be silently ignored. Null uniform means
-    // no imagery, and the untextured fallback keeps its authored neutral.
     const brightness = siteResult.brightnessUniform;
     if (!brightness) return;
     brightness.value = Math.max(0, Math.min(2, siteConfig.siteImageryBrightness));
@@ -3050,17 +1900,6 @@ export class RenderEngine {
     this.siteResult = null;
   }
 
-  /** Every Sun & Time tick arrives here: the viewer dock's Time slider and
-   * its preset tween both drive React state, which rebuilds
-   * `environmentConfig` and lands on this method once per input event /
-   * animation frame. A scrub only ever changes `viewerTimeHours` (and, if a
-   * date override is ever reintroduced, `simulationDate`), so a tick that
-   * changes nothing else skips straight to the sun writes instead of
-   * re-applying every sky, backdrop, water, cloud and ground uniform and
-   * re-testing the ground's geometry — work whose result is identical to
-   * what is already on the GPU. Every other caller, and the first call of
-   * all, still takes the full path unchanged; the diff decides, so nothing
-   * has to remember to opt in. */
   setEnvironmentConfig(config: EnvironmentConfig) {
     if (this.isSunTimeOnlyChange(config)) {
       this.environmentConfig = config;
@@ -3071,14 +1910,6 @@ export class RenderEngine {
     this.applyEnvironmentConfig(config, false);
   }
 
-  /** True only when `next` differs from the config already applied in
-   * `viewerTimeHours`/`simulationDate` and in NOTHING else. Diffs the whole
-   * key set rather than a hand-listed subset, so a field added to
-   * EnvironmentConfig later cannot silently start being skipped — an
-   * unrecognised change falls back to the full path, which is the safe
-   * direction. Object-valued fields (`solarAnchors`) compare by identity:
-   * they come from a stable `viewerConfig` memo, so a scrub leaves them
-   * identical, and a false negative only costs one full pass. */
   private isSunTimeOnlyChange(next: EnvironmentConfig): boolean {
     if (!this.hasAppliedEnvironmentConfigOnce) return false;
     const prev = this.environmentConfig;
@@ -3094,11 +1925,6 @@ export class RenderEngine {
     return sawSunTimeChange;
   }
 
-  /** PRD §10's ONE Global Sun Vector and everything that reads it directly.
-   * Extracted so the full path and the scrub fast path above cannot drift:
-   * a new sun-driven uniform added here is picked up by both. Anything that
-   * merely *reads* `this.sunDirection` every frame (FogSystem, CloudSystem
-   * — see updatePerFrameEnvironment) needs nothing here. */
   private applySunState(config: EnvironmentConfig) {
     const { sun, ambient, skyMesh, waterMesh } = this;
     if (!sun || !ambient) return;
@@ -3152,9 +1978,6 @@ export class RenderEngine {
       skyMesh.mieDirectionalG.value = config.skyMieDirectionalG;
       skyMesh.showSunDisc.value = config.sunDiscEnabled ? 1 : 0;
       skyMesh.visible = config.skyEnabled;
-      // The real raymarched Clouds layer is the primary system whenever
-      // it's active; SkyMesh's own baked-in cloud uniforms are the honest
-      // Low/Mobile-tier internal fallback (PRD §11) — never both at once.
       const useFallbackClouds = config.cloudsEnabled && !useRealCloudLayer;
       skyMesh.cloudCoverage.value = useFallbackClouds ? config.cloudCoverage : 0;
       skyMesh.cloudDensity.value = useFallbackClouds ? config.cloudDensity : 0;
@@ -3164,10 +1987,6 @@ export class RenderEngine {
       cloudSystem.mesh.visible = useRealCloudLayer;
     }
 
-    // 360° Backdrop Photo — cheap live updates (visibility/rotation) run
-    // on every call; the texture itself only (re)loads when the URL
-    // actually changes, same "expensive work gated behind a real change"
-    // discipline as scheduleEnvironmentRebuild below.
     const backdropMesh = this.backdropMesh;
     if (backdropMesh) {
       backdropMesh.rotation.y = THREE.MathUtils.degToRad(config.backdropRotationDeg);
@@ -3181,9 +2000,6 @@ export class RenderEngine {
         if (config.backdropImageUrl) {
           const url = config.backdropImageUrl;
           new THREE.TextureLoader().load(url, (texture) => {
-            // The URL can change again (or clear) while this in-flight
-            // load was still fetching — only apply it if it's still the
-            // one currently requested, and never onto a disposed mesh.
             if (this.backdropImageUrl !== url || !this.backdropMesh) {
               texture.dispose();
               return;
@@ -3211,11 +2027,6 @@ export class RenderEngine {
     }
 
     if (groundMesh) {
-      // A real site replaces the abstract ground outright. Both occupy
-      // Y=0 over the same footprint, so leaving the disc on z-fights the
-      // terrain across the whole overlap and receives the sun's shadow a
-      // second time. Enforced here as a rule rather than left to an admin
-      // remembering to turn Environment -> Ground off on another tab.
       groundMesh.visible = config.groundEnabled && !this.hasActiveSite();
       const wantsInfinite = config.groundStyle === "infinite";
       const wantedRadius = Math.max(this.boundingRadius * 1.6, 10);
@@ -3246,12 +2057,6 @@ export class RenderEngine {
     this.scheduleEnvironmentRebuild(config, immediateRebuild);
   }
 
-  /** Debounces the real shaded PMREM capture behind ~150ms of idle after
-   * the last call — same idiom Camera/Shots' own transitions and the
-   * pre-rebuild engine's identical method used. `environmentRefreshEnabled
-   * — off` (PRD §9) additionally skips every call AFTER the first
-   * successful one, freezing indirect lighting/reflections at their
-   * mount-time state as a real perf lever. */
   private scheduleEnvironmentRebuild(config: EnvironmentConfig, immediate: boolean) {
     if (this.environmentRebuildTimer != null) {
       clearTimeout(this.environmentRebuildTimer);
@@ -3273,12 +2078,6 @@ export class RenderEngine {
     }, 150);
   }
 
-  /** Real shaded-sky PMREM capture — restored near-verbatim from the
-   * pre-rebuild engine. Temporarily moves the one live `skyMesh` instance
-   * into an offscreen `envScene` to capture it (the same mesh is also the
-   * visible backdrop, so it can't just live permanently in a separate
-   * scene), then back. `skyEnabled: false` captures one cheap flat-color
-   * PMREM instead (still-lit scene, no directional sky gradient). */
   private rebuildEnvironment(config: EnvironmentConfig) {
     const scene = this.scene;
     const envScene = this.envScene;
@@ -3320,15 +2119,6 @@ export class RenderEngine {
     skyMesh.visible = true;
   }
 
-  // ---------------------------------------------------------------------
-  // Lighting tab (PRD §14-21) — Sun Light, Shadows (CSM/Contact/
-  // Transmitted), Global Illumination (SSGI), Artificial Lights,
-  // Volumetric Lighting. See render-engine/{shadows,postProcessing,
-  // artificialLights}.ts for the real per-feature implementations; this
-  // is just their live-apply/rebuild-on-structural-change orchestration,
-  // same discipline as Environment's own applyEnvironmentConfig.
-  // ---------------------------------------------------------------------
-
   setLightingConfig(config: LightingConfig) {
     this.applyLightingConfig(config);
   }
@@ -3338,23 +2128,12 @@ export class RenderEngine {
     const { renderer, sun, ambient, scene, camera } = this;
     if (!renderer || !sun || !ambient || !scene || !camera) return;
 
-    // Sun Light (PRD §15) — a real master kill switch on the same ONE sun
-    // Environment's own Sun & Sky drives; autoSunIntensityEnabled/
-    // autoSunColorEnabled/manualSunIntensity/manualSunColorHex are read
-    // from THIS config (shared with EnvironmentConfig's own copies of the
-    // same real Project3DConfig fields) inside applyEnvironmentConfig —
-    // no duplicate sun-color logic here, just the on/off switch and real
-    // shadow-map plumbing.
     sun.visible = config.sunLightEnabled;
     renderer.shadowMap.enabled = config.shadowsEnabled;
     sun.castShadow = config.shadowsEnabled && config.sunLightEnabled;
     sun.shadow.radius = config.shadowSoftness;
     setShadowMapTransmitted(renderer, config.transmittedShadowsEnabled);
 
-    // CSM (PRD §16) — real rebuild only when on/off or cascade count
-    // changes (CSMShadowNode's cascade count is fixed at construction);
-    // maxDistance/splitMode/margin are cheap property writes +
-    // updateFrustums() otherwise.
     const wantsCSM = config.shadowsEnabled && config.sunLightEnabled && config.csmEnabled;
     const needsCSMRebuild = wantsCSM !== (this.csmSystem != null) || (wantsCSM && this.csmSystem != null && this.csmSystem.node.cascades !== config.csmCascades);
     if (needsCSMRebuild) {
@@ -3364,34 +2143,15 @@ export class RenderEngine {
       this.csmSystem?.updateFrustums();
     }
 
-    // Post-processing chain (Contact Shadows/GI/Sun Shafts, PRD §17/19/21)
-    // — shares the Rendering tab's own scenePostPipeline (see
-    // applyScenePostPipeline's own doc comment); rebuild-vs-live-update
-    // is decided there, keyed on BOTH this config and renderingConfig.
     this.applyScenePostPipeline();
 
-    // Artificial Lights (PRD §20) — real add/update/remove diffing.
     void this.artificialLightSystem?.sync(config.artificialLights);
 
-    // Transmitted/Colored Shadows (PRD §18) — re-applied to every already-
-    // loaded root; syncModels() applies it to newly-loaded ones too.
     for (const root of this.modelRootsBySlot.values()) {
       applyTransmittedShadows(root, config);
     }
   }
 
-  // ---------------------------------------------------------------------
-  // Rendering tab (PRD §22-33) — Reflections (SSR), Anti-Aliasing (TRAA),
-  // Camera FX (Bloom/Lens Flare/DOF/Motion Blur), Color (Tone Mapping/
-  // Exposure/3D LUT). Extends the SAME shared post pipeline the Lighting
-  // tab built (postProcessing.ts's buildScenePostPipeline) — see
-  // applyScenePostPipeline below, the one place either tab rebuilds it.
-  // ---------------------------------------------------------------------
-
-  /** `antialiasEnabled` (TRAA) is the one renderer-CONSTRUCTION-time flag
-   * in this tab (MSAA must be off at the renderer for TRAA to be valid,
-   * same category `renderingMode` already is) — everything else applies
-   * live via applyRenderingConfig(), no remount. */
   setRenderingConfig(config: RenderingConfig) {
     const antialiasChanged = config.antialiasEnabled !== this.renderingConfig.antialiasEnabled;
     this.renderingConfig = config;
@@ -3407,15 +2167,9 @@ export class RenderEngine {
     const { renderer } = this;
     if (!renderer) return;
 
-    // Color (PRD §31-32) — plain renderer properties, not part of the TSL
-    // post-processing node graph; live, no rebuild.
     renderer.toneMapping = TONE_MAPPING_MAP[config.toneMapping];
     renderer.toneMappingExposure = config.exposure;
 
-    // 3D LUT (PRD §33) — the texture itself loads async and is cached by
-    // preset id (render-engine/lut.ts); kick off/reuse that load here and
-    // re-apply once it resolves (same "fire, cache, re-apply on resolve"
-    // pattern ArtificialLightSystem/IES already use). A no-op once cached.
     if (config.lutEnabled) {
       ensureLutLoading(config.lutPreset, () => {
         if (this.renderingConfig === config) this.applyScenePostPipeline();
@@ -3425,12 +2179,6 @@ export class RenderEngine {
     this.applyScenePostPipeline();
   }
 
-  /** The ONE shared post pipeline both Lighting (Contact Shadows/GI/Sun
-   * Shafts) and Rendering (Reflections/Anti-Aliasing/Bloom/Lens Flare/
-   * DOF/Motion Blur/LUT) extend (PRD §43) — real rebuild only when WHICH
-   * effects are structurally active (or which MRT channels they need)
-   * changes; every numeric slider inside an already-active effect is a
-   * cheap uniform update via ScenePostPipeline.update() instead. */
   private applyScenePostPipeline() {
     const { renderer, scene, camera, sun } = this;
     if (!renderer || !scene || !camera || !sun) return;
@@ -3444,9 +2192,6 @@ export class RenderEngine {
     }
   }
 
-  /** Performance tab (PRD §40) — real, live, no remount. Only
-   * renderingMode needs a full remount (see setQualityConfig's own doc
-   * comment); everything else here applies to the next resize/frame. */
   setQualityConfig(config: QualityConfig) {
     const renderingModeChanged = config.renderingMode !== this.qualityConfig.renderingMode;
     this.qualityConfig = config;
@@ -3462,32 +2207,17 @@ export class RenderEngine {
     this.applyRenderScale();
   }
 
-  /** renderingMode -> forceWebGL is a renderer-construction-time flag —
-   * the only Performance-tab field that needs a real dispose+re-init,
-   * same category cameraHelperEnabled/logarithmicDepthBuffer already are
-   * in the pre-rebuild engine. Re-mounts on the SAME container, so
-   * ThreeProjectViewer.tsx doesn't need to know this happened. */
   private async remount() {
     const container = this.container;
     if (!container) return;
     const showPerfStats = this.showPerfStats;
     const qualityConfig = this.qualityConfig;
-    // Real bug this fixes: dispose()+mount() alone leaves a genuinely
-    // empty scene (Tris 1) — mount() only sets up the renderer/scene/
-    // camera, it never loads content on its own; that's syncModels()'s
-    // job, and nothing would call it again since the React-level
-    // `detailModels` prop this remount is invisible to hasn't changed.
     const entries = this.lastSyncEntries;
     this.dispose();
-    // mount() re-applies this.cameraConfig internally (the field itself
-    // survives dispose(), only the THREE objects it configures get torn
-    // down) — no separate camera-restore call needed here.
     await this.mount(container, { showPerfStats, qualityConfig });
     await this.syncModels(entries);
   }
 
-  /** Applies effectiveRenderScale (or the temporary interaction-time
-   * scale, if lower) to the actual renderer size right now. */
   private applyRenderScale() {
     const { renderer, container } = this;
     if (!renderer || !container || !container.clientWidth || !container.clientHeight) return;
@@ -3495,29 +2225,20 @@ export class RenderEngine {
     renderer.setSize(container.clientWidth * scale, container.clientHeight * scale, false);
   }
 
-  /** PRD §41 "Interaction Performance Strategy" (the runtime half, not
-   * the interaction-drag half — see the controls "start"/"end" listeners
-   * in mount()): a REAL sustained-low-frame-time downgrade, one step,
-   * lowering renderScale — not a fake counter. Only the render-scale
-   * lever exists today; SSR/SSGI/volumetric/shadow sample-count steps
-   * land with their own Phase 2-4 features (ADAPTIVE_DOWNGRADE_ORDER in
-   * viewerPresets.ts already reserves the concept for them). */
   private sampleAdaptiveQuality() {
     if (!this.qualityConfig.adaptiveQualityEnabled || !this.qualityConfig.runtimeQualityReductionEnabled) return;
-    if (this.isMobileViewport) return; // mobile always renders at the full configured quality — see isMobileViewport's own doc comment
-    if (this.isInteracting) return; // the interaction-time lever already covers this window
+    if (this.isMobileViewport) return;
+    if (this.isInteracting) return;
     const frames = this.frameTimes;
     if (frames.length < 60 || this.downgradeStep >= 3) return;
     const avg = frames.reduce((a, b) => a + b, 0) / frames.length;
-    if (avg <= 33) return; // healthy (roughly >=30fps sustained)
+    if (avg <= 33) return;
     this.effectiveRenderScale = Math.max(0.4, this.effectiveRenderScale * 0.85);
     this.downgradeStep += 1;
-    this.frameTimes = []; // fresh window before judging the next step
+    this.frameTimes = [];
     this.applyRenderScale();
   }
 
-  /** Shots (PRD §38) — the live camera's current position/target/fov, for
-   * "Capture Shot". Null if the renderer isn't ready. */
   getCameraState(): { position: { x: number; y: number; z: number }; target: { x: number; y: number; z: number }; fov: number } | null {
     const { camera, controls } = this;
     if (!camera || !controls) return null;
@@ -3528,13 +2249,10 @@ export class RenderEngine {
     };
   }
 
-  /** Shots (PRD §38) — smoothly transitions to a saved CameraPreset over
-   * `preset.durationMs`. Cancelled early if the admin grabs the viewport
-   * mid-flight (see the controls "start" listener in mount()). */
   flyToPreset(preset: CameraPreset) {
     const { camera, controls } = this;
     if (!camera || !controls) return;
-    this.idleDrone.notifyInteraction(performance.now()); // Idle Drone Camera PRD §18/§43 — Shots always preempt the drone
+    this.idleDrone.notifyInteraction(performance.now());
     this.cameraTransition = {
       startPos: camera.position.clone(),
       endPos: new THREE.Vector3(preset.position.x, preset.position.y, preset.position.z),
@@ -3547,10 +2265,6 @@ export class RenderEngine {
     };
   }
 
-  /** Camera Helper (PRD §4/§37) — a wireframe frustum for a saved Shot,
-   * shown while previewing it in the Shots tab (not the live viewport
-   * camera's own frustum, which is never visible from inside it). Pass
-   * null to clear. */
   showCameraHelperFor(preset: CameraPreset | null) {
     const scene = this.scene;
     if (!scene) return;
@@ -3569,25 +2283,10 @@ export class RenderEngine {
     this.cameraHelper = helper;
   }
 
-  // ---------------------------------------------------------------------
-  // Idle Drone Camera PRD §54-55 — the public surface ThreeProjectViewer's
-  // imperative handle exposes. Actual per-frame math lives in
-  // idleDroneCamera.ts; everything here is thin delegation + the
-  // editor-only path-helper visualization (§38-39), which genuinely does
-  // belong to RenderEngine (it creates real scene objects, which
-  // idleDroneCamera.ts deliberately never does — see its own doc comment).
-  // ---------------------------------------------------------------------
-
-  /** §16-17 — any outside-canvas UI trigger (Views/Shot select, Sun&Time
-   * scrub, a unit picked from a list, returning to Explore) calls this so
-   * the next idle window starts fresh instead of firing instantly off a
-   * stale timestamp. */
   resetIdleTimer() {
     this.idleDrone.notifyInteraction(performance.now());
   }
 
-  /** Forces the drone off right now (e.g. an explicit "Reset Camera"
-   * action) — same effect as any other notifyInteraction. */
   cancelIdleDrone() {
     this.idleDrone.notifyInteraction(performance.now());
   }
@@ -3596,16 +2295,10 @@ export class RenderEngine {
     return this.idleDrone.isActive();
   }
 
-  /** §45-47 — Units/Views/Sun&Time modes suspend the drone for as long as
-   * the visitor stays there; Explore resumes it (after a fresh delay via
-   * resetIdleTimer(), called separately by the caller). */
   setIdleDroneSuspended(suspended: boolean) {
     this.idleDrone.setSuspended(suspended);
   }
 
-  /** §36-37 — Editor "Preview Drone Camera": ignores the idle delay,
-   * activates immediately with whatever cameraConfig is currently live
-   * (the unsaved draft). */
   startIdleDronePreview() {
     this.idleDrone.startPreview();
   }
@@ -3614,9 +2307,6 @@ export class RenderEngine {
     this.idleDrone.stopPreview();
   }
 
-  /** §38-39 — editor-only orbit-path helper (three altitude rings + a
-   * live position marker). No-op scene-wise for the public viewer, which
-   * never calls this. */
   setShowDronePath(enabled: boolean) {
     this.showDronePath = enabled;
     if (enabled) this.rebuildDronePathHelper();
@@ -3661,10 +2351,6 @@ export class RenderEngine {
     this.droneMarker = marker;
   }
 
-  /** Called every frame (only while showDronePath is on) from the
-   * animation loop — keeps the live-position marker following the real
-   * camera and only visible while the drone (or its preview) is actually
-   * driving it. */
   private updateDronePathHelper() {
     const marker = this.droneMarker;
     const camera = this.camera;
@@ -3673,15 +2359,6 @@ export class RenderEngine {
     marker.position.copy(camera.position);
   }
 
-  /** Async on purpose — WebGPURenderer presents to the canvas on its own
-   * schedule relative to `render()` returning (unlike WebGL2's synchronous
-   * swap), so reading `toDataURL()` in the same tick can capture a stale
-   * or blank frame. Waiting two real animation frames after `render()`
-   * before reading pixels is the standard way to guarantee the browser
-   * has actually composited what was just drawn. Wrapped in try/catch
-   * (not just an `if` guard) since `toDataURL()` itself can throw on a
-   * tainted/lost-context canvas — a real failure should surface as `null`
-   * to the caller, not an uncaught rejection. */
   async captureScreenshot(): Promise<string | null> {
     if (!this.renderer || !this.scene || !this.camera) return null;
     this.renderer.render(this.scene, this.camera);
@@ -3698,9 +2375,6 @@ export class RenderEngine {
   dispose() {
     this.mountToken++;
     this.syncToken++;
-    // "Map" tab — bump the site token and abort in-flight tile fetches
-    // BEFORE anything else tears down, so a build still downloading cannot
-    // land on a disposed scene. Same reasoning as the mount-token guard.
     this.siteToken++;
     this.siteAbort?.abort();
     this.siteAbort = null;
@@ -3708,9 +2382,6 @@ export class RenderEngine {
     this.disposeSite();
     const renderer = this.renderer;
     if (renderer) renderer.setAnimationLoop(null);
-    // "Real-world basemap" mount path — this engine's own repaint-request
-    // loop (startBasemapRepaintLoop's own doc comment) has no counterpart
-    // in setAnimationLoop(null) above, so it needs its own explicit stop.
     if (this.basemapRafId != null) {
       cancelAnimationFrame(this.basemapRafId);
       this.basemapRafId = null;
@@ -3729,10 +2400,6 @@ export class RenderEngine {
     this.loadedGlbUrlBySlot.clear();
     if (renderer) {
       renderer.dispose();
-      // Mapbox owns this canvas in basemap mode (see createBasemapRenderer's
-      // own doc comment) — map.remove() below tears it down along with
-      // every listener Mapbox itself attached; Three must not also remove
-      // a DOM node it doesn't own.
       if (!this.map) renderer.domElement.remove();
     }
     this.map?.remove();
@@ -3752,11 +2419,6 @@ export class RenderEngine {
     this.cameraTransition = null;
     this.hasFramedOnce = false;
 
-    // Idle Drone Camera PRD cleanup — real listener removal (not just a
-    // dropped reference) since document.addEventListener outlives this
-    // engine instance otherwise, and a real scene-object teardown for the
-    // path helper (clearDronePathHelper only removes/disposes; the group
-    // itself is owned by `scene`, already gone above).
     if (this.visibilityHandler) document.removeEventListener("visibilitychange", this.visibilityHandler);
     this.visibilityHandler = null;
     this.clearDronePathHelper();
@@ -3777,7 +2439,6 @@ export class RenderEngine {
     this.sectionIndicatorMesh = null;
     this.sectionFillMeshes = [];
 
-    // Units Blocks & POI Layer PRD cleanup.
     disposeUnitBoxAppearanceCaches(this.unitMaterialCache, this.unitOutlineByMesh);
     this.unitSelectionScaleOriginals.clear();
     this.unitRegistry.clear();
@@ -3787,7 +2448,6 @@ export class RenderEngine {
     this.isolatedUnitId = null;
     this.unitIdFilter = null;
 
-    // Environment tab (PRD §7-13) cleanup.
     if (this.environmentRebuildTimer != null) clearTimeout(this.environmentRebuildTimer);
     this.environmentRebuildTimer = null;
     this.hasRebuiltEnvironmentOnce = false;
@@ -3826,8 +2486,6 @@ export class RenderEngine {
     this.fogSystem = null;
     this.sunDistance = 200;
 
-    // Lighting/Rendering tab (PRD §14-21, §22-33) cleanup — one shared
-    // post pipeline for both.
     this.csmSystem?.dispose();
     this.csmSystem = null;
     this.scenePostPipeline?.dispose();

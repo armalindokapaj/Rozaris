@@ -2,26 +2,6 @@ import * as THREE from "three/webgpu";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { Project3DConfig } from "@/lib/types";
 
-/**
- * Idle Drone Camera PRD §13-14 — "Create idleDroneCamera.ts. Do not place
- * all calculations directly inside RenderEngine.ts... The controller owns
- * idle detection/activation/deactivation, orbit angle, base radius/
- * altitude/target, the height/distance/target waves, smoothing, safe
- * limits, preview mode, path visualization. It must not own the Three.js
- * renderer itself." A real, deliberate exception to this directory's
- * usual "pure stateless functions, RenderEngine.ts owns all mutable
- * state" convention (see sections.ts/unitRegistry.ts) — the PRD spells
- * out a self-contained stateful controller explicitly, so this one class
- * owns its own runtime state instead of RenderEngine holding another
- * dozen flat private fields for it.
- *
- * Replaces the old `OrbitControls.autoRotate` idle behavior (flat spin,
- * fixed altitude/distance) with a procedural "architectural drone" orbit:
- * rise/fall, breathe distance, a drifting look-target — all scaled off
- * the project's own bounds so one set of admin sliders looks right on a
- * villa and a tower alike (PRD §21).
- */
-
 export type IdleDroneConfig = Pick<
   Project3DConfig,
   | "idleDroneEnabled"
@@ -42,43 +22,23 @@ export type IdleDroneConfig = Pick<
 
 export interface IdleDroneBounds {
   center: THREE.Vector3;
-  /** World-space Y extent of the loaded content — the "40m building"/
-   * "12m building" §21 normalizes height/target amplitude against. */
   buildingHeight: number;
-  /** Lowest point of the loaded content — the floor the §32 minimum-
-   * height safety margin is measured up from. */
   groundMinY: number;
   boundingRadius: number;
 }
 
 export interface IdleDroneStepOptions {
-  /** An explicit POI/Shot transition is in flight — PRD §18: those always
-   * preempt the drone outright. */
   transitionInFlight: boolean;
   prefersReducedMotion: boolean;
   tabHidden: boolean;
 }
 
 const TWO_PI = Math.PI * 2;
-/** §33 — "1.25x boundingRadius to 2.5x" working range; the ceiling comes
- * from the live OrbitControls.maxDistance instead (§34, "respect existing
- * camera constraints") rather than a second hardcoded multiplier here. */
 const MIN_DISTANCE_RADIUS_MULTIPLIER = 1.25;
-/** §32 — "approximately 10-15%" of building height above the content's
- * lowest point. */
 const MIN_HEIGHT_SAFETY_RATIO = 0.12;
-/** §19 "~1.5-2.5 seconds" blend — not a separate timed state machine here
- * (see this module's own doc comment for why), just the slow end of the
- * smoothness→time-constant mapping below, so the gentlest default
- * (smoothness 0.88) lands inside that recommended window. */
 const SMOOTHING_TAU_MIN_SEC = 0.05;
 const SMOOTHING_TAU_MAX_SEC = 2.2;
 
-/** §26 "different frequencies/phase offsets/amplitudes" — deliberately
- * distinct per wave so height/distance/target never crest together
- * (which would read as robotic, per the PRD's own warning). Height uses
- * the admin's own `verticalCycles`; distance/target get fixed, mutually
- * irrational-ish ratios against it. */
 const DISTANCE_WAVE_FREQUENCY = 0.5;
 const DISTANCE_WAVE_PHASE = 1.3;
 const TARGET_WAVE_FREQUENCY = 0.75;
@@ -88,9 +48,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** Frame-rate independent exponential smoothing factor for the given
- * dt — see `step()`'s own doc comment for why "smoothness" is mapped to
- * a time constant rather than used as a raw per-frame lerp factor. */
 function dampingFactor(smoothness: number, dtSeconds: number): number {
   const tau = SMOOTHING_TAU_MIN_SEC + clamp(smoothness, 0, 1) * (SMOOTHING_TAU_MAX_SEC - SMOOTHING_TAU_MIN_SEC);
   return 1 - Math.exp(-dtSeconds / tau);
@@ -116,28 +73,17 @@ export class IdleDroneController {
     this.bounds = bounds;
   }
 
-  /** PRD §16-17/§64 — any meaningful interaction (canvas orbit/pan/zoom,
-   * a unit click, an explicit camera transition starting, an outside-
-   * canvas UI trigger like a Shot/View select) calls this. Deactivates
-   * immediately with no animate-back — the camera is already wherever it
-   * physically is, so OrbitControls simply resumes owning it from there. */
   notifyInteraction(now: number) {
     this.lastInteractionAt = now;
     this.active = false;
     this.preview = false;
   }
 
-  /** PRD §45-47 — Units/Views/Sun&Time modes suspend the drone entirely
-   * (not just reset the timer) for as long as the visitor stays there. */
   setSuspended(suspended: boolean) {
     this.suspended = suspended;
     if (suspended) this.active = false;
   }
 
-  /** PRD §36-37 — Editor "Preview Drone Camera" button; ignores the idle
-   * delay and activates immediately using whatever config was last set
-   * (the live unsaved draft, since the editor's viewport always receives
-   * the current draft's cameraConfig). */
   startPreview() {
     this.preview = true;
     this.active = true;
@@ -152,14 +98,6 @@ export class IdleDroneController {
     return this.active;
   }
 
-  /** §19 steps 1-4 — captures the live camera as the orbit's own entry
-   * point: current angle (relative to project center), current distance/
-   * altitude become `baseDistance`/`baseHeight` for the rest of this
-   * activation (§63 — never reset to a default framing). Both clamped
-   * once here into the safe working range (§32-34) rather than every
-   * frame, so a visitor who was already outside the "ideal" band doesn't
-   * get yanked there abruptly — the continuous damping in `step()` eases
-   * toward it smoothly instead. */
   private activate(camera: THREE.PerspectiveCamera, controls: OrbitControls, bounds: IdleDroneBounds) {
     const dx = camera.position.x - bounds.center.x;
     const dz = camera.position.z - bounds.center.z;
@@ -175,22 +113,16 @@ export class IdleDroneController {
     this.active = true;
   }
 
-  /** The per-frame heart (RenderEngine's animation loop calls this right
-   * after stepCameraTransition, PRD §52). Writes `camera.position`/
-   * `controls.target` in place when — and only when — the drone is
-   * actually driving the camera this frame; a plain no-op otherwise, so
-   * OrbitControls (or an explicit transition) stays the sole authority
-   * the rest of the time. */
   step(now: number, dtSeconds: number, camera: THREE.PerspectiveCamera, controls: OrbitControls, opts: IdleDroneStepOptions) {
     const { config, bounds } = this;
-    if (!config || !bounds) return; // §61 — no bounds yet, skip entirely rather than guess
-    if (opts.transitionInFlight) return; // §18 — explicit POI/Shot transition always wins
-    if (opts.tabHidden) return; // §50 — pause, don't burn the idle clock or move the camera off-screen
-    if (this.suspended) return; // §45-47
+    if (!config || !bounds) return;
+    if (opts.transitionInFlight) return;
+    if (opts.tabHidden) return;
+    if (this.suspended) return;
 
     if (!this.preview) {
       if (!config.idleDroneEnabled || opts.prefersReducedMotion) {
-        this.active = false; // §49 — reduced-motion disables the automatic system outright
+        this.active = false;
         return;
       }
       if (!this.active) {
@@ -230,11 +162,6 @@ export class IdleDroneController {
     const desiredX = bounds.center.x + Math.sin(this.angle) * desiredDistance;
     const desiredZ = bounds.center.z + Math.cos(this.angle) * desiredDistance;
 
-    // §29 — never snap; exponential damping toward the instantaneous
-    // procedural pose. "Smoothness" is a 0-1 admin knob, not a raw
-    // per-frame lerp factor: mapped to a damping TIME CONSTANT
-    // (dampingFactor's own doc comment) so higher smoothness reads as
-    // genuinely slower/gentler motion, matching the slider's label.
     const k = dampingFactor(config.idleDroneSmoothness, dtSeconds);
     camera.position.x = THREE.MathUtils.lerp(camera.position.x, desiredX, k);
     camera.position.y = THREE.MathUtils.lerp(camera.position.y, desiredY, k);
@@ -242,15 +169,8 @@ export class IdleDroneController {
     controls.target.x = THREE.MathUtils.lerp(controls.target.x, bounds.center.x, k);
     controls.target.y = THREE.MathUtils.lerp(controls.target.y, bounds.center.y + targetOffsetY, k);
     controls.target.z = THREE.MathUtils.lerp(controls.target.z, bounds.center.z, k);
-    // §30 — stable horizon always; the drone never touches camera.up or
-    // introduces roll.
   }
 
-  /** PRD §38-39 — editor-only path helper: three horizontal rings (high/
-   * mid/low, using the height wave's own amplitude) so an admin can see
-   * the orbit's real shape before previewing it. Pure sampling, no THREE
-   * scene objects created here (RenderEngine owns that, same "engine
-   * modules stay side-effect-free" split as sections.ts). */
   getPathPoints(samples = 64): { high: THREE.Vector3[]; mid: THREE.Vector3[]; low: THREE.Vector3[] } | null {
     const { config, bounds } = this;
     if (!config || !bounds) return null;
@@ -268,9 +188,6 @@ export class IdleDroneController {
     return { high: ring(baseY + heightAmplitude), mid: ring(baseY), low: ring(Math.max(bounds.groundMinY + bounds.buildingHeight * MIN_HEIGHT_SAFETY_RATIO, baseY - heightAmplitude)) };
   }
 
-  /** Full reset — RenderEngine.dispose() calls this so a later mount()
-   * (e.g. re-entering the editor) starts clean rather than resuming a
-   * stale angle/base pose from the previous session. */
   reset() {
     this.config = null;
     this.bounds = null;

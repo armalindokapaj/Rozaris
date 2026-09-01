@@ -4,27 +4,6 @@ import { requireAdmin, requireSuperAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { refreshExperienceDocument } from "@/lib/experienceDocument";
 
-/** Publish Gate (PRD_Admin_3D_Project_Experience §35 "Publish Gate" —
- * "GLB validation not BLOCKED"). Flips any currently-published version to
- * archived and this one to published, in one transaction.
- *
- * Rewrite Track B, step 5 expanded this beyond the single validationStatus
- * check: also blocks on duplicate unit bindings (the master PRD's own
- * rule — "Projects with inventory mode enabled must not publish with
- * critical duplicate or missing bindings", §9.3), a real data-integrity
- * concern (two GLB nodes both claiming the same real inventory unit).
- * Deliberately did NOT add "starting camera preset required" or "poster
- * generated" as hard gates: every project already gets a real, sensible
- * starting camera auto-computed from the model's bounding box even with
- * zero saved presets (requiring one would block the common case, not
- * protect against a real problem), and poster generation needs a new
- * client-side capture flow this pass doesn't add — both explicitly
- * deferred, not silently dropped.
- *
- * `{"force": true}` (Super Admin control/audit pass) bypasses BOTH gates
- * above for the "broken production 3D, need it back now" emergency case —
- * Super Admin only, mandatory `reason`, same pattern as the map-model
- * publish route's identical addition. */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ projectId: string; versionId: string }> }
@@ -64,12 +43,6 @@ export async function POST(
     );
   }
 
-  // Units Blocks & POI Layer PRD §26 — stricter gate specifically for a
-  // `role: units` slot's own version: unlike a Building GLB with some
-  // incidental embedded Unit_* boxes (still just the two checks above),
-  // a DEDICATED Units layer publishing with an unmapped block, a real
-  // project unit with no block at all, or a broken Building anchor is a
-  // genuinely broken inventory layer, not a cosmetic gap.
   if (!force) {
     const slot = await prisma.detailModelSlot.findUnique({ where: { id: version.slotId } });
     if (slot?.role === "units") {
@@ -114,9 +87,6 @@ export async function POST(
   const actor = gate.user?.email ?? gate.user?.name ?? "admin";
   const now = new Date();
   const updated = await prisma.$transaction(async (tx) => {
-    // Multiple Detail-Model Slots pass — scoped to THIS version's own
-    // slotId, not the whole project: publishing "Surroundings" must not
-    // archive "Building"'s independently-published version.
     await tx.detailModelVersion.updateMany({
       where: { slotId: version.slotId, publicationStatus: "published", NOT: { id: versionId } },
       data: { publicationStatus: "archived" },

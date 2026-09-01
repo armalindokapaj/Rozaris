@@ -13,15 +13,6 @@ export interface ApprovalItem {
   href: string;
 }
 
-/**
- * Approval Center (PRD_ROZARIS_Admin §10 "one universal approval inbox")
- * — real rows from the three submit→approve pipelines that already exist
- * as separate admin surfaces (Listings Control's `pending` queue,
- * Project's `approvalStatus: "pending"`, Verification's unverified
- * publishers), merged into one read so nothing needs a second decision
- * mechanism: approving/rejecting from here calls the exact same routes
- * those tabs already use.
- */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

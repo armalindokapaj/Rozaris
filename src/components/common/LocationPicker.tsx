@@ -6,16 +6,6 @@ import { MapPin } from "lucide-react";
 import { CITY_CENTER } from "@/lib/mockData";
 import { useT } from "@/lib/i18n/useT";
 
-/**
- * The "location drop" requirement — a publisher must click a real point on
- * the map to set a listing's exact location, rather than a listing only
- * ever inheriting its neighborhood's centroid (see the "Rozaris Platform
- * Audit" memory: `POST /api/listings` resolved lat/lng from the
- * neighborhood dropdown alone, with no way to place a real pin at all).
- * Click or drag the marker; `onChange` fires with the confirmed point.
- * `value: null` means "not confirmed yet" — the parent form uses that to
- * decide whether the submission can leave `draft` status.
- */
 export function LocationPicker({
   value,
   onChange,
@@ -77,9 +67,6 @@ export function LocationPicker({
       mapRef.current = null;
       markerRef.current = null;
     };
-    // Deliberately mount-once (`value` only seeds the initial marker) —
-    // re-centering on every parent re-render would fight the user's own
-    // drag/click.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 

@@ -10,12 +10,6 @@ interface SceneNode {
   children?: SceneNode[];
 }
 
-/** PRD v2.0 §4 — Scene Navigator's persistent hierarchy. Mock/static chrome
- * for Phase 0 (Experience Editor v2 rebuild decision: real DB-backed
- * hierarchy — actual buildings/floors/units/layers from this project — is
- * later-phase work, once Scene/Materials/Units tabs are for real). Slot
- * names from the real upload section thread into "Buildings" so the tree
- * isn't fully disconnected from real data even in Phase 0. */
 function buildTree(slotNames: string[]): SceneNode[] {
   return [
     {

@@ -65,14 +65,10 @@ export function ListingDetailClient({
   const inCompare = compareIndex !== -1;
 
   return (
-    // Same p-4 outer spacing as the Front Page's row container, so the right
-    // panel sits the exact same distance from the header and viewport edge
-    // as the Front Page's right results panel.
     <div className="px-4 py-4 pb-20 lg:p-4">
       <MobileBottomTabBar />
-      {/* Column gap matches the panel's distance from the header/edge (both
-          16px) — the same spacing rule used everywhere a left/right panel
-          sits next to the main column (Front Page, New Projects). */}
+      {                                                                     
+                                                                     }
       <nav aria-label={t("common.breadcrumb")} className="mb-3 flex items-center gap-1.5 text-xs text-neutral-500">
         <Link href="/" className="hover:text-neutral-900">
           {t("nav.home")}
@@ -185,12 +181,8 @@ export function ListingDetailClient({
               <ReportButton entityType="listing" entityId={listing.id} className="ml-1 hidden lg:block" />
             </div>
 
-            {/* Mobile only: WhatsApp/Call live here too, right under the
-                price, not just in the contact card at the very bottom of a
-                long scroll — reaching the publisher shouldn't require
-                scrolling past the whole listing first. The full PublisherCard
-                (with profile link, verified badge, etc.) still renders lower
-                down for both breakpoints. */}
+            {                                                            
+                                             }
             <div className="grid grid-cols-2 gap-2 border-t border-neutral-100 pt-3 lg:hidden">
               <a
                 href={whatsappHref(

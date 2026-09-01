@@ -44,22 +44,6 @@ function AdSlotCard({ ad, onTrack }: { ad: Ad; onTrack: (kind: "impression" | "c
   );
 }
 
-/**
- * Desktop mirror of `MobileBannerAds` — same real-admin-managed slots, same
- * seamless decoy-clone loop, same "Your AD can be put here" fallback for an
- * unfilled slot, just resized/restyled for this spot instead of
- * copy-pasted verbatim. When placed opposite `LandingSearchCard`
- * (`LandingHero.tsx`), `h-full`/`w-full` line up top/bottom/left/right with
- * the search-card block exactly (that grid row is `items-stretch`); when
- * placed as a plain strip (e.g. the Search page), it just fills its
- * container's fixed height instead. Square corners there, not mobile's
- * `rounded-2xl`, to match the desktop search card's own un-rounded
- * `border-neutral-200` aesthetic.
- *
- * Adds prev/next arrow buttons that mobile's version doesn't need — a
- * mouse can't swipe a snap-scroll track the way a touchscreen can, so
- * without them this loop would be effectively unreachable on desktop.
- */
 export function DesktopBannerAds({ category = "front_page" }: { category?: "front_page" | "search_page" }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
@@ -81,10 +65,8 @@ export function DesktopBannerAds({ category = "front_page" }: { category?: "fron
 
   const slides = Array.from({ length: SLOT_COUNT }, (_, i) => ads.find((ad) => ad.position.endsWith(`_banner_${i + 1}`)) ?? null);
 
-  const SLIDES = SLOT_COUNT + 2; // 1 decoy on each end + SLOT_COUNT real slots
+  const SLIDES = SLOT_COUNT + 2;
 
-  // Start on the first real slide (index 1 once decoys are prepended), no
-  // smooth scrolling so there's nothing to see before first paint.
   useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
@@ -104,9 +86,9 @@ export function DesktopBannerAds({ category = "front_page" }: { category?: "fron
     if (settleTimer.current) clearTimeout(settleTimer.current);
     settleTimer.current = setTimeout(() => {
       if (rawIndex === 0) {
-        el.scrollLeft = cardWidth * SLOT_COUNT; // land on the real last slot
+        el.scrollLeft = cardWidth * SLOT_COUNT;
       } else if (rawIndex === SLIDES - 1) {
-        el.scrollLeft = cardWidth; // land on the real first slot
+        el.scrollLeft = cardWidth;
       }
     }, 120);
   };

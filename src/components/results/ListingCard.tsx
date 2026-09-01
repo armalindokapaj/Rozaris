@@ -38,10 +38,6 @@ export function ListingCard({
   const inCompare = compareIndex !== -1;
 
   const isActive = selectedListingId === listing.id || hoveredId === listing.id;
-  // First click centers this listing on the map and reveals "View Unit" —
-  // it does not navigate. Only a second, explicit click on "View Unit"
-  // (a real Link, so it still works with ctrl/cmd-click and middle-click)
-  // goes to the detail page.
   const isSelected = selectedListingId === listing.id;
 
   function selectOnMap() {
@@ -71,14 +67,7 @@ export function ListingCard({
           : listing.premium
           ? "border-listing-premium/50"
           : "border-neutral-200 hover:border-neutral-300",
-        // Applied whenever premium, not only in the non-active branch above —
-        // otherwise hovering the card sets hoveredId (for map-marker sync),
-        // which flips isActive and would silently swallow the effect.
         listing.premium && "hover:z-10 hover:border-listing-premium hover:shadow-[var(--shadow-1)]",
-        // Horizontal on small screens so more results fit per scroll — same
-        // row spec (inset image, p-4/gap-4) as New Projects' ProjectListRow
-        // on desktop — then back to a stacked, flush-image card at lg+
-        // (grid variant is always a stacked, flush-image card).
         variant === "panel"
           ? "flex flex-row gap-4 overflow-visible p-4 lg:flex-col lg:gap-0 lg:overflow-hidden lg:p-0"
           : "flex flex-col overflow-hidden"
@@ -95,8 +84,8 @@ export function ListingCard({
         <PlaceholderImage seed={listing.id} kind="interior" className="h-full w-full" watermark />
         {variant !== "grid" && (
           <div className="absolute left-2.5 top-2.5 flex gap-1.5">
-            {/* No "Premium" text badge on the card itself — premium status
-                reads through the amber tint/border and hover treatment only. */}
+            {                                                              
+                                                                                }
             <span
               className={cn(
                 "rounded-full px-2 py-1 text-[11px] font-semibold text-white shadow",

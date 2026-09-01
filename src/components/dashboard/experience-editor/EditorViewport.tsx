@@ -17,21 +17,10 @@ const TOOLS: { id: Tool; icon: typeof MousePointer2; label: string }[] = [
   { id: "scale", icon: ScaleIcon, label: "Scale" },
 ];
 
-/**
- * Center viewport — toolbar + the real WebGPU render surface. PRD v2.0
- * §4's Move/Rotate/Scale/Section-plane/Sun-helper tools are visual
- * placeholders in Phase 0 (no editable transform gizmo exists yet — that
- * lands with the Scene tab's real Model transform controls in Phase 1);
- * Select is the only meaningfully "active" tool today, and Fullscreen is
- * real. Nothing here claims to do more than it does.
- */
 export const EditorViewport = forwardRef<
   ThreeProjectViewerHandle,
   {
     detailModels: DetailModelEntry[];
-    /** Whether the caller has finished figuring out WHAT to load at all
-     * (`useDetailModelSlots`'s own `slotsLoaded`) — see the loading-overlay
-     * doc comment below for why this, not just `onReady`, is needed. */
     slotsLoaded: boolean;
     cameraConfig?: CameraConfig;
     qualityConfig?: QualityConfig;
@@ -54,28 +43,6 @@ export const EditorViewport = forwardRef<
     const containerRef = useRef<HTMLDivElement>(null);
     const [tool, setTool] = useState<Tool>("select");
     const [fullscreen, setFullscreen] = useState(false);
-    // Real bug found live (reported as "the editor is stuck" opening a
-    // project with a large published GLB): nothing here ever told the
-    // admin a heavy model (this project's is ~50MB / 1.1M+ triangles) was
-    // still downloading/parsing — before RenderEngine's own
-    // frameLoadedContent() has anything to frame, the camera sits at its
-    // pre-content default position, which for this scene's ground-plane
-    // size reads as a giant blank pink/grey dome filling the whole
-    // viewport. Indistinguishable from "broken" without a real loading
-    // state.
-    //
-    // Deliberately NOT keyed off ThreeProjectViewer's own `onReady` (unlike
-    // the public viewer's ProjectViewerRuntime/ViewerHUD) — `onReady` fires once,
-    // ever, on the FIRST syncModels() call, and `detailModels` here starts
-    // as `[]` (this editor's `useDetailModelSlots` fetch hasn't resolved
-    // yet) then gets replaced with the real, heavy model once it has. That
-    // first sync is the trivial "zero models" case, which resolves
-    // instantly — `onReady` would already have fired and gone quiet by the
-    // time the real GLB starts loading, leaving nothing to hide the
-    // overlay behind afterward. Real triangle count (already sampled a few
-    // times a second via `onPerfStats`, which this editor always has on)
-    // is what actually distinguishes "just the bare ground plane" (~tens
-    // of tris) from real building geometry.
     const [maxTrianglesSeen, setMaxTrianglesSeen] = useState(0);
     const sceneReady = slotsLoaded && (detailModels.length === 0 || maxTrianglesSeen > 200);
     const handlePerfStats = useCallback(

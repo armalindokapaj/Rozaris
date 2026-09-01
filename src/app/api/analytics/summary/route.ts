@@ -10,15 +10,6 @@ export interface AnalyticsSummary {
   click: number;
 }
 
-/**
- * Real per-post analytics — "every user and publisher can see how the
- * post clicks and views, how many viewers clicked WhatsApp... and every
- * owner of the post can see it, admin too" (see the "Rozaris Platform
- * Audit" memory). Gated by real ownership, not just "signed in": a
- * listing/project's own publisher, or any admin, can read its counts —
- * nobody else (a competitor shouldn't be able to see another publisher's
- * traffic numbers just by guessing an id).
- */
 export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Not signed in." }, { status: 401 });

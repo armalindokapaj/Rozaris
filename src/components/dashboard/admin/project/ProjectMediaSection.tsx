@@ -7,22 +7,9 @@ import { useT } from "@/lib/i18n/useT";
 import { Btn, EmptyState, ErrorNote, Field, Panel, SectionHeader, inputClass } from "./kit";
 import type { ProjectDraft } from "./draft";
 
-/** Keep in sync with `/api/blob/upload`'s own `projects/` branch. */
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
-/**
- * Project Manager → "Media". Real uploads (Vercel Blob, straight from the
- * browser via `/api/blob/upload`'s `projects/` prefix) alongside the
- * paste-a-URL path the old modal offered — a URL field is fine for a
- * render already hosted somewhere, and useless for the photo sitting on an
- * admin's desktop, which was the actual complaint.
- *
- * Order is meaningful: `gallery[0]` is what the project card falls back to
- * and what the detail page leads with, so reordering is a real editing
- * action here rather than something only achievable by deleting and
- * re-adding in the right sequence.
- */
 export function ProjectMediaSection({
   projectId,
   draft,
@@ -90,9 +77,6 @@ export function ProjectMediaSection({
         <div className="grid gap-4 sm:grid-cols-[220px_1fr]">
           <div className="relative aspect-4/3 overflow-hidden rounded-card border border-neutral-200 bg-neutral-100">
             {draft.heroImage ? (
-              // Blob/remote hosts aren't all in next.config's image
-              // allowlist, and an admin can paste any URL here — a plain
-              // <img> is the honest choice for arbitrary remote media.
               // eslint-disable-next-line @next/next/no-img-element
               <img src={draft.heroImage} alt="" className="h-full w-full object-cover" />
             ) : (

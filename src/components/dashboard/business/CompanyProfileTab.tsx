@@ -59,13 +59,6 @@ interface OwnerRow {
   email: string | null;
 }
 
-/** Account & Profile System PRD v1.0 §9 "Business Publisher & Organization
- * Profile" + §8 "Business Teams, Roles & Permissions" — real
- * Publisher/OrganizationMembership/OrganizationInvitation data, replacing
- * this tab's previous fully-local Zustand `teamMembers` mock. Any team
- * member can view; only Owner/Org Admin (`canManage`, mirroring the
- * server's real `requireOrgRole()` gate) can edit the company profile or
- * the roster — everyone else sees the same data read-only. */
 export function CompanyProfileTab({ publisher }: { publisher: Publisher }) {
   const { t } = useT();
   const orgRole = useAppStore((s) => s.auth.orgRole);

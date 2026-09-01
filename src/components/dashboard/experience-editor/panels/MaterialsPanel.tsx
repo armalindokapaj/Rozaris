@@ -9,15 +9,6 @@ import type { DetailVersionRow } from "@/hooks/useDetailModelSlots";
 
 const DEFAULT_COLOR = "#cccccc";
 
-/**
- * Materials tab (PRD §6) — non-destructive per-node overrides. Original
- * GLB material is never modified (see RenderEngine.ts's applyNodeOverrides
- * doc comment — every reapplication clones fresh from a cached original).
- * No 3D-viewport click-to-select exists yet (Interaction phase), so nodes
- * are picked from the real sceneManifest list computed server-side at
- * upload time — a real substitute, not a placeholder, just a different
- * interaction than clicking in the viewport.
- */
 export function MaterialsPanel({ activeVersion, modelEditor, canEdit }: { activeVersion: DetailVersionRow | null; modelEditor: UseModelEditorReturn; canEdit: boolean }) {
   const [search, setSearch] = useState("");
   const [selectedRzNodeId, setSelectedRzNodeId] = useState<string | null>(null);

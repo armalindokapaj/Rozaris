@@ -21,13 +21,6 @@ interface AdminUser {
   adminScopes: string[];
 }
 
-/** Permission overrides (PRD_ROZARIS_Admin §3 "Future Admin permission
- * scopes") — grant/revoke `superAdmin` and per-scope access for
- * `role: "admin"` users. Every write here is itself Super-Admin-gated
- * server-side (`PATCH /api/admin/users/[userId]` requires
- * `requireSuperAdmin()` the moment `superAdmin`/`adminScopes` are in the
- * body) — this panel only renders inside the Super Admin tab to begin
- * with, but the real enforcement is the route, not the render guard. */
 export function PermissionsPanel() {
   const { t } = useT();
   const [admins, setAdmins] = useState<AdminUser[]>([]);

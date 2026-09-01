@@ -10,9 +10,6 @@ import {
   verifyImpersonationCookieValue,
 } from "@/lib/impersonation";
 
-/** Current impersonation state, for `ImpersonationBanner.tsx` — any admin
- * can read (it only reveals something if a cookie is already set on their
- * own request). */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;
@@ -28,9 +25,6 @@ export async function GET() {
 
 const bodySchema = z.object({ targetUserId: z.string().min(1) });
 
-/** Starts view-only impersonation — Super Admin only. See
- * `src/lib/impersonation.ts`'s doc comment for the real, honestly-scoped
- * blast radius. */
 export async function POST(request: Request) {
   const gate = await requireSuperAdmin();
   if (gate instanceof NextResponse) return gate;
@@ -72,8 +66,6 @@ export async function POST(request: Request) {
   return NextResponse.json({ active: true, target: { id: target.id, name: target.name, email: target.email } });
 }
 
-/** Ends impersonation — any admin can end their own, no target lookup
- * needed. */
 export async function DELETE() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

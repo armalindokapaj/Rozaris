@@ -1,15 +1,5 @@
 import type { Amenity, Project, ProjectSetting, ProjectStatus, PropertyType } from "@/lib/types";
 
-/**
- * The editable half of a `Project` record, flattened to exactly the shape
- * `POST /api/projects` accepts. The Project Manager holds ONE of these for
- * the whole record view — General, Location, Media and Features all edit
- * the same draft and commit through a single Save, so an admin who
- * renames the project and swaps its hero image doesn't have to remember to
- * press two different save buttons in two different panels (the failure
- * mode of per-panel saves, and the reason the old modal's single
- * bottom-of-the-scroll button existed at all).
- */
 export interface ProjectDraft {
   name: string;
   slug: string;
@@ -81,9 +71,6 @@ export function draftToPayload(projectId: string, draft: ProjectDraft) {
   };
 }
 
-/** Field-by-field, so the save bar can say WHAT is unsaved rather than
- * just that something is — and so a re-render with an identical draft
- * doesn't arm the "you have unsaved changes" guard. */
 export function draftDiff(a: ProjectDraft, b: ProjectDraft): (keyof ProjectDraft)[] {
   return (Object.keys(a) as (keyof ProjectDraft)[]).filter((key) => {
     const left = a[key];
@@ -95,10 +82,6 @@ export function draftDiff(a: ProjectDraft, b: ProjectDraft): (keyof ProjectDraft
   });
 }
 
-/** URL-safe slug from a project name — the same shape the create flows
- * produce, offered as a one-click "regenerate" next to the slug field
- * rather than silently rewriting it on every rename (an existing project's
- * slug is a live public URL). */
 export function slugify(name: string): string {
   return name
     .normalize("NFD")

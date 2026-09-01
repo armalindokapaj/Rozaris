@@ -2,13 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 
-/**
- * Reports tab — every number here is a real Postgres aggregate, replacing
- * four numbers that used to be hardcoded literals ("6.2h", "100%", "3",
- * "99.98%") with nothing behind them. `avgApprovalHours`/`errorCount` can
- * legitimately read "no data yet" right after the platform's content wipe
- * (see the "Rozaris Platform Audit" memory) — that's honest, not a bug.
- */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

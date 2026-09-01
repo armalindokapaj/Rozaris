@@ -4,11 +4,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import type { FollowKind } from "@/generated/prisma";
 
-/** §4 "Following — Developers, projects, neighborhoods and searches" —
- * real `Follow` rows. Only "project"/"developer" kinds today, matching the
- * client's existing `following` slice; neighborhood-follow is the
- * neighborhood SavedItem (see /api/account/saved), and search-follow is a
- * SavedSearch's own cadence — no separate Follow row for either. */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -28,7 +23,6 @@ const bodySchema = z.object({
   targetId: z.string().min(1),
 });
 
-/** Toggles a follow — creates it if absent, deletes it if present. */
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {

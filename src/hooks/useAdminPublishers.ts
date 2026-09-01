@@ -16,10 +16,6 @@ export interface RealPublisher {
   restrictedUntil: string | null;
 }
 
-/** Every real Publisher row (`GET /api/admin/publishers`, admin-gated,
- * already covers every seeded + real publisher) — shared by PublishersTab
- * and VerificationTab so both search/refresh the same way instead of each
- * carrying its own near-identical fetch effect. */
 export function useAdminPublishers(query: string) {
   const [publishers, setPublishers] = useState<RealPublisher[]>([]);
 

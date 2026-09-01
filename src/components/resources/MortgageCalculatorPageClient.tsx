@@ -13,12 +13,9 @@ export function MortgageCalculatorPageClient() {
   const [monthlyPayment, setMonthlyPayment] = useState(0);
 
   return (
-    // Same p-4 outer spacing and gap-4 column rhythm as the Front Page's
-    // three-column row, so both side panels sit the same distance from the
-    // header/edges and from the middle column as everywhere else on the site.
     <div className="px-4 py-4 lg:p-4">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        {/* Left panel: bank sponsor. */}
+        {                               }
         <aside className="shrink-0 lg:sticky lg:top-20 lg:w-72">
           <SponsorAdCard
             icon={Landmark}
@@ -27,7 +24,7 @@ export function MortgageCalculatorPageClient() {
           />
         </aside>
 
-        {/* Middle: the calculators themselves. */}
+        {                                         }
         <div className="min-w-0 flex-1 space-y-6">
           <div className="flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-card bg-brand-50">
@@ -42,7 +39,7 @@ export function MortgageCalculatorPageClient() {
           <AffordabilityCalculator monthlyPayment={monthlyPayment} />
         </div>
 
-        {/* Right panel: insurance calculator, then its sponsor below. */}
+        {                                                                }
         <aside className="shrink-0 space-y-4 lg:sticky lg:top-20 lg:w-72">
           <div className="glass-panel overflow-hidden rounded-panel">
             <div className="border-b border-neutral-100 px-5 pt-5 pb-4">

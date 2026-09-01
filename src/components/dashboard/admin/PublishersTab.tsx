@@ -7,14 +7,6 @@ import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { isPublisherIdle } from "@/lib/moderation";
 import { useAdminPublishers, type RealPublisher } from "@/hooks/useAdminPublishers";
 
-/** Publisher directory — real Postgres `Publisher` rows only now
- * (`GET /api/admin/publishers`, already returns every seeded + real
- * publisher, so the old separate `mockData.publishers` render pass was a
- * pure duplicate of the same 7 rows — see the "Rozaris Platform Audit"
- * memory). Each row gets a real management panel: edit contact details,
- * verify/unverify, restrict (with a time-bound option, distinct from a
- * specific listing's own idle window), and reset the owner's password —
- * all previously read-only or partially read-only. */
 export function PublishersTab({ initialQuery }: { initialQuery?: string }) {
   const { t } = useT();
   const [query, setQuery] = useState(initialQuery ?? "");
@@ -119,14 +111,6 @@ export function PublishersTab({ initialQuery }: { initialQuery?: string }) {
 const inputClass = "w-full rounded-control border border-neutral-200 px-2.5 py-1.5 text-sm";
 const labelClass = "mb-1 block text-xs font-medium text-neutral-500";
 
-/** Admin-initiated onboarding: creates the owner `User` + `Publisher`
- * together (`POST /api/admin/publishers`), auto-verified — the admin
- * counterpart to self-service signup, for a B2B/B2C partner Rozaris ops
- * is onboarding directly rather than one that signs itself up. Once this
- * Publisher exists it already shows up in every publisher-picker the
- * platform has (`/admin/projects/new`, `ListingsManagementTab`'s "posting
- * on behalf of"), so creating a Project/Listing for it needs no further
- * wiring here. */
 function NewPublisherForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
   const { t } = useT();
   const [ownerName, setOwnerName] = useState("");

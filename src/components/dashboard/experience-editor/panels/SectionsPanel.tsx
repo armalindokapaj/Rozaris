@@ -10,21 +10,6 @@ import { SECTION_FOOTPRINT_MAX_M, SECTION_HEIGHT_STOPS_M, SECTION_MAX_DIMENSION_
 import { parseSectionFloorNumber } from "@/lib/floorSections";
 import { SECTION_SITE_EXEMPT_HINT } from "@/lib/render-engine/sectionScope";
 
-/**
- * Sections tab (PRD §34-36) — real clip + cap via THREE.ClippingGroup
- * (RenderEngine.ts's activateSection/rebuildSectionCap, restored
- * near-verbatim from the pre-rebuild engine's already-production-proven
- * technique). "Floor Sections" (Single Floor / Building Section) and
- * "Manual Clipping" are the same underlying Section record in this
- * editor — a heightOnly cut IS a floor section, a full box IS a manual
- * clip — presented as one coherent list+editor rather than duplicated
- * logic across 3 mechanically-split subtabs. "Presets" is this same list
- * (each saved Section already is a quick-selectable preset).
- *
- * No TransformControls viewport drag-authoring yet (PRD's full vision) —
- * numeric fields only this pass, a real, honestly-scoped reduction, not a
- * placeholder.
- */
 export function SectionsPanel({
   configEditor,
   viewerRef,
@@ -46,9 +31,6 @@ export function SectionsPanel({
   }
 
   function create() {
-    // Real loaded-content bounds, not world origin — see addSection's own
-    // doc comment for the actual bug this prevents (a new section barely
-    // overlapping content that isn't centered at (0,0)).
     const bounds = viewerRef.current?.getContentBounds() ?? null;
     const midHeight = bounds ? (bounds.minY + bounds.maxY) / 2 : 3;
     const section = addSection({
@@ -59,11 +41,6 @@ export function SectionsPanel({
       centerZ: bounds?.centerZ,
       widthM: bounds ? Math.max(5, bounds.sizeX * 0.6) : undefined,
       depthM: bounds ? Math.max(5, bounds.sizeZ * 0.6) : undefined,
-      // Passed directly into the new record itself, not via a follow-up
-      // updateSection() call — that call would read `draft.sections` from
-      // BEFORE addSection's own update() lands (a real stale-closure bug
-      // this exact sequence hit: heightOnly silently never applied for
-      // Floor Sections).
       heightOnly: mode === "floor",
     });
     viewerRef.current?.activateSection(section);
@@ -72,8 +49,6 @@ export function SectionsPanel({
   function set(patch: Parameters<typeof updateSection>[1]) {
     if (!active) return;
     updateSection(active.id, patch);
-    // Live preview — reapply immediately so dragging a slider shows the
-    // clip move in real time, same pattern Materials/Model-transform use.
     viewerRef.current?.activateSection({ ...active, ...patch });
   }
 
@@ -97,11 +72,6 @@ export function SectionsPanel({
       </button>
 
       {mode === "floor" && (
-        // The naming convention is load-bearing, not decorative — it is the
-        // entire linkage between a section and the units it cuts open, so
-        // the panel says so where the admin is about to type a name rather
-        // than leaving it to be discovered. Each row below then shows what
-        // its own name actually resolved to.
         <p className="rounded-md border border-neutral-800 bg-neutral-900/60 p-2 text-[10px] leading-relaxed text-neutral-400">
           Name a section after its floor — <span className="text-neutral-200">Floor 7</span> or{" "}
           <span className="text-neutral-200">Kati 7</span> — and every unit on floor 7 gets a
@@ -111,10 +81,8 @@ export function SectionsPanel({
         </p>
       )}
 
-      {/* The site-context exemption is invisible in the viewport until an
-          admin cuts a section and wonders why the surroundings survived —
-          say it here, next to where sections are authored. Rule and copy
-          both live in render-engine/sectionScope.ts. */}
+      {                                                                   
+                                                        }
       <p className="rounded-md border border-neutral-800 bg-neutral-900/60 p-2 text-[10px] leading-relaxed text-neutral-400">
         {SECTION_SITE_EXEMPT_HINT}
       </p>
@@ -168,10 +136,8 @@ export function SectionsPanel({
             <ToggleRow label="Bottom Plane" checked={active.bottomEnabled} disabled={!canEdit} onChange={(v) => set({ bottomEnabled: v })} />
           </GroupCard>
 
-          {/* Piecewise, not flat: 0-100m covers essentially every slab an
-              admin cuts at, so it gets the slider's whole first half at
-              ~0.1m per pixel; the 100-350m tail is there for the rare
-              tower and shares the second half. */}
+          {                                                               
+                                                  }
           <SliderRow label="Height (Slab)" value={active.heightM} stops={SECTION_HEIGHT_STOPS_M} step={0.1} suffix="m" editable disabled={!canEdit} onChange={(v) => set({ heightM: v })} />
 
           {!active.heightOnly && (

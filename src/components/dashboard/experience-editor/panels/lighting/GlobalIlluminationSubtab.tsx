@@ -3,14 +3,6 @@
 import { GroupCard, SectionHeading, SliderRow, ToggleRow } from "../../fields";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 
-/**
- * Lighting → Global Illumination (PRD §19, `webgpu_postprocessing_ssgi.html`
- * parity) — real SSGINode, the ONE GI system (no separate SSAO/
- * LightProbeGrid feature per the PRD's own explicit rule). Field names
- * mirror the node's own uniform names exactly (sliceCount/stepCount/
- * radius/expFactor/thickness/useLinearThickness/backfaceLighting/
- * useScreenSpaceSampling/aoIntensity/giIntensity).
- */
 export function GlobalIlluminationSubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const on = draft.giEnabled;

@@ -6,7 +6,6 @@ import { useT } from "@/lib/i18n/useT";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
 import { formatPrice } from "@/lib/utils";
 
-/** A compact, removable summary of the current search state. */
 export function ActiveFilterChips() {
   const filters = useAppStore((s) => s.filters);
   const setFilters = useAppStore((s) => s.setFilters);

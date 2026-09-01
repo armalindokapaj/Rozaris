@@ -1,14 +1,5 @@
 import { prisma } from "@/lib/db";
 
-/**
- * Platform CMS's "SEO titles / SEO descriptions" (PRD_ROZARIS_Admin §14) —
- * the registry of every page an admin can override, paired with that
- * page's own real hardcoded copy as the fallback. A `PageSeoOverride` row
- * (see prisma/schema.prisma) beats the fallback when present; a page with
- * no row yet just renders exactly what it always has. `key` here must
- * match the `page` primary key the admin route reads/writes and the id
- * each page's own `generateMetadata()` passes to `getPageSeo()`.
- */
 export const PAGE_SEO_REGISTRY: Record<string, { title: string; description: string }> = {
   home: {
     title: "ROZARIS — Zbulo Pronën Ndryshe",
@@ -61,11 +52,6 @@ export const PAGE_SEO_REGISTRY: Record<string, { title: string; description: str
 
 export type PageSeoKey = keyof typeof PAGE_SEO_REGISTRY;
 
-/** Raw strings — the DB override wins field-by-field (a title-only
- * override still falls back to the real description, not an empty one).
- * Used by the root layout (which builds the `title.default`/`template`
- * pair itself) and the admin editor. Page-level `generateMetadata()`
- * bodies should use `getPageSeo()` below instead. */
 export async function getPageSeoRaw(key: PageSeoKey): Promise<{ title: string; description: string }> {
   const fallback = PAGE_SEO_REGISTRY[key];
   const override = await prisma.pageSeoOverride.findUnique({ where: { page: key } }).catch(() => null);
@@ -75,13 +61,6 @@ export async function getPageSeoRaw(key: PageSeoKey): Promise<{ title: string; d
   };
 }
 
-/** Server-side read for a page's own `generateMetadata()`. `title` is
- * wrapped as `{ absolute }` — every registry/override title here is
- * already a complete "Page Name | ROZARIS" string, so it must bypass the
- * root layout's own `title.template` (`"%s | ROZARIS"`) rather than being
- * run through it a second time, which would render "Page Name | ROZARIS
- * | ROZARIS". A real bug this shape avoids, not a hypothetical one — see
- * the "Rozaris Platform Audit" memory. */
 export async function getPageSeo(key: PageSeoKey): Promise<{ title: { absolute: string }; description: string }> {
   const { title, description } = await getPageSeoRaw(key);
   return { title: { absolute: title }, description };

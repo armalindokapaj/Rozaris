@@ -16,21 +16,6 @@ interface PriorityQueueSummary {
   total: number;
 }
 
-/**
- * PRD_ROZARIS_Admin_Dashboard §14.1 (Global Search) + §4.2 (Quick Action) +
- * §15 (notifications) — the console's persistent utility row. Every piece
- * is real, not decorative:
- *  - Search hits `GET /api/admin/search` (Projects/Publishers/Users only —
- *    see that route's own doc comment for why Listings/Units are omitted).
- *  - The bell's badge is the real Priority Queue total
- *    (`/api/admin/dashboard/priority-queue`, the same feed the Dashboard's
- *    own Priority Queue card uses) — not a fixed placeholder count.
- *  - Quick Action only lists actions with a real, working destination
- *    (PRD §14.3 "destructive/role-inappropriate actions are omitted" —
- *    extended here to "actions with nowhere real to go are omitted" too:
- *    the PRD's own "Add Publisher"/"Import Units" have no creation flow in
- *    this app yet, so they're left out rather than linking nowhere).
- */
 export function AdminTopBar({
   onNavigate,
   isSuperAdmin,

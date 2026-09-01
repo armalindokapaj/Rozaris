@@ -3,13 +3,6 @@
 import { Box, List, TriangleAlert } from "lucide-react";
 import { useT } from "@/lib/i18n/useT";
 
-/**
- * PER-009 graceful degradation: if Mapbox is unconfigured or WebGL is
- * unavailable, the discovery experience must still work via a fallback path.
- * The action is caller-supplied since "fall back to" means something
- * different on the home map (switch to List mode) vs. the ArchViz exterior
- * (open the unit list) vs. a small context map (no action needed).
- */
 export function MapFallback({
   reason,
   actionLabel,

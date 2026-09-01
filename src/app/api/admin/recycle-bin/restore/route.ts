@@ -10,10 +10,6 @@ const bodySchema = z.object({
   entityId: z.string().min(1),
 });
 
-/** Restore one soft-deleted row from the Recycle Bin — clears
- * `deletedAt`/`deletedBy`. Any `requireAdmin()`, not just Super Admin:
- * restoring is the low-risk half of soft delete, the same permission level
- * that could soft-delete it in the first place. */
 export async function POST(request: Request) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

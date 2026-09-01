@@ -30,12 +30,6 @@ export default function SearchPage() {
   const selectedListingId = useAppStore((s) => s.selectedListingId);
   const selectListing = useAppStore((s) => s.selectListing);
   const mapAreaSearchBounds = useAppStore((s) => s.mapAreaSearchBounds);
-  // Real Postgres listings (populated by `useLiveListings()` in
-  // `MapView`/`ResultsList`, both mounted above this lookup) — was reading
-  // `mockData.searchableListings` here, whose ids never match the real
-  // `cuid()` ids `selectListing()` is actually called with, so this panel
-  // silently failed to open for every real listing. See the launch-
-  // readiness audit that found this.
   const liveListings = useAppStore((s) => s.liveListings);
 
   const [listingsSnap, setListingsSnap] = useState<SheetSnap>("preview");
@@ -47,22 +41,15 @@ export default function SearchPage() {
   const { t } = useT();
   const selectedListing = selectedListingId ? (liveListings ?? []).find((listing) => listing.id === selectedListingId) ?? null : null;
 
-  // Note: mobile vs. desktop chrome below is switched with Tailwind's `lg:`
-  // breakpoint classes (both trees are always in the DOM), not a JS media
-  // query — a client-only mount/unmount split here would make the server
-  // and first client render disagree on tree shape and trigger a hydration
-  // mismatch. The CSS-only approach costs a second (hidden, cheap) results
-  // list in the DOM, which is the standard, hydration-safe tradeoff.
-
   return (
     <div className="relative flex h-full min-h-0 flex-1 overflow-hidden flex-col lg:flex-row">
 
-      {/* Mobile-only search row + quick-filter chip strip */}
+      {                                                      }
       <MobileSearchRow onOpenFilters={() => setMobileSheet("filters")} />
       <MobileFilterChipBar onOpenFilters={() => setMobileSheet("filters")} />
 
       <div className="relative flex min-h-0 flex-1 flex-col lg:contents">
-        {/* Persistent map column — one Mapbox instance shared across map/list modes and breakpoints */}
+        {                                                                                              }
         <div
           className={cn(
             "relative min-h-0 w-full flex-1 lg:h-full lg:flex-none lg:transition-[width] lg:duration-300",
@@ -74,9 +61,6 @@ export default function SearchPage() {
           )}
         >
           <div
-            // Mobile only: tapping the map collapses the listings sheet back
-            // to its default preview size, giving the map its full height
-            // back (the sheet only auto-expands via the handle-bar tap below).
             onClick={() => {
               if (mobileSheet === "listings" && listingsSnap !== "preview") {
                 setListingsSnap("preview");
@@ -97,7 +81,7 @@ export default function SearchPage() {
           <OnboardingHint />
           <CompareTray />
 
-          {/* Mobile listings sheet */}
+          {                           }
           <BottomSheet
             open={mobileSheet === "listings"}
             onClose={() => setMobileSheet(null)}
@@ -117,7 +101,7 @@ export default function SearchPage() {
             </div>
           </BottomSheet>
 
-          {/* Mobile filters sheet */}
+          {                          }
           <BottomSheet
             open={mobileSheet === "filters"}
             onClose={() => setMobileSheet("listings")}
@@ -129,9 +113,8 @@ export default function SearchPage() {
             <FiltersForm compact />
           </BottomSheet>
 
-          {/* Mobile: a compact preview card for the marker just tapped on the
-              map, floating above the mode pill — matches the mockup's map
-              screen. Only when no sheet is already open over it. */}
+          {                                                                   
+                                                                    }
           {selectedListing && mobileSheet === null && (
             <div className="absolute bottom-[4.75rem] left-1/2 z-30 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 overflow-hidden rounded-panel shadow-[var(--shadow-2)] lg:hidden">
               <ListingCard listing={selectedListing} variant="panel" />
@@ -151,8 +134,8 @@ export default function SearchPage() {
           </div>
         </div>
 
-        {/* Desktop: filters live at the top of the right workspace, directly
-            above its independently scrolling listings rail. */}
+        {                                                                    
+                                                               }
         <div
           className={cn(
             "hidden min-h-0 lg:flex lg:h-full lg:flex-col lg:shrink-0",

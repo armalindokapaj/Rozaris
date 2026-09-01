@@ -88,8 +88,6 @@ const UNIT_STATUS_CLASS: Record<Unit["status"], string> = {
   sold: "border-neutral-200 bg-neutral-100 text-neutral-500",
 };
 
-// Icon-only decoration for the "Project Highlights" grid — Amenity is a
-// closed 9-value union, so this map is exhaustive and needs no fallback.
 const AMENITY_ICON: Record<Amenity, typeof Waves> = {
   elevator: ArrowUpDown,
   parking: Car,
@@ -117,13 +115,6 @@ const NAV_ITEMS = [
 const UNIT_PAGE_SIZE = 9;
 const HERO_THUMBNAIL_COUNT = 4;
 
-/** Public, SEO-indexable editorial page for a single development
- * (PRD_Project_Detail_Page) — the authoritative information + inventory
- * page, distinct from the dedicated /project/[slug] Three.js viewer it
- * links out to via "Explore in 3D". Layout: full-width hero (gallery +
- * title/actions), then a two-column body — main content plus a sticky
- * sidebar (Project Facts / Construction Progress / Quick Actions) — so
- * the page's key facts and actions stay reachable while browsing. */
 export function ProjectDetailClient({
   project,
   related,
@@ -151,8 +142,6 @@ export function ProjectDetailClient({
 
   const sectionRefs = useRef<Partial<Record<string, HTMLElement | null>>>({});
 
-  // A project always has a hero image; the gallery is optional extra media
-  // riding alongside it in the same thumbnail rail / lightbox.
   const media = useMemo(
     () => (project.gallery.length > 0 ? project.gallery : [project.heroImage]),
     [project.gallery, project.heroImage]
@@ -160,9 +149,6 @@ export function ProjectDetailClient({
   const heroThumbnails = media.slice(0, HERO_THUMBNAIL_COUNT);
   const remainingMediaCount = media.length - HERO_THUMBNAIL_COUNT;
 
-  // Every seeded project only has an AVAILABLE unit's price count toward the
-  // public from-price (PRD_Project_Detail_Page §13) — never a fabricated or
-  // stale figure derived from sold/reserved inventory.
   const availableUnits = useMemo(
     () => project.units.filter((u) => u.status === "available"),
     [project.units]
@@ -272,7 +258,7 @@ export function ProjectDetailClient({
         <span className="truncate text-neutral-700">{project.name}</span>
       </nav>
 
-      {/* Title row — PRD_Project_Detail_Page §4 */}
+      {                                            }
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <Link
@@ -331,7 +317,7 @@ export function ProjectDetailClient({
         </div>
       </div>
 
-      {/* Hero gallery — thumbnail rail + main image, PRD §14 */}
+      {                                                         }
       <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-[88px_1fr]">
         <div className="hidden gap-2.5 sm:grid sm:auto-rows-[68px] sm:overflow-hidden">
           {heroThumbnails.map((g, i) => {
@@ -398,7 +384,7 @@ export function ProjectDetailClient({
         </div>
       </div>
 
-      {/* Sticky local navigation — PRD §6 */}
+      {                                      }
       <div className="sticky top-16 z-30 -mx-4 mt-6 border-b border-neutral-200 bg-white px-4 lg:mx-0">
         <div className="flex items-center gap-5 overflow-x-auto">
           {availableNavItems.map(({ id, labelKey }) => (
@@ -419,10 +405,10 @@ export function ProjectDetailClient({
         </div>
       </div>
 
-      {/* Two-column body: main content + sticky facts/actions sidebar */}
+      {                                                                  }
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px] lg:items-start">
         <div className="min-w-0 space-y-10">
-          {/* About + Project Highlights — PRD §7/§18 */}
+          {                                             }
           <section id="overview" ref={(el: HTMLElement | null) => { sectionRefs.current.overview = el; }} className="scroll-mt-32">
             <div className="grid gap-6 sm:grid-cols-2">
               <div>
@@ -467,8 +453,8 @@ export function ProjectDetailClient({
             </div>
           </section>
 
-          {/* Gallery — PRD §14 (simplified: flat grid, no category taxonomy —
-              the mock data model has no per-media category field to drive one) */}
+          {                                                                   
+                                                                                  }
           {project.gallery.length > 0 && (
             <section id="gallery" ref={(el: HTMLElement | null) => { sectionRefs.current.gallery = el; }} className="scroll-mt-32">
               <h2 className="font-serif text-xl text-neutral-900">{t("projectDetail.galleryTitle")}</h2>
@@ -491,7 +477,7 @@ export function ProjectDetailClient({
             </section>
           )}
 
-          {/* Available Inventory — PRD §9/§10/§11/§12/§13 */}
+          {                                                  }
           <section id="availability" ref={(el: HTMLElement | null) => { sectionRefs.current.availability = el; }} className="scroll-mt-32">
             <h2 className="font-serif text-xl text-neutral-900">{t("projectDetail.inventoryTitle")}</h2>
 
@@ -576,11 +562,8 @@ export function ProjectDetailClient({
             )}
           </section>
 
-          {/* Construction Progress — PRD §16, reuses the existing full strip.
-              Whole section skipped, not just the strip, for a project with
-              no construction-stage data yet (a real admin-created project
-              before that's been added) — a lone heading over an empty gap
-              would read as broken, not "not applicable yet". */}
+          {                                                                   
+                                                                }
           {construction.stages.length > 0 && (
             <section id="construction" ref={(el: HTMLElement | null) => { sectionRefs.current.construction = el; }} className="scroll-mt-32">
               <h2 className="font-serif text-xl text-neutral-900">{t("projectDetail.constructionTitle")}</h2>
@@ -602,7 +585,7 @@ export function ProjectDetailClient({
             </section>
           )}
 
-          {/* Amenities — PRD §18 */}
+          {                         }
           {project.amenities.length > 0 && (
             <section id="amenities" ref={(el: HTMLElement | null) => { sectionRefs.current.amenities = el; }} className="scroll-mt-32">
               <h2 className="font-serif text-xl text-neutral-900">{t("projectDetail.amenitiesTitle")}</h2>
@@ -617,7 +600,7 @@ export function ProjectDetailClient({
             </section>
           )}
 
-          {/* Location — PRD §19 */}
+          {                        }
           <section id="location" ref={(el: HTMLElement | null) => { sectionRefs.current.location = el; }} className="scroll-mt-32">
             <h2 className="font-serif text-xl text-neutral-900">{t("projectDetail.locationTitle")}</h2>
             <p className="mt-1 text-sm text-neutral-500">
@@ -636,7 +619,7 @@ export function ProjectDetailClient({
             )}
           </section>
 
-          {/* Developer Summary — PRD §20 */}
+          {                                 }
           <section id="developer" ref={(el: HTMLElement | null) => { sectionRefs.current.developer = el; }} className="scroll-mt-32">
             <h2 className="font-serif text-xl text-neutral-900">{t("projectDetail.developerTitle")}</h2>
             <div className="mt-3 rounded-panel border border-neutral-200 bg-white p-5">
@@ -667,7 +650,7 @@ export function ProjectDetailClient({
             </div>
           </section>
 
-          {/* Helpful Tools & Services — PRD §21 */}
+          {                                        }
           {fromPrice != null && (
             <section aria-label={t("projectDetail.toolsTitle")}>
               <h2 className="font-serif text-xl text-neutral-900">{t("projectDetail.toolsTitle")}</h2>
@@ -706,7 +689,7 @@ export function ProjectDetailClient({
             </section>
           )}
 
-          {/* Related Projects — PRD §3 */}
+          {                               }
           {related.length > 0 && (
             <section aria-label={t("projectDetail.relatedTitle")}>
               <h2 className="font-serif text-xl text-neutral-900">{t("projectDetail.relatedTitle")}</h2>
@@ -719,7 +702,7 @@ export function ProjectDetailClient({
           )}
         </div>
 
-        {/* Sidebar — Project Facts / Construction Progress / Quick Actions */}
+        {                                                                     }
         <aside className="glass-panel divide-y divide-neutral-100 overflow-hidden rounded-panel lg:sticky lg:top-20 lg:self-start">
           <div className="p-5">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-neutral-400">
@@ -828,7 +811,7 @@ export function ProjectDetailClient({
         </aside>
       </div>
 
-      {/* Gallery lightbox */}
+      {                      }
       {lightboxIndex !== null && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/90 p-4"

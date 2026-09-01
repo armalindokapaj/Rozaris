@@ -5,7 +5,6 @@ import { AlertTriangle, CheckCircle2, ShieldAlert, Users } from "lucide-react";
 import { formatPrice, cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/useT";
 
-// Estimated monthly cost of living for one person, excluding rent/mortgage.
 const MIN_LIVING_PER_PERSON = 570;
 
 type Risk = "low" | "medium" | "high";

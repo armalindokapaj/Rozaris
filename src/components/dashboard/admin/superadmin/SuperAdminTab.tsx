@@ -34,19 +34,6 @@ const SECTIONS = [
 ] as const;
 export type SectionId = (typeof SECTIONS)[number]["id"];
 
-/**
- * Super Admin — the full control/audit system. A real (not just mock)
- * `GET /api/admin/me` check gates what renders (Permissions/hard-delete
- * only for a real Super Admin) — the PRD's own "Security rule" applies
- * here too: this is a UX nicety, not the authorization; every route behind
- * these panels re-checks server-side regardless.
- *
- * `initialSection` lets the new Admin Dashboard tab deep-link straight into
- * one of these sections (e.g. "Recently Deleted" → recycleBin) — Admin's
- * page.tsx only renders this component while its own `tab === "auditLog"`,
- * so it remounts fresh (picking up a new `initialSection`) every time the
- * Dashboard navigates here, rather than needing a sync effect.
- */
 export function SuperAdminTab({ initialSection }: { initialSection?: SectionId }) {
   const { t } = useT();
   const [section, setSection] = useState<SectionId>(initialSection ?? "auditLog");

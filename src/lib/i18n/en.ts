@@ -1,4 +1,3 @@
-// English dictionary. Keys are grouped by the component/page that owns them.
 const en = {
   common: {
     close: "Close",
@@ -823,15 +822,7 @@ const en = {
     publisherType: "Publisher type",
     saveChanges: "Save changes",
   },
-  // Admin -> Projects -> Project Manager (/admin/projects/[projectId]) —
-  // the full-page ERP record view that replaced EditProjectModal. English
-  // strings in both dictionaries: the Albanian translation pass covers
-  // the public site only, and the admin console is explicitly out of its
-  // scope (see the "rozaris-i18n-albanian-translation-pass" note). The
-  // `useT` lookup falls back to English per key anyway, so these being
-  // identical costs nothing and keeps the two files structurally in sync.
   projectManager: {
-    // --- left rail ---
     groupRecord: "Record",
     groupInventory: "Sales",
     groupReach: "Distribution",
@@ -850,7 +841,6 @@ const en = {
     navPublishing: "Publishing",
     navActivity: "Activity",
 
-    // --- shell ---
     backToProjects: "All projects",
     headerUnits: "{count} units",
     unsavedChanges: "{count} unsaved change(s)",
@@ -860,7 +850,6 @@ const en = {
     savedConfirmation: "Project saved",
     viewPublicPage: "View public page",
 
-    // --- project index (Admin -> Projects) ---
     newProject: "New project",
     searchProjects: "Search by project, developer or city…",
     allApprovalStates: "Any state",
@@ -876,7 +865,6 @@ const en = {
     colEntryPrice: "From",
     colState: "State",
 
-    // --- overview ---
     overviewTitle: "Overview",
     overviewDescription: "The commercial picture, and what is still missing before this development can go live.",
     statInventory: "Inventory",
@@ -905,7 +893,6 @@ const en = {
     relatedModelSlots: "3D model slots",
     noUnitsWarning: "This project has no units — buyers see an empty development.",
 
-    // --- general ---
     generalTitle: "General",
     generalDescription: "Identity, classification and the copy that appears on the public project page.",
     identityTitle: "Identity",
@@ -924,7 +911,6 @@ const en = {
     descriptionsTitle: "Descriptions",
     descriptionsDescription: "Both languages are shown to buyers — an empty one falls back to the other.",
 
-    // --- location ---
     locationTitle: "Location",
     locationDescription: "Where this development sits, on the map and in the location taxonomy.",
     canonicalLocationTitle: "Canonical location",
@@ -952,7 +938,6 @@ const en = {
     mapControlSectionDescription: "The development's site pin and the lightweight 3D model that stands in for it on the public search map.",
     mapControlOpenFullPage: "Open full page",
 
-    // --- media ---
     mediaTitle: "Media",
     mediaDescription: "The hero shot and gallery buyers see. Upload files directly, or paste a URL if the image is already hosted.",
     heroDescription: "The single image used on cards, search results and the top of the project page.",
@@ -975,7 +960,6 @@ const en = {
     mediaTooLarge: "{name} is over {mb} MB.",
     mediaTypeRejected: "{name} is not a JPEG, PNG, WebP or GIF.",
 
-    // --- buildings & amenities ---
     featuresTitle: "Buildings & Amenities",
     featuresDescription: "The blocks this development is divided into, and the amenities buyers can filter on.",
     buildingsDescription: "Each name here becomes a building a unit can be assigned to.",
@@ -984,7 +968,6 @@ const en = {
     amenitiesDescription: "Only these amenities are filterable on the public site.",
     unknownAmenitiesTitle: "Stored values that aren't recognised amenities — remove them:",
 
-    // --- inventory ---
     inventoryTitle: "Inventory",
     inventoryDescription: "Every unit in this development. Edit in place, or select rows for bulk changes.",
     addUnit: "Add unit",
@@ -1038,12 +1021,10 @@ const en = {
     bulkFailed: "Bulk update failed.",
     confirmReprice: "Change the price of {count} unit(s) by {percent}%?",
 
-    // --- sheet sync ---
     sheetSyncTitle: "Google Sheets sync",
     sheetSyncDescription: "Let the developer keep their inventory in their own Google Sheet. Area, price, bedrooms, bathrooms, floor and status are read back onto the units here, matched by unit code.",
     downloadStarterSheet: "Download starter sheet",
 
-    // --- the seven sheet columns, editable in place ---
     gridTitle: "Units",
     gridDescription:
       "The seven columns a linked sheet writes back, plus 3D BLOCK — the header row below, minus 3D BLOCK, is exactly the one your sheet needs. Edit any cell here instead; every change saves itself, there is no Save button.",
@@ -1067,7 +1048,6 @@ const en = {
     gridSyncBlocked: "Finish or undo your unit edits above before syncing from the sheet.",
     gridHelp:
       "Tab moves across, Enter moves down, Esc undoes a cell. Paste a block copied from a spreadsheet to fill many cells at once. Adding and removing units — and the other unit fields — live in Inventory.",
-    // --- 3D BLOCK column (UnitMeshLinkV2, not a Unit field) ---
     blockColumn: "3D BLOCK",
     blockColumnHelp: "Which block of {file} this unit is, in the 3D viewer.",
     blockNone: "— not in the model —",
@@ -1144,7 +1124,6 @@ const en = {
     howToStep4: "Give the sheet a header row using these column names (any order, extra columns are ignored):",
     howToColumnsNote: "A blank cell means \"leave this field alone\" — so a sheet with only the units that changed today is fine.",
 
-    // --- team ---
     teamTitle: "Team",
     teamDescription: "Who at the developer can reach this specific project. Company-wide access is managed on the publisher instead.",
     grantAccessTitle: "Grant access",
@@ -1164,7 +1143,6 @@ const en = {
       analytics_viewer: "Analytics viewer",
     },
 
-    // --- 3D ---
     threeDTitle: "3D Assets",
     threeDDescription: "What this project has in the 3D pipeline. The editors themselves open full-screen.",
     mapControlDescription: "The lightweight model shown on the search map.",
@@ -1182,11 +1160,6 @@ const en = {
     hasSceneConfig: "Scene configuration saved.",
     noSceneConfig: "No scene configuration yet — open the 3D Experience editor to create one.",
 
-    // --- 3D asset downloads ---
-    // The Project Manager keeps its own copy of these strings rather than
-    // reusing `admin.health3d.files*`: that block is the 3D Health tab's
-    // cross-project file browser and its wording is scoped to a list of
-    // every project, which reads wrong inside one project's record.
     assetsLoading: "Loading model files…",
     assetsError: "Could not load this project's model files.",
     assetsRetry: "Retry",
@@ -1206,7 +1179,6 @@ const en = {
     assetStatusDraft: "Draft",
     assetStatusArchived: "Archived",
 
-    // --- publishing ---
     publishingTitle: "Publishing",
     publishingDescription: "Whether this development is visible to buyers, and where else it is distributed.",
     visibilityTitle: "Public visibility",
@@ -1232,7 +1204,6 @@ const en = {
     dangerZoneTitle: "Danger zone",
     dangerZoneDescription: "Moves the whole project — units, listings and 3D assets — to the Recycle Bin. Restorable by a Super Admin.",
 
-    // --- timeline / construction stages ---
     timelineTitle: "Construction timeline",
     timelineDescription: "The build phases buyers see on the project page, plus any progress change the developer has asked you to approve.",
     stagesTitle: "Stages",
@@ -1251,13 +1222,11 @@ const en = {
       active: "In progress",
       upcoming: "Upcoming",
     },
-    // --- activity ---
     activityTitle: "Activity",
     activityDescription: "Everything that has happened to this project and its units, from the real audit log.",
     noActivity: "Nothing recorded for this project yet.",
     loadMore: "Load more",
 
-    // --- timeline ---
     timelineNote: "Construction-timeline change requests submitted by the developer appear here for review.",
   },
   admin: {
@@ -1484,11 +1453,6 @@ const en = {
     viewer3DReset: "Reset to defaults",
     viewer3DSaved: "Saved — now live on the public viewer.",
     sceneSaveFailed: "Couldn't save — please try again.",
-    // Editor mode tabs (Phase 2 — Editor UX rebuild): the 7-mode shell's
-    // tab bar labels, short by design (fit a narrow tab strip). "Inventory"
-    // re-added (Inventory/Floors mockup pass) — was "Units"/"Scene" briefly,
-    // moved out to a persistent left panel, now back as a tab since the
-    // left panel is building/floor navigation only (see buildingNav* below).
     editorTabModel: "Model",
     editorTabMaterials: "Materials",
     editorTabSky: "Sky",
@@ -1503,24 +1467,13 @@ const en = {
     editorPreviewExperience: "Preview as Customer",
     editorNightMode: "Switch to night mode",
     editorLightMode: "Switch to light mode",
-    // Collapsible rails (2026-08-14 UI-polish pass, audit suggestion) —
-    // one toggle per rail, reclaims the full window for camera framing or
-    // a screenshot.
     editorCollapseLeftRail: "Collapse left panel",
     editorExpandLeftRail: "Expand left panel",
     editorCollapseRightRail: "Collapse right panel",
     editorExpandRightRail: "Expand right panel",
-    // Left rail (Inventory/Floors mockup pass) — real Unit.buildingName/
-    // Unit.floor grouping, not a mock. Floor label reuses
-    // detailModelFloorLabel below.
     buildingNavTitle: "Building",
     buildingNavAllUnits: "All units",
     buildingNavNoUnits: "No units yet.",
-    // Inventory tab (right rail) — reorganized into the mockup's 5
-    // sub-sections. Floors & Sections started as an honest placeholder for
-    // a not-yet-built PRD; the Sections module (first-class Configurator
-    // tab, 2026-08-13) shipped that PRD, so this now points there instead
-    // of saying "coming soon."
     inventoryUnitBlocksTitle: "Unit Blocks",
     inventoryUnitDisplayTitle: "Unit Display",
     inventoryFiltersTitle: "Filters",
@@ -1529,9 +1482,6 @@ const en = {
     inventoryClearFloorFilter: "Clear floor filter",
     inventoryFloorFilterActive: "Showing {building} · {floor}",
     inventoryNoUnits: "No units yet.",
-    // Sections module (first-class Configurator module, 2026-08-13) — real
-    // manual clipping-plane authoring. See src/lib/types.ts's `Section`
-    // interface for the full field list.
     sectionsListTitle: "Sections",
     sectionSave: "Save",
     sectionSaving: "Saving…",
@@ -1570,7 +1520,6 @@ const en = {
     sectionDelete: "Delete section",
     sectionDeleteConfirm: "Delete this section? This can't be undone.",
     interactionShowSections: "Sections menu",
-    // Global header/status bar (Inventory/Floors mockup pass).
     statusBarAllSaved: "All changes saved",
     statusBarPreviewDesktop: "Desktop",
     statusBarPreviewTablet: "Tablet",
@@ -1601,22 +1550,10 @@ const en = {
     performanceShadowSoftness: "Shadow softness",
     performanceLogarithmicDepth: "Logarithmic depth buffer",
     performanceLogarithmicDepthNote: "Reduces z-fighting at distance. Requires reopening the viewer to take effect.",
-    // Sky/Water/Bloom/Clouds "Ocean" tab (webgl_shaders_ocean.html parity)
-    // — replaces the old Lighting tab entirely (2026-08-14). Shows exactly
-    // the reference demo's own GUI: Sky (elevation/azimuth/exposure),
-    // Water (distortionScale/size), Bloom (strength/radius), Clouds
-    // (coverage/density/elevation). sunElevation/sunAzimuth/sceneExposure
-    // reused from the old Sun & Time/Exposure sub-tabs (same fields, now
-    // the only sun model). Ground/Fog/Environment Intensity moved to
-    // Effects; LUT (kept, expanded to the reference demo's full 9-preset
-    // GUI) stays on Effects too.
     oceanSkyTitle: "Sky",
     oceanWaterTitle: "Water",
     oceanBloomTitle: "Bloom",
     oceanCloudsTitle: "Clouds",
-    // Standalone "Sky" tab (webgl_shaders_sky.html parity, added
-    // alongside Ocean, 2026-08-14) — sunElevation/sunAzimuth/
-    // sceneExposure reused from the shared physical-sun fields above.
     skyEnabled: "Sky",
     skyEnabledNote: "The physical sky dome, the scene's atmosphere and its only source of ambient/reflection lighting. Off falls back to a flat neutral backdrop.",
     skySunTitle: "Sun",
@@ -1776,9 +1713,6 @@ const en = {
     versionDeleteConfirm: "Permanently delete version {version} and its file? This cannot be undone.",
     versionDeleted: "Version deleted.",
     versionDeleteFailed: "Couldn't delete this version — please try again.",
-    // Multiple Detail-Model Slots pass — independent named GLB slots per
-    // project ("Building", "Surroundings", ...), each with its own full
-    // upload/draft/publish/rollback/version-history above.
     slotAdd: "Add slot",
     slotNamePlaceholder: "e.g. Surroundings",
     slotRename: "Rename",
@@ -1844,10 +1778,6 @@ const en = {
     newProjectUnitsGlbPrompt: "Choose a .glb file",
     newProjectUnitsGlbNote: "Not wired yet — units are currently detected from mesh names inside the Detailed Building GLB (Configurator → Units tab).",
     newProjectOpenConfigurator: "Open 3D Configurator",
-    // Real Draft/Publish split (found live — the "Status: Draft" field
-    // above used to be pure display text; every project actually went
-    // live on the public platform immediately on creation regardless —
-    // see the POST /api/projects route's own doc comment).
     newProjectPublicationTitle: "Publication",
     newProjectDraftNote: "This project is a draft — hidden from search, listings, and the public site until you publish it.",
     newProjectPublishedNote: "Published — live on the platform.",
@@ -1867,9 +1797,6 @@ const en = {
     addUnit: "Add unit",
     manageUnits: "Units & Model",
 
-    // Multi-Channel Publishing PRD Phase 7 — /admin/distribution/[projectId],
-    // linked from the same 3D Platform project card as "Configure 3D
-    // Experience"/"Units & Model" above.
     configureDistribution: "Distribution",
     distributionTitle: "Distribution",
     distributionReleasesSectionTitle: "Releases",
@@ -1910,9 +1837,6 @@ const en = {
     distributionTargetCreateFailed: "Couldn't create the publish target — try again.",
     distributionTargetActionFailed: "That didn't work — try again.",
 
-    // Project visibility/lifecycle menu (admin "3D Platform" grid) —
-    // real approvalStatus (active/archived) + Recycle Bin soft-delete,
-    // see ProjectVisibilityMenu in admin/page.tsx.
     projectStatusActive: "Active",
     projectStatusHidden: "Hidden",
     projectStatusPending: "Pending",
@@ -2167,8 +2091,6 @@ const en = {
       security: "Security",
     },
 
-    // Super Admin control/audit pass — real, live-DB-backed panels behind
-    // the "Super Admin" tab (superadmin/SuperAdminTab.tsx and its children).
     superAdmin: {
       restricted: "Restricted",
       navRecycleBin: "Recycle Bin",
@@ -3109,10 +3031,6 @@ const en = {
     helpBody: "Questions about publishing, verification, or your listing? Visit the Help Center.",
     goToHelp: "Go to Help Center",
   },
-  // Project Viewer Front Page (Idle Experience PRD, 2026-08-16) — the
-  // ground-up-rebuilt ViewerHUD. Kept as its own top-level section rather
-  // than folded into `project` (which already carries some pre-rebuild
-  // viewer copy) since this is a sizeable, self-contained set of keys.
   viewer: {
     explore: "Explore",
     units: "Units",
@@ -3130,8 +3048,6 @@ const en = {
     dragToExplore: "Drag to explore",
     swipeToExplore: "Swipe to explore",
   },
-  // Units Search Mode (2026-08-16) — Phase 1 shell only; Phase 2 adds the
-  // real search/filter/sort/table copy this section will grow to hold.
   units: {
     title: "Units",
     close: "Close",
@@ -3147,40 +3063,17 @@ const en = {
     clearFilters: "Clear filters",
     moreComingSoon: "Coming in an upcoming update.",
     resultsCount: "{count} results",
-    // Units Bar (2026-08-17) — the floating filter bar shown when Units is
-    // active; distinct wording from resultsCount above to match the
-    // reference render's own "12 units found" exactly.
     foundCount: "{count} units found",
     refineSubtitle: "Refine available homes",
     listUnits: "List units",
-    // Units Bar desktop title zone (2026-08-17) — replaces the bar's own
-    // visible "Units" text; `title`/`listUnits` above are untouched
-    // (still used for the bar's own aria-label and UnitsWorkspace's real
-    // panel header) so this rename doesn't leak into either of those.
     filterListLabel: "Filter List",
     filterSurface: "Surface",
     filterBedrooms: "Bedrooms",
     filterBathrooms: "Bathrooms",
-    // Morphing Bottom Dock Phase 2 (2026-08-18) — the dock's own merged
-    // Bedrooms+Bathrooms popover trigger (`UnitsContent.tsx`'s own
-    // `roomsTrigger`) needed a field-name prefix that covers both, not
-    // just "Bedrooms" reused and now technically inaccurate.
     filterRooms: "Rooms",
-    // Mobile-only collapsible filter sheet (2026-08-24, direct
-    // instruction: "i dont want to let the 'filtering tab' to be visible
-    // while rotating the building. it takes too much space while
-    // navigating") — labels the dock's own expand/collapse control; the
-    // count badge beside it is bare digits, so no plural key is needed.
     filtersToggle: "Filters",
     filterAvailability: "Availability",
-    // Shown on the row when a list selection asked the camera to frame a
-    // unit and the engine reported no resolvable block for it in the
-    // loaded GLB (a real, common state on a partly-mapped project) — an
-    // honest note beats a viewport that silently refuses to move.
     notInModel: "Not shown in the 3D model",
-    // Mobile units sheet (2026-08-24) — the selected-unit summary bar's
-    // escalation into the full detail view, and the control that drops the
-    // selection (and with it the 3D highlight) without closing the list.
     viewDetails: "Details",
     clearSelection: "Clear selection",
     noResults: "No units match these filters.",
@@ -3214,8 +3107,6 @@ const en = {
       contact: "Contact developer",
     },
   },
-  // Sun & Time (2026-08-16) — the real interactive panel; see
-  // SunTimeWorkspace.tsx's own doc comment for scope notes.
   sunTime: {
     title: "Sun & Time",
     reset: "Reset",
@@ -3235,13 +3126,9 @@ const en = {
     presetEvening: "Evening",
     readOnlyHint: "Time is set by the project — live scrubbing isn't enabled here yet.",
   },
-  // Views Menu (2026-08-16) — real camera-preset tray; see
-  // ViewsWorkspace.tsx's own doc comment for scope notes.
   views: {
     empty: "No camera views published yet.",
   },
-  // More / Settings Menu (2026-08-16) — see MoreMenu.tsx's own doc
-  // comment for what's real vs. flagged.
   more: {
     projectInformation: "Project Information",
     share: "Share",

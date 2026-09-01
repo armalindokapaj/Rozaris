@@ -62,10 +62,6 @@ export default function BuyerSignupPage() {
       if (!signedIn) throw new Error("Account created, but sign-in failed — try signing in from the header.");
 
       setBuyerProfile({
-        // One profile per real account (the User row from the signup call
-        // above is the actual identity now — this only carries buyer
-        // preferences, which have no Postgres table of their own yet, see
-        // the "Rozaris Platform Audit" memory for that boundary).
         id: "buyer-demo-1",
         name: name.trim(),
         email: email.trim(),

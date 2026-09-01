@@ -11,22 +11,17 @@ import { useLocations } from "@/hooks/useLocations";
 import { CITY_CENTER, DEMO_PUBLISHER, stageTemplate } from "@/lib/mockData";
 import type { Project } from "@/lib/types";
 
-/** Best-effort read of a JSON `{ error }` body; every route in this app
- * that can fail now returns one (see the "rozaris-mvp-admin-project-pipe"
- * memory — `POST /api/projects` used to crash as raw HTML on a slug
- * collision, which `res.text()` alone would show verbatim and unreadably). */
 async function readErrorMessage(res: Response, fallback: string): Promise<string> {
   try {
     const body = await res.json();
     if (typeof body?.error === "string") return body.error;
     if (body?.error) return JSON.stringify(body.error);
   } catch {
-    // Non-JSON body (framework error page, etc.) — fall through.
   }
   return fallback;
 }
 
-const MAX_FILE_BYTES = 60 * 1024 * 1024; // keep in sync with api/blob/upload's maximumSizeInBytes
+const MAX_FILE_BYTES = 60 * 1024 * 1024;
 
 function slugify(name: string) {
   return (
@@ -49,58 +44,18 @@ interface PublisherOption {
   name: string;
 }
 
-/**
- * Temporary MVP admin flow: "Create Project → Upload 3D → Configure →
- * Preview" — a deliberately stripped-down pipe whose only purpose is to
- * test the 3D Experience Configurator end-to-end, per the user's explicit
- * request (see "rozaris-mvp-admin-project-pipe" memory). Separate route
- * from `NewProjectModal.tsx` / the admin `viewer3d` tab — doesn't touch
- * either, so nothing else that already depends on that flow regresses.
- * Deliberately NOT built here (per the user's scope): inventory import,
- * map placement, search integration, construction progress, media
- * management, SEO, publishing workflow, developer management.
- *
- * Authorization is handled by the nearest `layout.tsx` (real Auth.js
- * session, server-side, via `requireAdminPage()`) before this component
- * ever renders — see that file's doc comment for why the client-side
- * Zustand `auth.signedIn` gate that used to live here was removed
- * (Multi-Channel Publishing PRD, Phase 1).
- */
 export default function NewAdminProjectPage() {
   const router = useRouter();
   const addProject = useAppStore((s) => s.addProject);
   const { t } = useT();
 
-  // The real Auth.js session (checked by every write route this page calls)
-  // can go stale independently of the layout's initial gate above — this
-  // route is reachable directly by URL, same as /admin/3d-experience/[id],
-  // so it needs the same repair path. This exact gap was the confirmed root
-  // cause of an earlier "upload always fails" bug — see
-  // "rozaris-3d-editor-render-hardening" memory.
   const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
 
   const [step, setStep] = useState<1 | 2>(1);
 
-  // --- Step 1: Create Project ---
   const [name, setName] = useState("");
-  // Real Canonical Location System (see MEMORY note
-  // "rozaris-controlled-taxonomy-spec") — `POST /api/projects` now derives
-  // `city` server-side from a real `neighborhoodId` and rejects anything
-  // that doesn't resolve, same as NewProjectModal/EditProjectModal already
-  // send. This page used to send a hardcoded `neighborhoodId: "custom"`
-  // with a freeform `city` string the server silently ignored, so every
-  // project created here 400'd with `Unknown location "custom"` — a real
-  // bug found live (reported as "can't put a city name to create a
-  // project"). Fixed by picking a real neighborhood instead of typing a
-  // city, exactly like the other two creation surfaces.
-  // Both levels — a development can sit directly in a Village with no
-  // neighborhood layer at all (2026-08-21 spec).
   const neighborhoods = useLocations(["neighborhood", "village"]);
   const [neighborhoodIdChoice, setNeighborhoodIdChoice] = useState("");
-  // Derived, not effect-synced (avoids a setState-in-effect render
-  // cascade): defaults to the first loaded neighborhood until the admin
-  // actually picks one — `useLocations` starts empty, so this naturally
-  // resolves once the real `/api/locations` fetch lands.
   const neighborhoodId = neighborhoodIdChoice || neighborhoods[0]?.id || "";
   const setNeighborhoodId = setNeighborhoodIdChoice;
   const selectedNeighborhood = neighborhoods.find((n) => n.id === neighborhoodId);
@@ -121,22 +76,12 @@ export default function NewAdminProjectPage() {
         }
       })
       .catch(() => {
-        // Non-fatal — the form still works with the DEMO_PUBLISHER fallback
-        // already selected by default.
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Real UX gap found live (reported as "Project Name... can be added
-  // later"): Name used to hard-block Step 1 even though nothing else here
-  // (the 3D upload, the Configurator) actually needs a real name yet — an
-  // admin testing the upload pipe had to invent a placeholder name just to
-  // get past this screen. Name is no longer required; a blank one gets a
-  // real auto-generated placeholder in handleCreate below instead of an
-  // empty string, which would otherwise render as a blank row everywhere
-  // this project's name is shown.
   const canSubmit = !!neighborhoodId && !creating;
 
   async function handleCreate() {
@@ -198,16 +143,8 @@ export default function NewAdminProjectPage() {
       if (!res.ok) {
         throw new Error(await readErrorMessage(res, t("admin.newProjectCreateFailed")));
       }
-      // The server may have deduped `slug` (two projects submitted with the
-      // same name would otherwise collide on Postgres's unique constraint —
-      // see the route's own doc comment) — use whatever it actually saved,
-      // not the client-computed guess, so every later step (upload, the
-      // Configurator's Preview button, /project/[slug]) stays consistent.
       const saved: { slug: string } = await res.json();
       const finalProject: Project = { ...newProject, slug: saved.slug };
-      // Await-ed (unlike NewProjectModal.tsx's fire-and-forget POST) — step
-      // 2 needs the real Postgres `Project` row to exist before its GLB
-      // version API call can succeed.
       addProject(finalProject);
       setProject(finalProject);
       setStep(2);
@@ -219,41 +156,16 @@ export default function NewAdminProjectPage() {
     }
   }
 
-  // --- Step 2: Upload 3D ---
   const [detailFile, setDetailFile] = useState<File | null>(null);
   const [detailBusy, setDetailBusy] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailDone, setDetailDone] = useState(false);
   const [unitsFile, setUnitsFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  // The slot this project's one detail GLB lives in. Lazily created on
-  // first upload — see the `ensureDetailSlotId` comment below for why this
-  // can't just be a project-creation-time step.
   const [detailSlotId, setDetailSlotId] = useState<string | null>(null);
-  // Real gap found live (reported as "drag and dropping doesn't work") —
-  // both dropzones below have always LOOKED like a real HTML5 drop target
-  // (the dashed border, the UploadCloud icon) but never had an
-  // onDrop/onDragOver pair wired up, so a dropped file just did nothing —
-  // the browser's own "navigate to this file" default behavior, silently
-  // swallowed by the SPA router. `isDraggingX` only drives the active-state
-  // outline; the actual file handoff reuses the exact same handlers the
-  // <input>'s onChange already calls.
   const [isDraggingDetail, setIsDraggingDetail] = useState(false);
   const [isDraggingUnits, setIsDraggingUnits] = useState(false);
 
-  // Real bug fixed here (found live, see "rozaris-mvp-admin-project-pipe"
-  // memory): this page used to POST straight to
-  // `/api/detail-models/${project.id}/versions`, a route that no longer
-  // exists — the Multiple Detail-Model Slots pass moved version creation
-  // under `.../slots/[slotId]/versions` and this page's own hardcoded
-  // upload call was never updated to match, so every upload 404'd on a
-  // plain Next.js HTML 404 page. `readErrorMessage` can't find `.error` in
-  // an HTML body, so it silently fell back to the generic
-  // "Upload failed — please try again." with no detail — exactly what was
-  // reported. A brand-new project has zero slots (no auto-creation on
-  // project create, unlike old backfilled projects — see
-  // `slots/route.ts`'s own doc comment), so a slot has to be created here
-  // before the first version can be uploaded into it.
   async function ensureDetailSlotId(): Promise<string> {
     if (detailSlotId) return detailSlotId;
     if (!project) throw new Error("No project yet.");
@@ -286,11 +198,6 @@ export default function NewAdminProjectPage() {
     setUploadProgress(0);
     try {
       const slotId = await ensureDetailSlotId();
-      // Same mechanics as Project3DConfigEditor.tsx's handleDetailFile —
-      // direct client upload to Vercel Blob, then a real versioned-model
-      // API call. Duplicated rather than shared: this page is a temporary
-      // MVP surface, not meant to become a long-term dependency of the
-      // full editor.
       const blob = await upload(`project-detail-models/${project.id}-${file.name}`, file, {
         access: "public",
         handleUploadUrl: "/api/blob/upload",
@@ -322,11 +229,6 @@ export default function NewAdminProjectPage() {
     }
   }
 
-  // Shared by both dropzones — real HTML5 drag-and-drop, see the
-  // isDraggingDetail/isDraggingUnits doc comment above for what this
-  // fixes. `dragenter`/`dragover` both need `preventDefault()` or the
-  // browser refuses to fire `drop` at all (its own default is "navigate to
-  // this file"), which is the exact silent-no-op the bug report described.
   function dropHandlers(setDragging: (v: boolean) => void, onFile: (file: File) => void) {
     return {
       onDragOver: (e: DragEvent) => e.preventDefault(),
@@ -347,12 +249,6 @@ export default function NewAdminProjectPage() {
     };
   }
 
-  // --- Publication (Draft/Publish, PRD-less real bug fix) ---
-  // Tracked locally rather than read off `project` — the client-built
-  // `Project` object this page constructs has no `approvalStatus` field at
-  // all (it's not part of the shared `Project` type most pages read), and
-  // the real value is knowable without a fetch: POST /api/projects now
-  // always creates rows `pending` (see that route's own doc comment).
   const [publicationStatus, setPublicationStatus] = useState<"pending" | "active">("pending");
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);

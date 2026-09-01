@@ -68,11 +68,6 @@ export function AccountMenu() {
             icon={<LogOut className="h-4 w-4" />}
             onClick={async () => {
               close();
-              // Zustand's `signOut()` clears `auth` immediately (no flash
-              // of stale signed-in UI while the network call below is in
-              // flight); the real Auth.js session ends right after —
-              // AuthSessionSync would otherwise resurrect `auth` from the
-              // still-live session on its next sync.
               signOut();
               await nextAuthSignOut({ redirect: false });
             }}

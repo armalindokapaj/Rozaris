@@ -28,10 +28,6 @@ function Section({ title, count, children }: { title: string; count: number; chi
   );
 }
 
-/** Data Integrity checks — real, on-demand Prisma queries
- * (`GET /api/admin/integrity-check`), run only when asked (not a
- * background job — a "Run Scan" button, consistent with this being an
- * occasional admin tool, not a monitor). */
 export function DataIntegrityPanel() {
   const { t } = useT();
   const [report, setReport] = useState<IntegrityReport | null>(null);

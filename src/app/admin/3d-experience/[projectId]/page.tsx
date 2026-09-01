@@ -8,31 +8,11 @@ import { useAdminSessionRepair } from "@/hooks/useAdminSessionRepair";
 import { useDeleteProject } from "@/hooks/useDeleteProject";
 import { ExperienceEditor } from "@/components/dashboard/experience-editor/ExperienceEditor";
 
-/**
- * Full-page "Configure 3D Experience" editor — was a modal opened from a
- * project card in the admin console's Viewer3D tab (`admin/page.tsx`);
- * that tab's card now navigates here instead of setting local state.
- * `Project3DConfigEditor` itself is unchanged in behavior, only in shell
- * (no more `fixed inset-0` overlay — this route *is* the page).
- *
- * Authorization is handled by the nearest `layout.tsx` (real Auth.js
- * session, server-side, via `requireAdminPage()`) before this component
- * ever renders — see that file's doc comment for why the client-side
- * Zustand `auth.signedIn` gate that used to live here was removed
- * (Multi-Channel Publishing PRD, Phase 1).
- */
 export default function Admin3DExperiencePage() {
   const params = useParams<{ projectId: string }>();
   const router = useRouter();
   const { project, loading: projectLoading } = useAdminProject(params.projectId);
   const { t } = useT();
-  // Confirmed root cause of "3D Experience upload always fails": this route
-  // is reachable directly by URL, bypassing admin/page.tsx's session-repair
-  // gate entirely, so a real Auth.js session gone stale here previously had
-  // no repair path — every upload/delete/publish silently 401'd while the
-  // page still looked "signed in as Admin". Distinct from (and still needed
-  // alongside) the layout's initial gate above: this covers a session that
-  // was valid on load going stale later while the tab stays open.
   const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
   const { deleteProject, deleting: deletingProject } = useDeleteProject();
 

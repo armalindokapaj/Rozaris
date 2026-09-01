@@ -25,28 +25,6 @@ interface PendingIdentity {
   identityNote: string | null;
 }
 
-/**
- * Admin's Verification queue (Account & Profile System PRD v1.0 §9
- * "Verification & Trust") — two real, independent queues now that
- * `Publisher.verificationStatus` and `User.identityVerificationStatus`
- * exist:
- *
- * 1. Business verification: real `verificationStatus === "pending"` rows —
- *    an org only appears here after its owner/admin actually clicked
- *    "Request verification" (`POST /api/business/verification-request`),
- *    not just by being unverified. Previously this showed EVERY
- *    `!verified` publisher regardless of whether anyone asked to be
- *    reviewed — this pass's whole point was replacing that with a real
- *    submitted state (see this component's prior doc comment, now
- *    superseded).
- * 2. Identity verification: real `identityVerificationStatus === "pending"`
- *    accounts, from `GET /api/admin/identity-verifications` — unlocks the
- *    "Verified Publisher" badge for a Private Publisher.
- *
- * "Restrict publishing" stays on the same real, audit-logged
- * `PATCH /api/admin/publishers/[id]` it always was — unrelated to either
- * verification queue, still shown per business-queue row for convenience.
- */
 export function VerificationTab() {
   const { t, locale } = useT();
   const [queue, setQueue] = useState<PendingPublisher[]>([]);

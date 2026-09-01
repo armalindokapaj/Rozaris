@@ -9,11 +9,6 @@ import { LocationMunicipalityBrowser } from "./LocationMunicipalityBrowser";
 
 export type { LocationTypeValue };
 
-/** `"neighborhood"` -> `"admin.locations.typeNeighborhood"`, etc. — one
- * place for the snake_case-to-key transform every type label (option
- * list, parent picker, table column) needs. Exported so
- * `LocationBoundaryEditor`/`LocationMunicipalityBrowser`'s own pickers
- * render the exact same labels. */
 export function typeLabelKey(type: LocationTypeValue): string {
   const pascal = type
     .split("_")
@@ -35,10 +30,6 @@ export interface LocationRow {
   childCount: number;
   propertyCount: number;
   projectCount: number;
-  /** Whether a boundary is already drawn — never the geometry itself (see
-   * `GET /api/admin/locations`'s own doc comment). `LocationBoundaryEditor`
-   * fetches the real GeoJSON separately, only for whichever location is
-   * currently selected for editing. */
   hasBoundary: boolean;
 }
 
@@ -62,19 +53,6 @@ interface BrokenProject {
   city: string | null;
 }
 
-/**
- * Admin's write surface for the Canonical Location System (see MEMORY note
- * "rozaris-controlled-taxonomy-spec") — the ability to type in new
- * neighborhoods/cities/etc. by hand (`POST`/`PATCH /api/admin/locations*`,
- * previously only ever populated once by `scripts/seed-locations.ts`), plus
- * a "Location issues" list (`GET /api/admin/locations/issues`) that finds
- * every Listing/Project whose location doesn't resolve to a real, active
- * one any more and lets the admin fix it right here — the "fix the
- * listings and units if they have a problem" half of the same request. A
- * `Unit` has no location field of its own (it always inherits its
- * Project's), so fixing a Project's location here is also how a "broken
- * unit location" gets fixed.
- */
 export function LocationsTab() {
   const { t } = useT();
   const [rows, setRows] = useState<LocationRow[]>([]);
@@ -88,12 +66,6 @@ export function LocationsTab() {
   const [lng, setLng] = useState("");
   const [adding, setAdding] = useState(false);
 
-  // Doesn't reset `loading` to true on every call — only the initial
-  // `useState(true)` above drives the first-load spinner; a reload after a
-  // mutation just swaps the table's contents in place. Matters for the
-  // very first call too: `useEffect(reload, [])` calling this directly
-  // means any synchronous `setLoading(true)` here would fire during the
-  // effect itself (react-hooks/set-state-in-effect).
   function reload() {
     fetch("/api/admin/locations")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
@@ -200,11 +172,6 @@ export function LocationsTab() {
             <select
               value={type}
               onChange={(e) => {
-                // The previously-picked parent may not be a legal parent
-                // for the newly-picked type (e.g. switching from
-                // Neighbourhood, which allows a City parent, to Village,
-                // which doesn't) — reset it rather than silently submit an
-                // invalid pair.
                 setType(e.target.value as LocationTypeValue);
                 setParentId("");
               }}
@@ -217,12 +184,8 @@ export function LocationsTab() {
               ))}
             </select>
           </label>
-          {/* Municipality is always top-level (no parent) — nothing to
-              pick. Every other type's picker only ever offers the parent
-              types that type is actually allowed to have
-              (`ALLOWED_PARENT_TYPES`), so the request this form submits
-              can't already be an invalid pair by the time it reaches the
-              server's own copy of the same rule. */}
+          {                                                            
+                                                    }
           {type !== "municipality" && (
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-neutral-500">{t("admin.locations.parentLabel")}</span>
@@ -231,9 +194,8 @@ export function LocationsTab() {
                 onChange={(e) => setParentId(e.target.value)}
                 className="min-w-[200px] rounded-control border border-neutral-200 px-2.5 py-1.5 text-sm"
               >
-                {/* No "— none —" option here — every non-Municipality type
-                    requires a real parent (`ALLOWED_PARENT_TYPES`), unlike
-                    the old free-for-all hierarchy. */}
+                {                                                          
+                                                      }
                 <option value="" disabled>
                   {t("admin.locations.pickParentPlaceholder")}
                 </option>
@@ -369,10 +331,6 @@ export function LocationsTab() {
   );
 }
 
-/** "Fix the listings and units if they have a problem" — every Listing/
- * Project whose location doesn't resolve to a real, active `Location`
- * right now (`GET /api/admin/locations/issues`), each with an inline way
- * to reassign it without leaving this tab. */
 function LocationIssuesPanel({ activeLocations }: { activeLocations: LocationRow[] }) {
   const { t } = useT();
   const [listings, setListings] = useState<BrokenListing[]>([]);
@@ -382,8 +340,6 @@ function LocationIssuesPanel({ activeLocations }: { activeLocations: LocationRow
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Same "don't reset loading to true on every call" reasoning as
-  // LocationsTab's own `reload` above.
   function reload() {
     fetch("/api/admin/locations/issues")
       .then((r) => (r.ok ? r.json() : { listings: [], projects: [] }))
@@ -395,8 +351,6 @@ function LocationIssuesPanel({ activeLocations }: { activeLocations: LocationRow
   }
   useEffect(reload, []);
 
-  // Both levels — a listing/project can be assigned directly to a Village
-  // with no neighborhood layer at all (2026-08-21 spec).
   const neighborhoods = activeLocations.filter((l) => l.type === "neighborhood" || l.type === "village");
 
   async function fixListing(l: BrokenListing) {

@@ -3,14 +3,6 @@
 import { GroupCard, SectionHeading, SliderRow, ToggleRow } from "../../fields";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 
-/**
- * Environment → Clouds (PRD §11) — the ONE user-facing Clouds feature: a
- * real per-fragment raymarched cloud layer (src/lib/render-engine/
- * clouds.ts) on medium/high quality tiers, falling back to SkyMesh's own
- * cheap built-in cloud uniforms on Low/Mobile tiers (never both — PRD's
- * own "do not implement another public cloud system" rule) — the tier
- * check itself lives in RenderEngine.ts, invisible from this panel.
- */
 export function CloudsSubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const on = draft.cloudsEnabled;

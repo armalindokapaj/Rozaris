@@ -1,15 +1,3 @@
-/**
- * RZ-VIEWER-FX-01 — the `?fx=` pass-bisect override. Run with
- * `npm run test:effect-overrides`. Pure functions, no browser, no server.
- *
- * Why this is worth a test at all: this override exists to be reached by a
- * hand-typed URL on a phone that is already rendering wrong, by someone
- * who cannot see a console. Every failure mode here is silent — a typo
- * that parses as "disable everything", or an override that turns a pass
- * ON, would send the next debugging session down a false trail and look
- * exactly like a device bug. The one invariant that actually matters is
- * the last case below: an override can only ever SUBTRACT.
- */
 import {
   BISECTABLE_EFFECTS,
   applyEffectOverridesToLighting,
@@ -46,7 +34,6 @@ ok("a comma list disables each one", (() => {
 })());
 ok("whitespace and case are tolerated", parseEffectOverrides("?fx= -GI , -SSR ").size === 2);
 ok("`none` disables every bisectable pass", parseEffectOverrides("?fx=none").size === BISECTABLE_EFFECTS.length);
-// A typo must degrade to "no override", never to a black viewer.
 ok("an unknown token is ignored, not fatal", parseEffectOverrides("?fx=-nonsense").size === 0);
 ok("an unknown token does not poison its neighbours", parseEffectOverrides("?fx=-nonsense,-gi").has("gi"));
 
@@ -86,10 +73,6 @@ ok("`none` turns every rendering pass off", (() => {
 })());
 
 console.log("\n4. the invariant: an override can only ever SUBTRACT");
-// The whole point of this control is to answer "is pass X the culprit?".
-// If it could ever switch a pass ON, a project that never enabled that
-// pass would start rendering differently under `?fx=`, and the answer it
-// gave would be about a scene nobody publishes.
 const allOffLighting = { giEnabled: false, volumetricLightingEnabled: false } as unknown as LightingConfig;
 const allOffRendering = {
   ssrEnabled: false,

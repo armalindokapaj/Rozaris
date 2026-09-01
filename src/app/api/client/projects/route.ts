@@ -2,16 +2,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 
-/**
- * Multi-Channel Publishing PRD Phase 9 — "which projects can I see at
- * all," the client portal's landing list. Three ways in: own the
- * Publisher outright, an org-wide owner/admin `OrganizationMembership` on
- * the Publisher that owns them, or an explicit `ProjectMembership` row on
- * one specific project regardless of org role. Deliberately its own query
- * rather than a loop calling `requireProjectPermission()` per project —
- * that gate answers "can I touch THIS one," this route answers "which
- * ones," a different question worth its own (much cheaper) query shape.
- */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {

@@ -3,16 +3,6 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/adminAuth";
 import { getEntityConfig, PROJECT_3D_CONFIG_ENTITY } from "@/lib/adminEntities";
 
-/**
- * One entity's current live state + its full AuditLog history — the shared
- * read behind Version History, User Activity, and Before/After. Works for
- * any `entityType` string, not just the 8 Recycle Bin models: `current`
- * resolves to `null` for entity types outside both registries (e.g.
- * `DetailModelSlot`), but `history` still comes back — every
- * `logAuditEvent()` call site in the app already writes a consistent
- * `entityType`/`entityId` pair, so this works retroactively on data logged
- * before this route existed.
- */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ entityType: string; entityId: string }> }

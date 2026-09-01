@@ -25,14 +25,6 @@ import { Footer } from "@/components/layout/Footer";
 import { buttonVariants } from "@/components/ui/Button";
 import { useT } from "@/lib/i18n/useT";
 
-/**
- * The long-form counterpart to Help Center's short "About ROZARIS" teaser
- * (`helpPage.about*` — kept as-is, its "Learn more about us" link now
- * points here). Static/marketing content, not searchable like Help's FAQ,
- * so it's plain <details> accordions grouped under real topic headings
- * instead of the filterable sidebar HelpPageClient uses.
- */
-
 const PILLARS = [
   { icon: Rotate3d, titleKey: "pillar1Title", bodyKey: "pillar1Body" },
   { icon: Building2, titleKey: "pillar2Title", bodyKey: "pillar2Body" },
@@ -65,9 +57,6 @@ const HOW_STEPS = [
   { icon: MessageCircle, titleKey: "how4Title", bodyKey: "how4Body" },
 ] as const;
 
-// Flat numbered keys (aboutPage.faqG{g}Q{n}/A{n}) — same convention
-// HelpPageClient and LegalPageClient use, since useT()'s t() only does
-// dot-path lookups, not arrays.
 const FAQ_GROUPS = [
   { titleKey: "faqG1Title", count: 4 },
   { titleKey: "faqG2Title", count: 4 },
@@ -83,7 +72,7 @@ export function AboutPageClient() {
   return (
     <div className="min-h-full">
       <div className="mx-auto max-w-6xl px-4 py-8 lg:px-8">
-        {/* Hero */}
+        {          }
         <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
           <div className="max-w-2xl">
             <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-brand-600">
@@ -95,7 +84,7 @@ export function AboutPageClient() {
           <HeroSketch className="hidden h-32 w-52 shrink-0 text-neutral-300 sm:block" />
         </div>
 
-        {/* Mission */}
+        {             }
         <div className="mt-8 flex flex-col gap-4 rounded-panel bg-brand-50 p-5 sm:flex-row sm:items-start sm:p-6">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-card bg-brand-100 text-brand-600">
             <Sparkles className="h-5 w-5" />
@@ -106,13 +95,13 @@ export function AboutPageClient() {
           </div>
         </div>
 
-        {/* What ROZARIS is */}
+        {                     }
         <section className="mt-10 max-w-3xl">
           <h2 className="font-serif text-2xl text-neutral-900">{t("aboutPage.whatTitle")}</h2>
           <p className="mt-2 text-sm leading-relaxed text-neutral-600">{t("aboutPage.whatBody")}</p>
         </section>
 
-        {/* How it works */}
+        {                  }
         <section className="mt-10">
           <h2 className="font-serif text-2xl text-neutral-900">{t("aboutPage.howTitle")}</h2>
           <p className="mt-1 max-w-2xl text-sm text-neutral-500">{t("aboutPage.howSubtitle")}</p>
@@ -129,7 +118,7 @@ export function AboutPageClient() {
           </div>
         </section>
 
-        {/* Platform pillars */}
+        {                      }
         <section className="mt-10">
           <h2 className="font-serif text-2xl text-neutral-900">{t("aboutPage.pillarsTitle")}</h2>
           <p className="mt-1 max-w-2xl text-sm text-neutral-500">{t("aboutPage.pillarsSubtitle")}</p>
@@ -146,7 +135,7 @@ export function AboutPageClient() {
           </div>
         </section>
 
-        {/* Who it's for */}
+        {                  }
         <section className="mt-10">
           <h2 className="font-serif text-2xl text-neutral-900">{t("aboutPage.audienceTitle")}</h2>
           <p className="mt-1 max-w-2xl text-sm text-neutral-500">{t("aboutPage.audienceSubtitle")}</p>
@@ -163,7 +152,7 @@ export function AboutPageClient() {
           </div>
         </section>
 
-        {/* Trust & verification */}
+        {                          }
         <section className="mt-10 overflow-hidden rounded-panel border border-neutral-200 bg-white p-5 sm:p-6">
           <div className="flex items-start gap-4">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-card bg-brand-50 text-brand-600">
@@ -184,7 +173,7 @@ export function AboutPageClient() {
           </div>
         </section>
 
-        {/* Where we are today */}
+        {                        }
         <section className="mt-10 flex flex-col gap-4 rounded-panel bg-neutral-50 p-5 sm:flex-row sm:items-start sm:p-6">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-card bg-white text-brand-600">
             <MapPin className="h-5 w-5" />
@@ -195,7 +184,7 @@ export function AboutPageClient() {
           </div>
         </section>
 
-        {/* FAQ */}
+        {         }
         <section className="mt-10">
           <h2 className="font-serif text-2xl text-neutral-900">{t("aboutPage.faqTitle")}</h2>
           <p className="mt-1 max-w-2xl text-sm text-neutral-500">{t("aboutPage.faqSubtitle")}</p>
@@ -228,7 +217,7 @@ export function AboutPageClient() {
           </div>
         </section>
 
-        {/* CTA */}
+        {         }
         <section className="mt-10 flex flex-col gap-4 rounded-panel border border-neutral-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
           <div className="min-w-0">
             <h2 className="font-serif text-lg text-neutral-900">{t("aboutPage.ctaTitle")}</h2>

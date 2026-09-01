@@ -17,14 +17,6 @@ const SUBTABS: { id: RenderingSubtab; label: string }[] = [
   { id: "color", label: "Color" },
 ];
 
-/**
- * Rendering tab (PRD §22-33) — 4 subtabs. Extends the SAME shared post
- * pipeline the Lighting tab built (render-engine/postProcessing.ts's
- * buildScenePostPipeline) — every field here is real, live-applied with
- * no remount except Anti-Aliasing's own toggle (RenderEngine.ts's
- * setRenderingConfig), persisted through the same Project3DConfig PATCH
- * route every other tab already uses.
- */
 export function RenderingPanel({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const [subtab, setSubtab] = useState<RenderingSubtab>("reflections");
 

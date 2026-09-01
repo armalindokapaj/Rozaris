@@ -31,9 +31,6 @@ export default async function DeveloperPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  // Real Postgres `Publisher` row — was hardcoded `mockData.publishers`,
-  // meaning a real signed-up, admin-verified developer could never get a
-  // profile page here. See the launch-readiness audit that found this.
   const publisher = await getPublisherBySlug(slug);
   if (!publisher) notFound();
 

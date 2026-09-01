@@ -5,7 +5,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { logAuditEvent } from "@/lib/audit";
 
-/** §10.1 "Change password" — real bcrypt verify + rehash, session-scoped. */
 const bodySchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(8, "Password must be at least 8 characters."),

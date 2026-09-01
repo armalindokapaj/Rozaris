@@ -1,54 +1,32 @@
-// ROZARIS Rent vs Buy — calculation engine (PRD_Rent_vs_Buy.pdf v1.0, §7-9,
-// §14, §21). Pure, deterministic, no framework/DOM dependency — the same
-// module backs both the live client-side recalculation (§11: ~150-300ms
-// after each input change) and the /api/tools/rent-vs-buy/calculate route,
-// so there is exactly one implementation of the math (§15: "do not
-// maintain two independent implementations").
-//
-// Monthly simulation over the holding period, per §7's own formulas:
-//  - fixed-rate fully amortizing mortgage (§7.1)
-//  - property value compounds monthly from the annual appreciation rate (§7.3)
-//  - rent escalates once per anniversary, not monthly (§7.4's recommendation)
-//  - the renter's un-spent down payment + closing costs seed an investment
-//    account (§7.5) that also picks up the monthly saved difference
-//    whenever renting is cheaper that month (never an automatic withdrawal
-//    when buying is cheaper — §7.5)
-//  - net financial position, not just cumulative cash, is what's compared
-//    (§7.7): buy_net = recovered_cash_at_sale - cumulative_buyer_cash;
-//    rent_net = investment_account + refundable_deposit - cumulative_rent_cost
-//
-// Every field name here maps directly to §14's data model (camelCased).
-
 export const RENT_VS_BUY_METHODOLOGY_VERSION = "1.0.0";
 
 export interface RentBuyScenario {
   currency: "EUR" | "ALL";
   locationText: string;
-  holdingPeriodYears: number; // 1-30
+  holdingPeriodYears: number;
   rentMonthly: number;
-  rentGrowthAnnual: number; // fraction, e.g. 0.03
+  rentGrowthAnnual: number;
   renterInsuranceMonthly: number;
   securityDepositMonths: number;
   depositRefundable: boolean;
-  renterMovingCosts: number; // one-time, at move-in
+  renterMovingCosts: number;
   propertyPrice: number;
-  downPaymentPercent: number; // fraction, e.g. 0.2
-  mortgageRateAnnual: number; // fraction
-  loanTermYears: number; // 5-40
-  homeAppreciationAnnual: number; // fraction, may be negative
-  propertyTaxRateAnnual: number; // fraction of value / year
+  downPaymentPercent: number;
+  mortgageRateAnnual: number;
+  loanTermYears: number;
+  homeAppreciationAnnual: number;
+  propertyTaxRateAnnual: number;
   homeInsuranceMonthly: number;
-  maintenanceRateAnnual: number; // fraction of value / year
+  maintenanceRateAnnual: number;
   hoaMonthly: number;
-  purchaseClosingCostRate: number; // fraction of price
-  sellingCostRate: number; // fraction of sale price
-  investmentReturnAnnual: number; // fraction
-  investmentFeeDragAnnual: number; // fraction, subtracted from return
+  purchaseClosingCostRate: number;
+  sellingCostRate: number;
+  investmentReturnAnnual: number;
+  investmentFeeDragAnnual: number;
 }
 
 export interface RentBuySeriesPoint {
   year: number;
-  /** Null after planned stay: rent has ended and must not be extrapolated. */
   rentNet: number | null;
   buyNet: number;
   outstandingMortgageBalance: number;
@@ -59,7 +37,7 @@ export interface RentBuyBreakdown {
     rentPaid: number;
     renterInsurance: number;
     movingCosts: number;
-    depositTreatment: number; // positive = returned to renter, 0 if refundable (nets out), negative if lost
+    depositTreatment: number;
     investmentContributions: number;
     investmentGrowth: number;
     finalInvestmentAccount: number;
@@ -90,7 +68,6 @@ export interface RentBuyResult {
   buyNetPosition: number;
   winner: "rent" | "buy" | "tie";
   advantageAmount: number;
-  /** null when no durable break-even occurs within the horizon. */
   breakEvenMonth: number | null;
   annualSeries: RentBuySeriesPoint[];
   mortgagePayoffYear: number;
@@ -98,7 +75,7 @@ export interface RentBuyResult {
   breakdown: RentBuyBreakdown;
 }
 
-const BREAK_EVEN_CONFIRMATION_MONTHS = 6; // PRD §9 recommends 6-12
+const BREAK_EVEN_CONFIRMATION_MONTHS = 6;
 
 function leaderAt(rentNet: number, buyNet: number): "rent" | "buy" | "tie" {
   if (Math.abs(buyNet - rentNet) < 0.01) return "tie";
@@ -145,7 +122,7 @@ export function calculateRentVsBuy(scenario: RentBuyScenario): RentBuyResult {
 
   const depositAmount = scenario.rentMonthly * scenario.securityDepositMonths;
   if (!scenario.depositRefundable) {
-    cumulativeRentPaid += depositAmount; // a real, non-recoverable cost
+    cumulativeRentPaid += depositAmount;
   }
   cumulativeRentPaid += scenario.renterMovingCosts;
 
@@ -155,7 +132,6 @@ export function calculateRentVsBuy(scenario: RentBuyScenario): RentBuyResult {
   const monthlyLeader: ("rent" | "buy" | "tie")[] = [];
   const annualSeries: RentBuySeriesPoint[] = [];
 
-  // Year 0 — the instant-exit baseline before any month has elapsed.
   {
     const sellingCosts0 = propertyValue * scenario.sellingCostRate;
     const buyNet0 = propertyValue - sellingCosts0 - loanBalance - cumulativeBuyerCash;
@@ -226,8 +202,6 @@ export function calculateRentVsBuy(scenario: RentBuyScenario): RentBuyResult {
     }
   }
 
-  // Durable break-even: earliest month whose leader holds for the
-  // confirmation window (or through the end of the horizon) — §9.
   let breakEvenMonth: number | null = null;
   for (let i = 0; i < monthlyLeader.length; i++) {
     const leader = monthlyLeader[i];
@@ -236,8 +210,6 @@ export function calculateRentVsBuy(scenario: RentBuyScenario): RentBuyResult {
     const window = Math.min(BREAK_EVEN_CONFIRMATION_MONTHS, remaining);
     const holds = monthlyLeader.slice(i, i + window).every((l) => l === leader);
     if (holds) {
-      // Only a genuine "break-even" if this leader differs from month 1's
-      // leader (i.e. the lead actually changed hands at some point).
       if (i === 0 || monthlyLeader[0] === leader) continue;
       breakEvenMonth = i + 1;
       break;

@@ -16,9 +16,7 @@ export function Gallery({
 }: {
   seedBase: string;
   photoCount?: number;
-  /** Facade / unit-location media is only shown if the publisher uploaded it. */
   hasFacade?: boolean;
-  /** Video tour is only shown if the publisher uploaded one. */
   hasVideo?: boolean;
 }) {
   const { t } = useT();

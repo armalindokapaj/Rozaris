@@ -4,16 +4,6 @@ import { ColorRow, GroupCard, SectionHeading, SliderRow, ToggleRow } from "../..
 import { kelvinToHex } from "@/lib/colorTemperature";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 
-/**
- * Lighting → Sun Light (PRD §15) — a real master on/off for the ONE sun
- * light Environment → Sun & Sky's Solar system already positions/directs;
- * Automatic Color/Intensity + their manual fallbacks are the SAME real
- * Project3DConfig fields shown there (not a duplicate system — PRD's
- * "each feature exists once" rule). Temperature is a real Kelvin input
- * that recomputes `manualSunColorHex` on change (src/lib/
- * colorTemperature.ts) — a convenience alternate to the raw hex picker,
- * not a second stored color.
- */
 export function SunLightSubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
 

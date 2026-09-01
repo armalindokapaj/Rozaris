@@ -16,26 +16,12 @@ interface AuditRow {
   metadata: Record<string, unknown> | null;
 }
 
-/**
- * Project Manager → "Activity". The real `AuditLog`, scoped to this
- * project AND everything underneath it — unit edits, bulk repricings,
- * inventory syncs, publish-target deploys — via the `projectId` filter
- * added to `/api/admin/audit-log` alongside this panel (rows for child
- * entities carry a different `entityId` but stamp `projectId` into
- * `metadata`).
- *
- * Read-only by design: this is the record of what happened, and an
- * "edit" affordance on an audit trail would defeat its only purpose.
- */
 export function ProjectActivitySection({ projectId }: { projectId: string }) {
   const { t } = useT();
   const [rows, setRows] = useState<AuditRow[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // First page inside the effect, so nothing sets state synchronously as
-  // it runs; `loadMore` below appends and is only ever called from a
-  // click.
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/admin/audit-log?projectId=${encodeURIComponent(projectId)}&limit=40`)

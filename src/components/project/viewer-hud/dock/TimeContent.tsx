@@ -10,11 +10,6 @@ import type { SunTimePreset } from "@/lib/sunPosition";
 import { DOCK_MORPH_TIMING } from "../layoutState";
 import { DockPopover } from "./DockPopover";
 
-/** Duplicated from (soon-unreferenced) `SunTimeWorkspace.tsx` rather than
- * imported from it — that component is left in place only as a reference
- * for a later phase, not rendered by `ViewerHUD.tsx` any more once this
- * dock ships (see `ProjectViewerDock.tsx`'s own doc comment), so importing
- * from it would be a live dependency on a file nothing else uses. */
 function formatHM(hours: number): string {
   const norm = ((hours % 24) + 24) % 24;
   const h = Math.floor(norm);
@@ -37,44 +32,8 @@ const PRESET_ICON: Record<SunTimePreset["id"], typeof Sun> = {
   evening: Moon,
 };
 
-/** Half the rendered width of `.rz-range-single`'s thumb — the distance
- * its CENTRE is inset from each end of the track, because a native range
- * thumb's centre only travels from `thumbWidth / 2` to
- * `trackWidth − thumbWidth / 2`, never 0 → full width. `fillPercent`
- * below measures 0-100% of the container instead, so without this
- * correction the fill and the thumb diverge by up to 8px at each end
- * (~4.5% of a ~180px mobile track) — visible precisely where the user is
- * aiming. 8 and not 10: the thumb's 2px border does not widen it, WebKit
- * lays that pseudo-element out border-box. Measured against a real
- * Chromium, not derived — `npm run test:time-slider` asserts both this
- * constant and the resulting fill terminus. Keep in sync with
- * `.rz-range-single::-webkit-slider-thumb` in `globals.css`. */
 const SLIDER_THUMB_INSET_PX = 8;
 
-/**
- * Morphing Bottom Dock PRD §8-9 "Time Dock" — desktop:
- * `03:11 ──●── 18:10   Golden Hour ▾   ×`, one row, fits the dock's shared
- * 62px height (see `layoutState.ts`'s `DOCK_HEIGHT_DESKTOP` doc comment for
- * why this no longer needs the taller ~104px the pre-dock `SunTimeWorkspace`
- * bar had) — the always-visible 2×2 preset grid that pushed that bar's
- * height past 62px becomes a single popover trigger here instead, PRD §8's
- * own wording ("display only Golden Hour ▾... clicking opens a compact
- * popover"). No back control (2026-08-18 direct instruction: "remove text
- * time and the sign back at the left side") — exiting Time is Escape,
- * re-clicking the active "Time" nav item, or this row's own ×.
- *
- * Mobile keeps a 2-row layout close to `SunTimeWorkspace`'s own existing
- * mobile sheet (preset-trigger/reset/× row, then a full-width slider row,
- * same back-less top row as desktop) — full mobile choreography/spacing
- * polish is deferred to a later phase per the approved plan; this ports
- * today's shape rather than redesigning it fresh.
- *
- * `forwardRef`, attached directly to this component's own root div (no
- * extra wrapper) — `ProjectViewerDock`'s content-reveal animation targets
- * `ref.current.children` (sunrise/slider/sunset/preset/× on desktop)
- * directly, so an intermediate wrapper div here would leave only 1 child
- * to "stagger".
- */
 export const TimeContent = forwardRef<
   HTMLDivElement,
   {
@@ -88,14 +47,6 @@ export const TimeContent = forwardRef<
     onTimeChange: (hours: number) => void;
     onPresetSelect: (preset: SunTimePreset) => void;
     onReset: () => void;
-    /** Still received from `DockContent` (which still receives it from
-     * `ProjectViewerDock`, unchanged) even though this component no longer
-     * renders a back control itself (2026-08-18: "remove text time and the
-     * sign back at the left side") — Escape and re-clicking the active nav
-     * item both still return to Explore via the same handler on the
-     * orchestrator side; only this component's own on-canvas button is
-     * gone. Kept in the prop type for parity with `UnitsContent`/
-     * `ViewsContent`, which still take it. */
     onBack: () => void;
     onClose: () => void;
     popoverOpen: boolean;
@@ -124,8 +75,6 @@ export const TimeContent = forwardRef<
   const { t } = useT();
   const reducedMotion = useEffectiveReducedMotion();
   const tweenRef = useRef<gsap.core.Tween | null>(null);
-  // So `mousedown` on the preset trigger is not read as a click outside
-  // its own popover — see `DockPopover`'s own note.
   const presetTriggerRef = useRef<HTMLButtonElement>(null);
 
   function handleSliderInput(e: ChangeEvent<HTMLInputElement>) {
@@ -133,18 +82,6 @@ export const TimeContent = forwardRef<
     onTimeChange(clamp(Number(e.target.value), bounds.startHours, bounds.endHours));
   }
 
-  // PRD §9 — a selected preset's time (and everything downstream that
-  // reads it — sun direction, shadows, atmosphere) interpolates rather
-  // than jumps. Drives the *real* `onTimeChange` every animation frame
-  // (not a locally-echoed value) so there is still only one time-state,
-  // per §33-34 — this differs from `SunTimeWorkspace.tsx`'s own
-  // `handleSunPresetSelect`, which used to jump `liveSunTimeHours`
-  // instantly; `onPresetSelect` itself (still the real
-  // `ProjectViewerRuntime.handleSunPresetSelect`) now only fires once the
-  // tween completes, which is what actually sets `activeSunPreset` —
-  // during the ~0.75s tween the preset briefly reads as "none selected"
-  // rather than falsely showing the target preset as already active,
-  // matching a real "traveling toward it" feel rather than a lie.
   function handlePresetSelect(preset: SunTimePreset) {
     onClosePopover();
     const proxy = { value: timeHours };
@@ -185,11 +122,6 @@ export const TimeContent = forwardRef<
   const presetTriggerLabel = activePreset ? t(PRESET_LABEL_KEY[activePreset.id]) : t("sunTime.presets");
 
   const presetPopoverList = (
-    // Wider than the 152px it was before this row grew a time column, and
-    // `whitespace-nowrap` on the label besides: "Ora e Artë" (Golden Hour)
-    // wrapped to two lines at 152px, and Albanian is the default locale —
-    // see the "viewer locale width deltas" note. 196px clears the widest
-    // label plus the time plus the active row's check mark.
     <div className="flex min-w-[196px] flex-col gap-0.5" role="menu" aria-label={t("sunTime.presets")}>
       {presets.map((preset) => {
         const isActive = activePresetId === preset.id;
@@ -209,12 +141,8 @@ export const TimeContent = forwardRef<
           >
             <PresetIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span className="flex-1 whitespace-nowrap">{t(PRESET_LABEL_KEY[preset.id])}</span>
-            {/* The hour it actually lands on. Presets are derived from the
-                day's real sun (sunrise + 2h, sunset − 45min…) and then
-                snapped into this project's own scrub window, so "Morning"
-                is not a fixed clock time and is worth showing — it also
-                makes it obvious that picking one leaves the time on the
-                hour, like everything else on this bar. */}
+            {                                                              
+                                                          }
             <span className={cn("shrink-0 tabular-nums", isActive ? "text-brand-400/70" : "text-white/40")}>{formatHM(preset.hour)}</span>
             {isActive && <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
           </button>
@@ -223,10 +151,6 @@ export const TimeContent = forwardRef<
     </div>
   );
 
-  // Purple, not the neutral white/50→white every other icon-only button in
-  // this dock uses (2026-08-18 direct instruction: "make the X [close
-  // button] in Purple", desktop and mobile both — this component doesn't
-  // branch its `closeButton` by device, so one change covers both).
   const closeButton = (
     <button
       type="button"
@@ -239,20 +163,6 @@ export const TimeContent = forwardRef<
     </button>
   );
 
-  // Desktop's trailing divider ("the line between presets and ×") is
-  // deliberately a child of *this* relative wrapper rather than a sibling
-  // out in the row (2026-08-18 direct instruction: "Fix Presets dropdown
-  // menu, aligned with the line between presets and X") — `DockPopover`'s
-  // `anchorClassName="right-0"` resolves against this wrapper's own right
-  // edge, so folding the divider in here (instead of leaving it as the
-  // row's next flex child, after this wrapper) moves that edge from the
-  // trigger button's own right edge out to the divider's, which is what
-  // "aligned with the line" actually meant — the popover's right side now
-  // sits flush with that same vertical line, not a `gap-3` short of it.
-  // `isDesktop`-gated — mobile's own row has no adjacent × (a reset button
-  // sits between preset trigger and ×), so there's no "line" there to
-  // align to; folding it in unconditionally would just add a stray divider
-  // to mobile's row that never existed before.
   const presetTrigger = (
     <div className="relative flex shrink-0 items-center gap-3">
       <button
@@ -274,22 +184,10 @@ export const TimeContent = forwardRef<
     </div>
   );
 
-  // Where the handle actually is. Solid white against the track ends'
-  // white/40-to-brand pair so the live value reads as the answer and the
-  // bounds as scale marks. Desktop leads with it; mobile drops it into
-  // the left half of the existing top row (which was `justify-end` with
-  // nothing on the left) rather than adding a third row — that row's
-  // height is the whole dock's shared 72px, see the note below it.
   const liveTimeReadout = (
     <span className="shrink-0 text-sm font-semibold tabular-nums text-white">{formatHM(timeHours)}</span>
   );
 
-  // The two readouts flanking the track label the track's own ends —
-  // Sun Path → Start Time/End Time — not sunrise/sunset, which is what
-  // they showed until 2026-08-27. Those are different numbers (an admin
-  // who sets 06:00-20:00 saw "03:11" and "18:10" on a June day in
-  // Albania) and labelling a slider with values it cannot reach was the
-  // bug. Sunrise/sunset are still offered, as presets.
   if (isDesktop) {
     return (
       <div ref={ref} className="flex h-full w-full items-center gap-3 px-3.5 sm:px-4">
@@ -311,15 +209,6 @@ export const TimeContent = forwardRef<
     );
   }
 
-  // Direct instruction (2026-08-18): "Nav, Views, and Time now share
-  // exactly 72px" (down from an earlier 82px pass) — Time is the one
-  // mode whose real natural mobile content *defines* that shared value
-  // (`DOCK_HEIGHT_MOBILE_STANDARD` in `layoutState.ts`; Nav/Views apply it
-  // as a `min-height` floor instead of having their own real content that
-  // size). Trimmed 10px out of this row's own natural height to land
-  // there: `py-2.5`→`py-2` (-4px), `gap-2`→`gap-1.5` (-2px), and the reset
-  // button `h-8`→`h-7` (-4px, still comfortably tappable). Re-measured via
-  // `getBoundingClientRect()` after, not just eyeballed.
   return (
     <div ref={ref} className="flex w-full flex-col gap-1.5 px-4 py-2">
       <div className="flex items-center justify-between gap-2">

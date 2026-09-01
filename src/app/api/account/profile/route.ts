@@ -5,15 +5,6 @@ import { prisma } from "@/lib/db";
 import { logAuditEvent } from "@/lib/audit";
 import { getRequiredFieldsForScope } from "@/lib/fieldPolicies";
 
-/**
- * Account & Profile System PRD v1.0 §4 "Standard User Profile" — the one
- * real read/write surface for the signed-in account's own personal-profile
- * fields (firstName/lastName/country/preferredLanguage/preferredCurrency/
- * preferredContactMethod/cityLocationId), replacing the buyer dashboard's
- * previous local-only Zustand `buyerProfile` edits. Session-scoped only —
- * a user can only ever read/write their own row, there is no `userId`
- * param.
- */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -59,9 +50,6 @@ const bodySchema = z.object({
   cityLocationId: z.string().trim().max(80).optional().nullable(),
 });
 
-/** Field name in the request body -> the FieldPolicy key that governs it
- * (§11.4 "Backend enforcement — the API/service layer must enforce...
- * even when requests bypass the UI"). */
 const POLICY_KEY_FOR_FIELD: Record<string, string> = {
   firstName: "standard_user.firstName",
   lastName: "standard_user.lastName",
@@ -85,14 +73,11 @@ export async function PATCH(request: Request) {
   }
   const patch = parsed.data;
 
-  // Enforce admin-set "Must fill" policy server-side — a field explicitly
-  // included in the request body as empty/null on a Required field is
-  // rejected, regardless of what the client-side form allowed.
   const requiredFields = await getRequiredFieldsForScope("standard_user");
   const missing: string[] = [];
   for (const [field, policyKey] of Object.entries(POLICY_KEY_FOR_FIELD)) {
     if (!requiredFields[policyKey]) continue;
-    if (!(field in patch)) continue; // not being touched by this request
+    if (!(field in patch)) continue;
     const value = patch[field as keyof typeof patch];
     if (value == null || (typeof value === "string" && value.trim() === "")) {
       missing.push(field);
@@ -125,11 +110,7 @@ export async function PATCH(request: Request) {
         ? { preferredContactMethod: patch.preferredContactMethod }
         : {}),
       ...(patch.cityLocationId !== undefined ? { cityLocationId: patch.cityLocationId } : {}),
-      // Changing phone re-requires phone verification (§9.3 "Re-verification
-      // triggers — phone ownership changes").
       ...(patch.phone !== undefined && patch.phone !== before.phone ? { phoneVerifiedAt: null } : {}),
-      // A display name kept in sync from first/last for every pre-existing
-      // read site that still reads `name`.
       ...(patch.firstName !== undefined || patch.lastName !== undefined
         ? { name: `${patch.firstName ?? before.firstName ?? ""} ${patch.lastName ?? before.lastName ?? ""}`.trim() || before.name }
         : {}),

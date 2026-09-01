@@ -4,10 +4,6 @@ import type { CameraPreset, ExperienceDocument, NodeOverride, Project3DConfig, S
 
 const DEFAULT_VIEWER_UI: ViewerUIToggles = { home: true, unitSearch: true };
 
-/** The subset of a `DetailModelVersion` row `buildExperienceDocument` needs
- * — deliberately narrow (not the whole Prisma row) so callers can pass
- * either a freshly-created row or a plain object without importing
- * generated Prisma types here. */
 export interface ExperienceDocumentVersionInput {
   projectId: string;
   slotId: string;
@@ -22,15 +18,6 @@ export interface ExperienceDocumentVersionInput {
   validationStatus: "ready" | "warning" | "blocked";
 }
 
-/**
- * Assembles one `ExperienceDocument` snapshot from the project's current
- * `Project3DConfig` row plus one `DetailModelVersion`'s own fields — the
- * one function that does this merge (rewrite Track B, Phase 1). Called at
- * version-create/update time so `DetailModelVersion.experienceDocument`
- * stays a faithful snapshot of what that revision actually looked like,
- * without requiring every existing config-writing route to change: this
- * is assembled *from* their output, not instead of it.
- */
 export function buildExperienceDocument(
   config: Project3DConfig,
   version: ExperienceDocumentVersionInput
@@ -98,17 +85,6 @@ export function buildExperienceDocument(
   };
 }
 
-/**
- * Re-reads a version's current state (its own fields + unit links + the
- * project's Project3DConfig) and rewrites its `experienceDocument`
- * snapshot — the shared refresh step every route that mutates a version's
- * placement/overrides/links calls after its own write, so the snapshot
- * doesn't silently go stale relative to the fields it's assembled from.
- * A project with no Project3DConfig row yet writes `null` (nothing reads
- * this document yet, so there's no default-config fallback to maintain).
- * Accepts a transaction client or the plain `prisma` client — every call
- * site already runs inside its own `$transaction`.
- */
 export async function refreshExperienceDocument(
   tx: Pick<PrismaClient, "detailModelVersion" | "project3DConfig" | "detailModelSlot">,
   projectId: string,
@@ -119,12 +95,6 @@ export async function refreshExperienceDocument(
     tx.project3DConfig.findUnique({ where: { projectId } }),
   ]);
   if (!version) return;
-  // Multiple Detail-Model Slots pass — the document's slotName is a
-  // denormalized label (real slot management stays on DetailModelSlot,
-  // this is just for a reader to know which slot a standalone document
-  // describes without a second lookup). A missing slot (shouldn't happen,
-  // slotId is a required FK) falls back to the raw id rather than
-  // failing the whole refresh.
   const slot = await tx.detailModelSlot.findUnique({ where: { id: version.slotId } });
 
   const experienceDocument = config3d

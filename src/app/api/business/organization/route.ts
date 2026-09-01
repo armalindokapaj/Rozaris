@@ -4,13 +4,6 @@ import { prisma } from "@/lib/db";
 import { requirePublisherSession, requireOrgRole } from "@/lib/publisherAuth";
 import { logAuditEvent } from "@/lib/audit";
 
-/**
- * Account & Profile System PRD v1.0 §9 "Business Publisher & Organization
- * Profile" — the signed-in account's own Publisher/Organization row.
- * `Publisher` doubles as "Organization" (see the schema comment above it);
- * any team member can read it, only Owner/Org Admin can write it
- * (`requireOrgRole()`).
- */
 export async function GET() {
   const gate = await requirePublisherSession();
   if (gate instanceof NextResponse) return gate;
@@ -73,9 +66,6 @@ export async function PATCH(request: Request) {
   const before = await prisma.publisher.findUnique({ where: { id: gate.user.publisherId } });
   if (!before) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
-  // §9.3 "Re-verification triggers — Legal company name or registration
-  // number changes." Only fires while the org is currently verified — an
-  // already-unverified org just keeps editing freely.
   const identityChanged =
     (parsed.data.legalName !== undefined && parsed.data.legalName !== before.legalName) ||
     (parsed.data.registrationNumber !== undefined && parsed.data.registrationNumber !== before.registrationNumber);

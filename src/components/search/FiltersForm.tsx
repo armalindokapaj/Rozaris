@@ -15,8 +15,6 @@ import { cn, formatArea, formatPrice } from "@/lib/utils";
 import { mainFieldsFor } from "@/lib/propertyTypeFields";
 import { RangeSlider, type SliderScale } from "./RangeSlider";
 
-// Buy: fine 10k-EUR snapping from 10k-300k (the range most buyers search
-// within) packed into 70% of the track width; coarser steps beyond that.
 const BUY_PRICE_SCALE: SliderScale = {
   min: 10_000,
   max: 1_000_000,
@@ -33,13 +31,10 @@ const BUY_AREA_SCALE: SliderScale = {
   step: 10,
   stepAfterBreakpoint: 50,
 };
-// Long-term rent
 const RENT_PRICE_SCALE: SliderScale = { min: 100, max: 1_500, step: 50 };
 const RENT_AREA_SCALE: SliderScale = { min: 30, max: 1_500, step: 10 };
-// Daily (short-term) rent — much lower price/area domain than long-term
 const DAILY_RENT_PRICE_SCALE: SliderScale = { min: 20, max: 300, step: 10 };
 const DAILY_RENT_AREA_SCALE: SliderScale = { min: 30, max: 150, step: 10 };
-// A villa's plot is typically several times its built floor area.
 const LAND_SIZE_SCALE: SliderScale = {
   min: 100,
   max: 3_000,
@@ -134,8 +129,6 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
   const amenityLabels = AMENITY_LABELS[locale];
   const poiLabels = POI_LABELS[locale];
 
-  // The most recently toggled type drives which fields show — e.g.
-  // clicking Apartment surfaces its main filters (bedrooms/bathrooms/area).
   const activeType = filters.propertyTypes[filters.propertyTypes.length - 1];
   const activeFields = mainFieldsFor(activeType);
   const showArea = activeFields.includes("area");
@@ -145,8 +138,8 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
 
   return (
     <div className={cn("space-y-5", compact ? "px-4 py-4" : "p-5")}>
-      {/* Buy / Rent — a sliding accent-colored "switch" so toggling reads as
-          on/off rather than an abrupt background swap. */}
+      {                                                                      
+                                                          }
       <div className="relative grid grid-cols-2 rounded-control bg-neutral-100 p-1">
         <div
           className={cn(
@@ -180,9 +173,6 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
               onClick={() =>
                 setFilters({
                   rentSubtype: filters.rentSubtype === s ? undefined : s,
-                  // Daily and long-term rent use different price/area
-                  // scales, so a value picked under one is out of range
-                  // under the other.
                   priceMin: null,
                   priceMax: null,
                   areaMin: null,
@@ -196,7 +186,7 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
         </div>
       )}
 
-      {/* Location */}
+      {              }
       <Section label={t("filters.location")}>
         <div className="flex items-center gap-2 rounded-control border border-neutral-200 px-3 py-2.5">
           <MapPin className="h-4 w-4 shrink-0 text-neutral-400" />
@@ -209,7 +199,7 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
         </div>
       </Section>
 
-      {/* Property type */}
+      {                   }
       <Section label={t("filters.propertyType")}>
         <div className="flex flex-wrap gap-1.5">
           {PROPERTY_TYPES.map((pt) => (
@@ -226,7 +216,7 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
         </div>
       </Section>
 
-      {/* Price */}
+      {           }
       <Section label={t("filters.priceRangeEur")}>
         <RangeSlider
           scale={priceScaleFor(filters)}
@@ -238,8 +228,8 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
         />
       </Section>
 
-      {/* Area — relabeled "Villa size" for villas, since it's the built
-          floor area rather than the surrounding plot (see Land size below). */}
+      {                                                                 
+                                                                               }
       {showArea && (
         <Section label={activeType === "villa" ? t("filters.villaSizeM2") : t("filters.areaM2")}>
           <RangeSlider
@@ -277,7 +267,7 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
         </Section>
       )}
 
-      {/* Bedrooms / Bathrooms */}
+      {                          }
       {showBedBath && (
         <div className="grid grid-cols-2 gap-4">
           <Section label={t("filters.bedrooms")}>
@@ -309,7 +299,7 @@ export function FiltersForm({ compact = false }: { compact?: boolean }) {
         </div>
       )}
 
-      {/* More filters toggle */}
+      {                         }
       <button
         onClick={() => setAdvancedOpen((v) => !v)}
         aria-expanded={advancedOpen}

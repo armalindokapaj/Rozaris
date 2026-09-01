@@ -17,25 +17,8 @@ import {
 } from "three/tsl";
 import type { EnvironmentConfig } from "@/lib/types";
 
-/**
- * Environment → Fog & Haze (PRD §12, `webgpu_custom_fog.html` parity) — a
- * real TSL `scene.fogNode` built from vendored three.js primitives: a
- * base→top height band (`smoothstep`, not the library's fixed
- * `exponentialHeightFogFactor` — a two-edge band lets an admin author both
- * where the fog starts AND ends, matching "Base Height"/"Top Height"),
- * distance-based haze, and `triNoise3D` (the exact noise function the
- * reference demo itself is built around) for animated wisps that genuinely
- * scroll over time when Fog Movement is on (a real CPU-accumulated wind
- * offset, not just a shader `time` term nothing can pause). Composed via
- * the library's own `fog()` function (`three/tsl`'s canonical `Scene.
- * fogNode` composer). Feeds the SAME Global Sun Vector every other
- * Environment feature reads for its warm sun-tint — never a second sun.
- */
 export interface FogSystem {
   node: ReturnType<typeof tslFog>;
-  /** Advances the (real, pausable) wind-noise offset and writes every
-   * uniform from the given config + current Global Sun Vector. Call once
-   * per animation frame. */
   update: (config: EnvironmentConfig, sunDirection: THREE.Vector3, dtSeconds: number) => void;
 }
 
@@ -59,9 +42,6 @@ export function buildFogSystem(): FogSystem {
 
   const distance = tslLength(cameraPosition.sub(positionWorld));
 
-  // 1 at/under baseHeight, fades toward 0 by topHeight — gated to a no-op
-  // (always 1) when the height band itself is off, so plain uniform fog
-  // still works with heightBandOn=0.
   const heightFactor = smoothstep(topHeight, baseHeight, positionWorld.y).mul(heightBandOn).add(heightBandOn.oneMinus());
 
   const hazeFactor = distance.mul(haze).negate().exp().oneMinus();

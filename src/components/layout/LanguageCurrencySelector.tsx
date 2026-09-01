@@ -20,14 +20,7 @@ export function LanguageCurrencySelector({
   openUpward = false,
   variant = "inline",
 }: {
-  /** The mobile nav's footer sits at the bottom of the screen — a
-   * downward-opening dropdown there renders mostly off-screen. */
   openUpward?: boolean;
-  /** "inline" is the original pill trigger (desktop header, old mobile nav
-   * footer row). "tile" matches the front page's Tools bar cells exactly —
-   * icon circle + short bold label stacked, `flex-1` so it shares a
-   * `grid-cols-2` row evenly with the Sign in/out tile next to it. Same
-   * dropdown underneath either way, just a different trigger. */
   variant?: "inline" | "tile";
 }) {
   const { open, toggle, close, ref } = useDropdown<HTMLDivElement>();

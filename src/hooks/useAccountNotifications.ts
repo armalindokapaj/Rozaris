@@ -13,13 +13,6 @@ interface RealNotification {
   createdAt: string;
 }
 
-/** Account & Profile System PRD v1.0 §13 "Notifications — Alert center" —
- * real `GET/PATCH /api/account/notifications`, read only while signed in
- * (matches every other `/api/account/*` real-data hook in this app). Maps
- * the DB row shape onto the existing `NotificationItem` type so the
- * shared `<NotificationsList>` component doesn't need to know the
- * difference between this and the mock feed it also still renders for
- * publisher dashboards. */
 export function useAccountNotifications() {
   const signedIn = useAppStore((s) => s.auth.signedIn);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);

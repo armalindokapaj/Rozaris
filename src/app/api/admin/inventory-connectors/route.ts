@@ -10,28 +10,11 @@ import { COLUMN_MAPPING_VALUES } from "@/lib/integrations/normalization";
 const createConnectorSchema = z.object({
   projectId: z.string().min(1),
   type: z.enum(["google_sheets", "api", "manual"]),
-  /** What the admin actually pastes — a full Google Sheets URL or a bare
-   * id, either way (see `parseSheetRef`). The old `externalResourceId`
-   * (id only) is still accepted so existing callers don't break. */
   sheetUrl: z.string().min(1).optional(),
   externalResourceId: z.string().min(1).optional(),
-  /** Sheet-header -> `Unit` field overrides, for a sheet whose columns
-   * aren't named anything the built-in alias table recognises. */
   columnMapping: z.record(z.string(), z.enum(COLUMN_MAPPING_VALUES)).optional(),
 });
 
-/**
- * Multi-Channel Publishing PRD Phase 8 — admin CRUD for
- * `InventoryConnector`, mirroring `/api/admin/publish-targets`'s exact
- * convention. `type: api` (a future CRM/ERP integration) can be created
- * here for record-keeping/UI purposes but its `/sync` route rejects with
- * "not implemented" — no real external API target is defined for it yet.
- *
- * A project is allowed at most one connector per type — the panel in the
- * Project Manager presents this as "the sheet this project syncs from",
- * singular, and two active sheets writing the same units would race with
- * no defined winner.
- */
 export async function GET(request: Request) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

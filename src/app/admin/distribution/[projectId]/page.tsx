@@ -15,24 +15,6 @@ import { useT } from "@/lib/i18n/useT";
 
 type TFunc = ReturnType<typeof useT>["t"];
 
-/**
- * Multi-Channel Publishing PRD Phase 7 — "ADMIN → Distribution" (§32):
- * release readiness/history + publish-target CRUD/activate/suspend/deploy
- * for one project. Same full-page-route shape as `/admin/3d-experience/
- * [projectId]` and `/admin/3d-map-control/[projectId]` (gated by this
- * route's own `layout.tsx`), launched from the same 3D Platform project
- * card. Deliberately plain/bespoke admin styling (raw Tailwind classes,
- * not the shared `<Button>` — that component's own doc comment scopes it
- * to the public site, admin keeps its own hand-rolled chrome, same as
- * every other admin page in this app).
- *
- * Does NOT include: branding/viewerOverrides JSON editing, custom-domain
- * verification, license date editing — deliberately scoped to the core
- * loop (create a release, create a target, deploy/rollback, activate/
- * suspend/delete) that actually exercises Phases 2/3/5/6. Those richer
- * editors are straightforward additions once this shell is confirmed to
- * actually work end-to-end.
- */
 export default function DistributionPage() {
   const params = useParams<{ projectId: string }>();
   const router = useRouter();

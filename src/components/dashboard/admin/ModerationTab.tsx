@@ -29,12 +29,6 @@ interface ReportRow {
   entityHref: string | null;
 }
 
-/**
- * Admin's Moderation queue (PRD_ROZARIS_User_Types §5 "Verification &
- * moderation") — real user-submitted reports (`ModerationReport`, see
- * `ReportButton` on the listing/project detail pages for where these come
- * from), replacing the previous hardcoded `seedCases()` mock data.
- */
 export function ModerationTab() {
   const { t } = useT();
   const [reports, setReports] = useState<ReportRow[]>([]);

@@ -7,15 +7,6 @@ import { Panel, SectionHeader, Stat } from "./kit";
 import type { AdminProjectRecord } from "@/hooks/useAdminProjectRecord";
 import type { ProjectSectionId } from "./sections";
 
-/**
- * Project Manager → "Overview". The landing screen of the record: what
- * this project IS commercially (inventory mix, value, price per m²), and
- * a readiness checklist for the question that actually blocks a launch —
- * "what's still missing before this can go live".
- *
- * Every unfinished checklist row is a link to the section that fixes it,
- * rather than a message telling the admin to go and find it.
- */
 export function ProjectOverviewSection({
   record,
   onNavigate,

@@ -6,16 +6,6 @@ import { usePriceFormat } from "@/hooks/usePriceFormat";
 import { useT } from "@/lib/i18n/useT";
 import type { Listing } from "@/lib/types";
 
-/**
- * Shown on the map when a unit belonging to a New Project is selected from
- * the results list — the project's own marker is the only pin plotted at
- * that location (MAP declutter), so this is the only way the map surfaces
- * *which specific unit* is selected, rather than just the project overview
- * (ProjectPopupCard) or a generic "N listings here" aggregate
- * (BuildingPopupCard, which is for unrelated listings sharing a building).
- *
- * `forwardRef`'d for the same reason as ProjectPopupCard — see its comment.
- */
 export const UnitPopupCard = forwardRef<HTMLDivElement, {
   listing: Listing;
   onClose: () => void;

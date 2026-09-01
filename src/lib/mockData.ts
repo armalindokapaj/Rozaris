@@ -8,7 +8,6 @@ import type {
   ConstructionStage,
 } from "./types";
 
-// Tirana, Albania is the PRD's primary launch market (Section 0.3 / 1).
 export const CITY = "Tirana";
 export const CITY_CENTER = { lat: 41.3275, lng: 19.8187 };
 
@@ -173,10 +172,6 @@ export const publishers: Publisher[] = [
   },
 ];
 
-// Deterministic pseudo-random in [0, 1), seeded by an integer. Mock data is
-// generated identically on the server and in the browser — using
-// Math.random() here would make every field differ between the SSR pass and
-// client hydration, causing React hydration-mismatch errors.
 function seededRandom(seed: number): number {
   const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
   return x - Math.floor(x);
@@ -226,9 +221,7 @@ function buildListing(i: number, neighborhood: Neighborhood): Listing {
   const type = propertyTypeMix[i % propertyTypeMix.length];
   const bedrooms = NO_BEDROOM_TYPES.includes(type) ? 0 : 1 + (i % 4);
   const area = Math.round(40 + bedrooms * 22 + (i % 5) * 6);
-  // Villas sit on their own plot, distinct from the built floor area.
   const landArea = type === "villa" ? Math.round(area * (1.6 + (i % 3) * 0.3)) : undefined;
-  // Only meaningful for land listings.
   const buildingPermit = type === "land" ? i % 2 === 0 : undefined;
   const pricePerSqm = isRent ? 0 : Math.round(jitter(1650, 700, i * 11 + 1));
   const price = isRent
@@ -331,10 +324,6 @@ function buildUnits(
   });
 }
 
-/** Derives the fixed 8-stage construction breakdown from a single overall
- * percent — the source of truth for both the seeded mock projects and the
- * publisher's timeline editor (which only exposes one overall-progress
- * control, then regenerates stage status/percent/dates from it). */
 export const stageTemplate = (percent: number): ConstructionStage[] => {
   const names = [
     "Site preparation",
@@ -559,15 +548,7 @@ export const projects: Project[] = [
   },
 ];
 
-// New-development units are their own searchable inventory too — each
-// available residential unit gets a synthetic Listing (reusing the
-// project's location/developer/amenities) so it flows through the exact
-// same Front Page search, filter, map and detail-page pipeline as any
-// other listing, with no separate code paths to keep in sync.
 function unitToListing(unit: Unit, project: Project): Listing {
-  // Every unit in a project shares its building's location — jitter each
-  // one slightly so their map markers don't stack exactly on top of each
-  // other (or the project's own marker).
   const seed = hashSeed(`${project.id}-${unit.id}`);
   return {
     id: `unit-${project.id}-${unit.id}`,
@@ -611,15 +592,8 @@ export const projectUnitListings: Listing[] = projects.flatMap((p) =>
     .map((u) => unitToListing(u, p))
 );
 
-/** Everything searchable on the Front Page: publisher-submitted listings
- * plus every available unit inside a new-development project. */
 export const searchableListings: Listing[] = [...listings, ...projectUnitListings];
 
-/** Looks up the synthetic Listing behind one of a project's units, for
- * "View Unit" links on the Project Detail Page — only available residential
- * units get one (see projectUnitListings above), so this returns undefined
- * for parking/commercial/reserved/sold units, which the page renders
- * without a link instead. */
 export function getListingForUnit(project: Project, unit: Unit): Listing | undefined {
   return projectUnitListings.find((l) => l.id === `unit-${project.id}-${unit.id}`);
 }
@@ -640,9 +614,6 @@ export function getPublisherBySlug(slug: string): Publisher | undefined {
   return publishers.find((p) => p.slug === slug);
 }
 
-/** Looks up a publisher by id — used to resolve the signed-in identity's
- * own record (`auth.publisherId`) on the Private/Business Publisher
- * dashboards, as opposed to `getPublisherBySlug` for public profile pages. */
 export function getPublisherById(id: string): Publisher | undefined {
   return publishers.find((p) => p.id === id);
 }
@@ -655,10 +626,6 @@ export function relatedListings(listing: Listing, count = 4): Listing[] {
     .slice(0, count);
 }
 
-/** Same-neighborhood developments for a Project Detail Page's "Related
- * Projects" section — falls back to same-city when the neighborhood alone
- * doesn't have enough to fill the row, so the section isn't left half-empty
- * on smaller neighborhoods. */
 export function relatedProjects(project: Project, count = 3): Project[] {
   const sameNeighborhood = projects.filter(
     (p) => p.id !== project.id && p.neighborhoodId === project.neighborhoodId
@@ -678,14 +645,7 @@ export function listingsByPublisher(publisherId: string): Listing[] {
   return listings.filter((l) => l.publisher.id === publisherId);
 }
 
-// --- Demo publisher account + buyer<->seller messaging seed data ---
-// (used by the mock Publisher and Buyer dashboards; nothing here is fetched
-// from or delivered to a real backend)
-
 export const DEMO_PUBLISHER: Publisher = publishers[0];
-/** Fallback identity for the Private Publisher Dashboard when
- * `auth.publisherId` isn't set (e.g. the dashboard's own inline demo
- * sign-in, as opposed to picking a persona in the real SignInModal). */
 export const DEMO_PRIVATE_PUBLISHER: Publisher = getPublisherById("p-andi") ?? publishers[0];
 export const DEMO_BUYER_ID = "buyer-demo-1";
 

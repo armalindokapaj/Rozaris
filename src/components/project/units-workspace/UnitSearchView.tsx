@@ -21,10 +21,6 @@ import {
   type UnitFilterState,
 } from "./unitFilters";
 
-/** This surface's own pill order — "All" last, unlike the dock's, which
- * leads with it. Only the statuses a project actually has are rendered
- * (see `unitFacets`), so this is the ordering template rather than the
- * list itself; "All" is appended unconditionally as the reset. */
 const STATUS_PILL_ORDER: { id: Exclude<StatusFilter, "all">; dotClass?: string }[] = [
   { id: "available" },
   { id: "reserved", dotClass: STATUS_DOT.reserved },
@@ -32,10 +28,6 @@ const STATUS_PILL_ORDER: { id: Exclude<StatusFilter, "all">; dotClass?: string }
 ];
 export const UNITS_PAGE_SIZE = 30;
 
-/** Small hand-rolled dropdown, same pattern as ViewerUtilities/SunTime's
- * date menu (useState+ref+useClickOutside — this codebase's react-hooks/
- * refs lint rule rejects the shared `useDropdown` hook, see those
- * components' own doc comments). */
 function FilterDropdown({ label, active, children }: { label: string; active: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -75,43 +67,6 @@ function NumberField({ placeholder, value, onChange }: { placeholder: string; va
   );
 }
 
-/**
- * Units Search Mode PRD, Phase 2 (2026-08-16) — real search/filter/sort/
- * list UI, now over real Postgres units (Phase 3 swapped off this
- * session's original "placeholder data first" mock inventory). Renders
- * inside
- * UnitsWorkspace's fixed 380px panel; Phase 3 (3D↔list hover/select sync)
- * and Phase 4 (this view swapping to UnitDetailView on row click, now
- * built alongside this) both build on `onSelectUnit` below.
- *
- * Deliberate simplifications from the reference render: Price/Floor use
- * plain min/max number fields inside a dropdown rather than a dual-thumb
- * slider (RangeSlider.tsx exists but is tuned for the public Search
- * page's own domain-specific scales; a real listing-price slider here
- * would need its own scale tuned to this project's actual price spread,
- * which doesn't exist for mock data) — real, functioning range filtering,
- * simpler control. "Advanced filters" has no real content behind it yet
- * (bathrooms/transaction-type aren't part of this render's own spec) so
- * it's an inert affordance, same honesty pattern as ViewerModuleLayer's
- * "coming soon" placeholders elsewhere in this file tree.
- *
- * `filters`/`viewMode`/`visibleCount` are controlled by the parent, not
- * owned here — a real bug found live-testing: clicking into a unit's
- * detail view unmounts this component (Unit Detail PRD §1's "same panel,
- * never a second one" swap), so state that lived here as plain `useState`
- * reset the moment you clicked "Back to search". Same fix as favorites
- * already got. `filters` itself moved one level further up, from
- * UnitsWorkspace to ProjectViewerRuntime, for the Units Bar redesign
- * (2026-08-17) — UnitsBar is a sibling of UnitsWorkspace (both live under
- * ViewerHUD's parent), not its child, and needs to read/write the exact
- * same state so its Bedrooms/Bathrooms/Surface/Availability controls
- * genuinely narrow this same list rather than a disconnected copy.
- * Surface gained a real control of its own here on 2026-08-24 (see the
- * `units.filterSurface` dropdown below for why the dock alone wasn't
- * enough); Bathrooms still has none in *this* panel (still true of
- * "Advanced filters" below), but the state itself is real and shared, so
- * a bathroom count set from the dock is reflected here too.
- */
 export function UnitSearchView({
   units,
   selectedUnitId,
@@ -130,12 +85,7 @@ export function UnitSearchView({
   areaUnit,
 }: {
   units: Unit[];
-  /** Shared selection (ProjectViewerRuntime). Marks the row and scrolls it
-   * into view — the visible half of "clicking a block in 3D tells me which
-   * row that was", which had no representation here at all before. */
   selectedUnitId: string | null;
-  /** Selected but with no resolvable block in the loaded GLB — labelled on
-   * the row rather than left as a camera that mysteriously didn't move. */
   unmappedUnitId: string | null;
   favorites: Set<string>;
   onToggleFavorite: (id: string) => void;
@@ -153,30 +103,16 @@ export function UnitSearchView({
   const { t } = useT();
 
   const filtered = useMemo(() => sortUnits(filterUnits(units, filters), filters.sort), [units, filters]);
-  // A selection can arrive from the 3D scene for a unit that sits past the
-  // current page boundary — scrolling to a row that was never rendered is
-  // a no-op, so the page is *derived* wide enough to include it instead.
-  // Derived, not a `setVisibleCount` in an effect: this codebase's
-  // react-hooks/set-state-in-effect rule rejects that shape (see
-  // useViewerPreferences.ts), and a pure computation can't fall out of
-  // sync with the selection the way a mirrored counter could.
   const selectedIndex = selectedUnitId ? filtered.findIndex((u) => u.id === selectedUnitId) : -1;
   const effectiveVisibleCount =
     selectedIndex >= visibleCount ? Math.ceil((selectedIndex + 1) / UNITS_PAGE_SIZE) * UNITS_PAGE_SIZE : visibleCount;
   const visible = filtered.slice(0, effectiveVisibleCount);
   const selectedRowRef = useRef<HTMLButtonElement>(null);
-  // `block: "nearest"` so an already-visible row never jerks the list; the
-  // scroll container is this view's own `overflow-y-auto` body below.
   useEffect(() => {
     if (!selectedUnitId) return;
     selectedRowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [selectedUnitId]);
   const filterCount = activeFilterCount(filters);
-  // Only the options this project's units actually justify — see
-  // `unitFacets` for the two rules. Buildings used to be derived inline
-  // here (distinct names, sorted) and is now folded into that one shared
-  // derivation alongside Bedrooms and Availability, which were both still
-  // fixed lists.
   const facets = useMemo(() => unitFacets(units, filters), [units, filters]);
   const statusPills = useMemo<{ id: StatusFilter; dotClass?: string }[]>(
     () =>
@@ -255,25 +191,8 @@ export function UnitSearchView({
               <NumberField placeholder={t("units.max")} value={filters.maxFloor} onChange={(v) => update({ maxFloor: v })} />
             </div>
           </FilterDropdown>
-          {/* Surface (2026-08-24, direct instruction: "the Surface
-              Filtering its not working") — the same `minArea`/`maxArea`
-              the dock's own dual-thumb Surface slider writes, given a
-              control *in this panel* too. Until now Surface existed only
-              on the dock, and the dock deliberately folds away the moment
-              this panel opens (`ViewerHUD.tsx`'s own `leftPanelOpen`
-              fold), so the one place a visitor actually reads filtered
-              results was also the one place they could not set or unset a
-              surface range — including no way to clear one already set,
-              since `activeFilterCount` counted it toward "Clear filters
-              (N)" while nothing on screen said what it was.
-              Min/max number fields rather than a second copy of the dock's
-              slider: that is the established shape for a range in this
-              row (Price and Floor are both already this), and it takes no
-              horizontal room this 380px panel doesn't have.
-              Values are shown and typed in the visitor's own display unit
-              (`areaUnit`, m²/ft²) to match every unit row beside them,
-              and converted back to real stored m² on the way into
-              `UnitFilterState` — see `unitDisplay.ts`. */}
+          {                                                        
+                                                          }
           <FilterDropdown label={t("units.filterSurface")} active={filters.minArea != null || filters.maxArea != null}>
             <div className="flex items-center gap-2">
               <NumberField

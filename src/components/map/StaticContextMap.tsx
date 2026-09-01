@@ -9,7 +9,6 @@ import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import type { GeoPoint } from "@/lib/types";
 
-/** Lightweight, single-marker map used for listing/project "building context" panels. */
 export function StaticContextMap({
   center,
   className,
@@ -50,9 +49,6 @@ export function StaticContextMap({
     });
     mapRef.current = map;
 
-    // Embedded inline in the page, so a scroll/drag that merely passes over
-    // it shouldn't pan or zoom the map — interaction handlers stay off until
-    // the visitor deliberately clicks it (see the overlay below).
     map.scrollZoom.disable();
     map.dragPan.disable();
     map.dragRotate.disable();

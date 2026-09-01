@@ -4,16 +4,6 @@ import { RotateCcw, Ruler } from "lucide-react";
 import { GroupCard, SectionHeading, SliderRow, ToggleRow } from "../fields";
 import type { UseModelEditorReturn } from "@/hooks/useModelEditor";
 
-/**
- * Scene tab → Model (PRD §5). Position/Rotation/Scale/Ground alignment/
- * Reset Transform, plus the Model switches. Model/Visibility are real and
- * live (skip loading vs. hide); Cast Shadow/Receive Shadow are stored and
- * applied to mesh flags now but have no visible effect until a shadow-
- * casting light exists (Phase 3); Selectable/Transform Lock are stored
- * but inert until a viewport click-select/gizmo system exists — all
- * three are shown disabled with an honest "lands in Phase N" hint rather
- * than pretending to do something today.
- */
 export function ModelPanel({
   modelEditor,
   canEdit,

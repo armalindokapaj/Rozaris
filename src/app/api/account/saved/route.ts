@@ -4,13 +4,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import type { SavedEntityType } from "@/generated/prisma";
 
-/**
- * Account & Profile System PRD v1.0 §4 "User account home — Saved
- * Properties / Saved Projects" — real `SavedItem` rows, replacing the
- * buyer dashboard's previous local-only Zustand `saved` slice. A
- * neighborhood "save" doubles as following it (§5.2 — no separate action),
- * same convention the client already used.
- */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -31,8 +24,6 @@ const bodySchema = z.object({
   entityId: z.string().min(1),
 });
 
-/** Toggles a saved item — creates it if absent, deletes it if present.
- * Returns `{ saved: boolean }` for the one item toggled. */
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {

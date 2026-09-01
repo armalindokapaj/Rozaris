@@ -1,14 +1,5 @@
 import type { SavedEntityType, RecentlyViewedKind } from "./types";
 
-/**
- * Fire-and-forget writers for the "User utility" phase's real
- * /api/account/* endpoints, called from the Zustand store's existing
- * toggle/add/remove actions right alongside their local `set()` (see
- * store.ts). Deliberately optimistic and silent on failure — the local
- * state is the source of truth for the current tab; `AccountDataSync`
- * reconciles from the server on the next sign-in/reload, same tradeoff
- * every other optimistic action in this app already makes.
- */
 function post(url: string, body: unknown) {
   fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(
     () => {}

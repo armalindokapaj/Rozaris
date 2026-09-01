@@ -7,10 +7,6 @@ import { GroupCard, SectionHeading, SelectRow, SliderRow, ToggleRow } from "../f
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 
-/** Idle Drone Camera PRD §8 — "Reset Drone Settings" restores exactly
- * these 13 persisted fields (phaseOffsetDeg included for completeness even
- * though it has no slider of its own — see Project3DConfig's own doc
- * comment in src/lib/types.ts). */
 const IDLE_DRONE_DEFAULTS = {
   idleDroneEnabled: true,
   idleDroneDelaySec: 60,
@@ -28,10 +24,6 @@ const IDLE_DRONE_DEFAULTS = {
   idleDroneSmoothness: 0.88,
 };
 
-/** Converts FOV (vertical, degrees) + sensor width to an approximate
- * 35mm-equivalent focal length (mm) — standard cinematography formula,
- * assuming the sensor height implied by a 3:2 aspect (36×24mm full-frame
- * convention) since this editor's FOV is vertical, not horizontal. */
 function fovToFocalLength(fovDeg: number, sensorWidthMm: number): number {
   const sensorHeightMm = (sensorWidthMm * 2) / 3;
   return sensorHeightMm / 2 / Math.tan((fovDeg * Math.PI) / 360);
@@ -41,12 +33,6 @@ function focalLengthToFov(focalLengthMm: number, sensorWidthMm: number): number 
   return (360 / Math.PI) * Math.atan(sensorHeightMm / 2 / focalLengthMm);
 }
 
-/** Camera tab (PRD §37) — owns camera properties, not Shots. Built almost
- * entirely on pre-existing Project3DConfig fields (cameraFovDesktop/
- * Mobile, cameraStart/Min/MaxDistanceMultiplier, cameraMin/MaxPolarDeg,
- * autoRotate) plus a small Phase-A addition (near/far clip, azimuth
- * limits, pan/zoom/damping/orbit/auto-focus/helper toggles, sensor
- * width) — see the config editor's own doc comment. */
 export function CameraPanel({
   configEditor,
   canEdit,

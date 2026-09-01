@@ -3,15 +3,6 @@ import { prisma } from "@/lib/db";
 import { isFeatureEnabled } from "@/lib/featureFlags";
 import { AD_CATEGORIES, AD_DEVICES } from "@/app/api/admin/ads/route";
 
-/** Public ad banner slots — only enabled ones, no auth (same convention as
- * every other public GET in this app). Gated by the `ads_banner` feature
- * flag: off means every strip disappears entirely rather than each caller
- * having to know to hide it.
- *
- * `?category=front_page|search_page&device=mobile|desktop` filters down to
- * one placement's 3 slots (positions are `${category}_${device}_banner_${n}`,
- * see the admin ads route) — every real surface passes both; omitting them
- * returns every enabled ad across all 4 placements. */
 export async function GET(request: Request) {
   if (!(await isFeatureEnabled("ads_banner"))) {
     return NextResponse.json([]);

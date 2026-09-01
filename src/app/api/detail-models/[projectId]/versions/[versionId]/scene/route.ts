@@ -16,8 +16,6 @@ const nodeOverrideSchema = z.object({
   roughness: z.number().min(0).max(1).optional(),
   metalness: z.number().min(0).max(1).optional(),
   opacity: z.number().min(0).max(1).optional(),
-  // webgl_watch.html parity — see NodeOverride's own doc comment in
-  // types.ts for why iridescenceIOR's range is 1-2.333, not 0-1.
   clearcoat: z.number().min(0).max(1).optional(),
   clearcoatRoughness: z.number().min(0).max(1).optional(),
   iridescence: z.number().min(0).max(1).optional(),
@@ -25,8 +23,6 @@ const nodeOverrideSchema = z.object({
   visible: z.boolean().optional(),
   carried: z.boolean().optional(),
 
-  // Experience Editor v2, Materials tab (PRD §6) — see NodeOverride's own
-  // doc comment in types.ts for the full field-by-field rationale.
   materialOverrideEnabled: z.boolean().optional(),
   baseTextureEnabled: z.boolean().optional(),
   roughnessMapEnabled: z.boolean().optional(),
@@ -59,15 +55,6 @@ const nodeOverrideSchema = z.object({
   mapRotation: z.number().optional(),
 });
 
-/**
- * Admin's Scene Explorer node classification + material overrides for one
- * specific draft version (Editor UX & Scene Structure pass — sibling of
- * ./links/route.ts, kept separate since "which real Unit does this box
- * represent" and "how should this node render" are different concerns
- * that happen to live on the same GLB). Unlike links, overrides are a
- * plain `Json?` column on the version row, not a relational table — no
- * transaction needed, PUT replaces the whole array.
- */
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ projectId: string; versionId: string }> }
@@ -94,8 +81,6 @@ export async function PUT(
 
   const updated = await prisma.detailModelVersion.update({
     where: { id: versionId },
-    // Cast needed for Prisma's Json input type — see the identical
-    // comment in ../route.ts's POST handler.
     data: { nodeOverrides: (parsed.data.length ? parsed.data : []) as unknown as Prisma.InputJsonValue },
   });
   await refreshExperienceDocument(prisma, projectId, versionId);

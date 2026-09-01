@@ -3,16 +3,6 @@
 import { GroupCard, SectionHeading, SelectRow, SliderRow, ToggleRow } from "../../fields";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 
-/**
- * Lighting → Shadows (PRD §16-18) — real Cascaded Shadow Maps
- * (CSMShadowNode, on the sun's own DirectionalLight), Contact Shadows
- * (real small-radius GTAONode), and Transmitted/Colored Shadows (real
- * `material.castShadowNode` + `renderer.shadowMap.transmitted`, applied
- * to `Glass_*`-named GLB nodes). `shadowsEnabled` is the pre-existing
- * master field (finally wired to `renderer.shadowMap.enabled`, which was
- * never set at all since this engine's ground-up rebuild — a real gap
- * this tab closes).
- */
 export function ShadowsSubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const shadowsOn = draft.shadowsEnabled;

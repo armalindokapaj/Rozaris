@@ -1,14 +1,3 @@
-/**
- * One-off backfill: populates `experienceDocument` (added by rewrite Track
- * B, Phase 1 — the new versioned "one editor state" snapshot) for every
- * existing `DetailModelVersion` row, which predates the column and so has
- * it `null`. Idempotent — safe to re-run: recomputes and overwrites every
- * row's snapshot from its current fields + its project's current
- * Project3DConfig, same assembly `refreshExperienceDocument` uses at
- * request time, so re-running just re-syncs rather than duplicating.
- *
- * Run with: npx tsx scripts/backfill-experience-documents.ts
- */
 import { Prisma, PrismaClient } from "../src/generated/prisma";
 import { refreshExperienceDocument } from "../src/lib/experienceDocument";
 

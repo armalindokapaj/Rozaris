@@ -3,8 +3,6 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 
-/** §4 "Saved Searches — Persist structured search criteria" — real
- * `SavedSearch` rows. */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {

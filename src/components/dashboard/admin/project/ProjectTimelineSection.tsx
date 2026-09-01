@@ -11,9 +11,6 @@ type StageDraft = Pick<ConstructionStage, "name" | "status" | "progressPercent" 
 
 const STATUSES: ConstructionStage["status"][] = ["done", "active", "upcoming"];
 
-/** Offered as a starting point for a project with no timeline at all —
- * the five phases every development here goes through, so the first
- * timeline is four edits rather than five blank rows. */
 const STARTER: StageDraft[] = [
   { name: "Foundations", status: "done", progressPercent: 100, dateLabel: "" },
   { name: "Structure", status: "active", progressPercent: 50, dateLabel: "" },
@@ -22,21 +19,6 @@ const STARTER: StageDraft[] = [
   { name: "Handover", status: "upcoming", progressPercent: 0, dateLabel: "" },
 ];
 
-/**
- * Project Manager → "Timeline". Two related things in one place:
- *
- * 1. The real `ConstructionStage` rows shown on the public project page —
- *    editable here for the first time (they were seed-only until the
- *    `construction-stages` route landed with this section).
- * 2. The publisher's pending progress-change requests
- *    (`ProjectTimelinePanel`, unchanged), which is the OTHER direction:
- *    them asking, an admin approving.
- *
- * Saved on its own button rather than through the record save bar — these
- * are separate rows in a separate table behind a separate endpoint, and
- * folding them into the `Project` upsert would mean one Save doing two
- * unrelated writes that can fail independently.
- */
 export function ProjectTimelineSection({ project }: { project: Project }) {
   const { t } = useT();
   const [stages, setStages] = useState<StageDraft[] | null>(null);

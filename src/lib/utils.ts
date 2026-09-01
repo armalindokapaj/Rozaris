@@ -6,12 +6,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// sq-AL groups thousands with a space ("150 000") rather than en-US's comma
-// ("150,000") — in Albanian, a comma is the decimal separator, so showing
-// prices with commas reads as a foreign format (or worse, a different
-// number). ROZARIS defaults to the `sq` locale, so that's the default here
-// too; pass `locale: "en"` explicitly for the few call sites that render
-// under an English UI.
 const PRICE_INTL_LOCALE: Record<Locale, string> = { en: "en-US", sq: "sq-AL" };
 
 export function formatPrice(
@@ -105,33 +99,16 @@ export function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-/** Generic kebab-case slug generation — a create-form's own text (a
- * listing title, an account/publisher name) that never collects a slug
- * directly. Uniqueness (appending `-2`, `-3`, ...) is the caller's job;
- * see `POST /api/listings` and `POST /api/auth/signup` for the same
- * dedupe-loop shape `POST /api/projects` already established. */
 export function slugify(text: string): string {
   const base = text
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "") // strip accents (ë, ç, etc.)
+    .replace(/[̀-ͯ]/g, "")                              
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return base || "item";
 }
 
-/**
- * Human file size for admin/upload UI. Extracted here because three
- * byte-identical private copies already existed (the New Project page,
- * MapModelEditor, DetailModelUpload) and the 3D Health "Project 3D files"
- * panel would have been a fourth. Behaviour is deliberately unchanged
- * from those copies — MB to one decimal above 1 MB, whole KB below, and
- * never "0 KB" for a file that does have bytes.
- *
- * The three existing copies are intentionally left in place: swapping
- * them is a pure refactor with no behavioural payoff, and those files are
- * edited concurrently elsewhere.
- */
 export function formatBytes(bytes: number) {
   if (bytes <= 0) return "0 KB";
   const mb = bytes / (1024 * 1024);

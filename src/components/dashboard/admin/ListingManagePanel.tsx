@@ -21,22 +21,10 @@ interface ProjectOption {
 interface UnitOption {
   id: string;
   code: string;
-  /** `GET /api/admin/units`'s shape — which project this unit actually
-   * belongs to, so picking one can set the listing's project at the same
-   * time (see "A listing assigned a unit joins its project automatically"
-   * below) without a separate, easy-to-forget "Move to project" step. */
   projectId: string;
   projectName: string;
 }
 
-/** `GET /api/admin/listings?status=all`'s shape — see that route's own doc
- * comment for why these admin-only fields sit outside the public `Listing`
- * type. `projectId` added alongside the others once a Listing could
- * optionally belong to a Project (see the schema's own doc comment on
- * `Listing.projectId`); `unitId`/`unitCode` added the same way for the
- * Unit link ("Units & Listings, Untangled"). Shared by both consumers of
- * this panel: the global Listings tab and a single Project's nested
- * listings section. */
 export type AdminListingRow = Listing & {
   idleUntil: string | null;
   idleReason: string | null;
@@ -60,18 +48,6 @@ export const LISTING_STATUS_STYLE: Record<Listing["status"], string> = {
   rejected: "bg-red-100 text-red-700",
 };
 
-/**
- * The full per-listing admin management surface — status transitions,
- * idle/restore, premium, transfer-to-publisher, mark duplicate, history,
- * and (once a Listing could optionally belong to a Project) move to/out
- * of a project. Originally `ListingsManagementTab`'s inline panel; shared
- * now by both the global Listings tab (every listing, any project or
- * none) and `ProjectListingsPanel` (one project's own listings) so the
- * exact same actions are available from either surface — editing a
- * listing here is the one real write path both read from, so a change
- * made from the global tab is immediately visible from inside its
- * project's own view and vice versa, no separate sync needed.
- */
 export function ListingManagePanel({
   listing,
   publishers,
@@ -92,21 +68,8 @@ export function ListingManagePanel({
   const [duplicateTarget, setDuplicateTarget] = useState("");
   const [projectSelection, setProjectSelection] = useState(listing.projectId ?? "");
   const [unitSelection, setUnitSelection] = useState(listing.unitId ?? "");
-  // General location reassignment — was previously only reachable from the
-  // Locations tab's "Issues" list, and only for a listing already flagged
-  // as broken (unresolvable). This makes it available for ANY listing at
-  // any time, e.g. one that resolves fine but was just assigned the wrong
-  // neighborhood by mistake. Real Canonical Location System options (same
-  // source EditProjectModal/NewListingForm already use), not the old
-  // mockData.neighborhoods list.
-  // Both levels — a listing can sit directly in a Village with no
-  // neighborhood layer at all (2026-08-21 spec).
   const neighborhoods = useLocations(["neighborhood", "village"]);
   const [neighborhoodSelection, setNeighborhoodSelection] = useState(listing.neighborhoodId ?? "");
-  // Every real unit, platform-wide — not scoped to whichever project is
-  // currently picked in the dropdown above. Picking a unit is now its own
-  // complete action (see the Link button below), so its options shouldn't
-  // depend on a separate control being set correctly first.
   const [unitOptions, setUnitOptions] = useState<UnitOption[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -274,11 +237,8 @@ export function ListingManagePanel({
           </button>
         </div>
 
-        {/* Projects console — move this listing to a different project, or
-            back to standalone (the "— unassigned —" option, projectId:
-            null). The one real write path both the global Listings tab
-            and a project's own nested list read from — moving it here is
-            immediately visible from the other surface too. */}
+        {                                                                  
+                                                              }
         <div className="flex items-end gap-1.5">
           <div>
             <span className="mb-1 block text-xs font-medium text-neutral-500">{t("admin.projectLabel")}</span>
@@ -305,15 +265,8 @@ export function ListingManagePanel({
           </button>
         </div>
 
-        {/* "Units & Listings, Untangled" — links this listing to the
-            specific 3D-mapped inventory record (Unit) it's advertising.
-            Options span every project (grouped by one, via `<optgroup>`)
-            rather than only whichever project happens to be selected in
-            the dropdown above — picking a unit here is a complete action
-            on its own: the Link button below always sends that unit's own
-            `projectId` alongside it, so a listing assigned a unit joins
-            that unit's project automatically, with no separate "Move to
-            project" step to remember first. */}
+        {                                                            
+                                               }
         <div className="flex items-end gap-1.5">
           <div>
             <span className="mb-1 block text-xs font-medium text-neutral-500">{t("admin.linkedUnitLabel")}</span>
@@ -339,21 +292,9 @@ export function ListingManagePanel({
             type="button"
             disabled={busy || unitOptions.length === 0 || unitSelection === (listing.unitId ?? "")}
             onClick={() => {
-              // Bug fix (kept): send the unit's own project alongside it
-              // rather than trusting the separate Project dropdown to
-              // already agree — the server validates the pair together
-              // (see the publication route's `effectiveProjectId`), so a
-              // mismatched or stale project selection used to either 400
-              // or silently leave the listing unassigned. Now derived
-              // directly from the chosen unit instead of a second control
-              // the admin has to keep in sync by hand.
               const chosen = unitOptions.find((u) => u.id === unitSelection);
               const derivedProjectId = unitSelection ? (chosen?.projectId ?? null) : (projectSelection || null);
               const body: Record<string, unknown> = { unitId: unitSelection || null };
-              // Only include `projectId` when it's actually changing —
-              // otherwise every Link/Unlink click would re-attach the
-              // listing to the project it's already on, re-triggering the
-              // location-sync write and audit-log entry for no real change.
               if (derivedProjectId !== (listing.projectId ?? null)) {
                 body.projectId = derivedProjectId;
               }
@@ -365,12 +306,8 @@ export function ListingManagePanel({
           </button>
         </div>
 
-        {/* General location reassignment (see `neighborhoodSelection`'s own
-            doc comment above) — a project-attached listing's location
-            always follows its project, so this offers "Resync from
-            project" instead of a picker for that case (re-sends the same
-            `projectId`, which re-triggers the location-sync write on the
-            server regardless of whether it's actually changing). */}
+        {                                                                   
+                                                                    }
         <div className="flex items-end gap-1.5">
           {listing.projectId ? (
             <>
@@ -473,10 +410,6 @@ interface AuditRow {
   createdAt: string;
 }
 
-/** Inline "modification history" for one listing — reads the same generic
- * `AuditLog` the Super Admin Version History panel does
- * (`GET /api/admin/entities/listing/[id]`), just scoped and pre-filled to
- * this row instead of requiring a manual id lookup elsewhere. */
 function ListingHistoryInline({ listingId }: { listingId: string }) {
   const { t } = useT();
   const [rows, setRows] = useState<AuditRow[] | null>(null);

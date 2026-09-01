@@ -9,13 +9,6 @@ const addMemberSchema = z.object({
   role: z.enum(["project_admin", "inventory_manager", "sales_manager", "analytics_viewer"]),
 });
 
-/**
- * Multi-Channel Publishing PRD Phase 9 — admin-managed for now (see
- * ProjectMembership's own schema doc comment for why). Grants by email
- * (matching this app's existing OrganizationInvitation convention) rather
- * than a raw userId — an admin assigning project access almost certainly
- * knows the person's email, not their internal id.
- */
 export async function GET(_request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

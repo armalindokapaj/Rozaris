@@ -4,9 +4,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { logAuditEvent } from "@/lib/audit";
 
-/** §10.2 "Marketing consent — Explicit, revocable, versioned." Real toggle,
- * never preselected (enforced client-side by defaulting the checkbox to
- * whatever the account's stored value actually is, not `true`). */
 const bodySchema = z.object({ marketingConsent: z.boolean() });
 
 export async function PATCH(request: Request) {

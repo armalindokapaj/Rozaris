@@ -14,21 +14,6 @@ const STATUS_DOT: Record<Unit["status"], string> = {
   sold: "bg-red-400",
 };
 
-/**
- * Unit Detail Left Panel PRD (2026-08-16), Phase 4 — replaces
- * UnitSearchView inside the same UnitsWorkspace panel when a unit is
- * clicked (PRD's own §1: "never a second or middle panel" — see
- * UnitsWorkspace.tsx for the header/body branch this plugs into).
- * "Visual placeholder blocks" for imagery, per this session's own
- * explicit scoping answer (not a data gap — `Unit.images`/
- * `floorPlanImage` are real fields, just deliberately not rendered here
- * yet). The specs/price/status below ARE real, sourced from the actual
- * clicked `Unit` (Phase 3: real Postgres data, not the original mock
- * inventory). Contact/
- * inquiry is a disabled affordance for the same reason ViewsWorkspace's
- * "Advanced filters" is — there's no real publisher/lead pipeline for a
- * synthetic mock unit to route into.
- */
 export function UnitDetailView({
   unit,
   isFavorite,

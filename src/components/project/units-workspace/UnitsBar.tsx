@@ -15,15 +15,6 @@ import type { ActiveModule } from "../viewer-hud/types";
 
 const AVAILABILITY_PILLS: StatusFilter[] = ["available", "reserved", "sold"];
 
-/** Mobile bottom-sheet's own dropdown — a full bordered box (44px touch
- * target, matches the reference render's Bedrooms/Bathrooms rectangles),
- * not `CompactFilterSelect`'s compact "label above value" text trigger.
- * Opens *downward* (unlike `CompactFilterSelect`): the sheet already has
- * real room below each dropdown (they sit above the Availability row, not
- * flush against the sheet's own bottom edge), and this sheet's own
- * container carries no `overflow-hidden` — the exact real bug
- * `CompactFilterSelect` hit and had it removed for (see the desktop bar's
- * own doc comment below) — so nothing would clip it either way. */
 function MobileFilterSelect({
   label,
   value,
@@ -93,16 +84,6 @@ function MobileFilterSelect({
   );
 }
 
-/** Real, per-unit dropdown built for this bar's compact `label above value`
- * zone shape — distinct from UnitSearchView's own `FilterDropdown` (which
- * assumes a taller pill trigger with a border) and not shared with it, same
- * "no shared useDropdown hook" reasoning UnitSearchView's own doc comment
- * already gives (this codebase's react-hooks/refs lint rule rejects it);
- * each call site owns its own ref/state instead. Opens *upward* like
- * SunTimeWorkspace's dateMenuCompact — this bar already floats just above
- * the bottom nav, so a downward panel would collide with it. Desktop only —
- * see `MobileFilterSelect` below for the mobile sheet's own bordered-box
- * variant. */
 function CompactFilterSelect({
   label,
   value,
@@ -172,53 +153,6 @@ function CompactFilterSelect({
   );
 }
 
-/**
- * Units Bar (direct design reference, 2026-08-17) — replaces what used to
- * happen the instant "Units" was clicked (the real 380px UnitsWorkspace
- * panel sliding open immediately). Now clicking Units opens this floating
- * bar instead, sharing ViewsWorkspace/SunTimeWorkspace's own visual
- * language (`viewer-glass` + `rounded-panel` + purple ring, `h-[60px]`,
- * title-zone-then-dividers layout) — and the real panel only opens once
- * the visitor explicitly clicks the title zone itself ("List Units"),
- * wired to `onToggleList` → `unitsListOpen` in ProjectViewerRuntime →
- * `getViewerLayoutState`'s new third input (see that module's doc
- * comment). Desktop's own × was removed (direct instruction 2026-08-17),
- * then reinstated (direct instruction 2026-08-18) as an explicit trailing
- * zone alongside ViewerHUD's own click-outside-the-nav-group handler and
- * re-tapping "Units" in the bottom nav — all three now call the exact
- * same `onClose` → `onActiveModuleChange("explore")`.
- *
- * `filters` is the same `UnitFilterState` UnitsWorkspace/UnitSearchView
- * already read/write (lifted one level further up, to ProjectViewerRuntime, so
- * this sibling bar can share it) — every control here (Surface/Bedrooms/
- * Bathrooms/Availability) genuinely narrows the real left-panel list, not
- * a disconnected copy. Two fields are new on `UnitFilterState` itself,
- * added alongside this bar: `bathrooms` (UnitSearchView has no control of
- * its own for it yet, see that file's doc comment) and `minArea`/`maxArea`
- * (always real stored m², converted to the visitor's display AreaUnit only
- * for the on-screen label — see unitDisplay.ts).
- *
- * Surface's dual-thumb slider bounds are the real min/max `unit.area`
- * across this project's actual inventory (not the reference render's
- * literal "50–120", which was just that mockup's own placeholder data) —
- * degenerates to a plain static readout when there are fewer than two
- * distinct areas to make a real range from (0 or 1 units, or every unit
- * sharing one identical area), an honest empty/degenerate state rather
- * than a fake interactive slider with nothing to actually narrow.
- *
- * Mobile bottom sheet (direct design reference, 2026-08-17) — Units is no
- * longer desktop-only at the "here are the filters" level: below `isDesktop`
- * this now renders a real bottom sheet (drag-handle affordance, full-width
- * header/count/subtitle/close, stacked Surface/Bedrooms/Bathrooms/
- * Availability) sharing the exact same `filters`/`units` state and
- * computed values as the desktop bar above — same reasoning ViewsWorkspace/
- * SunTimeWorkspace already apply per-field: one real state, two layouts.
- * What's still genuinely desktop-only is the real *list* (`listOpen` /
- * "List Units" / the 380px `UnitsWorkspace` side panel it opens) — Units
- * Search Mode PRD §32's own mobile bottom-sheet browsing pattern isn't
- * built, so the mobile sheet is filters-only, matching the reference
- * render (which has no "List Units" affordance of its own either).
- */
 export function UnitsBar({
   activeModule,
   isDesktop,
@@ -234,11 +168,8 @@ export function UnitsBar({
   units: Unit[];
   filters: UnitFilterState;
   onFiltersChange: Dispatch<SetStateAction<UnitFilterState>>;
-  /** Desktop only — see this component's own doc comment. */
   listOpen: boolean;
   onToggleList: () => void;
-  /** Desktop bar's own × (2026-08-18) — same handler ViewerHUD's click-
-   * outside and re-tapping "Units" both already call. */
   onClose: () => void;
 }) {
   const { t } = useT();
@@ -256,14 +187,6 @@ export function UnitsBar({
       duration: reducedMotion ? 0 : 0.3,
       ease: "power2.out",
     });
-    // `isDesktop` is a real dependency, not just `open`/`reducedMotion` —
-    // this component now renders two structurally different DOM nodes
-    // (desktop bar vs. mobile sheet) off the same `panelRef`, so resizing
-    // across the breakpoint while Units is open swaps which node the ref
-    // points at. Without re-running this effect on that swap, the newly-
-    // mounted node would keep its static opacity-0 Tailwind class forever
-    // (GSAP only wrote inline styles onto the *previous* node), i.e. Units
-    // would silently stay invisible after a resize.
   }, [open, reducedMotion, isDesktop]);
 
   const filteredCount = useMemo(() => filterUnits(units, filters).length, [units, filters]);
@@ -279,10 +202,6 @@ export function UnitsBar({
     return min < max ? { min: Math.floor(min), max: Math.ceil(max) } : null;
   }, [units]);
 
-  // Unreferenced file (see ViewerHUD.tsx — the dock replaced this bar and
-  // it is kept only as historical reference), carried onto the shared
-  // `unitFacets` derivation alongside the live surfaces so it still
-  // compiles and would not reintroduce the fixed bedroom scale if revived.
   const facets = useMemo(() => unitFacets(units, filters), [units, filters]);
 
   const effMin = areaBounds ? clamp(filters.minArea ?? areaBounds.min, areaBounds.min, areaBounds.max) : 0;
@@ -304,9 +223,6 @@ export function UnitsBar({
   const fillRightPct = areaBounds ? 100 - ((effMax - areaBounds.min) / (areaBounds.max - areaBounds.min)) * 100 : 0;
   const minThumbOnTop = areaBounds ? (effMin - areaBounds.min) / (areaBounds.max - areaBounds.min) > 0.5 : false;
 
-  // Real dual-thumb Surface slider — identical bounds/fill/handlers as the
-  // desktop branch below, just reused inline here since the mobile sheet's
-  // own track needs the exact same JSX at a different (full-width) size.
   const surfaceSlider = areaBounds ? (
     <div className="relative flex h-6 items-center">
       <div className="pointer-events-none absolute inset-x-0 h-1.5 rounded-full bg-white/10" />
@@ -371,26 +287,12 @@ export function UnitsBar({
         aria-label={t("units.title")}
         aria-hidden={!open}
         className={cn(
-          // Same `w-[calc(100vw-1.5rem)]` full-width-minus-inset formula
-          // SunTimeWorkspace/ViewsWorkspace's own mobile branches already
-          // use — real content this time (not a placeholder), but the
-          // exact same positioning technique. No `overflow-hidden` (see
-          // the desktop branch's own doc comment for the real dropdown-
-          // clipping bug that taught this) and no accent ring, matching
-          // the reference render (a plain dark sheet) and SunTimeWorkspace's
-          // own un-ringed mobile branch.
           "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 w-[calc(100vw-1.5rem)] -translate-x-1/2 rounded-panel px-4 pb-4 pt-2.5 opacity-0",
           open ? "pointer-events-auto" : "pointer-events-none"
         )}
       >
-        {/* Drag-handle affordance — decorative only, no real swipe-to-
-            dismiss gesture wired (close is tap-outside / re-tapping Units,
-            same as every other module panel). Header row (icon/title/
-            count/subtitle) and the × close button were both removed
-            entirely (direct design feedback, 2026-08-17: "Remove top
-            header", then a follow-up "Remove X from units" superseding an
-            earlier ask to just relocate it) — Surface is the first real
-            content now. */}
+        {                                                              
+                           }
         <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-white/20" aria-hidden="true" />
 
         <div>
@@ -434,59 +336,12 @@ export function UnitsBar({
       aria-label={t("units.title")}
       aria-hidden={!open}
       className={cn(
-        // Fixed width (not `w-fit`, unlike every other bar in this file
-        // tree) — real bug found live-testing: this bar has more zones
-        // than Views/Sun & Time (title, Surface, Bedrooms, Bathrooms,
-        // Availability), and once a flex row gets this wide/complex,
-        // Chromium's `fit-content` intrinsic-width pass measurably
-        // undershoots its own children's real needed width (reproduced via
-        // getBoundingClientRect + scrollWidth), clipping trailing content
-        // under `overflow-hidden` even though every individual child
-        // measured at its own correct width. Fixed by not asking the
-        // browser to compute intrinsic sizing at all. `useIsDesktop`'s own
-        // 1024px floor (`calc(100vw-2rem)` = 992px minimum) always has room
-        // for it. Re-measured across this bar's revisions (each direct
-        // design feedback: "remove empty space on the right"), most
-        // recently 940px→904px→856px→872px→916px — that 856px step
-        // overshot: removing the close button + its divider, then guessing
-        // the new width down without re-measuring first, undershot by
-        // ~11px and let the Availability zone's own right edge overflow
-        // past the rounded corner (`scrollWidth` 866px vs. `offsetWidth`
-        // 856px, confirmed live). 872px was the real re-measured value for
-        // that state; 916px re-adds the × zone's own real measured width
-        // (divider + its own padding/icon) on top, same technique.
-        //
-        // `min-h-[104px]` (was `h-[60px]`) — direct instruction 2026-08-18:
-        // match Sun & Time's own real rendered height (measured 102px,
-        // small buffer), the same shared value ViewsWorkspace's desktop
-        // bar now also uses, rather than every bar picking its own. `min-`
-        // not a fixed height so nothing here needed to change if this
-        // bar's own content ever grows past it; every zone below already
-        // centers its content vertically (`justify-center`/`items-center`),
-        // so the extra height just gives them more breathing room instead
-        // of a taller, awkwardly top-aligned box.
-        //
-        // No `overflow-hidden` (unlike every sibling bar) — real bug found
-        // live-testing: Bedrooms/Bathrooms's own dropdown panels open
-        // *upward*, same as SunTimeWorkspace's dateMenuCompact, but this
-        // bar's `overflow-hidden` silently clipped them to fully invisible
-        // (0 opacity of paint, not layout — `aria-expanded`/the chevron
-        // flip both fired correctly, and Playwright's own actionability
-        // check reported the panel "visible", but the click still fell
-        // through to the 3D canvas underneath, proving nothing was
-        // actually painted there). None of this bar's children paint a
-        // hover background that reaches its own rounded outer edge (same
-        // reasoning ViewerUtilities' own doc comment gives for its
-        // identical fix), so corner-clipping was never actually needed
-        // here.
         "viewer-glass invisible absolute bottom-[calc(100%+12px)] left-1/2 flex min-h-[104px] w-[916px] max-w-[calc(100vw-2rem)] -translate-x-1/2 items-stretch rounded-panel px-3.5 opacity-0 ring-2 ring-brand-400/50 sm:px-4",
         open ? "pointer-events-auto" : "pointer-events-none"
       )}
     >
-      {/* Title zone — doubles as the real "List Units" trigger (direct
-          instruction: "when clicked LIST UNITS then open the left panel").
-          Same nested circle-badge treatment as every other bar's title
-          zone, tinted brand-400 while the list is actually open. */}
+      {                                                                
+                                                                    }
       <button
         type="button"
         onClick={onToggleList}
@@ -508,12 +363,8 @@ export function UnitsBar({
         </span>
         <span className="flex flex-col items-start gap-0.5 leading-none">
           <span className="flex items-baseline gap-1.5 whitespace-nowrap">
-            {/* Direct instruction, 2026-08-17: "Replace that text to:
-                Filter List" — a dedicated `filterListLabel` key, not a
-                rename of the shared `units.title` (that key still labels
-                the bar's own aria-label and UnitsWorkspace's real panel
-                header, so renaming it in place would've relabeled those
-                too). */}
+            {                                                         
+                        }
             <span className="text-sm font-bold text-white">{t("units.filterListLabel")}</span>
             <span className="text-xs font-normal text-white/50">{t("units.foundCount", { count: filteredCount })}</span>
           </span>
@@ -523,9 +374,8 @@ export function UnitsBar({
 
       <span className="my-3 w-px shrink-0 bg-white/10" aria-hidden="true" />
 
-      {/* Surface zone — real min/max `unit.area` for this project (see doc
-          comment above), not the reference render's own placeholder
-          "50–120". */}
+      {                                                                    
+                      }
       <div className="flex w-52 shrink-0 flex-col justify-center gap-1 px-3.5 sm:px-4">
         <div className="flex items-baseline justify-between gap-2">
           <span className="whitespace-nowrap text-[11px] text-white/50">{t("units.filterSurface")}</span>
@@ -562,11 +412,6 @@ export function UnitsBar({
             />
           </div>
         ) : (
-          // Degenerate range (0 or 1 units, or every unit sharing one
-          // identical area) — an inert flat track rather than a fake
-          // draggable slider with nothing real to narrow, or a "no
-          // results" message that would misdescribe a data-shape problem
-          // as a filtering one.
           <div className="flex h-5 items-center" aria-hidden="true">
             <div className="h-1.5 w-full rounded-full bg-white/10" />
           </div>
@@ -595,21 +440,14 @@ export function UnitsBar({
 
       <span className="my-3 w-px shrink-0 bg-white/10" aria-hidden="true" />
 
-      {/* Availability zone — real `filters.status`, same field
-          UnitSearchView's own 4-pill row (incl. "All") already drives; this
-          compact version mirrors the reference render's own 3 pills. Shared
-          `availabilityPills` helper — same buttons the mobile sheet below
-          renders, just a different wrapper className (compact row here vs.
-          equal-width `flex-1` there). Label removed (direct design
-          feedback, 2026-08-17: "remove the word 'availability'") — the
-          3 pills (Available/Reserved/Sold) read clearly on their own. */}
+      {                                                        
+                                                                         }
       <div className="flex shrink-0 items-center pl-3.5 sm:pl-4">{availabilityPills("flex items-center gap-1.5")}</div>
 
       <span className="my-3 w-px shrink-0 bg-white/10" aria-hidden="true" />
 
-      {/* × zone (2026-08-18, reinstated) — trailing so it inherits the
-          container's own right-edge `px-3.5`/`sm:px-4` for free, same as
-          every other bar's last zone. */}
+      {                                                                
+                                         }
       <button
         type="button"
         onClick={onClose}

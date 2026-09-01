@@ -9,22 +9,6 @@ import { ENVIRONMENT_PRESET_FIELD_GROUPS, pickEnvironmentPresetConfig } from "@/
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 import type { Locale } from "@/lib/types";
 
-/**
- * Presets tab — "1 preset for every Sun, Fog, Sunflare... setting, to use
- * in other projects." A global, cross-project library
- * (useEnvironmentPresets) of named "look" snapshots covering exactly the
- * field groups shown in "Included Settings" below — see
- * src/lib/environmentPresetFields.ts for the authoritative scope/reasoning
- * (deliberately excludes camera framing, Quality/Performance, Ground, Unit
- * Colors, Sections, and Shadows/GI — those stay tied to each project's own
- * GLB scale/branding, not portable).
- *
- * Applying a preset only populates this project's live draft
- * (configEditor.update), exactly like every other field in this editor —
- * it still needs the normal top-bar Save to persist, and Publish to go
- * live. Presets themselves are global rows (no projectId): saving/renaming/
- * deleting one here affects every project's Presets tab, by design.
- */
 export function PresetsPanel({ configEditor, locale }: { configEditor: UseProjectConfigEditorReturn; locale: Locale }) {
   const { presets, loaded, busy, error, flash, saveAsNewPreset, updatePresetConfig, renamePreset, deletePreset } = useEnvironmentPresets();
   const [newName, setNewName] = useState("");

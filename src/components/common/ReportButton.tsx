@@ -17,13 +17,6 @@ const REASON_KEYS: Record<ModerationCaseType, string> = {
 };
 const REASONS = Object.keys(REASON_KEYS) as ModerationCaseType[];
 
-/**
- * Real "Report" action on a listing/project detail page — the entry point
- * to the Moderation queue admin now actually reviews (`ModerationReport`,
- * see schema.prisma). Requires sign-in (same gate as Save on this page);
- * a signed-out visitor is prompted to sign in rather than the button
- * silently doing nothing.
- */
 export function ReportButton({
   entityType,
   entityId,

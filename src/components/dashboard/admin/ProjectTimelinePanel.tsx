@@ -6,16 +6,6 @@ import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/types";
 
-/**
- * The former standalone "Timeline" admin tab (`TimelineTab`), nested inside
- * a single Project's `EditProjectModal` instead — a publisher's proposed
- * construction-progress update is reviewed in the same place admin already
- * edits that project's own `progressPercent` directly, rather than a
- * separate cross-project queue elsewhere in the nav. Filters the same
- * Zustand `timelineRequests`/`projectConstructionOverrides` this always
- * read from (still mock — no real backend for this queue exists yet,
- * unaffected by this move) down to this one project.
- */
 export function ProjectTimelinePanel({ project }: { project: Project }) {
   const { t } = useT();
   const timelineRequests = useAppStore((s) => s.timelineRequests);

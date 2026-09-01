@@ -91,16 +91,7 @@ function matchesPreferences(listing: Listing, prefs: BuyerPreferences): boolean 
   return true;
 }
 
-/** User Dashboard (PRD_ROZARIS_User_Types §2) — a personal discovery
- * workspace, not a publishing surface. Reuses the same store slices the
- * standalone /saved page and the header's Compare overlay already read
- * (saved.*, savedSearches, compare, recentlyViewed) so every one of these
- * views always agrees with each other. Notifications are real
- * (`useAccountNotifications`, see Account & Profile System PRD v1.0
- * §13), not a store slice. */
 export default function BuyerDashboardPage() {
-  // Suspense boundary: reads the active tab from `?tab=` via `useUrlTab`,
-  // and `useSearchParams()` requires one per Next.js.
   return (
     <Suspense fallback={null}>
       <BuyerDashboardPageInner />
@@ -678,12 +669,6 @@ const INVITATION_ROLE_LABEL_KEY: Record<string, string> = {
   viewer: "team.roleViewer",
 };
 
-/** §14.4 "Business invitation" flow — a pending organization invitation
- * addressed to the signed-in account's own email. Accepting creates the
- * real `OrganizationMembership` row server-side, then calls next-auth's
- * `update()` (re-runs the `jwt` callback's `trigger === "update"` branch
- * in src/auth.ts) so the session actually carries the new
- * role/publisherId/orgRole without forcing a sign-out/sign-in. */
 function PendingInvitations() {
   const { t } = useT();
   const { update: updateSession } = useSession();
@@ -775,12 +760,6 @@ const CURRENCIES = [
   { value: "ALL", label: "ALL (L)" },
 ];
 
-/** Real Account & Profile System profile form (Account & Profile System
- * PRD v1.0 §4) — reads/writes `/api/account/profile`, the signed-in
- * account's real Postgres `User` row, instead of the local-only mock
- * `buyerProfile`. Required-field asterisks come from the same admin
- * `FieldPolicy` map the server enforces (§11.4 "Backend enforcement" —
- * the server re-checks these regardless of what this form shows). */
 function ProfileTab() {
   const { t } = useT();
   const [profile, setProfile] = useState<AccountProfile | null>(null);
@@ -1019,11 +998,6 @@ const IDENTITY_STATUS_LABEL_KEY: Record<string, string> = {
   expired: "buyer.identityExpired",
 };
 
-/** §9 "Verification & Trust — Identity" — real self-service request +
- * real admin manual review (no automated KYC provider in this
- * environment). Requesting this is what unlocks the "Verified Publisher"
- * badge for a Private Publisher, but any signed-in account can request
- * it from here. */
 function IdentityVerificationCard() {
   const { t } = useT();
   const [status, setStatus] = useState<{
@@ -1107,8 +1081,6 @@ function IdentityVerificationCard() {
   );
 }
 
-/** §10.1 "Change password" + "Active sessions/devices" + "Sign out all
- * other sessions" — real bcrypt password change + real `Session` rows. */
 function SecurityTab() {
   const { t, locale } = useT();
   const [currentPassword, setCurrentPassword] = useState("");
@@ -1221,9 +1193,6 @@ function SecurityTab() {
   );
 }
 
-/** §10.2 "Privacy controls" — real, revocable, versioned marketing
- * consent toggle. Data export/account deletion shown as an honest
- * "contact support" step (no automated pipeline behind them yet). */
 function PrivacyTab() {
   const { t } = useT();
   const [profile, setProfile] = useState<{ marketingConsent: boolean } | null>(null);

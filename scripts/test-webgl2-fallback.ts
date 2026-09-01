@@ -1,43 +1,7 @@
-/**
- * RZ-VIEWER-IOS-01 — the viewer on a device with no WebGPU. Run with
- * `npm run test:webgl2-fallback` (needs `npm run dev` on :3000).
- *
- * Why WebKit, and why headed: reported 2026-08-27 as "Time, Sun,
- * Environment doesn't work correctly in Mobile in my iPhone, it's dark.
- * In Desktop works fine. Even in Mobile View in Desktop browser works
- * fine." That last sentence is the whole diagnosis — a desktop browser's
- * mobile-emulation mode still has WebGPU, so it exercises a completely
- * different backend from the phone. `three` falls back to its WebGL2
- * backend when `navigator.gpu` is missing, which is every iPhone before
- * iOS 26 (Safari shipped WebGPU in Safari 26), and that path had never
- * been run here at all.
- *
- * `navigator.gpu` is removed via an init script rather than trusting the
- * WebKit build: Playwright's WebKit 26.5 *does* expose WebGPU, so without
- * this the run silently tests the path that already worked. The init
- * script is passed as a STRING, not a function — see the `__name` note in
- * `test-time-slider-touch.ts`.
- *
- * Headed for the same reason every other browser test here is: a headless
- * GPU-less Chromium/WebKit renders the viewer black, which is precisely
- * the symptom under test (see the "3D headless testing limitation" note).
- *
- * What it asserts, in the order the bug actually presented:
- *  1. the WebGL2 backend is really what's under test,
- *  2. no shader/program errors at all (the original failure was three's
- *     own SSRNode emitting `max(int, 1.0)`, illegal in GLSL ES 3.00),
- *  3. the scene is LIT — a mean-luminance floor, the literal "it's dark",
- *  4. Time/Sun/Environment respond: scrubbing the Time dock across the
- *     day visibly relights the scene rather than doing nothing.
- */
 import { webkit, devices, type Page } from "playwright";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
 const SLUG = process.env.SLUG ?? "tower-vlora";
-/** Mean 0-255 luminance below which a daylight scene is "dark". The real
- * failure rendered near-black; a correct render of this project sits far
- * above this, so the threshold is deliberately loose — it is a smoke
- * alarm for "the pipeline died", not a look regression test. */
 const DARK_FLOOR = 30;
 
 let pass = 0, fail = 0;
@@ -47,10 +11,6 @@ function ok(name: string, condition: boolean, detail = "") {
 }
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Mean luminance of a screenshot, decoded in the page itself so this
- * needs no image dependency (same technique as the time-slider test). No
- * named function inside the evaluate body — esbuild's `keepNames` would
- * reference a `__name` helper that does not exist in the page. */
 async function meanLuma(page: Page, clip: { x: number; y: number; width: number; height: number }) {
   const buf = await page.screenshot({ clip });
   return page.evaluate(async (url) => {
@@ -86,12 +46,9 @@ async function main() {
 
   await page.goto(`${BASE}/project/${SLUG}`, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await page.waitForSelector("canvas", { timeout: 60_000 });
-  await page.waitForTimeout(22_000); // GLB load + terrain + first shaded frames
+  await page.waitForTimeout(22_000);
 
   console.log("\n1. the backend actually under test");
-  // `=== undefined`, not `in`: the init script shadows the property with a
-  // getter, so `"gpu" in navigator` stays true while `navigator.gpu` is
-  // undefined — which is what three's own probe reads.
   ok("`navigator.gpu` is undefined (an iPhone before iOS 26)", await page.evaluate(() => (navigator as Navigator & { gpu?: unknown }).gpu === undefined));
   ok(
     "three reports it fell back to the WebGL2 backend",
@@ -107,9 +64,6 @@ async function main() {
 
   console.log("\n3. the scene is lit — the reported symptom was 'it's dark'");
   const view = page.viewportSize()!;
-  // The canvas band between the top chrome and the bottom dock, so HUD
-  // panels (which render fine even when the scene does not) can't prop up
-  // the average.
   const clip = { x: 0, y: Math.round(view.height * 0.25), width: view.width, height: Math.round(view.height * 0.45) };
   const lumaAtLoad = await meanLuma(page, clip);
   ok(`scene luminance ${r2(lumaAtLoad)} is above the dark floor (${DARK_FLOOR})`, lumaAtLoad > DARK_FLOOR);
@@ -141,15 +95,8 @@ async function main() {
     "the sun is not reaching the render on this backend"
   );
   ok(`the start of the day is lit (${r2(lumaStart)})`, lumaStart > DARK_FLOOR);
-  // Not a brightness floor at the far end: this project's window runs to
-  // 20:00 and its sun sets before that, so a dark frame there is the
-  // correct answer. What it must not be is *unchanged* — night darker
-  // than morning is the proof the one global sun vector reaches the
-  // WebGL2 render path at all.
   ok(`after sunset is darker than morning (${r2(lumaEnd)} < ${r2(lumaStart)})`, lumaEnd < lumaStart);
 
-  // Opt-in, and never into the repo: `SHOT_DIR=/tmp npm run
-  // test:webgl2-fallback` when a human needs to look at the frame.
   if (process.env.SHOT_DIR) {
     const shot = `${process.env.SHOT_DIR}/webgl2-fallback-check.png`;
     await page.screenshot({ path: shot });

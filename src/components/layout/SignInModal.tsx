@@ -6,14 +6,6 @@ import { useT } from "@/lib/i18n/useT";
 import { useCredentialsSignIn } from "@/hooks/useCredentialsSignIn";
 import { DEMO_ACCOUNTS } from "@/lib/demoAccounts";
 
-/**
- * Global sign-in modal (PRD_Authentication §4-5: a lightweight modal over the
- * current page, not an instant/anonymous login). Real Auth.js credentials
- * sign-in (real auth to UI pass — see the "Rozaris Platform Audit" memory);
- * the demo-account buttons below still quick-fill a known email/password,
- * but the actual check now happens against the real database, not a
- * client-only list.
- */
 export function SignInModal() {
   const open = useAppStore((s) => s.signInModalOpen);
   const closeSignIn = useAppStore((s) => s.closeSignIn);
@@ -28,7 +20,6 @@ export function SignInModal() {
   useEffect(() => {
     if (open) {
       triggerRef.current = document.activeElement;
-      // Focus the username field once the modal has mounted.
       const id = window.setTimeout(() => inputRef.current?.focus(), 0);
       return () => window.clearTimeout(id);
     }
@@ -137,24 +128,16 @@ export function SignInModal() {
           </p>
         )}
 
-        {/* Platform Audit (finding H1/C1): every DEMO_ACCOUNTS credential
-            shares the same guessable-password convention (see
-            src/lib/demoAccounts.ts), so the one-click list itself — not
-            just the Admin entry below — must never render outside a
-            non-production build. A previous pass excluded Admin from this
-            list but left the other four rendering unconditionally in
-            production, which is what actually made those accounts
-            reachable by any visitor; NODE_ENV is the real boundary, the
-            per-entry filter alone was not. */}
+        {                                                                 
+                                              }
         {process.env.NODE_ENV !== "production" && (
           <div className="mt-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
               {t("signInModal.demoAccounts")}
             </p>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {/* Admin stays excluded even in non-production builds — a
-                  sign-in form should never offer a super-admin one-click
-                  login, dev environment or not. */}
+              {                                                         
+                                                   }
               {DEMO_ACCOUNTS.filter((a) => a.typeLabel !== "Admin").map((a) => (
                 <button
                   key={a.email}

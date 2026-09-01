@@ -68,7 +68,6 @@ export function SearchBar({
   compact = false,
 }: {
   className?: string;
-  /** Smaller padding/icon/text — for the mobile top search row. */
   compact?: boolean;
 }) {
   const [query, setQuery] = useState("");
@@ -84,18 +83,8 @@ export function SearchBar({
   const liveListings = useAppStore((s) => s.liveListings);
   useLiveProjects();
   useLiveListings();
-  // Canonical Location System (see MEMORY note
-  // "rozaris-controlled-taxonomy-spec") — real neighborhood rows, not the
-  // fixed `mockData.neighborhoods` array this used to read.
   const neighborhoodLocations = useLocations("neighborhood");
 
-  // Location suggestions used to be `mockData.neighborhoods` with a
-  // `listingCount` hand-typed once and never updated — stale "history"
-  // numbers that drifted from what's actually live. This instead counts
-  // real currently-active `Listing`/`Project` rows per location (both
-  // already server-filtered to "live" — see `useLiveListings`/
-  // `useLiveProjects`) and only ever surfaces a location that has at least
-  // one right now, sorted by how much is currently there.
   const neighborhoodSuggestions = useMemo<Suggestion[]>(() => {
     const counts = new Map<string, number>();
     for (const l of liveListings ?? []) {

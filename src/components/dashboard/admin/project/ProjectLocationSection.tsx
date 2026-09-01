@@ -9,29 +9,6 @@ import { ProjectLocationMap } from "./ProjectLocationMap";
 import type { ProjectDraft } from "./draft";
 import type { ProjectSectionId } from "./sections";
 
-/**
- * Project Manager → "Location". The canonical-location rule from the
- * Controlled Taxonomy spec still holds — a project's neighborhood is
- * PICKED from the real `Location` table, never free-typed, and `city` is
- * derived from that pick rather than entered — but coordinates are now
- * editable.
- *
- * That's a deliberate change from the old modal, which silently overwrote
- * lat/lng with the selected neighborhood's centre on every save: a
- * development is a specific site, not the middle of Ish-Blloku. Picking a
- * neighborhood still offers its centre as a starting point — as an
- * explicit button, not a silent overwrite of coordinates someone placed on
- * purpose.
- *
- * ONE LOCATION. These coordinates are the development's only site: the
- * same value the 3D Map Control section drags, and on save
- * (`POST /api/projects` → `src/lib/projectLocation.ts`) the one every
- * map-model version, every unit's listing address and the 3D Experience
- * map anchor are re-derived from. The "What follows this pin" panel below
- * is that promise made visible, so an admin moving the pin can see what
- * else moves with it before pressing Save rather than discovering it on
- * the public site.
- */
 export function ProjectLocationSection({
   draft,
   onChange,
@@ -44,8 +21,6 @@ export function ProjectLocationSection({
   onNavigate: (section: ProjectSectionId) => void;
 }) {
   const { t } = useT();
-  // Both levels — a development can sit directly in a Village with no
-  // neighborhood layer at all (2026-08-21 spec).
   const neighborhoods = useLocations(["neighborhood", "village"]);
   const selected = neighborhoods.find((n) => n.id === draft.neighborhoodId);
   const centreAvailable = selected?.latitude != null && selected?.longitude != null;
@@ -53,10 +28,6 @@ export function ProjectLocationSection({
     centreAvailable && draft.lat === selected!.latitude && draft.lng === selected!.longitude;
 
   const publishedModels = record.threeD.hasMapModel;
-  // Same split the 3D Map Control surfaces, shown here too — this is the
-  // section an admin opens to answer "where is this development?", and
-  // finding out only after switching tabs that the model disagrees is too
-  // late. See MapModelEditor's `modelAnchor` for the full reasoning.
   const modelAnchor = record.threeD.mapModelPosition;
   const anchorSplit =
     modelAnchor && (modelAnchor.lat !== draft.lat || modelAnchor.lng !== draft.lng) ? modelAnchor : null;
@@ -74,15 +45,13 @@ export function ProjectLocationSection({
                 const next = neighborhoods.find((n) => n.id === e.target.value);
                 onChange({
                   neighborhoodId: e.target.value,
-                  // City follows the pick — it's derived, never authored.
                   ...(next ? { city: next.cityName } : {}),
                 });
               }}
               className={inputClass}
             >
-              {/* Same guard as the developer picker: never let an
-                  unresolved id silently display (and then save) as
-                  whichever location happens to sort first. */}
+              {                                                   
+                                                              }
               {!neighborhoods.some((n) => n.id === draft.neighborhoodId) && (
                 <option value={draft.neighborhoodId}>{draft.neighborhoodId || t("projectManager.locationUnset")}</option>
               )}

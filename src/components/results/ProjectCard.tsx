@@ -47,9 +47,6 @@ export function ProjectCard({ project }: { project: Project }) {
           : project.premium
           ? "border-listing-premium/50"
           : "border-neutral-200 hover:border-neutral-300",
-        // Applied whenever premium, not only in the non-active branch above —
-        // otherwise hovering the card sets hoveredId (for map-marker sync),
-        // which flips isActive and would silently swallow the effect.
         project.premium && "hover:z-10 hover:border-listing-premium hover:shadow-[var(--shadow-1)]"
       )}
     >
@@ -59,8 +56,8 @@ export function ProjectCard({ project }: { project: Project }) {
           <span className="rounded-full bg-listing-new-dev px-2 py-1 text-[11px] font-semibold text-white shadow">
             {t("results.newProject")}
           </span>
-          {/* No "Premium" text badge — premium status reads through the
-              amber tint/border and hover treatment only. */}
+          {                                                             
+                                                            }
         </div>
       </div>
       <div className="flex flex-1 flex-col gap-1.5 p-3.5">
@@ -82,9 +79,8 @@ export function ProjectCard({ project }: { project: Project }) {
             />
           </div>
         )}
-        {/* Details opens the editorial Project Detail Page (the authoritative
-            info/inventory page — PRD_Project_Detail_Page §1); 3D stays a
-            distinct, explicit escape hatch into the Three.js viewer. */}
+        {                                                                     
+                                                                        }
         <div className="mt-auto flex items-center gap-1.5">
           <Link
             href={`/projects/${project.slug}`}

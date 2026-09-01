@@ -1,21 +1,7 @@
-/**
- * Pure undo/redo state-transition logic, factored out of
- * `src/hooks/useUndoRedo.ts` specifically so it's testable without a
- * React renderer (this repo has no jest/vitest/testing-library —
- * verified before writing this — so plain framework-free functions are
- * what's actually exercisable here via a standalone script). The hook
- * itself is a thin `useReducer(historyReducer, ...)` wrapper that only
- * adds the debounce timer (a genuinely imperative concern `setTimeout`
- * can't be pure about) around dispatching these actions.
- */
-
 export interface HistoryState<T> {
   present: T;
   past: T[];
   future: T[];
-  // An in-progress, not-yet-committed burst (e.g. mid-slider-drag).
-  // `pendingBaseline` is the value *before* the burst started — what undo
-  // should revert to once the burst is committed.
   hasPending: boolean;
   pendingBaseline: T | null;
 }
@@ -52,14 +38,6 @@ export function historyReducer<T>(h: HistoryState<T>, action: HistoryAction<T>):
       const baseline = h.hasPending ? h.pendingBaseline : h.present;
       return { present: next, past: h.past, future: h.future, hasPending: true, pendingBaseline: baseline };
     }
-    // Replaces `present` only — no past/future/pending side effects.
-    // For syncing FROM an external source of truth (initial load from the
-    // server, or the row echoed back after a successful save) — never for
-    // a user edit. Doesn't clear existing undo history: a save happening
-    // mid-session shouldn't erase the user's ability to undo earlier
-    // edits, and at true initial load there's no history yet to clear
-    // anyway (an explicit `past: []`/`future: []` reset was considered
-    // and dropped as unnecessary once this was worked through).
     case "setSilent": {
       const next = typeof action.updater === "function" ? (action.updater as (prev: T) => T)(h.present) : action.updater;
       return { ...h, present: next };

@@ -24,22 +24,6 @@ interface UnitOption {
   code: string;
 }
 
-/**
- * The former standalone "Listings" admin tab, nested inside a single
- * Project's `EditProjectModal` — per the "Listings & Projects becomes just
- * Projects" restructuring, a listing is managed from inside the project it
- * belongs to as well as from the global Listings tab (`ListingsTab`), both
- * sharing the same `ListingManagePanel`. Fetches the full admin listing set
- * and filters to this project client-side rather than adding a
- * `?projectId=` query param to the route — at real-world row counts here
- * that's simpler than a new server-side filter, and it's the same list
- * `GET .../listings?status=all` always returned anyway.
- *
- * A listing created here is attached to this project from the start
- * (`NewListingForm`'s optional `projectId`); an existing one can be moved
- * to a different project or back to standalone from the shared manage
- * panel's own project picker.
- */
 export function ProjectListingsPanel({ project, publishers }: { project: Project; publishers: PublisherOption[] }) {
   const { t } = useT();
   const priceFmt = usePriceFormat();

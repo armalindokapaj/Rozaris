@@ -1,38 +1,11 @@
-/**
- * RZ-VIEWER-TIME-MOBILE-01 — the viewer dock's Time slider on touch.
- * Run with `npm run test:time-slider` (needs `npm run dev` on :3000).
- *
- * Browser-driven rather than a maths-only script (unlike
- * `test-floor-rail-magnify.ts`) because every requirement in the ticket is
- * a property of real layout and real hit-testing: `pointer-events`,
- * `touch-action`, a native range thumb's own travel range, and whether a
- * 28px touch band clears the controls row 2px above it. None of that is
- * observable outside a browser.
- *
- * Headed on purpose — `/project/[slug]` is WebGPU, and headless Chromium
- * here has no GPU (it falls back to SwiftShader and renders black). The
- * DOM measurements below would survive that, but the pixel pass that
- * locates the thumb would not.
- *
- * This does NOT replace the ticket's real-device acceptance run: Chromium
- * synthesises touch, and a synthetic touch passes things a finger fails.
- * It verifies the mechanism (band size, hit-testing, travel, fill
- * alignment); iOS Safari and Android Chrome still need a human.
- */
 import { chromium, type Page } from "playwright";
 import { readFileSync } from "node:fs";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
-/** Read out of the component source rather than imported, so this asserts
- * the value the shipped file actually carries — the point of §4 below is
- * that the constant and the browser must agree, and importing it would
- * still pass if both were wrong together. */
 const SOURCE_THUMB_INSET = Number(
   /const SLIDER_THUMB_INSET_PX = (\d+)/.exec(readFileSync("src/components/project/viewer-hud/dock/TimeContent.tsx", "utf8"))?.[1]
 );
 const SLUG = process.env.SLUG ?? "tower-vlora";
-/** `DOCK_HEIGHT_MOBILE_STANDARD` (layoutState.ts) — the content height, on
- * top of which DockShell's own 1px top+bottom border lands the shell at 72. */
 const DOCK_CONTENT_HEIGHT_MOBILE = 70;
 
 let pass = 0,
@@ -48,17 +21,13 @@ function ok(name: string, condition: boolean, detail = "") {
 }
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Opens the dock's Time module. `aria-label` on the nav button is the
- * translated string, so this goes by position in the nav row instead of
- * text — the viewer's default locale is Albanian ("Koha"), and hardcoding
- * either language makes this test a locale trap. */
 async function openTime(page: Page) {
   await page.waitForSelector(".rz-range-single, [aria-label]", { timeout: 30_000 });
   const timeBtn = page.locator('button[aria-label="Koha"], button[aria-label="Time"]').first();
   await timeBtn.waitFor({ state: "visible", timeout: 30_000 });
   await timeBtn.click();
   await page.waitForSelector("input.rz-range-single", { state: "visible", timeout: 15_000 });
-  await page.waitForTimeout(700); // dock morph + content reveal
+  await page.waitForTimeout(700);
 }
 
 const rectOf = (page: Page, selector: string) =>
@@ -69,10 +38,6 @@ const rectOf = (page: Page, selector: string) =>
     return { x: r.x, y: r.y, width: r.width, height: r.height, top: r.top, bottom: r.bottom, left: r.left, right: r.right };
   }, selector);
 
-/** Real touch, not `page.mouse` — the whole ticket is that touch and mouse
- * hit-test this control differently, so a mouse-driven pass would prove
- * nothing. Playwright's own touchscreen API is tap-only, so drags go
- * through CDP directly. */
 async function touchDrag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }, steps = 12) {
   const cdp = await page.context().newCDPSession(page);
   const pt = (x: number, y: number) => [{ x, y, radiusX: 12, radiusY: 12, force: 1 }];
@@ -89,9 +54,6 @@ async function touchDrag(page: Page, from: { x: number; y: number }, to: { x: nu
   await cdp.detach();
 }
 
-/** Decodes a screenshot back into pixels using the same browser that took
- * it, so the thumb's real rendered box can be located without pulling in an
- * image-decoding dependency. */
 async function whitePixelBox(page: Page, clip: { x: number; y: number; width: number; height: number }) {
   const buf = await page.screenshot({ clip });
   const dataUrl = `data:image/png;base64,${buf.toString("base64")}`;
@@ -122,12 +84,8 @@ async function whitePixelBox(page: Page, clip: { x: number; y: number; width: nu
   }, dataUrl);
 }
 
-/** Mean per-channel difference between two screenshots, 0-255. Decoded in
- * the page for the same reason whitePixelBox does it. */
 async function meanAbsDiff(page: Page, a: Buffer, b: Buffer) {
   return page.evaluate(async ([ua, ub]) => {
-    // Written out twice rather than through a local helper: see the note in
-    // §1 about esbuild's `keepNames` and `__name`.
     const imgA = new Image();
     imgA.src = ua;
     await imgA.decode();
@@ -183,16 +141,12 @@ async function main() {
 
   console.log("\n1. the touch band — R3, R5, R6");
   const input = (await rectOf(page, "input.rz-range-single"))!;
-  // No helper functions inside any `page.evaluate` body in this file: tsx
-  // compiles with esbuild's `keepNames`, which rewrites named function
-  // expressions to reference a `__name` helper that does not exist in the
-  // page. Everything below is therefore written out longhand on purpose.
   const geom = await page.evaluate(() => {
     const el = document.querySelector("input.rz-range-single")!;
-    const wrapper = el.parentElement!;            // relative h-5 flex-1
-    const row2 = wrapper.parentElement!;          // slider row
-    const root = row2.parentElement!;             // TimeContent mobile root
-    const row1 = root.children[0] as HTMLElement; // controls row
+    const wrapper = el.parentElement!;
+    const row2 = wrapper.parentElement!;
+    const root = row2.parentElement!;
+    const row1 = root.children[0] as HTMLElement;
     const w = wrapper.getBoundingClientRect();
     const r1 = row1.getBoundingClientRect();
     const rt = root.getBoundingClientRect();
@@ -240,7 +194,7 @@ async function main() {
   await touchDrag(
     page,
     { x: input.left + input.width * 0.25, y: input.top + input.height / 2 },
-    { x: input.left + input.width * 0.85, y: input.top + input.height / 2 + 22 } // ~20° of vertical deviation
+    { x: input.left + input.width * 0.85, y: input.top + input.height / 2 + 22 }
   );
   await page.waitForTimeout(250);
   const afterDrag = await val();
@@ -262,7 +216,7 @@ async function main() {
     const wMin = boxMin.maxX - boxMin.minX + 1;
     const centreMin = (boxMin.minX + boxMin.maxX) / 2;
     const centreMax = (boxMax.minX + boxMax.maxX) / 2;
-    const inset = centreMin; // distance of the thumb centre from the track's left edge at value=min
+    const inset = centreMin;
     console.log(`       thumb\u2019s white fill spans ${wMin}px (the 2px brand ring is excluded); centre travels ${r2(centreMin)} → ${r2(centreMax)} of ${clip.width}px`);
     ok(
       `SLIDER_THUMB_INSET_PX (${SOURCE_THUMB_INSET}) matches the real thumb centre inset`,
@@ -327,8 +281,6 @@ async function main() {
   console.log("\n8. dock height across mode switches — AC9");
   const heights: number[] = [];
   for (const label of [["Koha", "Time"], ["Njësi", "Units"], ["Koha", "Time"]] as const) {
-    // The nav row only exists in Explore mode, so every hop returns there
-    // first — otherwise the module currently open hides the button.
     await page.keyboard.press("Escape");
     await page.waitForTimeout(600);
     const b = page.locator(`button[aria-label="${label[0]}"], button[aria-label="${label[1]}"]`).first();
@@ -344,13 +296,6 @@ async function main() {
   ok("AC9 — dock shell height is stable across Nav → Time → Nav", heights.length > 0 && heights.every((h) => Math.abs(h - heights[0]) < 0.5), JSON.stringify(heights.map(r2)));
 
   console.log("\n10. the scrub fast path skips nothing — R10's correctness half");
-  // `setEnvironmentConfig` short-circuits a tick that changed only
-  // viewerTimeHours/simulationDate. That is only safe while every read of
-  // those two (and of the sun vector derived from them) lives inside
-  // `applySunState`, which BOTH paths call — anything time-dependent left
-  // behind in `applyEnvironmentConfig` would silently stop updating during
-  // a scrub and only reappear on the next unrelated config change. Static,
-  // because that is exactly the kind of regression a screenshot misses.
   const engineSrc = readFileSync("src/lib/render-engine/RenderEngine.ts", "utf8");
   const fullPathBody = engineSrc.slice(
     engineSrc.indexOf("private applyEnvironmentConfig(config: EnvironmentConfig, immediateRebuild: boolean) {"),

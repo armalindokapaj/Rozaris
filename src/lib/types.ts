@@ -1,9 +1,6 @@
-// ROZARIS core domain types — mirrors PRD Section 26 (Data Model and Entity Specification)
-
 export type Currency = "EUR" | "ALL";
 export type Locale = "en" | "sq";
 
-/** Bilingual free-text field — publishers must supply both languages. */
 export interface Bilingual {
   en: string;
   sq: string;
@@ -24,14 +21,7 @@ export type PropertyType =
 export type Condition = "new" | "renovated" | "good" | "needs_renovation";
 
 export type ListingStatus =
-  // No confirmed location yet (see Prisma's Listing.locationConfirmed) —
-  // never shown publicly. Added with the "location drop" requirement (see
-  // the "Rozaris Platform Audit" memory).
   | "draft"
-  // Submitted, awaiting admin approval — not yet live anywhere. Matches
-  // Prisma's `ListingStatus` enum default; added when `POST /api/listings`
-  // became real (see the "Rozaris Platform Audit" memory) since every
-  // publisher-submitted listing starts here.
   | "pending"
   | "active"
   | "sold"
@@ -39,8 +29,6 @@ export type ListingStatus =
   | "expired"
   | "suspended"
   | "archived"
-  // Approval Center's "Reject" verdict on a `pending` submission — see the
-  // matching doc comment on Prisma's `ListingStatus` enum.
   | "rejected";
 
 export type PublisherType = "private_owner" | "agency" | "developer";
@@ -73,9 +61,7 @@ export interface Publisher {
   phone: string;
   whatsapp: string;
   bio?: string;
-  /** HQ city — companies only; a private owner has no company address. */
   city?: string;
-  /** Company track record — developers/agencies only, not private owners. */
   foundedYear?: number;
   awardsCount?: number;
 }
@@ -103,10 +89,7 @@ export interface Listing {
   pricePerSqm?: number;
   negotiable: boolean;
   area: number;
-  /** Lot/plot size in m², distinct from the built-up `area` — relevant for
-   * villas (their own land) and raw land listings. */
   landArea?: number;
-  /** Only meaningful for land listings. */
   buildingPermit?: boolean;
   bedrooms: number;
   bathrooms: number;
@@ -127,19 +110,9 @@ export interface Listing {
   premium: boolean;
   status: ListingStatus;
   createdAt: string;
-  /** Last time the publisher confirmed this listing is still current (a
-   * "Renew" action, not every silent edit) — the basis for the >90-day
-   * "needs an update" staleness flag (see the "Rozaris Platform Audit"
-   * memory). Absent on the still-mock `projectUnitListings` synthetic
-   * rows, which never go stale the same way. */
   lastRenewedAt?: string;
   buildingListingCount?: number;
-  /** Set only on listings synthesized from a new-development project's
-   * units, so the unit's own detail page can link back to the project's
-   * 3D view. Absent on regular publisher-submitted listings. */
   fromProjectSlug?: string;
-  /** The project's display name, paired with fromProjectSlug for the
-   * detail page's "part of this project" tag. */
   fromProjectName?: string;
 }
 
@@ -154,10 +127,6 @@ export interface ConstructionStage {
   dateLabel: string;
 }
 
-/** The four compass points a unit's frontage can face. Stored as a plain
- * nullable string in Postgres (`units.orientation`) — same convention as
- * `type`/`status`/`transaction`, which are also closed unions here and
- * bare `String` columns there. */
 export type UnitOrientation = "N" | "E" | "S" | "W";
 
 export const UNIT_ORIENTATIONS: readonly UnitOrientation[] = ["N", "E", "S", "W"];
@@ -179,18 +148,9 @@ export interface Unit {
   floorPlanImage: string;
   facadeImage?: string;
   videoUrl?: string;
-  /** Which way this unit faces. `undefined` means "not authored yet" — a
-   * real state for every unit that predates the field, kept distinct from
-   * any of the four values rather than defaulted to north. Not the POI
-   * camera's yaw (`UnitMeshLink.poiYawDeg`), which also renders as
-   * N/E/S/W in the 3D editor but frames a shot rather than describing the
-   * unit. */
   orientation?: UnitOrientation;
 }
 
-/** Broad setting a new-development project sits in — used by the New Projects
- * directory's filters, which browse across cities/regions rather than a
- * single map viewport. */
 export type ProjectSetting = "residential_complex" | "beach" | "tower";
 
 export interface Project {
@@ -204,8 +164,6 @@ export interface Project {
   neighborhoodId: string;
   city: string;
   setting: ProjectSetting;
-  /** Predominant unit type in this development — used by the New Projects
-   * directory's property-type filter. */
   propertyType: PropertyType;
   availableUnits: number;
   totalUnits: number;
@@ -220,26 +178,10 @@ export interface Project {
   constructionStages: ConstructionStage[];
 }
 
-/** PRD_3D_Project_Viewer §17: controlled lighting presets — Admin picks
- * one rather than authoring an unrestricted Three.js scene, for
- * consistency across projects and predictable performance. */
-/** PRD_3D_Project_Viewer §11/§15/§16/§21: the persisted "3D Experience"
- * configuration for one project — Admin's Scene/Camera/Lighting/
- * Construction settings, versioned as draft vs. published (§28) rather
- * than edited live in production. Camera distances are stored as
- * multipliers of the procedural building's auto-computed bounding radius
- * (see lib/threeBuilding.ts) since that radius varies per project. */
-/** "3D Experience Phase 1" — see src/lib/viewerPresets.ts. */
 export type RenderingMode = "auto" | "webgpu" | "webgl2";
-/** renderer.toneMapping (2026-08-14 UI-polish pass) — the 7 values
- * THREE.*ToneMapping actually has (confirmed against constants.js), same
- * set the reference site's own debug panel exposes. */
 export type ToneMapping = "none" | "linear" | "reinhard" | "cineon" | "aces" | "agx" | "neutral";
 export type QualityPreset = "ultra_desktop" | "high_desktop" | "balanced" | "mobile_high" | "mobile_low" | "custom";
 export type GlassPreset = "performance" | "standard" | "premium";
-/** Non-glass architectural material presets (Editor UX & Scene Structure
- * pass) — glass already has its own dedicated GlassPreset/GLASS_TIERS
- * system above, kept separate rather than folded in here. */
 export type MaterialPresetId =
   | "concrete"
   | "plaster"
@@ -250,10 +192,6 @@ export type MaterialPresetId =
   | "chrome"
   | "ceramic";
 
-/** Experience Editor v2, Environment → Sun & Sky (PRD §9) — one admin-
- * authored "Solar Anchor" (time of day → elevation/azimuth); stored as
- * `Project3DConfig.solarAnchors[]`. See src/lib/sunPosition.ts's
- * sunPositionForAnchors for the interpolation this feeds. */
 export interface SolarAnchor {
   id: string;
   timeHours: number;
@@ -263,100 +201,34 @@ export interface SolarAnchor {
 
 export interface Project3DConfig {
   groundEnabled: boolean;
-  /** "disc" (default, unchanged behavior) is the original procedural-mode-
-   * only ground — sized off the computed layout, never available for a
-   * GLB project (no `layout.boundingRadius` to size it from). "infinite"
-   * (Ground Platform follow-up) is a large flat plane available in both
-   * content modes instead, colored via `groundColor` — this is the "GLB
-   * projects get a ground option too" fix, deliberately scoped to
-   * "infinite" only so no existing GLB project gains an unrequested disc
-   * the moment this field exists. */
   groundStyle: "disc" | "infinite";
-  /** Applies to the ground regardless of `groundStyle` — both share one
-   * real `MeshStandardNodeMaterial` builder now (RenderEngine.ts's
-   * buildGroundMaterial). Default `"#d8d6e6"` is the exact hex the ground
-   * was hardcoded to before this field existed, so no existing project's
-   * ground changes color until an admin touches this. */
   groundColor: string;
-  /** A second, deliberately different "fog" from `fogEnabled`/`fogColor`
-   * above — that one is `THREE.FogExp2`, distance-from-*camera*,
-   * affecting the whole scene. This one only affects the ground mesh's
-   * own material (a radial color fade toward `resolveFogColor(config)`,
-   * the same color the regular fog already resolves to), and the
-   * distance is measured from the fixed world origin (0,0,0), not the
-   * camera — a circular "misty edge" around a specific point rather than
-   * an atmospheric depth effect. Off by default. */
   groundFogEnabled: boolean;
-  /** World-space distance from (0,0,0), in scene units — admin-entered
-   * directly (a free-text number, not a slider with an arbitrary cap),
-   * since this is tied to real project geometry the admin already knows
-   * the scale of, not a 0-1 "look" knob like the sliders elsewhere in
-   * this tab. */
   groundFogRadius: number;
   cameraStartDistanceMultiplier: number;
   cameraMinDistanceMultiplier: number;
   cameraMaxDistanceMultiplier: number;
-  /** Degrees, 0-180 — caps how far under the building the camera can orbit. */
   cameraMaxPolarDeg: number;
-  /** Degrees, 0-180 — floor on how far *over the top* the camera can orbit
-   * (mirrors cameraMaxPolarDeg's floor/ceiling pair; 0 = can look straight
-   * down from directly above, the OrbitControls default). */
   cameraMinPolarDeg: number;
-  /** Kept but no longer consulted by the public viewer — Idle Drone Camera
-   * PRD §10/§60 replaced its cinematic-idle role. New rows still default
-   * `true` (see defaultProject3DConfig); an existing row's value was
-   * copied into `idleDroneEnabled` once by the migration that added the
-   * fields below, so a project's idle behavior didn't change the moment
-   * this shipped. */
   autoRotate: boolean;
-  /** Idle Drone Camera PRD — replaces plain `OrbitControls.autoRotate`
-   * with a procedural architectural orbit (rise/fall, breathe distance, a
-   * drifting look-target, all scaled off the project's own bounds — see
-   * src/lib/render-engine/idleDroneCamera.ts). `idleDroneEnabled` is the
-   * master per-project switch; `idleDroneMotionEnabled` is a convenience
-   * master over the three wave toggles below it (turning it off, or
-   * turning all three sub-toggles off, both behave as a plain controlled
-   * orbit — PRD §7's own example). Amplitudes are fractions (0-1) of the
-   * project's own building height/base distance, not absolute meters, so
-   * one set of defaults looks right on a villa and a tower alike (§21).
-   * `idleDronePhaseOffsetDeg` exists for API/schema completeness (§9/§11)
-   * but isn't exposed as its own editor slider — absent from the PRD's
-   * own §6 UI mock, defaults to 0. */
   idleDroneEnabled: boolean;
-  /** Seconds of inactivity before the drone activates. 5-600, default 60. */
   idleDroneDelaySec: number;
-  /** Seconds per full orbit revolution. 20-300, default 80. */
   idleDroneOrbitDurationSec: number;
   idleDroneClockwise: boolean;
-  /** Master convenience toggle over the three wave toggles below — see
-   * this field's own note above. */
   idleDroneMotionEnabled: boolean;
   idleDroneHeightEnabled: boolean;
-  /** Fraction (0-0.5) of building height. Default 0.18. */
   idleDroneHeightAmplitude: number;
   idleDroneDistanceEnabled: boolean;
-  /** Fraction (0-0.25) of the orbit's own base distance. Default 0.05. */
   idleDroneDistanceAmplitude: number;
   idleDroneTargetEnabled: boolean;
-  /** Fraction (0-0.25) of building height, applied to the look-target's Y. Default 0.06. */
   idleDroneTargetAmplitude: number;
-  /** Altitude wave cycles per full orbit. 1-4, default 2. */
   idleDroneVerticalCycles: number;
-  /** Degrees, 0-360 — not exposed as its own editor slider (see this
-   * field group's own doc comment above). */
   idleDronePhaseOffsetDeg: number;
-  /** 0-1 damping strength — higher is slower/gentler, not a raw per-frame
-   * lerp factor (idleDroneCamera.ts's dampingFactor() maps it to a time
-   * constant). Default 0.88. */
   idleDroneSmoothness: number;
   status: "draft" | "published";
 
-  /** Three.js WebGPURenderer target — "auto"/"webgpu" both let the renderer
-   * probe for WebGPU and fall back to WebGL2 automatically; "webgl2" forces
-   * the WebGL2 backend outright (see forceWebGL in ProceduralProjectViewer). */
   renderingMode: RenderingMode;
   qualityPreset: QualityPreset;
-  /** Experience Editor v2, Performance tab (PRD §40) additions. */
   customRenderScale: number | null;
   customDprCap: number | null;
   adaptiveQualityEnabled: boolean;
@@ -367,7 +239,6 @@ export interface Project3DConfig {
   environmentIntensity: number;
   cameraFovDesktop: number;
   cameraFovMobile: number;
-  /** Experience Editor v2, Camera tab (PRD §37) additions. */
   cameraNearClip: number;
   cameraFarClip: number;
   cameraMinAzimuthDeg: number | null;
@@ -380,49 +251,15 @@ export interface Project3DConfig {
   cameraHelperEnabled: boolean;
   cameraSensorWidthMm: number;
 
-  /** Admin-saved camera framings — clicking one in the public viewer
-   * smoothly transitions the live camera to it (not a snap). */
   cameraPresets: CameraPreset[];
-  /** Tone-mapping exposure multiplier (renderer.toneMappingExposure) —
-   * also the Sky/Water/Bloom/Clouds "Ocean" tab's Sky "exposure" slider,
-   * matching webgl_shaders_ocean.html's own GUI exactly. */
   exposure: number;
-  /** Tone-mapping curve (renderer.toneMapping) — real per-project choice
-   * (2026-08-14 UI-polish pass), matching every option the reference site
-   * (planpoint-webgpu.vercel.app) exposes in its own debug panel. Applied
-   * live, no remount needed — same category as `exposure` above (a plain
-   * renderer property, not part of the TSL post-processing node chain).
-   * Defaults to "aces" so every project predating this field keeps
-   * rendering exactly as before. */
   toneMapping: ToneMapping;
 
-  /** Which of the always-on bottom-menu controls show publicly — Xray/
-   * Camera Presets aren't included here, they're already conditional on
-   * real state (a loaded GLB / at least one saved preset). */
   viewerUI: ViewerUIToggles;
 
-  /** Sky/Water/Bloom/Clouds "Ocean" tab (webgl_shaders_ocean.html parity)
-   * — direct sun elevation/azimuth feeding the physical SkyMesh, matching
-   * the reference demo's own GUI exactly. The whole geographic-sun/HDRI/
-   * lensflare/light-probe/motion-blur system this project had grown
-   * around it (sunMode, sunIntensity, northRotationDeg, defaultTimeOfDay,
-   * allowUserTimeChange, simulationDate, hdriId, lensflareEnabled,
-   * lightProbeEnabled, motionBlurEnabled/Amount, skyPreset,
-   * backgroundPreset, backgroundBlurriness) was removed entirely
-   * 2026-08-14 at the user's explicit request — this is now the only sun
-   * model, and the physical sky dome is the only backdrop. */
   sunAzimuthDeg: number;
   sunElevationDeg: number;
 
-  /** Experience Editor v2, Environment → Sun & Sky (PRD §9-10) — the
-   * "ROZARIS Manual Time + Sun System" / "ONE Global Sun". Off (default):
-   * every existing project keeps the direct static sunElevationDeg/
-   * sunAzimuthDeg above unchanged. On: elevation/azimuth are derived every
-   * frame from viewerTimeHours + solarPathMode (see
-   * src/lib/sunPosition.ts's sunPositionForAnchors/geographicSunPosition)
-   * instead — the ONE resulting direction vector feeds Sky/Water/Clouds/
-   * Fog today, and Shadows/GI/Volumetrics/Lens Flare in later phases, per
-   * PRD §10's "one Global Sun Vector, no feature gets its own". */
   solarControllerEnabled: boolean;
   solarPathMode: "manual" | "geographic";
   viewerTimeControlEnabled: boolean;
@@ -433,8 +270,6 @@ export interface Project3DConfig {
   solarAnchors: SolarAnchor[];
   geoLatitude: number;
   geoLongitude: number;
-  /** ISO date string — only the calendar date matters (year/month/day);
-   * time-of-day comes from `viewerTimeHours`. */
   simulationDate: string;
   northOffsetDeg: number;
   sunDiscEnabled: boolean;
@@ -444,101 +279,26 @@ export interface Project3DConfig {
   manualSunColorHex: string;
   environmentRefreshEnabled: boolean;
 
-  /** Standalone "Sky" tab (webgl_shaders_sky.html parity, added after the
-   * Ocean tab above) — the reference demo's own elevation/azimuth/
-   * exposure controls are the shared fields above, reused rather than
-   * duplicated; these 4 are its remaining GUI params (turbidity/rayleigh/
-   * mieCoefficient/mieDirectionalG), previously one fixed constant
-   * (viewerPresets.ts's SKY_PHYSICAL_PARAMS) applied to every project, now
-   * real per-project fields. `skyEnabled` is a Rozaris-specific addition
-   * (the demo itself has no off switch) — false falls back to a flat
-   * neutral background/environment instead of the physical dome. */
   skyEnabled: boolean;
   skyTurbidity: number;
   skyRayleigh: number;
   skyMieCoefficient: number;
   skyMieDirectionalG: number;
 
-  /** Experience Editor "Map" tab — places this project's own detailed
-   * "building"-role model onto a real Mapbox map at its real-world
-   * location, as an alternate, toggle-able view alongside the freestanding
-   * Studio scene (mutually exclusive — see ProjectViewerRuntime.tsx's
-   * `viewMode`). Separate from `MapModelVersion` (the platform-wide public
-   * Search Map's own lightweight per-project proxy GLB, a different
-   * feature) — this reads the sun fields above (via
-   * src/lib/sunPosition.ts) to light the Mapbox render to match. Null
-   * lat/lng falls back to the project's own `coords`. */
   mapViewEnabled: boolean;
   mapViewLatitude: number | null;
   mapViewLongitude: number | null;
   mapViewAltitude: number;
   mapViewHeadingDeg: number;
   mapViewScale: number;
-  /** The Mapbox camera itself (zoom/tilt/rotation of the map view), as
-   * opposed to the five fields above which place the *model* on it. */
   mapViewZoom: number;
   mapViewPitchDeg: number;
   mapViewBearingDeg: number;
 
-  /** "Map" tab, 2026-08-26 rewrite — real-world SITE CONTEXT as ordinary
-   * scene geometry, replacing the nine `mapView*` fields' old meaning (a
-   * SEPARATE mapbox-gl view the visitor toggled to, mutually exclusive
-   * with the Studio scene — see ProjectViewerRuntime's old `viewMode`).
-   *
-   * The inversion that makes this work: nothing here hands Mapbox a
-   * canvas or a GL context. Mapbox raster-DEM + satellite tiles are
-   * fetched as DATA and rebuilt as a real `THREE.Mesh` inside the engine's
-   * own scene graph, so the site is lit by the ONE Global Sun Vector, and
-   * picks up fog/SSGI/SSR/DOF/TRAA/LUT for free — because it is just
-   * geometry. (The abandoned inverse — Mapbox owns the canvas, three.js
-   * draws into its WebGL2 context — could never do that: the TSL
-   * RenderPipeline's full-screen composite overwrites Mapbox's
-   * framebuffer, there is no shared depth so no mutual occlusion, and it
-   * forces `forceWebGL:true`, losing the WebGPU backend outright.)
-   *
-   * TRANSFORM RULE (the product decision this whole shape encodes): the
-   * SITE moves, the building never does. Every project GLB stays at its
-   * authored origin; `siteOffsetX/Z`, `siteElevationOffset`,
-   * `siteRotationDeg` and `siteScale` move the world around it. This is
-   * deliberately the OPPOSITE direction from the `mapView*` placement
-   * fields above (which moved the model onto a map), and the opposite of
-   * `transformParentSlotId` inheritance (which copies a parent's
-   * transform onto a child) — the site owns its transform and is nobody's
-   * child.
-   *
-   * `siteRotationDeg` is NOT only cosmetic: rotating the site is the
-   * admin stating where north really is, so it is added to the resolved
-   * sun azimuth exactly the way `northOffsetDeg` already is (see
-   * RenderEngine.resolveGlobalSunVector). Derivation: a Y-rotation by θ
-   * maps the sun's horizontal direction (sin a, cos a) to
-   * (sin(a+θ), cos(a+θ)) — i.e. rotating the site by θ and adding θ to
-   * the azimuth are the same operation, so the two fields are the same
-   * physical quantity in the same sign and units and simply add.
-   *
-   * Default off/zero: zero behavior change for any existing project. */
   siteEnabled: boolean;
-  /** Extraction radius in real metres from the project's canonical
-   * `Project.lat/lng`, capped at 2000 (a 4 km square).
-   *
-   * The cap is NOT the sky dome, despite the fixed 1600-unit
-   * SKY_DOME_SCALE: `SkyMesh` renders BackSide with `depthWrite: false`,
-   * so it never occludes geometry beyond it. What actually clips a large
-   * site is the camera far plane — and because the site is deliberately
-   * excluded from `boundingRadius`, nothing else knows how far it reaches,
-   * so `applyCameraConfig` gives it an explicit far-plane floor of its own
-   * (see `siteFarExtentM`). Past ~2 km the 0.1 default near plane starts
-   * costing visible depth precision, which is the real ceiling. */
   siteRadiusM: number;
-  /** Real DEM displacement (Mapbox raster-DEM). Off renders the same
-   * extent dead flat at Y=0, which is the right answer for a genuinely
-   * flat site and saves the DEM fetch entirely. */
   siteTerrainEnabled: boolean;
-  /** Satellite imagery as the site's albedo. */
   siteImageryEnabled: boolean;
-  /** Multiplier on the imagery albedo. Aerial imagery arrives with the
-   * sun of the day it was captured already baked into it, which fights
-   * the engine's own movable sun — pulling it down is the cheap, honest
-   * mitigation (a real de-lighting pass is out of scope). */
   siteImageryBrightness: number;
   siteOffsetX: number;
   siteOffsetZ: number;
@@ -546,53 +306,16 @@ export interface Project3DConfig {
   siteRotationDeg: number;
   siteScale: number;
 
-  /** 360° Backdrop Photo — an admin-uploaded equirectangular PNG (real
-   * site-context photography: surrounding buildings/terrain/horizon) with
-   * a transparent sky region, rendered as an unlit sphere just inside the
-   * SkyMesh dome above. The transparent (alpha=0) pixels let the physical
-   * Sky/sun keep showing through — this layer supplies real surroundings,
-   * it never replaces or drives lighting; the sun/sky above stay the only
-   * light source either way. `backdropImageUrl` is a Vercel Blob URL
-   * (`panoramas/` prefix — see /api/blob/upload's own doc comment);
-   * `backdropRotationDeg` lets an admin spin the photo to line its real
-   * captured compass heading up with the scene's `northOffsetDeg` (move
-   * left/right); `backdropPitchDeg` tilts it to line the photo's own
-   * horizon up with the platform's (move up/down). Both are real rotations
-   * of the backdrop sphere (Euler order "YXZ" — yaw applied before pitch,
-   * so "up/down" always means up/down from wherever "left/right" has
-   * already turned it, not a raw single-axis spin), not a texture-UV
-   * offset — the only way to reposition a full spherical panorama without
-   * warping it. `backdropElevation` is a different kind of move —
-   * translates the sphere's own center up/down (world Y, scene units), not
-   * a rotation — for when the photo's horizon is already level (pitch=0)
-   * but was shot from a different height than the model's own ground,
-   * so the horizon line sits at the wrong height relative to the scene.
-   * Default off/null/0: zero behavior change for any existing project. */
   backdropEnabled: boolean;
   backdropImageUrl: string | null;
   backdropRotationDeg: number;
   backdropPitchDeg: number;
   backdropElevation: number;
 
-  /** Exponential fog (THREE.FogExp2) — off by default, so every existing
-   * project renders unchanged until an admin enables it. */
   fogEnabled: boolean;
   fogColor: string;
-  /** THREE.FogExp2's density factor — small values (0-0.05ish) are the
-   * useful range; higher gets opaque very quickly at typical scene scale. */
   fogDensity: number;
-  /** When true, fog color is derived live from the resolved sky color
-   * instead of `fogColor` above — the "seamless horizon" technique from
-   * three.js's webgl_geometry_terrain example. Off by default: zero
-   * behavior change for any existing project until an admin enables it. */
   fogMatchesSky: boolean;
-  /** Experience Editor v2, Environment → Fog & Haze (PRD §12,
-   * webgpu_custom_fog.html parity) — real TSL scene.fogNode height fog +
-   * distance haze + animated triNoise3D wisps (src/lib/render-engine/
-   * fog.ts), layered on top of the classic FogExp2 above when both are on.
-   * `fogHeightBandEnabled` is PRD §12's own "Ground Fog" toggle — distinct
-   * from `groundFogEnabled` further down (Ground tab's older radial-mist-
-   * on-the-ground-material technique). */
   fogHeightBandEnabled: boolean;
   fogHazeEnabled: boolean;
   fogNoiseEnabled: boolean;
@@ -607,39 +330,13 @@ export interface Project3DConfig {
   fogWindSpeed: number;
   fogFalloff: number;
   fogMaxOpacity: number;
-  /** Real HDR bloom (TSL `bloom()` node) — per-project opt-in, off by
-   * default: zero behavior change for any existing project. `strength`/
-   * `radius` are the real admin-tunable knobs (mirrors
-   * webgl_shaders_ocean.html's own Bloom GUI folder); `threshold` isn't
-   * exposed, fixed instead — Experience Editor v2's Rendering tab (Phase
-   * 4, render-engine/postProcessing.ts) is this field's first real
-   * end-to-end wiring (the pre-rebuild engine that originally set
-   * threshold to 0.85 never actually shipped it live), and the real
-   * geographic-sun/PMREM-sky HDR range this new engine renders needed a
-   * real recalibration — live-tested: 0.85 bloomed almost the entire
-   * frame to white even at the lowest strength, 6 produces a tasteful
-   * highlight-only glow across the same strength range. */
   bloomEnabled: boolean;
   bloomStrength: number;
   bloomRadius: number;
 
-  /** Real flat, reflective water plane (`WaterMesh`, the WebGPU-native
-   * port of webgl_shaders_ocean.html's `Water`) — per-project opt-in
-   * (most projects are buildings, not waterfront), auto-sized/positioned
-   * like the reference demo (see viewerPresets.ts's `WATER_PLANE_SIZE`)
-   * rather than adding placement fields the demo's own GUI doesn't have
-   * either. Sun-lit specular is driven by the same real sun this app
-   * already computes (RenderEngine.ts's applySunAndEnvironment), not a
-   * second independent light. Off by default. */
   waterEnabled: boolean;
   waterDistortionScale: number;
   waterSize: number;
-  /** Experience Editor v2, Environment → Water (PRD §13) — see
-   * Project3DConfig's own doc comment in prisma/schema.prisma for exactly
-   * which of these are wired to a real render difference (waterType/
-   * waterWavesEnabled/waterNormalMapEnabled/waterSunReflectionEnabled/
-   * waterHeight/waterColor) vs. honestly stored-only for now
-   * (waterMovementEnabled/waterEnvReflectionEnabled/waterDeepColor). */
   waterType: "sea" | "lake" | "pool" | "decorative";
   waterWavesEnabled: boolean;
   waterMovementEnabled: boolean;
@@ -650,26 +347,10 @@ export interface Project3DConfig {
   waterColor: string;
   waterDeepColor: string;
 
-  /** Procedural clouds baked into the physical sky dome's own shader
-   * (`SkyMesh.cloudCoverage`/`cloudDensity`/`cloudElevation` — not a
-   * separate mesh/system, same as webgl_shaders_ocean.html's "Clouds" GUI
-   * folder, which is really just 3 more uniforms on its `Sky` object) —
-   * the Sky/Water/Bloom/Clouds "Ocean" tab's Clouds group. A different,
-   * second cloud implementation (real 3D-texture raymarching,
-   * `webgl_volume_cloud.html` parity) used to live alongside this one on
-   * its own tab — removed entirely 2026-08-14 (out of scope for this
-   * demo's own Clouds panel). Off by default so the physical-sky rollout
-   * (replacing the old gradient texture) doesn't also silently add clouds
-   * on top for every existing project in the same pass. */
   cloudsEnabled: boolean;
   cloudCoverage: number;
   cloudDensity: number;
   cloudElevation: number;
-  /** Experience Editor v2, Environment → Clouds (PRD §11) — the real
-   * raymarched cloud layer's own extra controls; cloudCoverage/
-   * cloudDensity/cloudElevation above are shared inputs to both this
-   * system and SkyMesh's own built-in cloud uniforms (the honest Low/
-   * Mobile-tier internal fallback PRD §11 explicitly allows). */
   cloudMovementEnabled: boolean;
   cloudSunLightingEnabled: boolean;
   cloudShadowsEnabled: boolean;
@@ -683,102 +364,31 @@ export interface Project3DConfig {
   cloudWindDirectionDeg: number;
   cloudRaymarchSteps: number;
 
-  /** `webgl_watch.html` parity — maps onto the sun
-   * `DirectionalLight.shadow.radius` (PCF soft-shadow-edge blur, in shadow
-   * map texels) — 0 matches today's hard-edged default exactly. */
   shadowSoftness: number;
 
-  /** Real 3D LUT color grading (`webgl_postprocessing_3dlut.html` parity)
-   * — every option the reference demo's own GUI exposes: `enabled`, a
-   * 9-way `lut` dropdown (all 9 of the demo's own vendored presets — 5
-   * real `.CUBE` files via `LUTCubeLoader`, 1 real `.3dl` file via
-   * `LUT3dlLoader`, 3 real image-strip LUTs via `LUTImageLoader` — see
-   * viewerPresets.ts's `LUT_PRESETS` and RenderEngine.ts's `loadLut` for
-   * the loader-per-format dispatch, and `public/luts/` for the vendored
-   * assets), and `intensity`. `lutPreset` is a free string key into that
-   * list, not a DB enum. Applied last in the post-processing chain (after
-   * bloom and antialiasing), matching the reference demo's own OutputPass
-   * -> LUTPass ordering. Off by default: zero behavior change for any
-   * existing project. */
   lutEnabled: boolean;
   lutPreset: string;
   lutIntensity: number;
 
-  /** Real depth of field (`webgl_postprocessing_dof2.html` parity) — TSL
-   * `dof()` node sampling the scene's own viewZ (depth) buffer. Focus
-   * distance isn't a stored field: RenderEngine.ts recomputes it every
-   * frame from the real live camera-to-orbit-target distance, auto-
-   * focusing on whatever's currently framed rather than a manual distance
-   * that would drift out of sync as a visitor orbits. `focalLength`/
-   * `bokehScale` mirror the TSL node's own param names/defaults (1/1). Off
-   * by default: zero behavior change for any existing project. */
   depthOfFieldEnabled: boolean;
   depthOfFieldFocalLength: number;
   depthOfFieldBokehScale: number;
 
-  /** Distance Blur (aerial/far-field blur) — a depth-masked gaussian blur
-   * over everything past `distanceBlurStartM`, reaching full strength at
-   * `distanceBlurFullM`. Deliberately NOT Depth of Field: `dof()`'s
-   * circle-of-confusion is SYMMETRIC around one focus plane (it blurs the
-   * near field too), and this app auto-focuses it on the live
-   * camera-to-orbit-target distance, so pulling back softens the whole
-   * frame — building included. These are absolute metres from the camera
-   * along its look direction (the same viewZ buffer the DOF node reads),
-   * never a multiplier of the project's bounding radius, so the same
-   * numbers mean the same thing on every project. `amount` caps the blend
-   * (distant context softened, not erased); `radius` scales the kernel's
-   * tap spacing as a live uniform — the kernel width itself is baked into
-   * the shader and stays fixed, so dragging this never recompiles.
-   * Off by default: zero behavior change for any existing project. */
   distanceBlurEnabled: boolean;
   distanceBlurStartM: number;
   distanceBlurFullM: number;
   distanceBlurAmount: number;
   distanceBlurRadius: number;
 
-  /** Real logarithmic depth buffer
-   * (`webgpu_camera_logarithmicdepthbuffer.html` parity) — passed to the
-   * `WebGPURenderer` constructor, reducing z-fighting at distance. A
-   * renderer-construction-time flag, so it needs a fresh mount to take
-   * effect. Off by default: zero behavior change for any existing
-   * project. */
   logarithmicDepthEnabled: boolean;
 
-  /** Loading-screen reveal (`webgl_postprocessing_transition.html`
-   * technique, RenderEngine.ts's `revealActive`/`buildRenderPipeline`) —
-   * real per-project on/off, per explicit user request ("every feature
-   * has an option to turn it on/off"). Default `true` is a deliberate
-   * exception to this file's usual "off by default" rule for new fields
-   * — same "accepted visual default change" precedent the physical sky
-   * dome rollout already used, since this is a purely cosmetic one-time
-   * mount transition with no functional behavior to preserve. */
   loadingRevealEnabled: boolean;
 
-  /** Hex colors for the four unit statuses (+ the shared "selected"
-   * highlight) shown both in the 3D scene (GLB unit boxes and the
-   * procedural box fallback) and the public viewer's status legend/filter
-   * dot — see RenderEngine.ts's refreshGlbUnitBoxAppearance/refreshBoxAppearance
-   * and ProceduralProjectViewer.tsx's StatusLegend usage. Default values
-   * match the previously-hardcoded UNIT_BOX_COLOR/SELECTED_COLOR constants
-   * in viewerPresets.ts exactly, so existing projects render identically
-   * until an admin changes them. */
   unitColorAvailable: string;
   unitColorReserved: string;
   unitColorSold: string;
   unitColorSelected: string;
 
-  /** Units Blocks & POI Layer PRD §5, §11-12, §24 — appearance config for
-   * the X-ray unit-box overlay, consumed by `src/lib/unitStatusVisuals.ts`
-   * together with the `unitColor*` fields just above. A real, pre-
-   * existing gap this PRD's implementation found and fixed: `unitColor*`
-   * were already real, admin-editable, persisted fields (with a stale doc
-   * comment above claiming they drove "RenderEngine.ts's
-   * refreshGlbUnitBoxAppearance" — a function that no longer exists,
-   * deleted along with the rest of the pre-rebuild engine in the
-   * Experience Editor v2 rewrite) but the rebuilt RenderEngine.ts never
-   * actually read them, rendering unit boxes with hardcoded
-   * UNIT_BOX_COLOR/SELECTED_COLOR constants instead. Both are wired
-   * together now. */
   unitBlocksEnabled: boolean;
   unitBlocksStatusColorsEnabled: boolean;
   unitBlocksXrayEnabled: boolean;
@@ -786,24 +396,13 @@ export interface Project3DConfig {
   unitBlocksHoverOpacity: number;
   unitBlocksSelectedOpacity: number;
   unitBlocksSelectedOutlineEnabled: boolean;
-  /** Outline thickness in SCREEN PIXELS — see the schema comment. `1`
-   * is the old hairline look. */
   unitBlocksSelectedOutlineWidth: number;
-  /** Selection "pop" — scales the selected unit's block up about its own
-   * bounding-box center (see the schema comment). Off by default. */
   unitBlocksSelectedScaleEnabled: boolean;
   unitBlocksSelectedScale: number;
-  /** Opt-in selection FILL color — replaces the status color on the
-   * selected unit only (the outline keeps `unitColorSelected`). Off by
-   * default; see the schema comment. */
   unitBlocksSelectedFillEnabled: boolean;
   unitColorSelectedFill: string;
-  /** X-ray for the selected unit alone — see the schema comment. */
   unitBlocksSelectedXrayEnabled: boolean;
 
-  /** Units Blocks & POI Layer PRD §14-17 — one master POI-camera config
-   * per project; the only per-unit knob lives on UnitMeshLink.poiYawDeg
-   * instead. */
   unitPoiCameraEnabled: boolean;
   unitPoiCameraFov: number;
   unitPoiCameraDistanceMultiplier: number;
@@ -811,14 +410,6 @@ export interface Project3DConfig {
   unitPoiTransitionMs: number;
   unitPoiAutoOcclusionCorrection: boolean;
 
-  /** Unit-status caustics (`webgpu_caustics.html` parity, adapted — see
-   * RenderEngine.ts's `buildCausticsNode` doc comment for the real
-   * technique and honest deviations from the reference's refract()/
-   * castShadowNode approach). Procedural-mode unit boxes only. Color
-   * reuses the real `unitColor*` fields above (no separate caustics-color
-   * fields); intensity is per-availability-status; scale/speed are the
-   * real tunable caustics properties. Off by default: zero behavior
-   * change for any existing project. */
   causticsEnabled: boolean;
   causticsScale: number;
   causticsSpeed: number;
@@ -826,31 +417,11 @@ export interface Project3DConfig {
   causticsIntensityReserved: number;
   causticsIntensitySold: number;
 
-  /** Real per-project overrides for the post-processing chain — ANDed with
-   * QUALITY_TIERS' own tier-level flags in RenderEngine.ts's
-   * buildRenderPipeline, not a replacement for them.
-   *
-   * `ssrEnabled`/`gtaoEnabled` (screen-space reflections/ambient
-   * occlusion) used to live here — removed entirely (schema, API, UI,
-   * render pipeline) 2026-08-13 at the user's explicit request after
-   * being implicated in a real render-instability report; see
-   * viewerPresets.ts's QUALITY_TIERS header comment for the full history.
-   * Not just disabled — genuinely gone, no dead toggle left behind. */
   shadowsEnabled: boolean;
-  /** Real TRAA (temporal reprojection AA) + MSAA disabled at the
-   * renderer when true, matching RenderEngine.ts's own doc comment —
-   * same field, upgraded technique, default unchanged (true). */
   antialiasEnabled: boolean;
 
-  /** Manual clipping-plane sections (Sections module) — admin-authored,
-   * real Postgres-backed, same "typed array in a Json column" pattern as
-   * `cameraPresets` above. See the `Section` interface's own doc comment. */
   sections: Section[];
 
-  /** Experience Editor v2, Lighting tab (PRD §14-21) — see
-   * Project3DConfig's own doc comment in prisma/schema.prisma for the
-   * full architecture (real CSMShadowNode/SSGINode/GTAONode/GodraysNode/
-   * IESSpotLight, all real vendored three.js classes). */
   sunLightEnabled: boolean;
   sunTemperatureK: number;
   csmEnabled: boolean;
@@ -891,11 +462,6 @@ export interface Project3DConfig {
   volumetricMaxDensity: number;
   volumetricDistanceAtten: number;
 
-  /** Experience Editor v2, Rendering tab (PRD §22-33) — see
-   * Project3DConfig's own doc comment in prisma/schema.prisma for the
-   * full architecture (real vendored SSRNode/TRAANode/BloomNode/
-   * LensflareNode/DepthOfFieldNode/motionBlur()/Lut3DNode, all extending
-   * the SAME shared MRT render graph Lighting built). */
   ssrEnabled: boolean;
   ssrIntensity: number;
   ssrMaxDistance: number;
@@ -909,45 +475,28 @@ export interface Project3DConfig {
   updatedAt: string;
 }
 
-/** Lighting tab (PRD §20) — one admin-authored artificial light. Stored as
- * `Project3DConfig.artificialLights[]`. */
 export interface ArtificialLight {
   id: string;
   name: string;
   type: "point" | "spot" | "ies" | "rect";
   enabled: boolean;
   shadowsEnabled: boolean;
-  /** Real, simplified per-light volumetric cone (see RenderEngine.ts's own
-   * doc comment for why this isn't a second raymarch system). */
   volumetricEnabled: boolean;
   helperEnabled: boolean;
   position: { x: number; y: number; z: number };
-  /** Spot/IES/Rect only — ignored for point lights. */
   target: { x: number; y: number; z: number };
   colorHex: string;
-  /** Null = use colorHex directly; a number recomputes colorHex via
-   * src/lib/colorTemperature.ts on change, same convenience-input pattern
-   * as Sun Light's own sunTemperatureK. */
   temperatureK: number | null;
   intensity: number;
   distance: number;
   decay: number;
-  /** Spot/IES only. */
   angleDeg: number;
   penumbra: number;
-  /** Rect only. */
   width: number;
   height: number;
-  /** IES only — a real uploaded `.ies` photometric profile (Vercel Blob),
-   * loaded via IESLoader. Null = a plain SpotLight cone, no profile. */
   iesProfileUrl: string | null;
 }
 
-/** Lighting tab (PRD §14-21) subset of Project3DConfig — kept here (not
- * RenderEngine.ts) so render-engine/{shadows,postProcessing,
- * artificialLights,volumetrics}.ts can import it without a circular
- * dependency back into RenderEngine.ts, same reasoning as
- * EnvironmentConfig above. */
 export type LightingConfig = Pick<
   Project3DConfig,
   | "sunLightEnabled"
@@ -997,15 +546,6 @@ export type LightingConfig = Pick<
   | "volumetricDistanceAtten"
 >;
 
-/** Rendering tab (PRD §22-33) subset of Project3DConfig — Reflections
- * (SSR), Anti-Aliasing (TRAA), Camera FX (Bloom/Lens Flare/Depth of
- * Field/Motion Blur), Color (Tone Mapping/Exposure/3D LUT). Extends the
- * SAME shared MRT render graph LightingConfig's own consumers
- * (render-engine/postProcessing.ts) already built — most of these fields
- * pre-date the v2 rebuild and are reused here, not duplicated; only the
- * ssr/lensFlare/motionBlur fields are genuinely new. Kept here (not in
- * RenderEngine.ts) for the same anti-circular-import reason
- * EnvironmentConfig/LightingConfig are. */
 export type RenderingConfig = Pick<
   Project3DConfig,
   | "ssrEnabled"
@@ -1037,13 +577,6 @@ export type RenderingConfig = Pick<
   | "lutIntensity"
 >;
 
-/** Units Blocks & POI Layer PRD — the new Units tab's own subset of
- * Project3DConfig (appearance + master POI camera). Kept here for the
- * same anti-circular-import reason as the other *Config Picks: the Unit
- * Registry/X-ray material logic lives in its own render-engine module
- * (render-engine/unitRegistry.ts), plus the shared, non-3D-only
- * `src/lib/unitStatusVisuals.ts` resolver both need this shape without
- * importing RenderEngine.ts itself. */
 export type UnitsConfig = Pick<
   Project3DConfig,
   | "unitColorAvailable"
@@ -1071,11 +604,6 @@ export type UnitsConfig = Pick<
   | "unitPoiAutoOcclusionCorrection"
 >;
 
-/** Environment tab (PRD §7-13) subset of Project3DConfig — Sun & Sky,
- * Clouds, Fog & Haze, Water, Ground. Shared by RenderEngine.ts and its
- * render-engine/clouds.ts + render-engine/fog.ts modules (kept here,
- * not in RenderEngine.ts itself, so those two don't need a circular
- * import back into it). */
 export type EnvironmentConfig = Pick<
   Project3DConfig,
   | "solarControllerEnabled"
@@ -1086,14 +614,6 @@ export type EnvironmentConfig = Pick<
   | "geoLongitude"
   | "simulationDate"
   | "northOffsetDeg"
-  // Deliberately in BOTH EnvironmentConfig and SiteConfig: it is one
-  // field read by two systems. Rotating the site restates where north is,
-  // so the sun must follow it (see the field's own doc comment for the
-  // derivation) — which makes it a real Sun & Sky input, not just a
-  // transform. Re-entering applyEnvironmentConfig on a rotation drag is
-  // correct, not waste: a new north means a new sun, which means a new
-  // sky, which means the PMREM environment genuinely is stale (and that
-  // rebuild is already debounced).
   | "siteRotationDeg"
   | "sunDiscEnabled"
   | "autoSunIntensityEnabled"
@@ -1167,18 +687,6 @@ export type EnvironmentConfig = Pick<
   | "groundFogRadius"
 >;
 
-/** "Map" tab — real-world site context as scene geometry (see
- * Project3DConfig's own `siteEnabled` doc comment for the whole design).
- *
- * A config path of its own rather than more fields on EnvironmentConfig,
- * for one concrete reason: `applyEnvironmentConfig` re-derives the sun,
- * the sky uniforms and (debounced) the PMREM environment capture on every
- * call. A transform slider has no business touching any of that, and the
- * engine's own established discipline is one apply-method per concern
- * (setCameraConfig / setQualityConfig / setEnvironmentConfig / …), each
- * re-entered by prop identity from a useMemo. `siteRotationDeg` is the
- * single deliberate exception and appears in both — it really is a Sun &
- * Sky input, because it restates where north is. */
 export type SiteConfig = Pick<
   Project3DConfig,
   | "siteEnabled"
@@ -1193,74 +701,32 @@ export type SiteConfig = Pick<
   | "siteScale"
 >;
 
-/** What the engine actually needs to build a site: the admin's settings
- * plus the project's own coordinates.
- *
- * The coordinates are carried alongside rather than stored as site fields
- * on purpose. `Project.lat/lng` is canonical and src/lib/projectLocation.ts
- * exists specifically to stop map features from authoring their own
- * private copy — that three-way drift (project vs MapModelVersion vs
- * Project3DConfig.mapView*) is the bug that module was written to kill.
- * A site with its own lat/lng would recreate it immediately. Null
- * coordinates simply mean "no site" — the same state as the toggle off. */
 export interface SiteRuntimeConfig extends SiteConfig {
   latitude: number | null;
   longitude: number | null;
 }
 
-// `PlatformHdri` (a shared, platform-wide HDRI environment map) removed
-// entirely 2026-08-14 along with `Project3DConfig.hdriId` — see
-// prisma/schema.prisma's own removal note.
-
 export interface ViewerUIToggles {
   home: boolean;
   unitSearch: boolean;
-  /** Interaction toggles (added alongside the full-configurator pass) —
-   * optional since `viewerUI` is a nullable Json? column and every
-   * pre-existing row predates these keys; every read site defaults a
-   * missing key to `true` (today's hardcoded always-on behavior), same
-   * pattern this codebase already established for new Json? keys (see
-   * "rozaris-3d-editor-render-hardening" memory). */
   hoverEnabled?: boolean;
   selectEnabled?: boolean;
   showUnitInfo?: boolean;
-  /** Public "Sections" bottom-menu button (Sections module, first-class
-   * pass) — same optional/defaults-true pattern as the three toggles
-   * above. Hidden regardless once `Project3DConfig.sections` is empty,
-   * same as the Camera Presets menu button already does. */
   sectionsEnabled?: boolean;
-  /** Public "Sun Orientation" bottom-menu button — 5 fixed-preset sun
-   * elevation/azimuth override (`SUN_POSITION_PRESETS`, viewerPresets.ts),
-   * re-added 2026-08-14 after the old continuous Time of Day scrubber was
-   * removed the same day. Same optional/defaults-true pattern as the
-   * toggles above. Purely a client-side visitor preference — never
-   * written back to `sunAzimuthDeg`/`sunElevationDeg` above. */
   sunPresetEnabled?: boolean;
 
-  // --- Experience Editor v2, Interaction tab (PRD §39) additions ---
-  // Same optional/defaults-true pattern as every field above. Real,
-  // persisted admin configuration; several gate public-viewer systems
-  // (3D click-to-select/hover/highlight/isolation, Filters UI) that don't
-  // exist yet in the ground-up-rebuilt public viewer — the Interaction
-  // tab UI says so honestly per-toggle rather than pretending otherwise.
-  /** Units subtab master switch. */
   unitInteractionEnabled?: boolean;
   highlightEnabled?: boolean;
   statusColorsEnabled?: boolean;
   isolationEnabled?: boolean;
   floorIsolationEnabled?: boolean;
   unitPageLinkEnabled?: boolean;
-  /** Filters subtab master switch. */
   filtersEnabled?: boolean;
   filterFloorEnabled?: boolean;
   filterAvailabilityEnabled?: boolean;
   filterBedroomsEnabled?: boolean;
   filterTypeEnabled?: boolean;
   filterPriceEnabled?: boolean;
-  /** Viewer Controls subtab — resetEnabled/fullscreenEnabled/
-   * screenshotEnabled are real and wired into ProjectViewerRuntime.tsx's header
-   * buttons now; shotsMenuEnabled/shareEnabled aren't (no public Shots
-   * menu or share affordance built yet). */
   resetEnabled?: boolean;
   fullscreenEnabled?: boolean;
   shotsMenuEnabled?: boolean;
@@ -1274,155 +740,52 @@ export interface CameraPreset {
   position: { x: number; y: number; z: number };
   target: { x: number; y: number; z: number };
   fov: number;
-  /** Transition duration when this preset is clicked, ms. */
   durationMs: number;
 }
 
-/** One manual clipping-section — a rectangular, rotatable, finite cut
- * volume through the detail GLB (Sections module, first-class pass).
- * Authored in the admin editor by drawing/dragging directly in the
- * viewport (`RenderEngine.ts`'s section methods, `TransformControls`-
- * driven); persisted as one entry in `Project3DConfig.sections`, the same
- * "typed array in a nullable Json column, flows through the existing
- * draft/update/undo/autosave pipeline for free" pattern `cameraPresets`
- * already established. Never stored inside the GLB itself — the geometry
- * is untouched, only the render-time clipping planes/cap change.
- *
- * `scope`/`buildingName` are a label, not an enforcement mechanism: the
- * clipping volume is already spatially finite (5-6 planes, AND/
- * intersection semantics), so a rectangle drawn over one building only
- * ever clips that building's geometry regardless of scope — see
- * RenderEngine.ts's section-planes doc comment. True per-node building
- * tagging / a "Selected Objects" scope is deferred (no per-node building
- * tag exists on architecture GLB meshes today, only on `Unit` rows).
- *
- * `floorId` is not a foreign key to a real Floor table (none exists) —
- * it's the same `` `${buildingName}::${floor}` `` composite identity
- * `src/lib/units.ts`'s `groupUnitsByFloor` derives from real `Unit`
- * rows, which is also what `BuildingNavRail.tsx`/`UnitsPanel.tsx`'s
- * `selectedFloor` filter already keys on. */
 export interface Section {
   id: string;
   name: string;
   scope: "project" | "building";
   buildingName?: string;
-  /** World-space footprint, meters — X/Z ground-plane center, Three.js
-   * Y-up convention (matches every other spatial field in this app). */
   centerX: number;
   centerZ: number;
   widthM: number;
   depthM: number;
-  /** Degrees around the vertical (Y) axis — matches this schema's other
-   * angle fields (`cameraMinPolarDeg`, `northRotationDeg`, etc.), all
-   * degree-based, not radians. */
   rotationDeg: number;
-  /** World-space Y (meters) the horizontal cut plane sits at. */
   heightM: number;
-  /** Whether a 6th, bottom clipping plane is also applied — off by
-   * default (open-bottomed cut, matching the reference mockup). */
   bottomEnabled: boolean;
-  /** When true, the 4 side (right/left/front/back) planes are dropped —
-   * only `heightM` (and `bottomEnabled`, if also on) actually clip
-   * anything, and the cut runs the full unbounded width/depth of
-   * whatever's in the scene, not just this section's own drawn rectangle.
-   * `widthM`/`depthM`/`centerX`/`centerZ`/`rotationDeg` stay set (still
-   * used to size/place the little authoring gizmo + the "clip plane
-   * indicator" rectangle an admin edits against) but stop affecting the
-   * real clip/cap the moment this is on. Real user request ("I want only
-   * plane Y to clip") — matches webgl_clipping_stencil.html's own single-
-   * axis planes exactly, vs. this module's usual 4-6-plane box. Optional/
-   * defaults falsy for any section saved before this field existed (same
-   * "new Json? key, every old row defaults to today's behavior" pattern
-   * `hidden`/`floorId` above already use). */
   heightOnly?: boolean;
-  /** The cut's cap surface — real behavior, not just a color: whichever
-   * is currently true drives BOTH the material AND whether it renders
-   * at all (see RenderEngine.ts's `rebuildSectionCap`):
-   * - `fillGapsEnabled: false` (default) — a translucent (50% opacity)
-   *   "clip plane indicator" in the admin's own live-preview only,
-   *   purely an editing aid (matches the section rectangle it's editing
-   *   against) — 100% transparent, i.e. not rendered at all, in the
-   *   public viewer, since visitors shouldn't see an abstract reference
-   *   plane.
-   * - `fillGapsEnabled: true` — a fully opaque, admin-picked `fillColor`
-   *   fill, shown in both the editor and the public viewer, so a
-   *   customer-facing cutaway doesn't look hollow/broken. */
   fillGapsEnabled: boolean;
   fillColor: string;
-  /** Saved via the same `getCameraState()` flow `CameraPanel`'s "Save
-   * current view" already uses. Unset = activating this section clips
-   * without moving the camera. */
   cameraPreset?: { position: { x: number; y: number; z: number }; target: { x: number; y: number; z: number }; fov: number };
   floorId?: string;
-  /** Excluded from the left rail's default list view and the public
-   * viewer's Sections panel — stays in `Project3DConfig.sections`,
-   * doesn't delete it. */
   hidden?: boolean;
 }
 
-/** Admin's "3D Map Control" — an outdoor GLB placed at a project's real
- * lng/lat on the search map (mapbox-gl custom layer), separate from
- * Project3DConfig above (which governs the *indoor* Pure Three.js viewer
- * at /project/[slug]). The uploaded binary lives in Vercel Blob (a real,
- * shared, permanent URL — see src/app/api/blob/upload); this record is a
- * real Postgres row (`project_map_models`, see src/app/api/map-models) —
- * a real, shared placement any visitor's browser reads, not Zustand. */
 export interface ProjectMapModel {
   glbUrl: string;
   fileName: string;
   fileSize: number;
-  /** Multiplies the model's authored size so it reads at real-world scale
-   * once placed in mercator meters — most GLBs aren't authored in exact
-   * meters, so Admin dials this in against the preview's 5m grid. */
   scale: number;
-  /** Heading offset in degrees, on top of the model's own orientation —
-   * lets Admin align it to the street grid. */
   rotationDeg: number;
-  /** Meters above ground level. */
   altitudeOffset: number;
-  /** Hidden on the public map without discarding the upload/config. */
   enabled: boolean;
-  /** Hides the basemap's real 3D building footprint at this project's
-   * coordinates (BuildingHider) — so the GLB replaces it cleanly instead of
-   * sitting alongside/inside a generic extruded box. */
   hideBaseBuilding: boolean;
-  /** Manually picked anchor point ("Pick Building to Remove" in
-   * MapModelEditor) used instead of the project's own coordinates to
-   * resolve which real building footprint BuildingHider hides — the
-   * project pin doesn't always sit exactly on the footprint that needs to
-   * go. Unset (both null/undefined) falls back to the project's own
-   * coordinates, same as before this existed. */
   hiddenBuildingLng?: number | null;
   hiddenBuildingLat?: number | null;
   updatedAt: string;
 }
 
-/** One admin-confirmed link between a `Unit_<number>` node found inside a
- * ProjectDetailModel's GLB and a real Unit — see ProjectDetailModel below. */
 export interface UnitMeshLink {
   meshName: string;
   unitId: string;
-  /** Units Blocks & POI Layer PRD §7/§15/§29 — the per-unit POI-camera
-   * authoring fields that travel with the mapping itself (including into
-   * the versioned ExperienceDocument snapshot). Deliberately NOT
-   * `Unit.status` — see PRD §29's "do not snapshot status" rule;
-   * availability is live inventory, not 3D authoring configuration. */
   poiYawDeg?: number;
   poiEnabled?: boolean;
   poiDistanceOverride?: number | null;
   poiHeightOverride?: number | null;
 }
 
-/** One entry per glTF node in a detail-model GLB, in the source file's own
- * node-array order — computed server-side (src/lib/glbValidate.ts) at
- * upload time, not client-side, since it's derived from the same
- * dependency-free GLB parse that already produces triangle/mesh counts.
- * `rzNodeId` is a deterministic fingerprint (index + slugified name), not
- * an author-embedded persistent identity: it disambiguates true duplicate
- * names and gives Scene Explorer/overrides a clean storage key, but
- * doesn't survive a node being renamed between GLB versions any better
- * than the name itself would — same limitation UnitMeshLink already has,
- * handled the same way (carry forward by name, flag the rest for review). */
 export interface SceneManifestNode {
   rzNodeId: string;
   name: string;
@@ -1433,19 +796,8 @@ export interface SceneManifestNode {
   autoClassification: "unit_block" | "architecture";
 }
 
-/** Admin-assignable node categories (Editor UX & Scene Structure pass,
- * PRD §7). "unit_block" is deliberately excluded here — that stays
- * auto-derived from whether a node is linked via UnitMeshLink, so this
- * classification system and the unit-linking one can't disagree about the
- * same node. */
 export type NodeClassification = "architecture" | "landscape" | "interaction" | "helper";
 
-/** Non-destructive override for one GLB node — the original glTF material
- * is never modified; this just says what to render on top of it. Any
- * unset field means "use the GLB's own value for that field." Carried
- * forward by node name when a new GLB version is uploaded, same as
- * UnitMeshLink, and flagged via `carried` so admin knows to double-check
- * it still applies to the right node. */
 export interface NodeOverride {
   rzNodeId: string;
   classification?: NodeClassification;
@@ -1453,18 +805,7 @@ export interface NodeOverride {
   colorHex?: string;
   roughness?: number;
   metalness?: number;
-  /** 0-1. Unset means "use the GLB's own opacity." Applying it also flips
-   * the material's `transparent` flag on (see RenderEngine.ts's
-   * applyNodeOverrides) — a value of 1 is functionally "opaque" even
-   * though it's stored, matching the slider's own full-range default. */
   opacity?: number;
-  /** Real MeshPhysicalMaterial clearcoat/iridescence (webgl_watch.html
-   * parity) — 0-1 each, plus iridescence's own IOR (1-2.333, matching
-   * MeshPhysicalMaterial's own documented range for that field). Setting
-   * either clearcoat* or iridescence* upgrades the node's material to a
-   * real MeshPhysicalMaterial if it isn't already one (see
-   * RenderEngine.ts's applyNodeOverrides) — these properties don't exist
-   * on the plain MeshStandardMaterial GLTFLoader normally produces. */
   clearcoat?: number;
   clearcoatRoughness?: number;
   iridescence?: number;
@@ -1472,23 +813,11 @@ export interface NodeOverride {
   visible?: boolean;
   carried?: boolean;
 
-  // --- Experience Editor v2, Materials tab (PRD §6) additions below ---
-  // All still optional/additive on the same JSON column — no migration
-  // needed. "Restore Original GLB Material" is just clearing every field
-  // below (and the ones above) back to unset, not a separate stored flag.
-
-  /** Master switch — PRD's "Material Override — ON/OFF". When false, every
-   * other Materials-tab field here is ignored even if set (so toggling
-   * back on restores the prior values instead of losing them). */
   materialOverrideEnabled?: boolean;
-  /** Base Texture Map — ON/OFF (default true = keep the GLB's own diffuse
-   * map; false = colorHex replaces it outright instead of tinting it). */
   baseTextureEnabled?: boolean;
   roughnessMapEnabled?: boolean;
   metalnessMapEnabled?: boolean;
   normalMapEnabled?: boolean;
-  /** Normal Strength — only meaningful with normalMapEnabled and an
-   * existing GLB normal map (no new map upload here). */
   normalStrength?: number;
   aoMapEnabled?: boolean;
 
@@ -1497,9 +826,6 @@ export interface NodeOverride {
   emissiveColorHex?: string;
   emissiveIntensity?: number;
 
-  /** Glass — real MeshPhysicalMaterial transmission, not the separate
-   * GlassPreset/GLASS_TIERS system (that's project-wide/Rendering-tab
-   * scope; this is a per-node override). */
   transmissionEnabled?: boolean;
   transmission?: number;
   ior?: number;
@@ -1513,8 +839,6 @@ export interface NodeOverride {
   sheen?: number;
   sheenColorHex?: string;
   sheenRoughness?: number;
-  /** MeshPhysicalMaterial.dispersion — only has a visible effect together
-   * with transmission. */
   dispersion?: number;
 
   textureTransformEnabled?: boolean;
@@ -1525,27 +849,6 @@ export interface NodeOverride {
   mapRotation?: number;
 }
 
-/** Admin's "Project 3D Experience" detailed GLB — a second, separate upload
- * from ProjectMapModel above. That one is deliberately minimalistic (search
- * page performance, many projects rendered at once); this one is the real,
- * highly-detailed architectural model rendered in the project's own
- * standalone WebGPU/WebGL2 viewer (ProceduralProjectViewer.tsx — "3D
- * Experience Phase 1" replaced the older Mapbox-embedded path this comment
- * used to describe). Authored with individual `Unit_<number>` box nodes
- * baked in; `unitLinks` is Admin's confirmed mapping of those nodes to real
- * Units, `sceneManifest`/`nodeOverrides` are the full node list and any
- * classification/material overrides on top of it. When absent or
- * `enabled: false`, the project falls back to the existing procedural
- * Three.js viewer unchanged. */
-/** A named container a project's detail GLBs hang off of — e.g.
- * "Building" and "Surroundings" — so replacing one doesn't touch the
- * other (Multiple Detail-Model Slots pass). Every project has at least
- * one (auto-created "Building" for any project that had a detail model
- * before this existed — see scripts/migrate-detail-model-slots.ts).
- * `ProjectDetailModel` below is now per-slot, not per-project. */
-/** Units Blocks & POI Layer PRD §2 — what a slot's GLB actually contains,
- * resolved by this real field rather than ever string-matching on `name`
- * (an admin can rename "Building" to anything). */
 export type DetailModelSlotRole = "building" | "units" | "surroundings" | "context" | "custom";
 
 export interface DetailModelSlot {
@@ -1554,9 +857,6 @@ export interface DetailModelSlot {
   name: string;
   order: number;
   role: DetailModelSlotRole;
-  /** PRD §3 — set (normally to the project's `building`-role slot's id)
-   * so this slot's own transform is ignored in favor of live-copying the
-   * parent's, keeping Building and Units from ever drifting apart. */
   transformParentSlotId: string | null;
   createdAt: string;
 }
@@ -1566,76 +866,33 @@ export interface ProjectDetailModel {
   fileName: string;
   fileSize: number;
   scale: number;
-  /** Y-axis rotation (degrees). */
   rotationDeg: number;
-  /** Y-axis position. */
   altitudeOffset: number;
-  /** Experience Editor v2, Scene tab (PRD §5) — X/Z position and
-   * rotation, alongside the pre-existing Y-only altitudeOffset/
-   * rotationDeg above. */
   positionX: number;
   positionZ: number;
   rotationXDeg: number;
   rotationZDeg: number;
-  /** PRD §5's "Model — ON/OFF" (reused pre-existing field name — a
-   * project already fell back to the procedural viewer when this was
-   * false, before the Scene tab had a real switch for it). */
   enabled: boolean;
   visible: boolean;
   castShadow: boolean;
   receiveShadow: boolean;
-  /** Stored, no real backing system yet — see NodeOverride/DetailModel
-   * Version's own doc comments. */
   selectable: boolean;
   transformLocked: boolean;
   updatedAt: string;
   unitLinks: UnitMeshLink[];
   sceneManifest: SceneManifestNode[];
   nodeOverrides: NodeOverride[];
-  /** Published GLB's own recorded counts (Publish/runtime hardening
-   * pass's performance inspector shows these next to the live scene's
-   * actual numbers, which can differ once material presets/overrides or
-   * procedural elements are layered on top) — null if the version
-   * predates server-side validation recording them. */
   triangleCount: number | null;
   meshCount: number | null;
   materialCount: number | null;
   textureCount: number | null;
 }
 
-/**
- * The single, versioned authoring-state snapshot for one revision of a
- * project's 3D Experience — rewrite Track B, Phase 1 ("Consolidate the
- * schema into one versioned ExperienceDocument", per the master PRD's
- * non-negotiable principle P2 "One editor state"). Stored as
- * `DetailModelVersion.experienceDocument`, one snapshot per version,
- * mirroring the PRD's `LIVE r12 / DRAFT r13` revision model (a
- * `DetailModelVersion` row already *is* a revision).
- *
- * Deliberately additive for now: built from and alongside the existing
- * scattered fields (`Project3DConfig` + `DetailModelVersion`'s own
- * placement/overrides/links), not yet the thing every read path consumes
- * — see buildExperienceDocument() in src/lib/experienceDocument.ts, the
- * one function that assembles it. The engine module (Phase 1's next step)
- * is the first real consumer; every existing route/hook keeps reading the
- * scattered fields directly, unchanged, for at least one more release.
- */
 export interface ExperienceDocument {
   schemaVersion: 1;
   projectId: string;
-  /** Multiple Detail-Model Slots pass — one `DetailModelVersion` row (and
-   * so one `experienceDocument`) now describes one *slot's* revision, not
-   * necessarily "the whole project's 3D experience" (a project can have
-   * several independently-versioned slots at once). Kept as a simple
-   * per-version fragment rather than aggregating every sibling slot's
-   * current state into one document — this field isn't consumed by any
-   * live read path yet (see the class doc comment above), so there's
-   * nothing that actually needs the aggregate view today, and building it
-   * would mean every slot's save re-querying every *other* slot's latest
-   * version for no real consumer. */
   slotId: string;
   slotName: string;
-  /** = the owning DetailModelVersion's `version` number. */
   revision: number;
   model: {
     scale: number;
@@ -1648,9 +905,6 @@ export interface ExperienceDocument {
   environment: {
     environmentIntensity: number;
   };
-  /** Sky/Water/Bloom/Clouds "Ocean" tab (webgl_shaders_ocean.html parity)
-   * — see Project3DConfig's own doc comment for the fields removed
-   * alongside the old geographic-sun/HDRI system this replaced. */
   lighting: {
     sunAzimuthDeg: number;
     sunElevationDeg: number;
@@ -1664,10 +918,6 @@ export interface ExperienceDocument {
     maxDistanceMultiplier: number;
     maxPolarDeg: number;
     autoRotate: boolean;
-    /** Idle Drone Camera PRD §56 — snapshot shape, deliberately mirroring
-     * that section's JSON literally. Not consumed by any live read path
-     * yet (same "additive, no consumer yet" status the class doc comment
-     * on ExperienceDocument itself already flags). */
     idleDrone: {
       enabled: boolean;
       delaySec: number;
@@ -1692,8 +942,6 @@ export interface ExperienceDocument {
   units: {
     bindings: UnitMeshLink[];
   };
-  /** Sections module — same array `Project3DConfig.sections` already
-   * carries, folded into the published snapshot unchanged. */
   sections: Section[];
   viewer: ViewerUIToggles;
   publishing: {
@@ -1752,8 +1000,6 @@ export interface FilterState {
 export type ViewMode = "map" | "list";
 export type MobileSheet = "listings" | "filters" | "compare" | null;
 
-// --- Buyer account, saved-preference feed, and buyer<->seller messaging ---
-
 export interface BuyerPreferences {
   transaction: "buy" | "rent";
   propertyTypes: PropertyType[];
@@ -1789,11 +1035,6 @@ export interface Conversation {
   messages: Message[];
 }
 
-// --- Construction timeline edits (publisher-submitted, admin-approved) ---
-
-/** The editable part of a project's construction progress — a publisher
- * drafts one of these and it only takes effect on the live project once an
- * admin approves it. */
 export interface ConstructionTimelineDraft {
   progressPercent: number;
   stages: ConstructionStage[];
@@ -1812,9 +1053,6 @@ export interface ConstructionTimelineRequest {
   submittedAt: string;
   reviewedAt?: string;
 }
-
-// --- User dashboard: Following, Recently Viewed, Notifications ---
-// (PRD_User §7 Continue Exploring, §8 Recently Viewed, §11 Following, §13 Notifications)
 
 export type RecentlyViewedKind = "listing" | "project";
 
@@ -1845,14 +1083,10 @@ export interface NotificationItem {
   type: NotificationType;
   titleKey: string;
   bodyKey: string;
-  /** Interpolation values for titleKey/bodyKey, e.g. { name: "..." }. */
   vars?: Record<string, string>;
   href?: string;
   createdAt: string;
 }
-
-// --- Publisher dashboards: Leads (PRD_Business_Publisher §16, PRD_Private_Publisher §8,
-// pipeline stages per PRD_ROZARIS_User_Types §4 "Leads") ---
 
 export type LeadStatus = "new" | "contacted" | "qualified" | "viewing" | "negotiating" | "won" | "lost";
 export type LeadSource = "phone_click" | "whatsapp_click" | "listing_inquiry" | "digital_twin_inquiry";
@@ -1865,14 +1099,8 @@ export interface LeadItem {
   source: LeadSource;
   status: LeadStatus;
   createdAt: string;
-  /** Free-text follow-up notes an assignee has left — PRD_ROZARIS_User_Types
-   * §4 "Lead detail supports notes, assignment and follow-up." Local/mock
-   * only, held in Zustand alongside the status override. */
   notes?: string;
 }
-
-// --- Admin dashboard: Verification, Moderation, Audit, Team
-// (PRD_ROZARIS_User_Types §5) ---
 
 export type VerificationKind =
   | "business_identity"
@@ -1911,10 +1139,6 @@ export interface ModerationCase {
   evidence: string;
 }
 
-/** A session-local stand-in for the real Prisma `AuditLog` table this
- * becomes once the backend-wiring phase lands (see the Rozaris backend
- * plan memory) — every sensitive admin action in this prototype appends
- * one of these via `useAppStore(s => s.logAudit)`. */
 export interface AuditLogEntry {
   id: string;
   actor: string;

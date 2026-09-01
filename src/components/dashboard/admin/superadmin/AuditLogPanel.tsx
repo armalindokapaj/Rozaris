@@ -21,13 +21,6 @@ interface AuditRow {
   createdAt: string;
 }
 
-/**
- * Global Audit Log — real, replaces `AuditLogTab.tsx`'s old session-local
- * Zustand mock body with a paginated `GET /api/admin/audit-log` feed.
- * Every row is expandable to its Before/After diff when the entry carries
- * one (only writes made after this pass do — older rows just show the
- * action/actor/entity line, honestly, no fabricated diff).
- */
 export function AuditLogPanel() {
   const { t, locale } = useT();
   const [rows, setRows] = useState<AuditRow[]>([]);

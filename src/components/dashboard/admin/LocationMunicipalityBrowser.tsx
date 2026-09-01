@@ -11,11 +11,6 @@ function siblingsOf(all: LocationRow[], parentId: string | null): LocationRow[] 
     .sort((a, b) => a.sortOrder - b.sortOrder || a.officialName.localeCompare(b.officialName));
 }
 
-/** Depth-first walk from one Municipality down through every descendant
- * (City/Village, then their Neighbourhoods — or a Neighbourhood sitting
- * directly under the Municipality, for a Himarë/Dhërmi-shaped branch with
- * no distinct city center), each sibling group already in its real
- * `sortOrder`. */
 function buildTree(all: LocationRow[], rootId: string): { row: LocationRow; depth: number }[] {
   const root = all.find((l) => l.id === rootId);
   if (!root) return [];
@@ -30,16 +25,6 @@ function buildTree(all: LocationRow[], rootId: string): { row: LocationRow; dept
   return out;
 }
 
-/**
- * "A clear filtering and sorting system for each of the municipality,
- * editable" (user's 2026-08-21 ask) — pick one Municipality, see its real
- * City/Village -> Neighbourhood structure as an indented tree instead of
- * the flat, type-then-name-sorted "All locations" table above, and reorder
- * any sibling group with the up/down arrows (writes a fresh, sequential
- * `sortOrder` across that whole group — robust even though every row's
- * `sortOrder` started at the same default `0`, where a plain two-row swap
- * would be a no-op).
- */
 export function LocationMunicipalityBrowser({
   locations,
   onChanged,
@@ -71,10 +56,6 @@ export function LocationMunicipalityBrowser({
     setBusyId(row.id);
     setError(null);
     try {
-      // Rewrites the WHOLE sibling group as sequential 0..n sortOrders —
-      // not just swapping the two moved rows' existing values — since
-      // every row here started at the same default `sortOrder: 0`, where
-      // a plain value-swap between two zeroes would visibly do nothing.
       const results = await Promise.all(
         reordered.map((s, i) =>
           fetch(`/api/admin/locations/${s.id}`, {

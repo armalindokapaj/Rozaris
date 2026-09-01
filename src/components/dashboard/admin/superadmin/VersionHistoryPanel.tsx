@@ -28,16 +28,6 @@ interface AuditRow {
   createdAt: string;
 }
 
-/**
- * Version History — "restore previous versions of Project Data, 3D Map, 3D
- * Experience, inventory" per the Super Admin brief. For MapModelVersion/
- * DetailModelVersion the real version lineage lives in their own rows
- * (draft/publish/rollback, already real — see the 3D pipeline's own
- * editors for that UI); this panel is the generic one, driven entirely by
- * AuditLog snapshots (`GET/POST /api/admin/entities/...`), which is what
- * gives Project/Unit/Publisher/User/Listing/Project3DConfig a version
- * history at all — none of them had one before this pass.
- */
 export function VersionHistoryPanel() {
   const { t, locale } = useT();
   const [entityType, setEntityType] = useState("project");

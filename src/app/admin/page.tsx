@@ -63,30 +63,10 @@ import { PlatformSettingsTab } from "@/components/dashboard/admin/PlatformSettin
 import { LocationsTab } from "@/components/dashboard/admin/LocationsTab";
 import type { Project } from "@/lib/types";
 
-// Grouped per PRD_ROZARIS_Admin_Dashboard §4 "Information Architecture"
-// (Overview / Content / 3D Platform / People / Operations / System) —
-// 3D Platform now has all three of its named items as real, separate tabs
-// (Map Control / Experience / Health), not the single merged "3D
-// authoring" tab from the previous pass. Existing tab ids are otherwise
-// unchanged so old `?tab=` deep links still land right.
 const TABS = [
   { id: "dashboard", labelKey: "admin.tabDashboard", icon: LayoutDashboard, group: "overview" },
-  // "Projects" (content) then "Listings" directly below it — the flat,
-  // platform-wide catch-all for whatever isn't (yet) attached to a
-  // project; day-to-day listing management happens inside that project's
-  // own record instead (Project Manager -> Listings,
-  // /admin/projects/[projectId]).
-  // "Timeline" was here too until construction-timeline requests moved
-  // into that same per-project view (ProjectTimelinePanel) — no longer a
-  // separate top-level tab.
   { id: "content", labelKey: "admin.tabContent", icon: Box, group: "content" },
   { id: "listings", labelKey: "admin.tabListings", icon: ListChecks, group: "content" },
-  // Canonical Location System's admin write surface (see MEMORY note
-  // "rozaris-controlled-taxonomy-spec") — manually add/rename a
-  // neighborhood/city/etc., and fix any Listing/Project whose location
-  // doesn't resolve to a real, active one. Sits under "content" alongside
-  // Projects/Listings since it's the taxonomy backing both, not a rarely-
-  // touched platform setting.
   { id: "locations", labelKey: "admin.tabLocations", icon: MapPin, group: "content" },
   { id: "mapControl", labelKey: "admin.tabMapControl", icon: MapIcon, group: "3d" },
   { id: "experience", labelKey: "admin.tab3DExperience", icon: Boxes, group: "3d" },
@@ -100,15 +80,7 @@ const TABS = [
   { id: "advertising", labelKey: "admin.tabAdvertising", icon: Megaphone, group: "commercial" },
   { id: "marketData", labelKey: "admin.tabMarketData", icon: TrendingUp, group: "data" },
   { id: "analytics", labelKey: "admin.tabAnalytics", icon: LineChart, group: "system" },
-  // Was "Audit Log" (mock Zustand feed) — now the real Super Admin control/
-  // audit system (Audit Log is its first, default section). Kept the same
-  // tab id so any existing `?tab=auditLog` deep link still lands somewhere
-  // sensible instead of falling back to the first tab.
   { id: "auditLog", labelKey: "admin.tabSuperAdmin", icon: ShieldAlert, group: "system" },
-  // Same component as "auditLog" (SuperAdminTab), just pre-opened on its
-  // Recycle Bin section — a real top-level shortcut to it, not a
-  // duplicate feature. See RecycleBinPanel's own use below for the
-  // standalone case.
   { id: "recycleBin", labelKey: "admin.tabRecycleBin", icon: Trash2, group: "system" },
   { id: "team", labelKey: "admin.tabTeam", icon: UsersRound, group: "system" },
   { id: "settings", labelKey: "admin.tabSettings", icon: Settings, group: "system" },
@@ -116,15 +88,6 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-// "overview" isn't a real nav group anymore — "dashboard" (its one and
-// only member) moved to the logo/wordmark click instead of its own nav
-// row (see the sidebar header above), so a group header with nothing
-// under it would just be dead space.
-// "commercial" is real but deliberately thin — only "Advertising" lives
-// here today. The fuller Plans/Subscriptions/Premium Placement/Leads/
-// Billing group from the target admin IA isn't built yet; this group name
-// is the honest home to grow it into later rather than a placeholder full
-// of empty tabs (see the "Rozaris Platform Audit" memory).
 const GROUP_ORDER = ["content", "3d", "people", "operations", "commercial", "data", "system"] as const;
 const GROUP_LABEL_KEY: Record<(typeof GROUP_ORDER)[number], string> = {
   content: "admin.navGroupContent",
@@ -142,51 +105,23 @@ interface Me {
   superAdmin: boolean;
 }
 
-/**
- * Real page component — wrapped in Suspense below because it reads the
- * initial tab from `?tab=`, and `useSearchParams()` requires that per
- * Next.js. That query param exists so the full-page 3D editors
- * (`/admin/3d-experience/[id]`, `/admin/3d-map-control/[id]`) can link
- * `?tab=experience`/`?tab=mapControl` on their "Back" action and land
- * Admin on the same tab they came from, instead of always resetting to the
- * first tab — every tab switch (via `goTo`) now also mirrors into `?tab=`
- * (`router.replace`, no history spam), so a hard refresh stays on
- * whichever tab you were looking at instead of resetting to "dashboard".
- */
 function AdminPageInner() {
   const auth = useAppStore((s) => s.auth);
   const openSignIn = useAppStore((s) => s.openSignIn);
   const signOutMock = useAppStore((s) => s.signOut);
   const router = useRouter();
   const searchParams = useSearchParams();
-  // AC-01/§3.1: the Dashboard is the default Admin landing page — falls
-  // back to it whenever `?tab=` is absent or unrecognized.
   const [tab, setTab] = useState<TabId>(() => {
     const fromUrl = searchParams.get("tab");
     return (TABS.some((tb) => tb.id === fromUrl) ? fromUrl : "dashboard") as TabId;
   });
-  // Which Super Admin section (`?tab=auditLog` sub-nav) to open next time
-  // `tab` becomes "auditLog" — the Dashboard's Recently Deleted/Audit Log
-  // cards set this before switching tabs so SuperAdminTab remounts
-  // straight into e.g. Recycle Bin instead of always its own default.
   const [superAdminSection, setSuperAdminSection] = useState<SectionId | undefined>(undefined);
-  // A Global Search result for a Publisher/User has nowhere to deep-link
-  // *to* (no per-record admin page exists) — the honest destination is
-  // "that directory, pre-filtered to this name". This carries the name
-  // across the tab switch; always reset (not just set) on every `goTo` so
-  // a later, unrelated nav click can't leave a stale query sitting in a
-  // tab it wasn't meant for.
   const [pendingQuery, setPendingQuery] = useState<string | undefined>(undefined);
   function goTo(tabId: string, section?: string, query?: string) {
     if (section) setSuperAdminSection(section as SectionId);
     setPendingQuery(query);
     if (TABS.some((tb) => tb.id === tabId)) {
       setTab(tabId as TabId);
-      // Mirror the tab into `?tab=` so a hard refresh (or a bookmark/share)
-      // lands back on this same tab instead of always resetting to
-      // "dashboard" — `replace` (not `push`) so tab-switching doesn't
-      // spam browser history. Was previously read-only: `?tab=` set the
-      // *initial* tab above but clicking around never wrote it back.
       router.replace(`/admin?tab=${tabId}`, { scroll: false });
     }
   }
@@ -198,33 +133,11 @@ function AdminPageInner() {
   const [me, setMe] = useState<Me | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  // Real Auth.js session repair, separate from the Zustand `auth` mock flag
-  // above — see useAdminSessionRepair's doc comment. This was the root
-  // cause behind "can't upload/delete a 3D model" reports; the two
-  // full-page 3D editors use the same hook.
   const { sessionStatus, authError, reauthing, establishAdminSession } = useAdminSessionRepair();
 
-  // SECURITY: this used to be `boolean | null` and the console below
-  // rendered the instant Zustand's mock `auth.signedIn` flag was true —
-  // front-end-only, and easily true for a signed-in buyer/publisher with
-  // no admin role at all. `/api/admin/me` is itself gated by the real
-  // `requireAdmin()` (src/lib/adminAuth.ts), so a successful response is
-  // the actual authority here; everything below now waits for it instead
-  // of trusting the mock. See useAdminSessionRepair's doc comment for the
-  // matching fix to how a stale session gets reconnected.
-  // "idle" doubles as "still checking" while `auth.signedIn` is true and
-  // the fetch below hasn't resolved yet — no synchronous setState at the
-  // top of the effect (the linter's react-hooks/set-state-in-effect
-  // correctly flags that as a footgun), only ever inside the promise
-  // callbacks, same pattern as the pre-existing `setMe` fetch this
-  // replaces.
   const [meStatus, setMeStatus] = useState<"idle" | "ok" | "unauthorized">("idle");
 
   useEffect(() => {
-    // No reset-to-"idle" branch here: the render gate below independently
-    // re-checks `auth.signedIn` on every render, so a stale "ok" from a
-    // previous sign-in can never leak the console after a sign-out — it
-    // just gets recomputed the moment `auth.signedIn` flips back to true.
     if (!auth.signedIn) return;
     fetch("/api/admin/me")
       .then(async (r) => {
@@ -242,12 +155,6 @@ function AdminPageInner() {
       });
   }, [auth.signedIn]);
 
-  // Sidebar badge count for the Approval Center — the real inbox
-  // (`ApprovalCenterTab`) fetches its own full list when the tab is open;
-  // this is just the count so the nav row shows how many are waiting
-  // without mounting that whole tab. Tied to `meStatus === "ok"` (confirmed
-  // real admin), not the Zustand mock — the route is `requireAdmin()`-
-  // gated server-side anyway, but there's no reason to fire it early.
   useEffect(() => {
     if (meStatus !== "ok") return;
     fetch("/api/admin/approval-center")
@@ -256,9 +163,6 @@ function AdminPageInner() {
       .catch(() => {});
   }, [meStatus, tab]);
 
-  // Admin console — real role check, not front-end visibility. A
-  // signed-in buyer/publisher (auth.signedIn true, meStatus "unauthorized")
-  // gets turned away here rather than seeing the console shell at all.
   if (!auth.signedIn || meStatus === "idle") {
     return (
       <div className="mx-auto flex h-full min-h-0 max-w-md flex-col items-center justify-center gap-4 px-4 text-center">
@@ -288,7 +192,6 @@ function AdminPageInner() {
     );
   }
 
-
   async function signOutAdmin() {
     setProfileOpen(false);
     signOutMock();
@@ -304,13 +207,6 @@ function AdminPageInner() {
     .toUpperCase();
 
   return (
-    // Full-bleed SaaS app shell — a dark, fixed-height sidebar (the
-    // console's own chrome — see admin/layout.tsx's doc comment for why
-    // the public marketing header is gone) + a persistent utility bar +
-    // an independently-scrolling content pane, with a slim footer status
-    // bar spanning the full width beneath both. Mobile stays simple
-    // stacked page flow with the nav collapsed to a horizontally-scrolling
-    // strip.
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex flex-1 flex-col min-h-0 lg:flex-row lg:overflow-hidden">
         {sessionStatus === "unauthenticated" && (
@@ -353,11 +249,8 @@ function AdminPageInner() {
                 >
                   {t(GROUP_LABEL_KEY[group])}
                 </p>
-                {/* "dashboard" stays a real, routable tab (clicking the
-                    logo/wordmark above goes there) — just no longer listed
-                    as its own nav row. Its `group: "overview"` no longer
-                    appears in GROUP_ORDER at all, so it's already excluded
-                    here with no extra check needed. */}
+                {                                                       
+                                                       }
                 {TABS.filter((tb) => tb.group === group).map(({ id, labelKey, icon: Icon }) => {
                   const active = tab === id;
                   return (
@@ -384,10 +277,8 @@ function AdminPageInner() {
                           {queueCount}
                         </span>
                       )}
-                      {/* Timeline requests moved inside each project's own
-                          edit view (ProjectTimelinePanel) — this badge
-                          rides along on "Projects" (content) instead of a
-                          dedicated tab of its own now. */}
+                      {                                                    
+                                                          }
                       {id === "content" && pendingTimelineCount > 0 && (
                         <span className="ml-auto rounded-full bg-danger px-1.5 text-[10px] font-bold text-white">
                           {pendingTimelineCount}
@@ -484,11 +375,6 @@ function AdminPageInner() {
   );
 }
 
-/** Slim footer status bar spanning the full console width (below the
- * sidebar + content row) — PRD_ROZARIS_Admin_Dashboard's own reference
- * mockup shows one. "All systems operational" is derived from the same
- * real System Health signal the Dashboard's own System Status card and
- * the Super Admin System Health panel already read — not a static label. */
 function AdminFooterBar() {
   const { t } = useT();
   const [healthy, setHealthy] = useState<boolean | null>(null);
@@ -527,14 +413,6 @@ export default function AdminPage() {
   );
 }
 
-/**
- * Admin's 3D Platform project grid — shared by the "3D Map Control" and "3D
- * Experience" tabs (PRD_ROZARIS_Admin_Dashboard §4 wants these as two
- * separate nav items again, not the single merged tab a previous pass
- * combined them into). `focus` decides which of the two 3D authoring
- * surfaces gets the primary action button; both statuses are still shown
- * on every card so context isn't lost switching between the two tabs.
- */
 interface VersionSummary {
   fileName: string;
   publicationStatus: "draft" | "published" | "archived";
@@ -587,33 +465,11 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
   const { projects: liveProjects, loaded: liveProjectsLoaded } = useAdminProjects();
   const [editingUnits, setEditingUnits] = useState<Project | null>(null);
   const [creating, setCreating] = useState(false);
-  // Real Postgres rows per project (src/app/api/map-models/[id]/versions,
-  // src/app/api/detail-models/[id]/versions) — the latest version's
-  // publish/validation status for each of Admin's two 3D authoring
-  // surfaces, not Zustand. A project created right here (via "New project"
-  // below) gets a matching Postgres row too (NewProjectModal.tsx posts to
-  // /api/projects immediately after), so its model can attach right away,
-  // same as a seeded mockData.ts project.
   const [mapModels, setMapModels] = useState<Record<string, VersionSummary>>({});
   const [detailModels, setDetailModels] = useState<Record<string, VersionSummary>>({});
-  // Live visibility state (Active / Hidden-archived / in the Recycle Bin) —
-  // real `Project.approvalStatus`/`deletedAt`, fetched the same per-project
-  // way as mapModels/detailModels above (mockData.ts + Zustand carry
-  // neither field, see the new GET on publication/route.ts). `statusReload`
-  // is bumped by the visibility menu after a mutation to refetch without a
-  // full page reload.
   const [projectStatus, setProjectStatus] = useState<Record<string, ProjectStatus>>({});
   const [statusReload, setStatusReload] = useState(0);
 
-  // Dedupe by id (a `customProjects` entry whose real Postgres row has
-  // since landed would otherwise render twice), and self-heal any
-  // `customProjects` ghost left over from before project creation became a
-  // real, awaited round trip (see NewProjectModal.tsx / useAdminProject.ts)
-  // — once `liveProjects` has actually loaded, a `customProjects` entry
-  // that still isn't in it is either a stale phantom (a create that
-  // silently failed server-side) or a project deleted since, not a
-  // legitimate in-flight one, so it's dropped from local storage rather
-  // than kept resolvable forever.
   const liveProjectIds = new Set(liveProjects.map((p) => p.id));
   useEffect(() => {
     if (!liveProjectsLoaded) return;
@@ -688,10 +544,8 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
           <p className="text-sm text-neutral-500">{subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* MVP test pipe (Create → Upload → Configure → Preview), separate
-              from the modal below — see "rozaris-mvp-admin-project-pipe"
-              memory. Doesn't replace the modal; both routes to a new
-              project coexist for now. */}
+          {                                                                  
+                                         }
           <button
             onClick={() => router.push("/admin/projects/new")}
             className="flex items-center gap-1.5 rounded-control border border-neutral-200 px-3.5 py-2.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-100"
@@ -764,10 +618,8 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
                       {t("admin.configure3DMapControl")}
                     </button>
                   )}
-                  {/* Same size/shape as the Configure button above (was a
-                      small text-only link) — user-requested, see the
-                      "rozaris-mvp-admin-project-pipe" memory's visibility-
-                      controls note. */}
+                  {                                                       
+                                       }
                   <button
                     onClick={() => setEditingUnits(p)}
                     className="flex items-center justify-center gap-1.5 rounded-control border border-neutral-300 bg-white py-2.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
@@ -775,8 +627,8 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
                     <Boxes className="h-3.5 w-3.5" />
                     {t("admin.manageUnits")}
                   </button>
-                  {/* Multi-Channel Publishing PRD Phase 7 — same card, same
-                      button shape as the two above. */}
+                  {                                                         
+                                                       }
                   <button
                     onClick={() => router.push(`/admin/distribution/${p.id}`)}
                     className="flex items-center justify-center gap-1.5 rounded-control border border-neutral-300 bg-white py-2.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
@@ -808,10 +660,6 @@ function Project3DGrid({ focus }: { focus: "map" | "experience" }) {
   );
 }
 
-/** Small colored pill next to a project's name reflecting its real
- * `approvalStatus`/`deletedAt` (Project3DGrid fetches this live — mockData
- * + Zustand carry neither). `undefined` (still loading) renders nothing
- * rather than a misleading default. */
 function ProjectStatusBadge({ status, t }: { status: ProjectStatus | undefined; t: ReturnType<typeof useT>["t"] }) {
   if (!status) return null;
   if (status.deletedAt) {
@@ -842,24 +690,6 @@ function ProjectStatusBadge({ status, t }: { status: ProjectStatus | undefined; 
   );
 }
 
-/**
- * Per-card visibility/lifecycle menu — user-requested addition alongside
- * the Units & Model button restyle. Backs onto two already-real routes,
- * nothing new added to the schema:
- *  - `PATCH /api/admin/projects/[id]/publication` (`approvalStatus`
- *    active ⇄ archived — pre-existing "force unpublish/republish", just
- *    never had a UI on this page before).
- *  - `POST /api/admin/recycle-bin/soft-delete` (real Recycle Bin, already
- *    used by Super Admin — sets `deletedAt`, recoverable, not a hard
- *    delete).
- * The schema only has ONE "hidden but not deleted" state (`archived`) —
- * "Hide (client stopped paying)" and "Store / archive" both transition to
- * it; they're kept as two separate menu items (matching what was asked
- * for) but only differ in the default reason text prefilled into the
- * prompt, which is real and lands in the audit log either way. If a
- * genuinely distinct third state is wanted later, that needs a schema
- * change — flagged here rather than faked.
- */
 function ProjectVisibilityMenu({
   project,
   status,
@@ -941,13 +771,6 @@ function ProjectVisibilityMenu({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entityType: "project", entityId: project.id, reason: reason?.trim() || undefined }),
       });
-      // A 404 here means this card was never (or is no longer) a real
-      // Postgres row — a local-only "ghost" from before project creation
-      // became a real awaited round trip (see NewProjectModal.tsx),
-      // or one already removed some other way. "Delete" on a ghost has
-      // nothing server-side to do, so treat it as success and just clear
-      // the local copy — matching the "delete everything I create" ask
-      // rather than leaving an undeletable phantom card stuck in the grid.
       if (res.status === 404) {
         removeProject(project.id);
         onChanged();
@@ -1027,18 +850,8 @@ function ProjectVisibilityMenu({
   );
 }
 
-/** One row of `GET /api/admin/projects` — the public `Project` shape plus
- * the two admin-only columns that route now adds (see its doc comment). */
 type AdminProjectRow = Project & { approvalStatus: "pending" | "active" | "archived"; createdAt: string };
 
-/**
- * Admin → "Projects": the index into the Project Manager
- * (`/admin/projects/[projectId]`), which is where a project is actually
- * managed now. Was a two-line card grid whose only action opened
- * `EditProjectModal`; it's a real, searchable, sortable register with the
- * numbers a portfolio is judged on (inventory, availability, entry price,
- * publication state) visible without opening anything.
- */
 function ContentTab() {
   const { t } = useT();
   const router = useRouter();

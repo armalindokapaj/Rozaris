@@ -1,16 +1,3 @@
-/**
- * One-off data migration: copies every existing legacy
- * ProjectMapModel/ProjectDetailModel/UnitMeshLink row (single mutable row
- * per project) into the new versioned tables
- * (MapModelVersion/DetailModelVersion/UnitMeshLinkV2) as "version 1",
- * preserving every field. Idempotent — safe to re-run: skips a project if
- * a version 1 row already exists for it.
- *
- * Run with: npx tsx scripts/migrate-3d-versions.ts
- *
- * Legacy tables are left untouched (not deleted) — see the "LEGACY" doc
- * comment above ProjectMapModel in prisma/schema.prisma for why.
- */
 import { PrismaClient } from "../src/generated/prisma";
 
 const prisma = new PrismaClient();
@@ -41,11 +28,8 @@ async function main() {
         publicAssetUrl: row.glbUrl,
         fileName: row.fileName,
         fileSize: row.fileSize,
-        latitude: 0, // legacy row had no lat/lng of its own — placement was
-        longitude: 0, // always relative to the project's own coords; the new
-        // versioned model stores an explicit anchor, defaulted here to 0,0
-        // since nothing reads it until an admin re-saves placement — flagged
-        // via validationIssues below rather than silently guessing.
+        latitude: 0,
+        longitude: 0,
         altitude: 0,
         heading: row.rotationDeg,
         scale: row.scale,
@@ -68,12 +52,6 @@ async function main() {
   let detailSkipped = 0;
   let linksMigrated = 0;
   for (const row of legacyDetailModels) {
-    // Multiple Detail-Model Slots pass — DetailModelVersion.slotId is a
-    // required FK now (unique key is [slotId, version], not
-    // [projectId, version] anymore), so this legacy-migration path needs
-    // a real slot to attach to too. Find-or-create the project's default
-    // "Building" slot, same as scripts/migrate-detail-model-slots.ts does
-    // for already-versioned rows.
     let slot = await prisma.detailModelSlot.findFirst({ where: { projectId: row.projectId } });
     if (!slot) slot = await prisma.detailModelSlot.create({ data: { projectId: row.projectId, name: "Building", order: 0 } });
 

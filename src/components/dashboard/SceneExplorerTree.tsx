@@ -15,18 +15,6 @@ const CLASSIFICATION_DOT: Record<EffectiveClassification, string> = {
   unit_block: "bg-brand-500",
 };
 
-/**
- * Every GLB node from a version's `sceneManifest`, rendered as an indented
- * expand/collapse tree — Editor UX & Scene Structure pass (PRD §8). No
- * comparable component exists anywhere else in this app (confirmed by
- * search before building this), so this owns its own small, self-contained
- * interaction convention rather than adapting an unrelated one: a chevron
- * toggles children, clicking a row's name selects it (driving the
- * classification/material inspector rendered by the caller), a small dot
- * before the name shows its current classification at a glance, and a
- * second dot after the name marks "has a saved override" so Admin can spot
- * customized nodes while collapsed.
- */
 export function SceneExplorerTree({
   manifest,
   selectedRzNodeId,
@@ -40,9 +28,6 @@ export function SceneExplorerTree({
   classificationOf: (node: SceneManifestNode) => EffectiveClassification;
   overriddenSet: Set<string>;
 }) {
-  // Collapsed by default past the first level — most GLBs have a handful
-  // of top-level groups (Architecture/Landscape/Units/...) and a lot of
-  // depth underneath; starting fully expanded would just be a wall of rows.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const childrenOf = useMemo(() => {

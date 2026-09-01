@@ -7,20 +7,6 @@ import { useEffectiveReducedMotion } from "@/hooks/useEffectiveReducedMotion";
 import { cn } from "@/lib/utils";
 import { MODULE_ICONS, type ActiveModule } from "./types";
 
-/**
- * Front Page PRD §8 — "The corresponding UI module may then appear above
- * the bottom bar." Explore never opens this (it's the default/fallback
- * camera mode, not a real overlay — see ViewerNavigation's doc comment).
- * Now only ever shows for mobile's own Units fallback (see layoutState.ts)
- * — "sunTime" and "views" are both excluded below, each with a real panel
- * of its own (SunTimeWorkspace, ViewsWorkspace) rendered alongside this
- * one instead.
- *
- * Stays permanently mounted and toggles via GSAP `autoAlpha`/`y` (PRD
- * §21 "Module Opening/Closing" is explicitly a GSAP item) rather than
- * conditional rendering — avoids having to delay React unmount until an
- * exit tween finishes.
- */
 export function ViewerModuleLayer({
   activeModule,
   onClose,

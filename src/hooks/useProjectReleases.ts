@@ -19,13 +19,6 @@ export interface ReleaseReadiness {
   warnings: string[];
 }
 
-/**
- * Multi-Channel Publishing PRD Phase 7 — release readiness + history +
- * "Create Release" for one project, backing `/admin/distribution`. See
- * `src/lib/publishing/{validateRelease,compileRelease}.ts` for what these
- * two endpoints actually do server-side; this hook is a thin client shell
- * around them, same shape as `usePublishTargets.ts`.
- */
 export function useProjectReleases(projectId: string) {
   const [releases, setReleases] = useState<ViewerReleaseSummary[] | null>(null);
   const [readiness, setReadiness] = useState<ReleaseReadiness | null>(null);
@@ -61,9 +54,6 @@ export function useProjectReleases(projectId: string) {
       return false;
     } finally {
       setCreating(false);
-      // Blocking/warnings can shift after a release is created (e.g. it
-      // doesn't, but re-checking is cheap and keeps the checklist honest
-      // rather than trusting a snapshot from before the write).
       fetch(`/api/admin/projects/${projectId}/releases/readiness`)
         .then((r) => (r.ok ? r.json() : null))
         .then((data: ReleaseReadiness | null) => setReadiness(data))

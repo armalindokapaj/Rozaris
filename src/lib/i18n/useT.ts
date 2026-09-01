@@ -17,7 +17,6 @@ function lookup(dict: unknown, path: string): unknown {
   }, dict);
 }
 
-/** Translate a dot-path key (e.g. "nav.buy") for the current locale, with optional {var} interpolation. */
 export function useT() {
   const locale = useAppStore((s) => s.locale);
 

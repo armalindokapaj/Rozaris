@@ -43,8 +43,6 @@ import { Project3DSection } from "@/components/dashboard/admin/project/Project3D
 import { ProjectPublishingSection } from "@/components/dashboard/admin/project/ProjectPublishingSection";
 import { ProjectActivitySection } from "@/components/dashboard/admin/project/ProjectActivitySection";
 
-/** Left-rail entries, grouped the way the record reads: what it IS, what
- * it SELLS, who it REACHES. */
 const SECTIONS: { id: ProjectSectionId; labelKey: string; icon: LucideIcon; group: "record" | "inventory" | "reach" }[] = [
   { id: "overview", labelKey: "projectManager.navOverview", icon: Gauge, group: "record" },
   { id: "general", labelKey: "projectManager.navGeneral", icon: FileText, group: "record" },
@@ -68,31 +66,8 @@ const GROUPS: { id: "record" | "inventory" | "reach"; labelKey: string }[] = [
   { id: "reach", labelKey: "projectManager.groupReach" },
 ];
 
-/** Which sections edit the shared project draft (and therefore need the
- * save bar). Everything else writes through its own API on its own. */
 const DRAFT_SECTIONS: ProjectSectionId[] = ["general", "location", "mapControl", "media", "features"];
 
-/**
- * The Project Manager — Admin's full-page, ERP-style record view for one
- * project, replacing `EditProjectModal`. That modal put every field in a
- * single scrolling popup: no room for the unit inventory (a separate
- * editor entirely), no listings/team/activity, no way to link a Google
- * Sheet, and nothing addressable — you could not send someone a link to a
- * project's record, because it wasn't a page.
- *
- * This is a real route (`/admin/projects/[projectId]?section=…`, gated
- * server-side by `/admin/projects/layout.tsx`), with a left rail, a
- * persistent header carrying the record's identity + status, and a save
- * bar that appears only when the shared draft is actually dirty.
- *
- * One draft, one Save, for the four sections that edit `Project` columns —
- * they all commit through the same `POST /api/projects` upsert, so
- * splitting them into four independent saves would mean four round trips
- * writing the same row, with a partial-failure state nobody wants to
- * reason about. The other nine sections own their own writes because they
- * touch entirely different tables (units, connectors, memberships,
- * listings, approval state).
- */
 function ProjectManagerInner() {
   const params = useParams<{ projectId: string }>();
   const router = useRouter();
@@ -112,12 +87,6 @@ function ProjectManagerInner() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
-  // Seed (and re-seed) the draft from whatever the server last confirmed —
-  // a refetch only happens after a save or an out-of-band change, and in
-  // both cases the server's copy is what should win. Adjusted DURING
-  // render against the previous server value (React's own "adjusting
-  // state when a prop changes" pattern) rather than in an effect, which
-  // would render once with the stale draft before correcting it.
   const serverDraft = useMemo(() => (record ? draftFromProject(record.project) : null), [record]);
   const [seededFrom, setSeededFrom] = useState<ProjectDraft | null>(null);
   if (serverDraft && serverDraft !== seededFrom) {
@@ -131,8 +100,6 @@ function ProjectManagerInner() {
   );
   const isDirty = dirtyFields.length > 0;
 
-  // Leaving with unsaved edits is the one way this page can lose work —
-  // the browser's own guard is the only one that also covers a tab close.
   useEffect(() => {
     if (!isDirty) return;
     const handler = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -143,9 +110,6 @@ function ProjectManagerInner() {
   const goToSection = useCallback(
     (next: ProjectSectionId) => {
       setSection(next);
-      // Mirror into the URL so a refresh (or a link sent to a colleague)
-      // lands on the same section — `replace`, not `push`, so the rail
-      // doesn't fill the back button with thirteen entries.
       router.replace(`/admin/projects/${params.projectId}?section=${next}`, { scroll: false });
     },
     [params.projectId, router]
@@ -269,9 +233,8 @@ function ProjectManagerInner() {
                   >
                     <Icon className="h-4 w-4 shrink-0" />
                     <span className="whitespace-nowrap">{t(labelKey)}</span>
-                    {/* A dot on any record section holding unsaved edits —
-                        the save bar says "you have changes", this says
-                        WHERE they are. */}
+                    {                                                      
+                                          }
                     {isDirty && DRAFT_SECTIONS.includes(id) && dirtyFieldsInSection(dirtyFields, id) && (
                       <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
                     )}
@@ -322,9 +285,8 @@ function ProjectManagerInner() {
                 <Btn onClick={() => serverDraft && setDraft(serverDraft)} disabled={saving}>
                   {t("projectManager.discardChanges")}
                 </Btn>
-                {/* The upsert route requires both — an empty slug would
-                    400 with a raw zod payload rather than anything an
-                    admin can act on. */}
+                {                                                       
+                                        }
                 <Btn
                   variant="primary"
                   onClick={() => void save()}
@@ -343,15 +305,10 @@ function ProjectManagerInner() {
   );
 }
 
-/** Whether any dirty field belongs to a given record section — drives the
- * rail's unsaved dot. */
 function dirtyFieldsInSection(dirty: (keyof ProjectDraft)[], section: ProjectSectionId): boolean {
   const map: Record<string, (keyof ProjectDraft)[]> = {
     general: ["name", "slug", "publisherId", "propertyType", "setting", "status", "progressPercent", "premium", "completionLabel", "descriptionEn", "descriptionSq"],
     location: ["neighborhoodId", "city", "lat", "lng"],
-    // The map-control pin IS the project's coordinates — same two fields
-    // as Location above, so both rail entries light up together, which is
-    // exactly right: they are two views of one value.
     mapControl: ["lat", "lng"],
     media: ["heroImage", "gallery"],
     features: ["buildings", "amenities"],

@@ -5,10 +5,6 @@ import { prisma } from "@/lib/db";
 
 const MAX_NOTIFICATIONS = 50;
 
-/** Account & Profile System PRD v1.0 §5.3/§13 "Notifications — Alert
- * center" — real `Notification` rows, replacing the buyer dashboard's
- * previous `mockActivity.ts` feed. Producers that create these rows live
- * in `src/lib/notify.ts`. */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -27,8 +23,6 @@ const bodySchema = z.union([
   z.object({ markAllRead: z.literal(true) }),
 ]);
 
-/** Mark one notification read (`{id}`) or every unread one (`{markAllRead:
- * true}`) — both scoped to the signed-in account's own rows only. */
 export async function PATCH(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {

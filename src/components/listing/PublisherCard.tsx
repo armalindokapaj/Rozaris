@@ -29,27 +29,13 @@ export function PublisherCard({
   whatsappMessage: string;
   contentTitle: string;
   contentUrl: string;
-  /** Skip the card's own border/background — for nesting inside a parent panel that already provides one. */
   bare?: boolean;
-  /** `"dark"` for the 3D viewer's unit card, which is `.viewer-glass`
-   * (#0c0e12) like every other HUD surface — the default light treatment
-   * would put neutral-900 text on near-black. Only the four
-   * surface-dependent colors change; WhatsApp keeps its own brand green,
-   * which reads on either ground. */
   tone?: "light" | "dark";
-  /** Tighter avatar/row/button sizing for a panel that has to fit inside
-   * something else (again: the viewer's unit card, which is 384px wide and
-   * shares its height with media, facts and a footer). */
   compact?: boolean;
-  /** The listing/project this contact card belongs to — real WhatsApp/call
-   * click tracking (see the "Rozaris Platform Audit" memory) fires here
-   * when set; omitted call sites (if any) just don't track, same as before. */
   trackEntity?: { type: "listing" | "project"; id: string };
 }) {
   const { t } = useT();
   const track = useTrackEvent();
-  // The number reads first so people can see who they're about to reach;
-  // clicking it (which also fires the tel: link) swaps the label to "Call".
   const [phoneClicked, setPhoneClicked] = useState(false);
   const dark = tone === "dark";
   return (

@@ -6,14 +6,6 @@ import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 
-/**
- * Persistent bottom tab bar (Map / Search / Saved / Compare / Profile) for
- * content pages that don't already own the bottom of the viewport — listing
- * detail, developer/publisher profile, New Projects. Deliberately NOT used
- * on the Search page itself (its BottomSheet + "Show list" pill already
- * occupy that space) or the 3D project viewer (ThreeProjectViewer owns its
- * own bottom chrome) — a second bar there would collide with both.
- */
 export function MobileBottomTabBar() {
   const router = useRouter();
   const pathname = usePathname();

@@ -1,8 +1,5 @@
 import type { Listing } from "@/lib/types";
 
-/** Matches `SearchRankingConfig`'s columns minus the audit fields — the
- * shape both `GET /api/search-ranking` (public) and the admin editor pass
- * around. */
 export interface SearchRankingWeights {
   premiumWeight: number;
   freshListingWeight: number;
@@ -23,10 +20,6 @@ export const DEFAULT_SEARCH_RANKING_WEIGHTS: SearchRankingWeights = {
 
 const FRESH_LISTING_DAYS = 14;
 
-/** "Complete information" — a real, checkable minimum: at least 3 photos,
- * a real (non-trivial) description, and at least one amenity tagged.
- * Anything short of that also trips the "poor data" penalty below (the
- * two are independent factors, both can apply to the same listing). */
 function hasCompleteInfo(listing: Listing): boolean {
   return listing.images.length >= 3 && listing.description.en.trim().length >= 40 && listing.amenities.length > 0;
 }
@@ -35,14 +28,6 @@ function hasPoorData(listing: Listing): boolean {
   return listing.images.length === 0 || listing.description.en.trim().length < 20;
 }
 
-/**
- * Search Engine Control's real ranking score — every factor is a real,
- * computable signal off the actual `Listing`/`Publisher` row, matching
- * the weights an admin sets in Platform Settings → Search
- * (`GET /api/search-ranking`). Used only for the "recommended" sort;
- * every other sort (price/area/newest) stays a direct field comparison,
- * untouched by this.
- */
 export function computeRankScore(listing: Listing, weights: SearchRankingWeights): number {
   let score = 0;
   if (listing.premium) score += weights.premiumWeight;

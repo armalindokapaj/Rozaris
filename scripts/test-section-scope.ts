@@ -1,14 +1,3 @@
-/**
- * `isSlotCutBySections` (render-engine/sectionScope.ts) — the rule that
- * keeps a Section from erasing the surrounding-site GLBs (2026-08-27).
- * Run with `npm run test:section-scope`.
- *
- * Worth a standalone test rather than browser-only checking: the whole
- * rule is one regex plus two role names, its failure mode in a browser is
- * silent (a slot that quietly stops being cut, or quietly starts), and
- * tower-vlora's real data only exercises two of the branches. Same plain
- * tsx script shape test-sections.ts/test-unit-facets.ts established.
- */
 import { isSlotCutBySections, type SectionScopeSlot } from "@/lib/render-engine/sectionScope";
 
 let pass = 0,

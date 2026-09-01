@@ -2,12 +2,6 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminAuth";
 import { RECYCLE_BIN_ENTITIES, RECYCLE_BIN_ENTITY_TYPES } from "@/lib/adminEntities";
 
-/**
- * Super Admin Recycle Bin — lists every soft-deleted row across the 8
- * configured entity types (`src/lib/adminEntities.ts`). `?type=` narrows
- * to one; omitted returns all, grouped by type, so the panel can show a
- * single combined list with per-row type badges.
- */
 export async function GET(request: Request) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

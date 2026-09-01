@@ -71,12 +71,6 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-/**
- * Section header for the expanded "More filters" panel — a small uppercase
- * label followed by a hairline rule filling the rest of the row, matching
- * the grouped-checklist reference layout (label, then a divider, then a
- * bordered box of options below).
- */
 function GroupHeader({ label }: { label: string }) {
   return (
     <div className="mb-2 flex items-center gap-2.5">
@@ -88,7 +82,6 @@ function GroupHeader({ label }: { label: string }) {
   );
 }
 
-/** A bordered box of options under a `GroupHeader`, 2-3 per row. */
 function Group({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -122,14 +115,6 @@ function CheckboxOption({
   );
 }
 
-/**
- * Desktop-only minimal filter row for the Search page: search bar, then
- * Property type / Price / Beds & Baths as the three always-visible top
- * filters, then a "More filters" toggle (a +/- icon button, not a popover)
- * that expands an inline panel below for the rest (Area, Condition,
- * Amenities, Nearby essentials, Publisher). Mobile keeps its own row
- * (MobileSearchRow) which already worked this way.
- */
 export function TopFilterBar({ className }: { className?: string }) {
   const filters = useAppStore((s) => s.filters);
   const setFilters = useAppStore((s) => s.setFilters);
@@ -205,11 +190,8 @@ export function TopFilterBar({ className }: { className?: string }) {
 
         <SearchBar className="min-w-[180px] flex-1" />
 
-        {/* Property type — right after the search bar, per the requested
-            order. Panel deliberately uses the default fixed width (not a
-            percentage of this narrow trigger) — a wider percent-based panel
-            previously overflowed past the results pane's clipped edge and
-            rendered off-screen. */}
+        {                                                                
+                                   }
         <FilterDropdown className="w-40 shrink-0" label={typeLabel} active={typeCount > 0}>
           {(close) => (
             <div className="grid gap-1">
@@ -226,10 +208,8 @@ export function TopFilterBar({ className }: { className?: string }) {
           )}
         </FilterDropdown>
 
-        {/* Price — button stays w-32, but the popover panel is widened past
-            it (to roughly the combined width of Price + Bedrooms +
-            Bathrooms) so the dual-thumb range slider has enough track to
-            drag precisely; left-aligned so it doesn't creep off-screen. */}
+        {                                                                   
+                                                                           }
         <FilterDropdown
           className="w-32 shrink-0"
           panelClassName="w-[22.75rem]"
@@ -250,7 +230,7 @@ export function TopFilterBar({ className }: { className?: string }) {
           )}
         </FilterDropdown>
 
-        {/* Bedrooms and Bathrooms — each its own box, not a combined dropdown */}
+        {                                                                        }
         {showBedBath && (
           <>
             <FilterDropdown
@@ -299,8 +279,8 @@ export function TopFilterBar({ className }: { className?: string }) {
           </>
         )}
 
-        {/* More filters — icon-only toggle: + collapsed, − expanded, opens
-            an inline panel below instead of a floating popover. */}
+        {                                                                  
+                                                                   }
         <button
           type="button"
           onClick={() => setMoreOpen((v) => !v)}
@@ -332,9 +312,8 @@ export function TopFilterBar({ className }: { className?: string }) {
         )}
       </div>
 
-      {/* Expanded "More filters" panel — Area, Condition, Amenities, Nearby
-          essentials, Publisher, grouped as labeled checkbox lists rather
-          than a dropdown popover. */}
+      {                                                                     
+                                     }
       {moreOpen && (
         <div className="space-y-4 border border-neutral-200 bg-white p-4">
           <div>

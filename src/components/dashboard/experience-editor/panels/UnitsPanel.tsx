@@ -13,22 +13,12 @@ import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEdito
 import type { ThreeProjectViewerHandle } from "@/components/project/viewerTypes";
 import type { Project, Section, Unit } from "@/lib/types";
 
-/** Unions two node-name lists into the sorted, de-duplicated order the
- * Mapping list renders in — same numeric-aware collation
- * `extractUnitNodeNames` already sorts its own result with, so a merged
- * list doesn't reshuffle relative to an unmerged one. */
 function mergeNodeNames(a: string[], b: string[]): string[] {
   return Array.from(new Set([...a, ...b])).sort((x, y) =>
     x.localeCompare(y, undefined, { numeric: true, sensitivity: "base" })
   );
 }
 
-/** The POI camera's yaw presets — where the focus shot is taken FROM, in
- * Building-local degrees. Not the unit's own compass orientation, which is
- * a listing attribute (`Unit.orientation`) authored in ProjectUnitsEditor
- * and unchanged by any GLB re-upload; these two both read as N/E/S/W and
- * were genuinely being confused for each other, hence the explicit "Camera
- * from" label on the row below. */
 const POI_CAMERA_YAW_PRESETS: { label: string; deg: number }[] = [
   { label: "N", deg: 0 },
   { label: "E", deg: 90 },
@@ -36,18 +26,6 @@ const POI_CAMERA_YAW_PRESETS: { label: string; deg: number }[] = [
   { label: "W", deg: 270 },
 ];
 
-/**
- * Units tab (Units Blocks & POI Layer PRD §23-25) — replaces the old
- * Scene-tab-embedded Unit Mapping panel (moved here per §23, not
- * duplicated). Four real sections: Asset (which slot is the Units layer +
- * its Building-anchor alignment), Mapping (the pre-existing Auto Match/
- * Manual Mapping UI, unchanged logic, new home), Appearance (the real
- * X-ray/opacity/status-color config this PRD's RenderEngine wiring
- * consumes), POI Camera (the master camera config), and a per-unit list
- * with the one real per-unit knob (poiYawDeg) plus a "Test Camera" button
- * that calls the exact same `focusUnit()` the public viewer uses — no
- * separate preview implementation, per §25.
- */
 export function UnitsPanel({
   project,
   detail,
@@ -83,16 +61,6 @@ export function UnitsPanel({
   const [detectError, setDetectError] = useState<string | null>(null);
   const [creatingUnits, setCreatingUnits] = useState(false);
 
-  /** The upload-time `sceneManifest` is the AUTHORITATIVE list of this
-   * GLB's node names: glbValidate.ts builds it server-side straight from
-   * the file's own JSON chunk, so it sees exactly what the 3D artist
-   * authored. The client-side walk in `detect()` re-derives the same list
-   * from a GLTFLoader-parsed scene, and the two can legitimately
-   * disagree — the loader rewrites node names it considers unsafe (see
-   * glbNodeName.ts), and the blob fetch can simply fail. Treating the
-   * client walk as the only source is what left an admin staring at an
-   * empty Mapping list on a model whose manifest listed all three unit
-   * blocks, with no way to link a mesh to a listing at all. */
   const manifestUnitNodes = useMemo(
     () =>
       (activeVersion?.sceneManifest ?? [])
@@ -120,10 +88,6 @@ export function UnitsPanel({
       setDetectedNodes(names);
       if (units) modelEditor.autoDetectLinks(names, units);
     } catch (err) {
-      // Blanking to `null` here used to wipe the whole Mapping section
-      // with no explanation — indistinguishable from "this GLB genuinely
-      // has no unit blocks". Keep whatever the manifest already knows so
-      // mapping stays possible, and say what actually went wrong.
       const fallback = mergeNodeNames(manifestUnitNodes, []);
       setDetectedNodes(fallback.length > 0 ? fallback : null);
       setDetectError(err instanceof Error ? err.message : "Could not read this GLB.");
@@ -140,17 +104,6 @@ export function UnitsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVersion?.publicAssetUrl, autoDetect, activeSlot?.role]);
 
-  // The step that kept getting missed (real support case, not
-  // hypothetical): Auto Detect correctly finds `Unit_<code>` meshes, but
-  // if no `Unit` row with a matching code exists yet, there's nothing to
-  // auto-match against and every mesh just silently sits at "needs
-  // review" forever — indistinguishable in the UI from a genuine naming
-  // mismatch. This closes that gap directly: stub-creates a real `Unit`
-  // (placeholder price/area — `code` taken from the mesh name so
-  // `autoMatchUnitNodes` links it immediately after) for every detected
-  // mesh that isn't linked yet, then re-runs the exact same auto-match
-  // the mount-time effect above uses, using the freshly-created units
-  // rather than waiting on this hook's own next poll.
   async function createUnitsFromDetectedMeshes() {
     if (!detectedNodes) return;
     const missing = detectedNodes.filter((n) => !modelEditor.linkFor(n));
@@ -203,12 +156,6 @@ export function UnitsPanel({
             onChange={(v) => configEditor.update({ unitBlocksEnabled: v })}
           />
           {unitsSlots.length === 0 ? (
-            // Real bug caught live (headed-browser verification): this was
-            // wrongly gated on `canEdit`, which reflects whether the
-            // CURRENTLY ACTIVE slot's version is a draft — creating a brand
-            // NEW slot is an independent action unrelated to that (the
-            // Scene tab's own "+Add slot" pill, SlotTabStrip.tsx, has no
-            // such gate either). Left the disabled state gone entirely.
             <button
               onClick={() => void detail.handleAddSlot("Units", "units")}
               className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-neutral-700 px-2.5 py-1.5 text-[11px] font-semibold text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
@@ -234,16 +181,8 @@ export function UnitsPanel({
               ))}
             </div>
           )}
-          {/* The Building anchor is what a Units slot inherits its
-            * placement from, and publishing a role=units slot is
-            * hard-gated on having one (publish/route.ts:78). The PATCH
-            * route has accepted `transformParentSlotId` since the Units
-            * Blocks & POI Layer pass, but nothing ever rendered a control
-            * for it — this panel and the Publish panel both just pointed
-            * at "the Scene tab", which has no such control either. An
-            * admin whose slot predates the auto-anchor-on-create rule
-            * (slots/route.ts:65-72) was simply stuck, blocked by a gate
-            * with no reachable remedy. This is that control. */}
+          {                                                        
+                                                                }
           {activeSlot?.role === "units" && (
             <label className="mt-1.5 flex items-center justify-between gap-2 px-0.5 text-[11px] text-neutral-400">
               <span>Building Anchor</span>
@@ -270,13 +209,8 @@ export function UnitsPanel({
         </GroupCard>
         {activeSlot?.role === "units" && (
           <p className="mt-1.5 px-0.5 text-[11px] text-neutral-500">
-            {/* Reads the live draft (modelEditor.links), not the
-                last-saved activeVersion.unitLinks — otherwise this line
-                reads "0 blocks mapped" right after Auto Detect/Auto Match
-                runs, disagreeing with the Mapping section just below it
-                until the admin hits Save. Caught live: a fresh upload's
-                auto-match landed correctly but this summary line still
-                showed the stale pre-save count. */}
+            {                                                    
+                                                   }
             {activeVersion ? `${modelEditor.links.length} block${modelEditor.links.length === 1 ? "" : "s"} mapped` : "No GLB uploaded yet — use the Scene tab to upload one."}
             {" · Alignment: "}
             {activeSlot.transformParentSlotId ? (
@@ -342,10 +276,8 @@ export function UnitsPanel({
             </p>
           )}
 
-          {/* Real dead end an admin can otherwise hit with no explanation:
-            * detection completed, found nothing, and the Mapping list
-            * below renders as empty space. Say why, and name the naming
-            * convention the platform is actually looking for. */}
+          {                                                                
+                                                                 }
           {!detecting && detectedNodes !== null && detectedNodes.length === 0 && (
             <p className="mt-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-300">
               No <span className="font-mono">Unit_</span> nodes found in this GLB. Each unit block must be
@@ -415,18 +347,17 @@ export function UnitsPanel({
           {draft.unitBlocksSelectedOutlineEnabled && (
             <SliderRow label="Outline Width" value={draft.unitBlocksSelectedOutlineWidth} min={0.5} max={20} step={0.5} suffix="px" onChange={(v) => configEditor.update({ unitBlocksSelectedOutlineWidth: v })} />
           )}
-          {/* Selection "pop" — enlarges the clicked unit about its own
-              center so it reads as picked even at masterplan distance. */}
+          {                                                            
+                                                                          }
           <ToggleRow label="Selected Enlarge" checked={draft.unitBlocksSelectedScaleEnabled} onChange={(v) => configEditor.update({ unitBlocksSelectedScaleEnabled: v })} />
           {draft.unitBlocksSelectedScaleEnabled && (
             <SliderRow label="Enlarge Scale" value={draft.unitBlocksSelectedScale} min={1} max={1.5} step={0.01} suffix="x" onChange={(v) => configEditor.update({ unitBlocksSelectedScale: v })} />
           )}
-          {/* Off = the selected unit keeps its status color and is marked
-              by the outline alone (the platform default). On = the block
-              is repainted with the Selected Fill color below. */}
+          {                                                               
+                                                                 }
           <ToggleRow label="Selected Fill" checked={draft.unitBlocksSelectedFillEnabled} onChange={(v) => configEditor.update({ unitBlocksSelectedFillEnabled: v })} />
-          {/* X-ray for the selected unit only — visible through the facade
-              from any angle, while the rest of the blocks stay occluded. */}
+          {                                                                
+                                                                            }
           <ToggleRow label="Selected X-Ray" checked={draft.unitBlocksSelectedXrayEnabled} onChange={(v) => configEditor.update({ unitBlocksSelectedXrayEnabled: v })} />
         </GroupCard>
         <GroupCard>
@@ -459,25 +390,14 @@ export function UnitsPanel({
                 <GroupCard key={unit.id}>
                   <div className="flex items-center justify-between gap-2">
                     <span className="shrink-0 text-[11px] font-semibold text-neutral-200">{unit.code}</span>
-                    {/* Which mesh THIS unit is linked to, right on its own
-                        row — not just "✓ mapped"/"unmapped" — plus a picker
-                        to link/relink it directly, the reverse direction of
-                        the per-mesh dropdown in the Mapping section above.
-                        Only meaningful once meshes have actually been
-                        detected; falls back to the plain status text until
-                        then (no GLB yet, or Auto Detect hasn't run). */}
+                    {                                                      
+                                                                        }
                     {detectedNodes ? (
                       <select
                         value={link?.meshName ?? ""}
                         disabled={!canEdit}
                         onChange={(e) => {
                           const newMeshName = e.target.value || null;
-                          // Clear the OLD mesh's link first — setLink()
-                          // only ever touches one mesh at a time, so
-                          // re-pointing a unit at a different mesh without
-                          // this would leave both the old and new mesh
-                          // pointing at the same unit.id, a stale
-                          // double-mapping neither list would show.
                           if (link && link.meshName !== newMeshName) {
                             modelEditor.setLink(link.meshName, null);
                           }

@@ -44,9 +44,6 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-// Deterministic mock performance numbers, same technique the Business
-// Publisher dashboard uses — a real backend would replace this with actual
-// counters.
 function metricHash(id: string, salt: number): number {
   const s = `${id}-${salt}`;
   let h = 0;
@@ -62,9 +59,6 @@ function performanceFor(id: string) {
   };
 }
 
-// PRD_ROZARIS_User_Types §3 "Listing workflow": Draft → Incomplete →
-// Pending Review → Changes Requested → Approved → Published → Paused/
-// Archived, with "current status and required next action always visible."
 const STAGE_ORDER = [
   "draft",
   "incomplete",
@@ -86,14 +80,6 @@ const STAGE_LABEL_KEY: Record<Stage, string> = {
   archived: "privatePublisher.stageArchived",
 };
 
-/** Maps this app's actual Listing.status onto the PRD's fuller lifecycle
- * stepper. `pending` (real since `POST /api/listings` started creating
- * real rows — see the "Rozaris Platform Audit" memory) maps cleanly onto
- * "pendingReview". `draft` (the "location drop" requirement — a listing
- * with no confirmed location stays here until the publisher adds one and
- * resubmits, or an admin approves it without one) is now real too; there's
- * still no distinct "approved" status in the data model, so that one stage
- * remains unreachable from a real listing. */
 function stageForStatus(status: Listing["status"]): Stage {
   switch (status) {
     case "draft":
@@ -137,9 +123,6 @@ function WorkflowStepper({ status }: { status: Listing["status"] }) {
   );
 }
 
-/** Computed, not hardcoded — PRD_ROZARIS_User_Types §3 shows a "92%,
- * Listing Completeness" ring; this counts how many of a listing's
- * meaningfully-optional-for-completeness fields are actually filled. */
 function listingCompleteness(listing: Listing): number {
   const checks = [
     !!listing.title,
@@ -154,18 +137,9 @@ function listingCompleteness(listing: Listing): number {
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
 
-/** Private Publisher Dashboard (PRD_ROZARIS_User_Types §3) — deliberately
- * simpler than BusinessPublisherDashboard in dashboard/page.tsx: one active
- * listing, no Projects/Inventory/Leads-pipeline/Company-team modules. A
- * real, separate component tree (not the business dashboard with items
- * hidden) per the PRD's "Final Platform Rule". */
 export function PrivatePublisherDashboard({ publisher }: { publisher: Publisher }) {
   const [tab, setTab] = useUrlTab<TabId>("/dashboard", TABS.map((tb) => tb.id), "overview");
   const { t } = useT();
-  // Single-listing rule (PRD §3): whichever real listing landed on this
-  // publisher is treated as "the" listing; any further ones stay in the
-  // underlying data as historical/archived, never surfaced as a second
-  // active listing here.
   const { listings: myListings, refresh: refreshListing } = usePublisherListings(publisher.id);
   const myListing = myListings?.[0] ?? null;
 
@@ -238,10 +212,6 @@ function OverviewTab({
 }) {
   const { t, locale } = useT();
   const priceFmt = usePriceFormat();
-  // Real `Notification` rows for the signed-in account, same as the
-  // buyer/business dashboards — replaces `publisherNotifications()`,
-  // which regenerated fake notifications every session (launch-readiness
-  // audit finding).
   const { notifications: allNotifications, readIds, markRead, markAllRead } = useAccountNotifications();
   const notifications = useMemo(() => allNotifications.slice(0, 3), [allNotifications]);
   const perf = listing ? performanceFor(listing.id) : null;

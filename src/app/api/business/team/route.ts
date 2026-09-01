@@ -5,13 +5,6 @@ import { requirePublisherSession, requireOrgRole } from "@/lib/publisherAuth";
 import { logAuditEvent } from "@/lib/audit";
 import type { OrganizationRole } from "@/generated/prisma";
 
-/**
- * §8 "Business Teams, Roles & Permissions" — the owner (via
- * `Publisher.ownerUserId`, not a membership row) plus every accepted
- * `OrganizationMembership`, plus outstanding `OrganizationInvitation`s.
- * Any team member can read the roster; only Owner/Org Admin can invite,
- * change a role, or remove someone (`requireOrgRole()`).
- */
 export async function GET() {
   const gate = await requirePublisherSession();
   if (gate instanceof NextResponse) return gate;

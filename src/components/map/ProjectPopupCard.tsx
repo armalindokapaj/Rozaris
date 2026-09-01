@@ -6,18 +6,6 @@ import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import { useT } from "@/lib/i18n/useT";
 import type { Project } from "@/lib/types";
 
-/**
- * PRJ / BR-014: the new-development map popup exposes exactly three fields —
- * developer name, available unit count and an Explore in 3D action.
- *
- * `forwardRef`'d so MapView can reposition this card by writing directly to
- * its `style.left/top` while the camera is moving, instead of going through
- * React state — see MapView.tsx's popup-tracking effect for why (mapbox
- * fires `move` on every rendered frame during a drag/rotate; a `setState`
- * per frame there forces a React re-render at up to 60fps for the entire
- * time a popup is open, which is a large part of what "laggy while moving"
- * was).
- */
 export const ProjectPopupCard = forwardRef<HTMLDivElement, {
   project: Project;
   onClose: () => void;

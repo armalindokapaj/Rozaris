@@ -1,20 +1,3 @@
-/**
- * The viewer time bar's hour grid — `snapSunTimeHours` /
- * `snapSunTimePresets` (src/lib/sunPosition.ts) plus the window derivation
- * they are fed from (`ProjectViewerRuntime.sunTimeWindow`). Run with
- * `npm run test:sun-time-snap`.
- *
- * Maths-only, like `test-unit-facets.ts`: every rule here is pure, and the
- * cases that matter most are ones no seeded project reaches — a preset
- * that falls outside the admin's scrub window, two presets that collapse
- * onto the same stop, an inverted window, a coarse step. The real projects
- * in §4 are the ones that do exist, read out of the DB on 2026-08-27 and
- * pinned here so the astronomy and the grid stay checked together.
- *
- * `sunTimeWindow` itself lives inside a `useMemo` in a client component,
- * so it is re-stated below rather than imported — §3 exists precisely to
- * catch the two drifting apart.
- */
 import {
   computeSunTimeline,
   geographicSunPosition,
@@ -32,7 +15,6 @@ function eq(name: string, got: unknown, want: unknown) {
   else { fail++; console.log(`  FAIL ${name}\n       got  ${g}\n       want ${w}`); }
 }
 
-/** Mirror of `ProjectViewerRuntime`'s own `sunTimeWindow` memo. */
 function sunTimeWindow(startHours: number, endHours: number, stepMinutes: number): SunTimeWindow {
   const MIN_SUN_TIME_WINDOW_HOURS = 1;
   const lo = Math.min(startHours, endHours);
@@ -43,7 +25,7 @@ function sunTimeWindow(startHours: number, endHours: number, stepMinutes: number
   return { startHours: start, endHours: Math.min(24, start + spanHours), stepHours };
 }
 
-const W = sunTimeWindow(6, 20, 15); // the default project: 06:00-20:00, hourly
+const W = sunTimeWindow(6, 20, 15);
 
 console.log("\n1. the window is whole hours, and every stop on it is reachable");
 eq("6/20/15min -> 6-20 step 1h", W, { startHours: 6, endHours: 20, stepHours: 1 });
@@ -67,7 +49,7 @@ eq("...and never off-grid at the top", snapSunTimeHours(17.9, sunTimeWindow(6, 2
 
 console.log("\n3. presets are stops on THIS slider, not raw astronomy");
 const raw: SunTimePreset[] = [
-  { id: "morning", hour: 5.184 },     // Tirana, 21 June — outside a 06:00 start
+  { id: "morning", hour: 5.184 },                                               
   { id: "noon", hour: 10.667 },
   { id: "goldenHour", hour: 17.424 },
   { id: "evening", hour: 18.507 },

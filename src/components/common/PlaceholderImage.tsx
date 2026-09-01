@@ -44,10 +44,6 @@ export function PlaceholderImage({
   kind?: Kind;
   className?: string;
   iconClassName?: string;
-  /** Stands in for what a real upload pipeline would stamp onto a listing
-   * photo — opt in only where this is genuinely a property photo being
-   * viewed (galleries, card hero images), not small icon-sized thumbnails
-   * (compare chips, neighborhood avatars) where a badge would overwhelm it. */
   watermark?: boolean;
 }) {
   const idx = hash(seed) % GRADIENTS.length;

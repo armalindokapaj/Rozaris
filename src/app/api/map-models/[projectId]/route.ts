@@ -1,23 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
-/**
- * GET-only as of the Platform Audit (finding C2) — resolves the project's
- * currently-*published* `MapModelVersion` instead of the old single-row
- * `ProjectMapModel`, keeping the exact same response shape for
- * MapModelEditor.tsx and every other existing caller. This route used to
- * also expose unauthenticated PUT/DELETE against the legacy table; both
- * were removed outright rather than gated, since the versioned pipeline
- * (POST/PATCH .../versions, requireAdmin()-gated) already fully replaced
- * them and nothing in the frontend called them anymore.
- */
 function toLegacyShape(v: {
   projectId: string;
-  // Nullable as of "save location before uploading a model" — a published
-  // version can have placement with no file yet (see MapModelVersion's own
-  // doc comment). `glbUrl: null` below is exactly what MapView.tsx already
-  // treats as "no admin-uploaded model for this project" (falls back to
-  // procedural massing), so this needed no downstream change.
   publicAssetUrl: string | null;
   fileName: string | null;
   fileSize: number | null;
@@ -39,9 +24,6 @@ function toLegacyShape(v: {
     scale: v.scale,
     rotationDeg: v.heading,
     altitudeOffset: v.altitude,
-    // Multi-building-pick + reposition pass — was hardcoded to the
-    // project's own coordinates by every consumer before this (these
-    // columns were write-only); now the actual, possibly-dragged position.
     lng: v.longitude,
     lat: v.latitude,
     enabled: v.publicationStatus === "published",
@@ -61,11 +43,3 @@ export async function GET(
   });
   return NextResponse.json(version ? toLegacyShape(version) : null);
 }
-
-// PUT/DELETE removed (Platform Audit, see the "rozaris-publish-security-
-// audit" memory, finding C2) — they wrote the legacy single-row
-// `ProjectMapModel` table with NO auth check at all, and nothing in the
-// frontend has called them since the versioned pipeline
-// (POST/PATCH .../versions, requireAdmin()-gated) replaced them. Confirmed
-// via a full grep sweep: every remaining caller of this route only ever
-// does a bare (GET) `fetch()`. Use the versioned routes for any new write.

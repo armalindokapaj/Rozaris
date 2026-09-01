@@ -2,29 +2,6 @@ import { z } from "zod";
 import { LUT_PRESET_IDS } from "./viewerPresets";
 import type { Project3DConfig } from "./types";
 
-/**
- * Environment Presets ("1 preset for every Sun, Fog, Sunflare... setting,
- * to use in other projects") — a curated, portable subset of
- * `Project3DConfig` considered "atmosphere/look" rather than
- * project-specific. Deliberately EXCLUDES camera framing, quality/
- * performance tier, ground, unit status colors/caustics, Sections, and the
- * heavier Shadows/GI/DoF/SSR/Motion-Blur systems — those are tuned to each
- * project's own GLB scale/triangle budget or branding, so bundling them
- * into a cross-project "look" preset would silently mis-apply values tuned
- * for a different model (a 200m CSM shadow distance authored on a tower
- * project landing on a small villa, for example). Kept in a dedicated file
- * (not inlined in the API route) because it's the single source of truth
- * for both `/api/environment-presets` validation AND the Presets tab's
- * grouped "what's included" UI — the two can never drift apart.
- *
- * Field ranges mirror `/api/project-3d-config`'s own `patchSchema` exactly
- * (copied, not imported — that route's schema isn't exported, and
- * duplicating validated ranges for a second, differently-scoped schema is
- * the same precedent `sectionSchema`/`cameraPresetSchema` already set for
- * "mirrors the TS interface field-for-field") so a preset can never carry
- * a value the destination project's own PATCH route would reject.
- */
-
 const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Expected a #rrggbb hex color");
 
 const solarAnchorSchema = z.object({
@@ -51,11 +28,6 @@ const FIELD_GROUPS = [
       solarAnchors: z.array(solarAnchorSchema).max(24),
       geoLatitude: z.number().min(-90).max(90),
       geoLongitude: z.number().min(-180).max(180),
-      // ISO date string, same client-side representation as
-      // Project3DConfig.simulationDate — this is a JSON blob, not a Prisma
-      // DateTime column, so no coercion is needed (or wanted: applying a
-      // preset should hand the string straight to `configEditor.update`
-      // unchanged, exactly like every other field here).
       simulationDate: z.string().min(1),
       northOffsetDeg: z.number().min(-360).max(360),
       sunDiscEnabled: z.boolean(),
@@ -161,9 +133,6 @@ const FIELD_GROUPS = [
   },
 ] as const;
 
-/** UI-facing summary — which named groups exist and which field keys each
- * one covers, derived from `FIELD_GROUPS` so the Presets tab's "what's
- * included" list can never fall out of sync with the real validated shape. */
 export const ENVIRONMENT_PRESET_FIELD_GROUPS = FIELD_GROUPS.map((g) => ({
   id: g.id,
   label: g.label,
@@ -176,11 +145,6 @@ export const environmentPresetConfigSchema = z.object(
 
 export type EnvironmentPresetConfig = z.infer<typeof environmentPresetConfigSchema>;
 
-/** Extracts exactly the preset-scoped fields off a live `Project3DConfig`
- * draft (Save-as-Preset). Written out explicitly field-by-field rather than
- * looping over a key list — so adding a field to a `FIELD_GROUPS` entry
- * above without also adding it here is a real TS compile error (a missing
- * property on `EnvironmentPresetConfig`), not a silent gap. */
 export function pickEnvironmentPresetConfig(draft: Project3DConfig): EnvironmentPresetConfig {
   return {
     sunAzimuthDeg: draft.sunAzimuthDeg,
@@ -269,12 +233,6 @@ export function pickEnvironmentPresetConfig(draft: Project3DConfig): Environment
     exposure: draft.exposure,
     toneMapping: draft.toneMapping,
     lutEnabled: draft.lutEnabled,
-    // Project3DConfig.lutPreset is a free `string` client-side (validated
-    // against LUT_PRESET_IDS only at the zod layer, same "free string key,
-    // not a DB enum" convention /api/project-3d-config's own patchSchema
-    // already uses) — this cast is that same convention, not a real type
-    // hole: environmentPresetConfigSchema.parse() re-validates it for real
-    // on every save.
     lutPreset: draft.lutPreset as EnvironmentPresetConfig["lutPreset"],
     lutIntensity: draft.lutIntensity,
   };

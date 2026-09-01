@@ -9,27 +9,10 @@ import { fetchGoogleSheet, SheetParseError } from "@/lib/integrations/googleShee
 import type { RawInventoryRow, SyncableField } from "@/lib/integrations/normalization";
 
 const syncBodySchema = z.object({
-  /** `type: manual` supplies its rows inline. */
   rows: z.array(z.record(z.string(), z.unknown())).min(1).max(2000).optional(),
-  /** Parse + diff only: nothing is written, no sync-run row is created.
-   * Also accepted as `?dryRun=1` for a plain link. */
   dryRun: z.boolean().optional(),
 });
 
-/**
- * Multi-Channel Publishing PRD Phase 8, §33 "[Sync Now]". Fetch step
- * differs per connector type; the actual write logic is 100% shared
- * (`runInventorySync`). `type: manual` takes `rows` directly in the
- * request body — the one path this session can fully test against the
- * real DB (see googleSheets.ts's own doc comment for why `google_sheets`
- * can't be).
- *
- * `dryRun` is the "Preview changes" half of the Project Manager's sync
- * panel: same fetch, same match, same validation, same diff — no writes.
- * The response additionally carries which sheet columns were recognised
- * (and which were ignored), so a mis-named column shows up as "we didn't
- * read your PRICE column" before it shows up as "nothing changed".
- */
 export async function POST(request: Request, { params }: { params: Promise<{ connectorId: string }> }) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;
@@ -78,20 +61,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
       };
     } catch (err) {
       const reason = err instanceof Error ? err.message : "Sheet fetch failed.";
-      // A failed run is a connector-health fact worth persisting; a failed
-      // dry run is the admin actively debugging their sheet and shouldn't
-      // flip the stored status on them mid-edit.
       if (!dryRun) {
         await prisma.inventoryConnector.update({
           where: { id: connectorId },
           data: { status: "error", lastSyncAt: new Date() },
         });
-        // ...and the reason has to be recorded somewhere durable. Setting
-        // the badge to red without writing a run row left "Needs
-        // attention" on screen with the sync history immediately below it
-        // showing nothing at all — the one place an admin would look to
-        // find out what went wrong was the one place guaranteed to be
-        // silent about it.
         await prisma.inventorySyncRun.create({
           data: {
             connectorId,
@@ -106,10 +80,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
         });
         await logApiError(`/api/admin/inventory-connectors/${connectorId}/sync`, err, actor);
       }
-      // 422, not 502, when the sheet downloaded fine and simply isn't
-      // shaped like inventory — the fix is a header row (or a column
-      // mapping), not Google being unreachable. The headers ride along so
-      // the panel can offer that mapping right there.
       if (err instanceof SheetParseError) {
         return NextResponse.json(
           {
@@ -122,9 +92,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
       return NextResponse.json({ error: reason }, { status: 502 });
     }
   } else {
-    // type: api — no real external integration target defined yet, see
-    // this route's own doc comment and the connector's create-route
-    // comment. Honest 501, not a silent no-op.
     return NextResponse.json({ error: "This connector type has no sync implementation yet." }, { status: 501 });
   }
 

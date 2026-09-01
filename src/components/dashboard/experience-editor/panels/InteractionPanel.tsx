@@ -4,18 +4,6 @@ import { GroupCard, SectionHeading, ToggleRow } from "../fields";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 import type { ViewerUIToggles } from "@/lib/types";
 
-/**
- * Interaction tab (PRD §39) — Units/Filters/Viewer Controls, all real,
- * persisted toggles on the pre-existing `Project3DConfig.viewerUI` field
- * (extended this pass, no migration needed — it's a nullable Json?
- * column). Honest per-toggle: Fullscreen/Screenshot/Information Card are
- * wired into the real public viewer (ProjectViewerRuntime.tsx) now; the rest
- * (3D hover/select/highlight/isolation, Filters UI, a public Shots menu)
- * gate systems the ground-up-rebuilt public viewer doesn't have yet —
- * each says so via its hint rather than pretending otherwise. The Viewer
- * Time Slider is deliberately NOT here (PRD §39: "configured only under
- * Environment → Sun & Sky").
- */
 export function InteractionPanel({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const ui = draft.viewerUI;

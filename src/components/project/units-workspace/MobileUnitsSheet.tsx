@@ -20,73 +20,15 @@ import {
   type UnitFilterState,
 } from "./unitFilters";
 
-/** Units Search Mode PRD §32's mobile browsing pattern, finally built.
- *
- * Until now the dock's "Filter List" trigger existed on mobile, was fully
- * styled, called `onToggleUnitsList` — and nothing below `lg` read the
- * boolean it flipped, because `getViewerLayoutState` gated the real panel
- * on `isDesktop` (a deliberate gate: the fixed 380px panel ate a 390px
- * viewport whole). This is the surface that gate was waiting for.
- *
- * Three things make this a sheet rather than a rotated copy of the desktop
- * panel:
- *
- * 1. **The 3D stays on screen.** The point of the request driving this
- *    ("every unit clicked on the filtering list to also highlight it in
- *    the 3D building") is a *correspondence*, and a correspondence you
- *    cannot see is worth nothing. Every snap point leaves real viewport
- *    above the sheet, and picking a unit drops the sheet to `peek` so the
- *    building is unmistakably visible at the moment it reacts.
- * 2. **It never covers the dock.** The dock is where Units' filters live
- *    on mobile (`UnitsContent`'s own mobile branch), and it carries the
- *    trigger that closes this sheet again. `bottom` is measured off the
- *    live dock (`[data-viewer-dock]`, the same hook `UnitPreviewCard`
- *    already measures) rather than assumed, because below `lg` the dock's
- *    height is content-driven and Units is explicitly allowed to be the
- *    tall one.
- * 3. **Filters are not duplicated here.** The dock already owns Surface/
- *    Rooms/Availability on mobile, with its own collapse. A second filter
- *    stack inside this sheet would be two controls for one concept — the
- *    "Filters" button in this header expands the dock's own stack instead
- *    (`onOpenDockFilters`). Search and sort DO live here: neither exists
- *    on the dock, and both are list concerns rather than model concerns.
- *
- * `position: absolute`, not `fixed` — and mounted by `ProjectViewerRuntime`
- * as a child of its own root rather than inside `ViewerHUD`. `MoreMenu.tsx`
- * documents the bug that makes this non-negotiable: a transformed ancestor
- * becomes the containing block for `fixed`, and the HUD GSAP-transforms its
- * dock wrapper constantly.
- *
- * Height is animated with a CSS transition rather than GSAP, matching
- * `BottomSheet.tsx` (this repo's only other drag-to-resize sheet) — the
- * global `prefers-reduced-motion` rule in globals.css zeroes it, so this
- * needs no reduced-motion branch of its own, and it sidesteps GSAP's
- * documented inability to tween `height: auto` that `ProjectViewerDock`
- * had to work around.
- */
-
 type SheetSnap = "peek" | "half" | "full";
 const SNAP_ORDER: SheetSnap[] = ["peek", "half", "full"];
-/** Fractions of the height actually available above the dock — not of the
- * viewport — so a taller Units dock shrinks the sheet instead of pushing
- * its bottom edge underneath. */
 const SNAP_FRACTION: Record<SheetSnap, number> = {
   peek: 0.36,
   half: 0.62,
   full: 0.94,
 };
-/** Gap between the sheet's bottom edge and the dock's top edge. */
 const DOCK_GAP = 10;
-/** Floor under `peek`, in px. `peek` is where the sheet lands the moment a
- * unit is picked, and at that point it has to hold the drag handle, the
- * search/sort header, the selected-unit summary bar AND at least one whole
- * row. A pure fraction of the available height does not: on a short
- * viewport the first pass computed ~230px here, the flex column overflowed,
- * and the summary bar rendered *through* the sheet's own bottom edge and
- * over the dock. Verified against a real 390x664 iPhone 13 viewport. */
 const PEEK_MIN_PX = 300;
-/** Room kept above the sheet at its tallest, so the header identity plate
- * and the compass/settings capsule are never fully buried. */
 const TOP_RESERVE = 84;
 const PAGE_SIZE = 30;
 
@@ -109,8 +51,6 @@ export function MobileUnitsSheet({
   unmappedUnitId: string | null;
   filters: UnitFilterState;
   onFiltersChange: Dispatch<SetStateAction<UnitFilterState>>;
-  /** Unfolds the dock's own mobile filter stack — see this file's own doc
-   * comment on why filters deliberately do not live in here. */
   onOpenDockFilters: () => void;
 }) {
   const { t } = useT();
@@ -129,21 +69,8 @@ export function MobileUnitsSheet({
   const dragStartY = useRef(0);
   const selectedRowRef = useRef<HTMLButtonElement>(null);
 
-  // Same measurement `UnitPreviewCard` makes, for the same reason: below
-  // `lg` the dock's height is content-driven and mode-dependent, so no
-  // constant can describe it. The constants are only the pre-mount frame's
-  // fallback (`+ 2` is DockShell's own border, which its 70px content
-  // floor doesn't include).
   const measure = useCallback(() => {
     const rect = document.querySelector<HTMLElement>("[data-viewer-dock]")?.getBoundingClientRect();
-    // The dock's own TOP edge, not its height. A first pass used
-    // `height + gap` and left the sheet 2px inside the dock on a real
-    // iPhone 13, because the dock is not flush with the viewport bottom —
-    // its wrapper carries `bottom-[max(0.75rem,env(safe-area-inset-
-    // bottom))]`, which is 12px on most phones and more on a notched one
-    // now that `viewport-fit=cover` is actually set. Measuring the top
-    // edge absorbs that inset, the safe area, and any future change to
-    // either, without this file having to know about any of them.
     const bottom = rect
       ? Math.round(window.innerHeight - rect.top) + DOCK_GAP
       : (window.innerWidth < 1024 ? DOCK_HEIGHT_MOBILE_STANDARD + 2 : DOCK_HEIGHT_DESKTOP) + 12 + DOCK_GAP;
@@ -151,20 +78,6 @@ export function MobileUnitsSheet({
     setAvailable((prev) => (prev.height === height && prev.bottom === bottom ? prev : { height, bottom }));
   }, []);
 
-  // Every path into `measure` here is a *callback* — a ResizeObserver
-  // firing, a resize event, a rAF tick — never a synchronous call in this
-  // effect's own body. That isn't stylistic: this codebase enforces
-  // react-hooks/set-state-in-effect, which rejects the synchronous shape
-  // outright. It also happens to be the correct shape, since the thing
-  // being measured genuinely is an external system whose size changes on
-  // its own schedule.
-  //
-  // The dock is not a fixed backdrop: its filter stack folds and unfolds,
-  // and the shell morphs between modes, each of which changes its height
-  // under this sheet. `ResizeObserver` fires once on `observe()` too, so
-  // it doubles as the initial measurement — the rAF below is only a
-  // belt-and-braces first tick for a browser without ResizeObserver, and
-  // for the window-height half that observing the dock alone can't see.
   useLayoutEffect(() => {
     if (!open) return;
     const frame = requestAnimationFrame(measure);
@@ -183,10 +96,6 @@ export function MobileUnitsSheet({
   const selectedUnit = useMemo(() => units.find((u) => u.id === selectedUnitId) ?? null, [units, selectedUnitId]);
   const filterCount = activeFilterCount(filters);
 
-  // Derived, never a `setVisibleCount` in an effect (this codebase's
-  // react-hooks/set-state-in-effect rule rejects that shape): a selection
-  // arriving from a 3D tap can name a unit past the current page boundary,
-  // and scrolling to a row that was never rendered does nothing.
   const selectedIndex = selectedUnitId ? filtered.findIndex((u) => u.id === selectedUnitId) : -1;
   const effectiveCount =
     selectedIndex >= visibleCount ? Math.ceil((selectedIndex + 1) / PAGE_SIZE) * PAGE_SIZE : visibleCount;
@@ -197,10 +106,6 @@ export function MobileUnitsSheet({
     selectedRowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [open, selectedUnitId, detailOpen]);
 
-  // Px, not fractions, everywhere below — `peek` has a floor (see
-  // PEEK_MIN_PX) so its real height is not a fixed share of the available
-  // space, and comparing fractions after that would snap to the wrong
-  // point on short viewports.
   const snapPx = useCallback(
     (point: SheetSnap) => {
       const raw = available.height * SNAP_FRACTION[point];
@@ -229,9 +134,6 @@ export function MobileUnitsSheet({
     const settledPx = snapPx(snap) - dragOffset;
     setDragging(false);
     setDragOffset(0);
-    // Dragged well below the shortest snap = dismiss. `0.6` of `peek`
-    // rather than a bare "below peek" so a slightly overshot drag settles
-    // back onto peek instead of closing a list the visitor was resizing.
     if (settledPx < snapPx("peek") * 0.6) {
       onClose();
       return;
@@ -257,11 +159,6 @@ export function MobileUnitsSheet({
     });
   }
 
-  // The whole point of the sheet: picking a row must let you SEE the
-  // building react. Dropping to `peek` (never lower, never closing) is
-  // what guarantees the block the camera just flew to is actually on
-  // screen — a selection made behind a half- or full-height sheet is a
-  // correspondence the visitor has to take on faith.
   function handleRowClick(unit: Unit) {
     onSelectUnit(unit.id);
     setSnap("peek");
@@ -324,24 +221,13 @@ export function MobileUnitsSheet({
         role="dialog"
         aria-label={t("units.title")}
         className={cn(
-          // `overflow-hidden` IS correct here, unlike on `DockShell`/
-          // `UnitsContent`/`UnitsBar` — all three of which carry a note
-          // about it silently clipping an upward-opening `DockPopover` to
-          // invisible while taps fell through to the canvas. Nothing
-          // inside this sheet opens outside its own box: the only
-          // popover-ish control is the sort `<select>`, whose menu is
-          // browser chrome rather than a positioned descendant, and the
-          // dock's real popovers are in a different subtree entirely.
-          // Without it, rows and the summary bar paint straight over the
-          // 16px radius and out through the bottom edge onto the dock.
           "viewer-glass pointer-events-auto mx-2 flex flex-col overflow-hidden rounded-[16px]",
           dragging ? "" : "transition-[height] duration-300 ease-out"
         )}
         style={{ height: heightPx, background: "rgba(12, 14, 18, 0.96)" }}
       >
-        {/* Drag handle — its own generous row rather than the whole sheet,
-            so a flick meant to scroll the list can never be read as a
-            resize. Same split BottomSheet.tsx uses. */}
+        {                                                                  
+                                                       }
         <div
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}

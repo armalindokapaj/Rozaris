@@ -4,7 +4,6 @@ import { SearchX } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
 
-/** SEA-009: zero-result states must offer a concrete way forward. */
 export function EmptyState() {
   const resetFilters = useAppStore((s) => s.resetFilters);
   const setFilters = useAppStore((s) => s.setFilters);

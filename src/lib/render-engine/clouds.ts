@@ -20,48 +20,12 @@ import {
 } from "three/tsl";
 import type { EnvironmentConfig } from "@/lib/types";
 
-/**
- * Environment → Clouds (PRD §11, `webgpu_volume_cloud.html` parity) — the
- * ONE user-facing "Clouds" feature (per PRD §11's own "do not implement
- * another public cloud system" rule; `SkyMesh`'s own built-in cloud
- * uniforms stay the honest Low/Mobile-tier internal fallback, see
- * RenderEngine.ts's applyGlobalSun).
- *
- * A real per-fragment raymarch — NOT a flat cloud texture — through the
- * height band [cloudHeight, cloudHeight+cloudThickness], rendered on a
- * large horizontal quad that re-centers on the camera's XZ every frame
- * (`update()`'s caller does this) so it always reads as an unbounded sky
- * layer. The ray for each screen pixel is `normalize(positionWorld -
- * cameraPosition)` (the real view ray toward that point of the quad); the
- * march samples `triNoise3D` (the exact noise primitive the reference
- * demo itself is built around) at points along that ray inside the band,
- * front-to-back accumulating density into alpha — genuine volumetric
- * parallax as the camera moves, not a billboard.
- *
- * The loop itself is a FIXED `MAX_STEPS` iteration count (same "never
- * change the shader's compiled structure at runtime" discipline this
- * codebase already established for Section clip planes — a variable loop
- * bound risks a real shader-recompile stall/instability, not just a
- * cosmetic downgrade). `cloudRaymarchSteps` instead masks how many of
- * those fixed iterations actually contribute (via `select`, not a
- * shorter/longer loop) — fewer steps reads as coarser/gappier density
- * over the same total marched depth, more steps as smoother — a real,
- * honest interpretation of a "Raymarch Steps" quality knob.
- */
-
 const MAX_STEPS = 24;
 const CLOUD_PLANE_SIZE = 3000;
 
 export interface CloudSystem {
   mesh: THREE.Mesh;
-  /** Repositions the plane onto the camera's XZ + writes every uniform
-   * from config/sun/dt. Call once per frame BEFORE the plane is rendered
-   * (i.e. after controls.update()). */
   update: (config: EnvironmentConfig, sunDirection: THREE.Vector3, cameraPos: THREE.Vector3, dtSeconds: number) => void;
-  /** The real accumulated wind offset (only advances when
-   * cloudMovementEnabled) — Cloud Shadows (RenderEngine.ts's
-   * buildGroundMaterial) reads this so the ground-projected shadow scrolls
-   * in sync with the cloud layer itself, not a second independent clock. */
   getWindOffset: () => THREE.Vector2;
   dispose: () => void;
 }
@@ -85,9 +49,6 @@ export function buildCloudSystem(): CloudSystem {
     const bottomY = height;
     const topY = height.add(thickness);
 
-    // Ray-vs-horizontal-plane intersection for the band's bottom/top —
-    // guarded against a near-zero rayDir.y (a ray running nearly parallel
-    // to the band never usefully enters it).
     const safeRy = select(rayDir.y.abs().lessThan(0.001), float(0.001), rayDir.y);
     const tBottom = bottomY.sub(cameraPosition.y).div(safeRy);
     const tTop = topY.sub(cameraPosition.y).div(safeRy);
@@ -108,9 +69,6 @@ export function buildCloudSystem(): CloudSystem {
       const shaped = smoothstep(threshold.oneMinus().sub(softness), threshold.oneMinus().add(softness), raw.add(coverage.sub(0.5)));
       const stepDensity = shaped.mul(density).mul(dt.mul(0.04)).mul(stepActive);
 
-      // Sun-lit vs. shadowed shading — a directional bias along the sun
-      // vector, not real self-shadowing between steps (an honest
-      // simplification, same class as Fog's sun-tint).
       const sunFactor = select(sunLightingOn.greaterThan(0.5), dot(rayDir, sunDirectionUniform).mul(0.5).add(0.5), float(0.7));
       const stepColor = mix(vec3(0.55, 0.57, 0.62), vec3(1.0, 0.98, 0.94), sunFactor);
 
@@ -123,16 +81,6 @@ export function buildCloudSystem(): CloudSystem {
   })();
 
   const opacityNode = Fn(() => {
-    // Recomputing alpha here would double the raymarch cost; instead this
-    // mirrors colorNode's own accumulation via a second lightweight pass
-    // scaled by the same `opacity` (coverage-driven) uniform. Kept simple
-    // (density-proportional, not a literal re-march) — NodeMaterial has
-    // no built-in way to share a Var computed in colorNode with
-    // opacityNode, so a full duplicate accumulation would double the cost
-    // for a value already implicitly encoded in how bright/dark colorNode
-    // came out. This uses the same ray/band math as colorNode's own
-    // tEntry/tExit test so a ray that never crosses the band is fully
-    // transparent.
     const rayDir = normalize(positionWorld.sub(cameraPosition)).toVar();
     const bottomY = height;
     const topY = height.add(thickness);
@@ -157,7 +105,7 @@ export function buildCloudSystem(): CloudSystem {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.rotation.x = -Math.PI / 2;
   mesh.frustumCulled = false;
-  mesh.renderOrder = -5; // after the sky dome, before real geometry
+  mesh.renderOrder = -5;
   mesh.visible = false;
 
   const windAccum = new THREE.Vector2(0, 0);
@@ -201,13 +149,6 @@ export function buildCloudSystem(): CloudSystem {
   return { mesh, update, getWindOffset, dispose };
 }
 
-/** Cloud Shadows (PRD §11) — a real, simplified ground-projected darkening
- * (not a per-pixel shadow map): samples the SAME noise field used by the
- * cloud layer above, at the ground fragment's own XZ offset toward the sun
- * by the cloud height (a flat-plane shadow projection), and multiplies it
- * into whatever color the ground material node already produced. Exported
- * separately (not baked into buildCloudSystem) since it's applied inside
- * `buildGroundMaterial`, a different mesh/material entirely. */
 export function cloudShadowFactor(
   groundWorldPos: THREE.Node<"vec3">,
   sunDirection: THREE.Node<"vec3">,
@@ -223,8 +164,5 @@ export function cloudShadowFactor(
   const uv = projected.mul(cloudScale).add(windOffset);
   const raw = triNoise3D(vec3(uv.x, float(0), uv.y), 1, time);
   const mask = smoothstep(float(0.3), float(0.7), raw.add(coverage.sub(0.5)));
-  // mix(noShadow=1, shadowed=(1-mask), by strength) — standalone `mix(x,y,a)`
-  // form, NOT the `.mix()` chain form (that one treats the receiver as the
-  // blend factor, not the first value — see mixElement in three's MathNode.js).
   return mix(float(1), mask.oneMinus(), strength);
 }

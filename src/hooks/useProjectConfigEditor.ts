@@ -7,22 +7,6 @@ import { defaultProject3DConfig } from "@/lib/store";
 import { DEFAULT_FILL_COLOR } from "@/lib/render-engine/sections";
 import type { CameraPreset, Project3DConfig, Section } from "@/lib/types";
 
-/**
- * Live-editable draft of a project's Project3DConfig row — the shared
- * backing store for Camera/Shots (this pass) and, once built, Sections/
- * Interaction/Performance/Environment/Lighting/Rendering (this table
- * already has real schema + a real validated PATCH route for most of
- * those — see the route's own doc comment; this rebuild is extracting UI
- * for fields that were already real, not inventing new ones for most of
- * it).
- *
- * Same "adjust state during render, not in an effect" sync pattern as
- * useModelEditor.ts, but keyed differently: useProject3DConfig has no
- * stable per-fetch identity to compare against (it fetches once per
- * projectId and never again), so this tracks "have I synced the real
- * fetched row yet" via reference-equality against the shared
- * defaultProject3DConfig placeholder instead.
- */
 export function useProjectConfigEditor(projectId: string, canEdit: boolean) {
   const { establishAdminSession } = useAdminSessionRepair();
   const config = useProject3DConfig(projectId);
@@ -70,9 +54,6 @@ export function useProjectConfigEditor(projectId: string, canEdit: boolean) {
     }
   }
 
-  // --- Shots (PRD §38) — thin wrapper over draft.cameraPresets. First
-  // item in the array is the "Opening Shot" by convention (matches
-  // Reorder already being a required function, no extra field needed). ---
   function addShot(preset: CameraPreset) {
     update({ cameraPresets: [...draft.cameraPresets, preset] });
   }
@@ -109,10 +90,6 @@ export function useProjectConfigEditor(projectId: string, canEdit: boolean) {
     update({ cameraPresets: next });
   }
 
-  // --- Sections (PRD §34-36) — thin wrapper over draft.sections, same
-  // pattern as Shots above. Only one section is "active" (real clip+cap)
-  // at a time in the editor's own live preview — session-only state, not
-  // persisted (matches the old editor's identical behavior). ---
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
   function addSection(opts: {
     name: string;
@@ -124,10 +101,6 @@ export function useProjectConfigEditor(projectId: string, canEdit: boolean) {
     widthM?: number;
     depthM?: number;
     heightOnly?: boolean;
-    /** The `${buildingName}::${floor}` composite identity from
-     * src/lib/units.ts's `makeFloorId`, when this section is being
-     * created AS a specific floor's cut (UnitsPanel's Floor Sections
-     * group). Left unset for a plain hand-authored section. */
     floorId?: string;
   }) {
     const section: Section = {
@@ -135,25 +108,11 @@ export function useProjectConfigEditor(projectId: string, canEdit: boolean) {
       name: opts.name,
       scope: opts.scope,
       buildingName: opts.buildingName,
-      // Callers should pass the real loaded content's center (see
-      // ThreeProjectViewerHandle.getContentBounds) — world origin is only
-      // a sane fallback when nothing is loaded yet, not a real placement
-      // (a real bug this exact gap caused: a project whose content sits
-      // off-origin got a new section that clipped away nearly the whole
-      // building, only grazing a thin edge slice).
       centerX: opts.centerX ?? 0,
       centerZ: opts.centerZ ?? 0,
       widthM: opts.widthM ?? 20,
       depthM: opts.depthM ?? 20,
       heightOnly: opts.heightOnly,
-      // Set here, on the record itself, NOT via a follow-up
-      // updateSection() call: that call would map over the `draft.sections`
-      // captured in THIS closure, i.e. the array from BEFORE the update()
-      // two lines below lands, so it would write a `sections` array that
-      // doesn't contain the new section at all. That exact sequence
-      // already caused a real bug once with `heightOnly` (silently never
-      // applied to a new Floor Section) — see SectionsPanel.tsx's
-      // `create()` doc comment.
       floorId: opts.floorId,
       rotationDeg: 0,
       heightM: opts.heightM,

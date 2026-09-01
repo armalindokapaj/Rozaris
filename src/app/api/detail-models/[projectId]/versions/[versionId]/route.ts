@@ -9,8 +9,6 @@ const patchSchema = z.object({
   scale: z.number().positive().max(1000).optional(),
   rotationDeg: z.number().optional(),
   altitudeOffset: z.number().optional(),
-  // Experience Editor v2, Scene tab (PRD §5) — full Position/Rotation +
-  // Model switches.
   positionX: z.number().optional(),
   positionZ: z.number().optional(),
   rotationXDeg: z.number().optional(),
@@ -70,17 +68,6 @@ export async function PATCH(
   return NextResponse.json(updated);
 }
 
-/**
- * Soft-deletes a version — Postgres row marked `deletedAt`/`deletedBy`,
- * stored blob(s) left alone (Super Admin control/audit pass; this route
- * previously ran a real `prisma.delete()` + `del(blobUrl)` here — see git
- * history for that version if the old unconditional-hard-delete behavior
- * is ever needed again). Both the editor's "Delete Model" button (any
- * status, including the currently published version — no "cannot delete
- * published" guard, unchanged from before) and its per-version history
- * delete call this. The row is restorable from the Super Admin Recycle
- * Bin; only a Super Admin hard-delete actually removes the blob.
- */
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ projectId: string; versionId: string }> }

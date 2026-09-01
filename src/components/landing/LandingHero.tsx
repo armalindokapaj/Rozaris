@@ -13,8 +13,6 @@ import { LandingSearchCard } from "./LandingSearchCard";
 import { MobileLandingHero } from "./MobileLandingHero";
 import { TypewriterWord } from "./TypewriterWord";
 
-// Exported for MobileLandingHero, which shares this session's mode
-// selection/search logic rather than keeping its own copy of it.
 export type DiscoveryMode = "buy" | "rent" | "new";
 
 const MODES: { id: DiscoveryMode; label: string; icon: typeof Home }[] = [
@@ -23,13 +21,8 @@ const MODES: { id: DiscoveryMode; label: string; icon: typeof Home }[] = [
   { id: "new", label: "New developments", icon: Building2 },
 ];
 
-// Exported so MobileLandingHero's heading animates the exact same cycle
-// instead of a second, drifting copy of the word list.
 export const CYCLE_WORDS = ["home", "apartment", "villa", "house", "studio"];
 
-// Exported — MobileLandingHero's tools grid reuses this verbatim (same
-// titles/descriptions the mockup's mobile tool cards show) instead of
-// keeping a second, drifting copy.
 export const tools = [
   {
     href: "/rent-vs-buy",
@@ -73,42 +66,24 @@ export function LandingHero() {
 
   return (
     <div className="relative flex min-h-viewport flex-col">
-      {/* Top Bar + Menu are static everywhere in the app — this is the
-          exact same shared `<Header/>` (and the `<MobileNav/>` it renders
-          internally) every other page uses, not a landing-specific
-          variant. Landing previously had its own bespoke mobile top bar
-          (wordmark + hamburger only, no Buy/Rent/New pills, its own
-          separate `<MobileNav>` instance) — deleted outright per that
-          rule, not kept as an unused fallback. Rendered once, unconditionally
-          (not inside the `hidden lg:block` split below), so it's identical
-          at every breakpoint. */}
+      {                                                                
+                                 }
       <Header />
 
       <div className="relative min-h-0 flex-1">
-        {/* Phone/tablet (< lg): a bienici-style photo hero, fitted to one
-            screen with no scroll, below the shared Header above. See
-            MobileLandingHero for why it doesn't just reflow the desktop
-            markup below. */}
+        {                                                                 
+                            }
         <MobileLandingHero mode={mode} onSelectMode={selectMode} onSearch={search} />
 
-        {/* Desktop (>= lg): unchanged split hero + wallpaper backdrop. */}
+        {                                                                 }
         <div className="hidden lg:block">
-          {/* Fixed full-page backdrop — sits behind the hero and tools row
-              alike, not boxed into one column. */}
+          {                                                                
+                                                  }
           <HeroWallpaper />
 
           <main className="relative z-10">
-            {/* `items-stretch` (not the previous `items-center`) is
-                deliberate: it's what makes the right column's height
-                match the left column's exactly, top edge to bottom edge —
-                a CSS grid row's height comes from its tallest item's
-                natural content size regardless of `align-items`, and
-                stretch is what then makes the *other* column's box fill
-                that same height instead of collapsing to its own (empty)
-                intrinsic size. `DesktopBannerAds` below has `h-full`, so
-                it fills exactly that stretched box: same top line as the
-                badge above the heading, same bottom line as the search
-                card, same halves either side of the column gap. */}
+            {                                                       
+                                                                   }
             <section className="mx-auto grid max-w-[88rem] grid-cols-1 items-stretch gap-10 px-5 py-8 sm:px-8 lg:grid-cols-2 lg:gap-14 lg:px-12 lg:py-12">
               <div>
                 <span className="inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-brand-100 bg-white px-4 py-1.5 text-sm font-semibold text-brand-700 shadow-[0_2px_10px_rgba(17,24,39,0.06)]">
@@ -116,11 +91,8 @@ export function LandingHero() {
                   Your next chapter starts here
                 </span>
 
-                {/* Two fixed rows on purpose: the animated word's width changes
-                    as it types/backspaces, and letting "that fits your life"
-                    share a line with it meant that line's wrap point shifted
-                    underneath it constantly. A hard break keeps row two static
-                    regardless of what row one is doing. */}
+                {                                                               
+                                                           }
                 <h1 className="mt-4 text-4xl font-extrabold leading-[1.15] tracking-tight text-neutral-900 sm:text-5xl lg:text-[3.2rem]">
                   Find <TypewriterWord words={CYCLE_WORDS} className="text-brand-600" />
                   <br />
@@ -156,11 +128,8 @@ export function LandingHero() {
                 </div>
               </div>
 
-              {/* Right column mirrors the left: the same ad-slot carousel
-                  shown on mobile (MobileBannerAds), resized to fill this
-                  column edge-to-edge instead of a fixed card height.
-                  Hidden below lg — same reasoning as before, the space is
-                  better spent on the search card alone at narrower widths. */}
+              {                                                           
+                                                                              }
               <div className="hidden h-full lg:block">
                 <DesktopBannerAds />
               </div>

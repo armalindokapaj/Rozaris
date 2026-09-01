@@ -5,9 +5,6 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { logAuditEvent } from "@/lib/audit";
 import { PAGE_SEO_REGISTRY, type PageSeoKey } from "@/lib/pageSeo";
 
-/** Admin's SEO overrides list — every real registry key, merged with its
- * DB row if one exists yet (a page never overridden has no row, and
- * renders its own real hardcoded fallback). */
 export async function GET() {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;
@@ -36,9 +33,6 @@ const bodySchema = z.object({
   description: z.string(),
 });
 
-/** Empty string clears that field back to the page's own fallback —
- * clearing both fields removes the override row entirely rather than
- * leaving a dead all-blank row behind. */
 export async function PATCH(request: Request) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;

@@ -3,14 +3,6 @@
 import { GroupCard, SectionHeading, SliderRow, ToggleRow } from "../../fields";
 import type { UseProjectConfigEditorReturn } from "@/hooks/useProjectConfigEditor";
 
-/**
- * Rendering → Reflections (PRD §22-24) — real screen-space reflections
- * (vendored `SSRNode`, single-bounce mirror+roughness-blur mode), part of
- * the shared post pipeline the Lighting tab's Contact Shadows/GI also
- * extend. Reflects glass/polished surfaces (dielectrics included, not
- * just literal metal materials — see RenderEngine.ts's own doc comment)
- * — has no visible effect on a scene with no reflective materials.
- */
 export function ReflectionsSubtab({ configEditor }: { configEditor: UseProjectConfigEditorReturn }) {
   const { draft, update } = configEditor;
   const on = draft.ssrEnabled;

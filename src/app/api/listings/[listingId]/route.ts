@@ -8,8 +8,6 @@ import { recordSaleOrRentalIfNewlyCompleted } from "@/lib/transactions";
 import { AMENITY_KEYS } from "@/lib/constants";
 import { notifyPriceDrop, notifyAvailabilityChange } from "@/lib/notify";
 
-// Same fields as POST /api/listings' create schema, all optional — a
-// dashboard edit only sends the fields that changed.
 const patchSchema = z.object({
   title: z.string().min(1).optional(),
   price: z.number().positive().optional(),
@@ -19,9 +17,6 @@ const patchSchema = z.object({
   bedrooms: z.number().int().min(0).optional(),
   bathrooms: z.number().int().min(0).optional(),
   condition: z.enum(["new", "renovated", "good", "needs_renovation"]).optional(),
-  // Controlled taxonomy (spec item 11 — see MEMORY note
-  // "rozaris-controlled-taxonomy-spec") — same enum `POST /api/listings`
-  // enforces at creation.
   amenities: z.array(z.enum(AMENITY_KEYS as [string, ...string[]])).optional(),
   images: z.array(z.string()).optional(),
   descriptionEn: z.string().min(1).optional(),
@@ -31,10 +26,6 @@ const patchSchema = z.object({
   lat: z.number().optional(),
   lng: z.number().optional(),
   locationConfirmed: z.boolean().optional(),
-  /// "Still available / confirm listing" — bumps `lastRenewedAt` to now,
-  /// clearing the >90-day staleness flag. A real field on the request
-  /// (not inferred from "any PATCH counts as a renewal") so a silent admin
-  /// edit doesn't quietly reset a publisher's own staleness clock.
   renew: z.boolean().optional(),
 });
 
@@ -61,16 +52,10 @@ export async function PATCH(
   if (gate.user.role !== "admin" && gate.user.publisherId !== existing.publisherId) {
     return NextResponse.json({ error: "You can only edit your own listings." }, { status: 403 });
   }
-  // "active"/"suspended" are moderation outcomes, not a publisher's own
-  // edit — those go through PATCH /api/admin/listings/[id]/publication
-  // (Admin's Queue tab) so a listing can't skip review by self-approving.
   if (gate.user.role !== "admin" && (parsed.data.status === "active" || parsed.data.status === "suspended")) {
     return NextResponse.json({ error: "Only an admin can publish or suspend a listing." }, { status: 403 });
   }
 
-  // Property/Listing split (see MEMORY note "rozaris-controlled-taxonomy-
-  // spec") — an edit can touch either row, so this route now writes both
-  // in one transaction rather than a single `listing.update()`.
   const { renew, area, bedrooms, bathrooms, condition, amenities, lat, lng, locationConfirmed, ...listingFields } =
     parsed.data;
   const propertyFields = { area, bedrooms, bathrooms, condition, amenities, lat, lng, locationConfirmed };
@@ -86,9 +71,6 @@ export async function PATCH(
       data: {
         ...listingFields,
         ...(renew ? { lastRenewedAt: new Date() } : {}),
-        // A draft that just got a real location for the first time re-enters
-        // the normal review pipeline automatically — the publisher shouldn't
-        // have to separately know to "resubmit" on top of adding a pin.
         ...(existing.status === "draft" && nowConfirmed && !listingFields.status
           ? { status: "pending" as const }
           : {}),
@@ -96,10 +78,6 @@ export async function PATCH(
       include: { publisher: true, property: true },
     });
 
-    // Real Transaction event — see src/lib/transactions.ts's doc comment.
-    // A publisher marking their own listing sold/rented (a deal closed
-    // outside the platform) is a real sale/rental event, not just a status
-    // label change.
     await recordSaleOrRentalIfNewlyCompleted(tx, {
       listingId: updated.id,
       previousStatus: existing.status,
@@ -110,10 +88,6 @@ export async function PATCH(
       currency: updated.currency,
     });
 
-    // Price history — spec item 31 (see MEMORY note "rozaris-controlled-
-    // taxonomy-spec"): "never overwrite a price silently." Only a real
-    // change in the numeric value gets a new point (a currency-only edit
-    // with the same number, or a no-op resave, doesn't).
     if (listingFields.price != null && listingFields.price !== existing.price) {
       await tx.priceHistoryEntry.create({
         data: { listingId: updated.id, price: updated.price, currency: updated.currency },
@@ -123,9 +97,6 @@ export async function PATCH(
     return updated;
   });
 
-  // Real notification producers (Account & Profile System PRD v1.0 §5.3 —
-  // see src/lib/notify.ts) — outside the transaction since a saver
-  // notification failing shouldn't roll back the listing edit itself.
   if (listingFields.price != null && listingFields.price < existing.price) {
     await notifyPriceDrop({
       id: listing.id,
@@ -155,11 +126,6 @@ export async function PATCH(
   return NextResponse.json(normalizeListing(listing));
 }
 
-/**
- * Soft-delete only, same convention as `Project`/`Publisher` — sets
- * `deletedAt`/`deletedBy` rather than removing the row, so it surfaces in
- * the Super Admin Recycle Bin instead of vanishing without a trace.
- */
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ listingId: string }> }

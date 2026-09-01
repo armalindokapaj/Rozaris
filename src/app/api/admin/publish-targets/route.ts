@@ -9,7 +9,6 @@ import { generatePublicKey } from "@/lib/publishing/publicKey";
 const createTargetSchema = z.object({
   projectId: z.string().min(1),
   type: z.enum(["marketplace", "embed", "custom_domain", "kiosk"]),
-  // Admin-facing label only — see the model's own doc comment.
   name: z.string().min(1).max(120),
   customDomain: z.string().min(1).max(255).optional(),
   allowedOrigins: z.array(z.string().url()).optional(),
@@ -19,20 +18,6 @@ const createTargetSchema = z.object({
   licenseEndsAt: z.coerce.date().optional(),
 });
 
-/**
- * Multi-Channel Publishing PRD Phase 2 — admin CRUD for
- * `ProjectPublishTarget` ("where is this Project's digital twin actually
- * deployed"). requireAdmin()-gated like /api/environment-presets: this is
- * an internal control-plane route, never called by the public runtime
- * (that's Phase 5's `/api/viewer/v1/t/[publicKey]/bootstrap`, which
- * resolves a target by its opaque `publicKey`, not this route's ids).
- *
- * Deliberately minimal for Phase 2: no `activeReleaseId` here — assigning
- * a release to a target is a "deploy" action that needs the release
- * compiler (Phase 3) and the admin Distribution UI (Phase 7) to mean
- * anything; a bare id-setter now would let an admin point a target at a
- * release id that can't yet do anything.
- */
 export async function GET(request: Request) {
   const gate = await requireAdmin();
   if (gate instanceof NextResponse) return gate;
@@ -66,8 +51,6 @@ export async function POST(request: Request) {
     data: {
       publicKey: generatePublicKey(),
       projectId: project.id,
-      // Denormalized from the project, not client-supplied — see the
-      // schema's own doc comment on why this column exists at all.
       publisherId: project.publisherId,
       type: parsed.data.type,
       name: parsed.data.name,

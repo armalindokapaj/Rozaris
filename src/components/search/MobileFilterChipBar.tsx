@@ -6,16 +6,6 @@ import { useT } from "@/lib/i18n/useT";
 import { PROPERTY_TYPE_LABELS } from "@/lib/constants";
 import { cn, formatPrice } from "@/lib/utils";
 
-/**
- * Slim horizontal quick-filter row sitting directly under the mobile search
- * bar (Search page only) — the "Buy · Apartment · Price · 2+ Beds · More"
- * chip strip from the mobile mockup. Every chip opens the same Filters
- * bottom sheet FiltersForm already renders (no per-chip inline popover —
- * that's real added surface for marginal gain); the chip's own label/active
- * color is the only per-filter thing this component does. Additive next to
- * CategoryQuickFilters/PopularAreasRow (still shown inside the listings
- * sheet) rather than a replacement for them.
- */
 export function MobileFilterChipBar({ onOpenFilters }: { onOpenFilters: () => void }) {
   const filters = useAppStore((s) => s.filters);
   const { t, locale } = useT();

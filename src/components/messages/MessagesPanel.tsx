@@ -9,14 +9,6 @@ import { formatRelativeDate } from "@/lib/utils";
 import { PlaceholderImage } from "@/components/common/PlaceholderImage";
 import type { Conversation } from "@/lib/types";
 
-/**
- * Shared buyer<->publisher conversation list + thread view. Which
- * conversations are visible, and whose messages render as "own" bubbles, is
- * entirely determined by the caller (Buyer dashboard passes conversations
- * for the demo buyer, Publisher dashboard passes conversations for the demo
- * publisher) — this component has no opinion on the viewer's role beyond
- * displaying the other participant's name/avatar seed.
- */
 export function MessagesPanel({
   conversations,
   viewerId,

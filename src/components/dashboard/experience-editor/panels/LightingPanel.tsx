@@ -19,13 +19,6 @@ const SUBTABS: { id: LightingSubtab; label: string }[] = [
   { id: "volumetric", label: "Volumetric" },
 ];
 
-/**
- * Lighting tab (PRD §14-21) — 5 subtabs. Every field here is real,
- * live-applied to the viewport with no remount where the underlying
- * three.js node supports it (RenderEngine.ts's setLightingConfig),
- * persisted through the same Project3DConfig PATCH route every other tab
- * already uses.
- */
 export function LightingPanel({ configEditor, projectId }: { configEditor: UseProjectConfigEditorReturn; projectId: string }) {
   const [subtab, setSubtab] = useState<LightingSubtab>("sun");
 

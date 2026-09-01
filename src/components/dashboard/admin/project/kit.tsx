@@ -3,17 +3,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-/**
- * Shared chrome for the Project Manager (`/admin/projects/[projectId]`) —
- * the console's ERP-style record view. Every section is built out of these
- * four pieces so twelve independently-authored panels still read as one
- * application rather than twelve visual dialects. Deliberately plain
- * Tailwind, not the public site's shared `<Button>`: that component's own
- * doc comment scopes it to the marketing site, and admin keeps its own
- * hand-rolled chrome (same as Distribution, Map Control and the 3D
- * editors).
- */
-
 export function SectionHeader({
   title,
   description,
@@ -63,9 +52,6 @@ export function Panel({
   );
 }
 
-/** One labelled form control. `hint` sits under the field for the "why is
- * this read-only" / "this changes the public URL" notes an ERP record view
- * lives on. */
 export function Field({
   label,
   hint,
@@ -91,16 +77,9 @@ export function Field({
   );
 }
 
-/** The control WITHOUT a width — for inline cases (a filter select in a
- * toolbar, a 20-wide number input beside a slider). Composing
- * `${inputClass} w-auto` silently loses instead: two same-specificity
- * width utilities resolve by stylesheet order, not by their order in the
- * class string, so `w-full` kept winning and every toolbar select
- * rendered full-bleed. */
 export const narrowInputClass =
   "rounded-control border border-neutral-200 px-3 py-2 text-sm text-neutral-900 focus:border-brand-400 focus:outline-none disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500";
 
-/** The full-width control used by every stacked form field. */
 export const inputClass = `w-full ${narrowInputClass}`;
 
 export const readOnlyInputClass =
@@ -126,9 +105,6 @@ export function Btn({
   );
 }
 
-/** A single figure with its label — the Overview section's whole
- * vocabulary. `tone` colours only the value, never the whole tile: a wall
- * of coloured boxes stops meaning anything. */
 export function Stat({
   label,
   value,
@@ -196,10 +172,6 @@ export function ErrorNote({ children }: { children: ReactNode }) {
   );
 }
 
-/** Add/remove list editor for the two `String[]` columns a project carries
- * (buildings, amenities). Beats the comma-separated single input the old
- * modal used, where deleting one entry meant re-typing the whole line and
- * a stray comma silently created an empty building called "". */
 export function ChipEditor({
   values,
   onChange,
@@ -239,8 +211,6 @@ export function ChipEditor({
           e.preventDefault();
           const input = e.currentTarget.elements.namedItem("value") as HTMLInputElement;
           const next = input.value.trim();
-          // Silently ignoring a duplicate beats adding a second "Pool"
-          // chip that then has to be hunted down.
           if (next && !values.includes(next)) onChange([...values, next]);
           input.value = "";
         }}

@@ -27,23 +27,7 @@ export interface ViewerReleaseManifestModel {
   castShadow: boolean;
   receiveShadow: boolean;
   nodeOverrides: unknown;
-  /** Multi-Channel Publishing PRD Phase 5 addition — RenderEngine's
-   * `applyNodeOverrides` cross-references this against `nodeOverrides`
-   * (both keyed by `rzNodeId`) to resolve a mesh's runtime `.name` before
-   * a Materials-tab override can apply at all; without it, node overrides
-   * silently no-op (an empty `sceneManifest` produces an empty
-   * name-lookup map, not an error). Not present on any `ViewerRelease`
-   * compiled before this field existed — every reader must treat it as
-   * optional and fall back to `[]`, matching `useProjectDetailModel`'s
-   * own nullable-column handling for the live path. */
   sceneManifest: unknown;
-  /** Multi-Channel Publishing PRD Phase 5 addition — per-slot mesh→unit
-   * mapping. The top-level `unitBindings`/`unitPoi` maps below stay
-   * (merged across every slot, for the runtime's raycast-hit lookup) —
-   * this is the per-model breakdown `applyUnitBoxes` actually needs (see
-   * its own "only matches against that slot's own unitLinks map" doc
-   * comment on `ProjectViewerRuntime`). Same optional/fall-back-to-`[]`
-   * rule as `sceneManifest` above for pre-existing compiled releases. */
   unitLinks: Array<{
     meshName: string;
     unitId: string;
@@ -59,37 +43,14 @@ export interface ViewerReleaseManifest {
   projectId: string;
   compiledAt: string;
   models: ViewerReleaseManifestModel[];
-  /** meshName -> real Unit id, merged across every included model — the
-   * runtime's raycast-hit-to-Unit lookup (PRD §5's `unitBindings`). Deliberately
-   * excludes price/availability/anything else Unit-shaped — those stay live
-   * (PRD §5-6 "separate static experience from live inventory"), fetched by
-   * the viewer from the inventory endpoint (Phase 6), never baked in here. */
   unitBindings: Record<string, string>;
-  /** unitId -> the one thing this schema lets an admin author per unit
-   * (UnitMeshLinkV2's own doc comment) — POI camera facing/overrides. */
   unitPoi: Record<
     string,
     { yawDeg: number; enabled: boolean; distanceOverride: number | null; heightOverride: number | null }
   >;
-  /** Full current Project3DConfig snapshot at compile time (minus its own
-   * id/bookkeeping columns) — deliberately NOT the narrow hand-picked field
-   * set `buildExperienceDocument()` uses (that allowlist already predates
-   * several rendering tabs — Ocean/Water/Clouds/GI/Volumetrics aren't in it
-   * — and a release manifest going stale the same way the moment a new tab
-   * ships is a worse failure mode than one extra unused field). */
   rendering: Record<string, unknown>;
 }
 
-/**
- * Multi-Channel Publishing PRD Phase 3 — turns a project's current
- * PUBLISHED 3D state into one immutable `ViewerRelease` row. Does NOT
- * itself check readiness — callers must run `validateViewerRelease()`
- * first and refuse to call this when `ready` is false (the one real call
- * site, `POST /api/admin/projects/[projectId]/releases`, does exactly
- * that). Kept as two single-purpose functions rather than one, per
- * validateRelease.ts's own doc comment about being safe to poll
- * repeatedly — compiling should never be a side effect of just checking.
- */
 export async function compileViewerRelease(projectId: string, actor: string) {
   const [config, slots, lastRelease] = await Promise.all([
     prisma.project3DConfig.findUnique({ where: { projectId } }),
@@ -119,8 +80,6 @@ export async function compileViewerRelease(projectId: string, actor: string) {
   for (const slot of slots) {
     const published = slot.versions[0];
     if (!published) {
-      // validateViewerRelease() should have already blocked this — defensive,
-      // not the normal path.
       throw new Error(`Cannot compile a release: slot "${slot.name}" has no published version.`);
     }
     models.push({

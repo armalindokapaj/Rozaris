@@ -17,9 +17,6 @@ export function ConstructionTimelineStrip({
 }: {
   stages: ConstructionStage[];
   overallPercent: number;
-  /** Small header-pill form — label, mini segment bar, percentage, nothing
-   * else (no scrub slider, no stage detail row). Used where the strip has
-   * to share a row with other chrome instead of floating as its own card. */
   compact?: boolean;
 }) {
   const activeIndex = stages.findIndex((s) => s.status === "active");
@@ -28,12 +25,6 @@ export function ConstructionTimelineStrip({
   const { t, locale } = useT();
   const stageName = (s: ConstructionStage) => STAGE_NAMES[locale][s.order] ?? s.name;
 
-  // A real, live project can genuinely have zero construction stages yet
-  // (freshly admin-created, before that data's been added — see the
-  // "Rozaris Platform Audit" memory's Projects/Units migration, which
-  // surfaced this crashing a real production build for exactly such a
-  // project). mockData's hand-authored fixtures never left this empty, so
-  // nothing below was ever exercised against it before.
   if (stages.length === 0) return null;
 
   if (compact) {

@@ -26,11 +26,6 @@ import { LanguageCurrencySelector } from "./LanguageCurrencySelector";
 import { MenuToggleIcon } from "./MenuToggleIcon";
 import { cn } from "@/lib/utils";
 
-/**
- * A row in the main nav list. `active` (current-page highlight) is real —
- * computed from `pathname`, not hardcoded — so it's correct wherever this
- * drawer is opened from, not just landing.
- */
 function NavRow({
   href,
   icon: Icon,
@@ -85,16 +80,6 @@ export function MobileNav({
   const { t } = useT();
   const { hint: savedHint, hintRef: savedHintRef, handleSavedClick } = useSavedHint();
 
-  // Always mounted (no conditional unmount, no local animation state) —
-  // every class below is driven straight off the `open` prop, so the same
-  // DOM node transitions in *and* out symmetrically via plain CSS. The
-  // previous version unmounted on `!open`, which meant open had a real
-  // slide/fade transition (a freshly-mounted node animating to its
-  // resting state) while close was an instant cut (unmounting mid-CSS-
-  // transition doesn't let it finish) — this fixes that asymmetry.
-  // `inert` (not just `aria-hidden`) keeps the closed drawer's links and
-  // buttons out of tab order and unclickable without needing
-  // `pointer-events-none` sprinkled on every interactive child.
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
     return () => {
@@ -110,42 +95,24 @@ export function MobileNav({
       aria-hidden={!open}
       inert={!open}
     >
-      {/* Dimmed backdrop over the ~30% of the screen the drawer doesn't
-          cover — click closes, same as the X button. Fades independently
-          of the panel's slide (see below) — the dim is what should fade,
-          not the drawer itself. */}
+      {                                                                 
+                                   }
       <button
         aria-label={t("nav.closeMenu")}
         onClick={onClose}
         className={cn("absolute inset-0 bg-neutral-900/45 transition-opacity duration-300 ease-[var(--ease-rz)]", open ? "opacity-100" : "opacity-0")}
       />
 
-      {/* The drawer itself — ~72% width, a pure slide: fully opaque the
-          entire time, only `transform` animates, right to left on open and
-          straight back out to the right on close (the same motion in
-          reverse, not a different close effect). Deliberately no opacity
-          transition on this panel — a solid card fading while it also
-          moves reads as flimsy/glitchy; fading was tried and cut for
-          exactly that reason. `duration-[420ms]` + `--ease-rz`'s strong
-          deceleration (cubic-bezier(0.2,0,0,1), fast start / hard settle,
-          no bounce) is what actually reads as "premium" here — a snappier
-          300ms felt utilitarian, a spring/overshoot would feel playful
-          rather than premium for a real-estate app. `will-change-transform`
-          keeps 72%-width repaint smooth on mid-tier phones. */}
+      {                                                                 
+                                                               }
       <div
         className={cn(
           "absolute inset-y-0 right-0 flex w-[72%] max-w-sm flex-col bg-white shadow-2xl transition-transform duration-[420ms] ease-[var(--ease-rz)] will-change-transform",
           open ? "translate-x-0" : "translate-x-full"
         )}
       >
-        {/* Same bar as the Front Page header (MobileLandingHero) — wordmark
-            left, toggle right, identical height/padding/border — so the
-            close button lands in exactly the position the hamburger that
-            opened this drawer occupies, and the hamburger→X morph
-            (MenuToggleIcon) reads as one continuous motion in place rather
-            than two different-looking buttons swapping. Wordmark is a real
-            link to the front page here too, same as the Front Page's own
-            header — not just decorative text. */}
+        {                                                                   
+                                                 }
         <div className="flex h-16 shrink-0 items-center justify-between border-b border-neutral-200 px-5">
           <Link
             href="/"
@@ -241,10 +208,8 @@ export function MobileNav({
           <div className="my-3 border-t border-neutral-100" />
 
           <nav className="flex flex-col gap-0.5">
-            {/* Not NavRow: needs the real click event for useSavedHint's
-                preventDefault()/clientX/clientY (empty-saved-list tooltip
-                instead of navigating to an empty page), which NavRow's
-                plain `() => void` onClick can't carry. */}
+            {                                                            
+                                                          }
             <Link
               href="/saved"
               onClick={(e) => {
@@ -278,11 +243,8 @@ export function MobileNav({
                 )
               }
             />
-            {/* Signed-in only — last item, directly above the Language
-                footer, always highlighted (brand-tinted, not just when
-                `pathname` happens to match) since this is the one row
-                whose whole point is "go to your account", not a page
-                among peers. */}
+            {                                                          
+                               }
             {auth.signedIn && (
               <Link
                 href="/buyer/dashboard"
@@ -297,11 +259,8 @@ export function MobileNav({
           </nav>
         </div>
 
-        {/* Language/currency switching lives here on mobile — there's no
-            other entry point for it below the `lg:` breakpoint (desktop's
-            selector in Header is `hidden lg:block`). Not in the reference
-            mockup for this drawer, kept anyway so switching languages
-            doesn't regress into being mobile-unreachable. */}
+        {                                                                
+                                                             }
         <div className="shrink-0 border-t border-neutral-100 px-5 py-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-neutral-500">{t("nav.language")}</span>
