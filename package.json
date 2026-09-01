@@ -26,7 +26,9 @@
     "test:viewer-viewport": "tsx scripts/test-viewer-viewport.ts",
     "test:effect-overrides": "tsx scripts/test-effect-overrides.ts",
     "test:outline-clip": "tsx scripts/test-unit-outline-clip.ts",
-    "test:section-scope": "tsx scripts/test-section-scope.ts"
+    "test:section-scope": "tsx scripts/test-section-scope.ts",
+    "test:glb-optimize": "tsx scripts/test-glb-optimize.ts",
+    "optimize:blobs": "tsx scripts/optimize-blob-assets.ts"
   },
   "browserslist": [
     "chrome >= 100",
