@@ -6,6 +6,7 @@ import { useDropdown } from "@/hooks/useDropdown";
 import { DropdownPanel } from "@/components/ui/Dropdown";
 import { Button, buttonVariants } from "@/components/ui/Button";
 import { useT } from "@/lib/i18n/useT";
+import { PlatformAdminQuickLogin } from "./PlatformAdminQuickLogin";
 import { useCredentialsSignIn } from "@/hooks/useCredentialsSignIn";
 
 export function JoinMenu({ variant = "pill" }: { variant?: "pill" | "bare" }) {
@@ -89,6 +90,12 @@ export function JoinMenu({ variant = "pill" }: { variant?: "pill" | "bare" }) {
                 {t("signInModal.invalidCredentials")}
               </p>
             )}
+
+            <PlatformAdminQuickLogin
+              submit={submit}
+              submitting={submitting}
+              onError={() => setError(true)}
+            />
 
             <Button type="submit" fullWidth disabled={!username.trim() || !password || submitting} className="mt-3">
               {t("common.signIn")}

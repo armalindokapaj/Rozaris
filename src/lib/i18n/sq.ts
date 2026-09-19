@@ -24,6 +24,7 @@ const sq: Dictionary = {
     required: "e detyrueshme",
   },
   signInModal: {
+    platformAdminQuickLogin: "Hyrje e shpejtë si Admin i Platformës",
     title: "Mirë se erdhe përsëri",
     subtitle: "Identifikohu për të ruajtur prona, ndjekur projekte dhe vazhduar aty ku e le.",
     usernameLabel: "Email",

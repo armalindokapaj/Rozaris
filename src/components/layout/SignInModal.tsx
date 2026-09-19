@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAppStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/useT";
+import { PlatformAdminQuickLogin } from "./PlatformAdminQuickLogin";
 import { useCredentialsSignIn } from "@/hooks/useCredentialsSignIn";
 import { DEMO_ACCOUNTS } from "@/lib/demoAccounts";
 
@@ -152,6 +153,12 @@ export function SignInModal() {
             </div>
           </div>
         )}
+
+        <PlatformAdminQuickLogin
+          submit={submit}
+          submitting={submitting}
+          onError={() => setError(true)}
+        />
 
         <p className="mt-3 text-xs text-neutral-400">{t("signInModal.mockNote")}</p>
 

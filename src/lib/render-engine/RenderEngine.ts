@@ -385,7 +385,13 @@ export interface RendererFacts {
   gpuErrors: string[];
 }
 
+export type ModelLoadStatus =
+  | { state: "loading" }
+  | { state: "ready" }
+  | { state: "failed"; models: string[]; forbidden: boolean };
+
 export interface RenderEngineCallbacks {
+  onModelLoadStatus?: (status: ModelLoadStatus) => void;
   onWebglFail: () => void;
   onContextLost?: () => void;
   onRendererFacts?: (facts: RendererFacts) => void;
@@ -1139,6 +1145,9 @@ export class RenderEngine {
     const unclippedModelGroup = this.unclippedModelGroup;
     if (!scene || !loader || !clippingGroup || !unclippedModelGroup) return;
     const token = ++this.syncToken;
+    this.callbacks.onModelLoadStatus?.({ state: "loading" });
+    const failedModels: string[] = [];
+    let forbidden = false;
 
     const groupFor = (entry: DetailModelEntry) =>
       isSlotCutBySections(entry) ? clippingGroup : unclippedModelGroup;
@@ -1195,6 +1204,11 @@ export class RenderEngine {
         this.loadedGlbUrlBySlot.set(slotId, model.glbUrl);
         loadedSomethingNew = true;
       } catch (err) {
+        if (token !== this.syncToken) return;
+        failedModels.push(entry.slotName ?? slotId);
+        const response = (err as { response?: Response })?.response;
+        forbidden ||= response?.status === 403;
+        this.callbacks.onModelLoadStatus?.({ state: "failed", models: [...failedModels], forbidden });
         console.error("RenderEngine: GLB load failed", model.glbUrl, err);
       }
     }
@@ -1215,6 +1229,9 @@ export class RenderEngine {
     this.loadedRoots = Array.from(this.modelRootsBySlot.values());
     this.refreshUnitRegistryAndAppearance();
     if (loadedSomethingNew) this.frameLoadedContent();
+    this.callbacks.onModelLoadStatus?.(
+      failedModels.length ? { state: "failed", models: failedModels, forbidden } : { state: "ready" }
+    );
   }
 
   private refreshUnitRegistryAndAppearance() {

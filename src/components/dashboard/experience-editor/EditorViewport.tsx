@@ -1,11 +1,11 @@
 "use client";
 
-import { forwardRef, useCallback, useRef, useState } from "react";
+import { forwardRef, useRef, useState } from "react";
 import { Expand, Minimize, Move, MousePointer2, RotateCw, Scale as ScaleIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThreeProjectViewer } from "@/components/project/ThreeProjectViewer";
 import type { ThreeProjectViewerHandle, ThreeProjectViewerProps } from "@/components/project/viewerTypes";
-import type { CameraConfig, DetailModelEntry, QualityConfig } from "@/lib/render-engine/RenderEngine";
+import type { CameraConfig, DetailModelEntry, ModelLoadStatus, QualityConfig } from "@/lib/render-engine/RenderEngine";
 import type { EnvironmentConfig, LightingConfig, RenderingConfig, SiteRuntimeConfig, UnitsConfig } from "@/lib/types";
 
 type Tool = "select" | "move" | "rotate" | "scale";
@@ -43,15 +43,7 @@ export const EditorViewport = forwardRef<
     const containerRef = useRef<HTMLDivElement>(null);
     const [tool, setTool] = useState<Tool>("select");
     const [fullscreen, setFullscreen] = useState(false);
-    const [maxTrianglesSeen, setMaxTrianglesSeen] = useState(0);
-    const sceneReady = slotsLoaded && (detailModels.length === 0 || maxTrianglesSeen > 200);
-    const handlePerfStats = useCallback(
-      (stats: { fps: number; frameTimeMs: number; drawCalls: number; triangles: number; textures: number; dpr: number } | null) => {
-        onPerfStats?.(stats);
-        if (stats) setMaxTrianglesSeen((prev) => Math.max(prev, stats.triangles));
-      },
-      [onPerfStats]
-    );
+    const [modelLoadStatus, setModelLoadStatus] = useState<ModelLoadStatus>({ state: "loading" });
 
     function toggleFullscreen() {
       const el = containerRef.current;
@@ -109,9 +101,29 @@ export const EditorViewport = forwardRef<
             onUnitHover={onUnitHover}
             className="relative h-full w-full"
             showPerfStats={!!onPerfStats}
-            onPerfStats={handlePerfStats}
+            onPerfStats={onPerfStats}
+            onModelLoadStatus={setModelLoadStatus}
           />
-          {!sceneReady && (
+          {slotsLoaded && modelLoadStatus.state === "loading" && (
+            <div role="status" className="pointer-events-none absolute left-3 top-3 rounded-md bg-neutral-900/90 px-3 py-2 text-xs text-neutral-300">
+              Loading 3D models…
+            </div>
+          )}
+          {modelLoadStatus.state === "failed" && (
+            <div role="alert" className="absolute inset-x-3 top-3 rounded-md border border-red-400/30 bg-neutral-900/95 p-3 text-sm text-white">
+              <p className="font-semibold">Could not load 3D models</p>
+              <p className="mt-1 text-xs text-neutral-300">
+                {modelLoadStatus.forbidden
+                  ? "Model storage denied access (403). Restore access to the Blob store, then reload."
+                  : "Check the model files and your connection, then reload."}
+              </p>
+              <p className="mt-1 text-xs text-neutral-400">{modelLoadStatus.models.join(", ")}</p>
+              <button type="button" onClick={() => window.location.reload()} className="mt-2 rounded border border-white/20 px-3 py-1 text-xs hover:bg-white/10">
+                Reload
+              </button>
+            </div>
+          )}
+          {!slotsLoaded && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-neutral-900">
               <div className="flex flex-col items-center gap-3 text-neutral-400">
                 <div className="h-7 w-7 animate-spin rounded-full border-2 border-neutral-700 border-t-neutral-300" />

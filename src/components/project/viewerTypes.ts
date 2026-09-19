@@ -71,5 +71,6 @@ export interface ThreeProjectViewerProps {
       outlineClip: string;
     } | null
   ) => void;
+  onModelLoadStatus?: RenderEngineCallbacks["onModelLoadStatus"];
   onReady?: () => void;
 }

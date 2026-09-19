@@ -22,6 +22,7 @@ const en = {
     required: "required",
   },
   signInModal: {
+    platformAdminQuickLogin: "Platform Admin quick login",
     title: "Welcome back",
     subtitle: "Sign in to save properties, follow projects, and pick up where you left off.",
     usernameLabel: "Email",

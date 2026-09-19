@@ -8,7 +8,7 @@ export type { ThreeProjectViewerHandle, ThreeProjectViewerProps } from "./viewer
 
 export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProjectViewerProps>(
   function ThreeProjectViewer(
-    { detailModels, className, showPerfStats, onPerfStats, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, unitsConfig, siteConfig, onUnitClick, onUnitHover, onReady, onSiteStatus, onRendererFacts, onContextLost },
+    { detailModels, className, showPerfStats, onPerfStats, cameraConfig, qualityConfig, environmentConfig, lightingConfig, renderingConfig, unitsConfig, siteConfig, onUnitClick, onUnitHover, onReady, onModelLoadStatus, onSiteStatus, onRendererFacts, onContextLost },
     ref
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -16,6 +16,8 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
     const [webglFailed, setWebglFailed] = useState(false);
     const [contextLost, setContextLost] = useState(false);
     const readyFiredRef = useRef(false);
+    const onModelLoadStatusRef = useRef(onModelLoadStatus);
+    onModelLoadStatusRef.current = onModelLoadStatus;
     const onUnitClickRef = useRef(onUnitClick);
     onUnitClickRef.current = onUnitClick;
     const onUnitHoverRef = useRef(onUnitHover);
@@ -68,6 +70,7 @@ export const ThreeProjectViewer = forwardRef<ThreeProjectViewerHandle, ThreeProj
       if (!container) return;
       let cancelled = false;
       const engine = new RenderEngine({
+        onModelLoadStatus: (status) => onModelLoadStatusRef.current?.(status),
         onWebglFail: () => setWebglFailed(true),
         onContextLost: () => {
           setContextLost(true);
